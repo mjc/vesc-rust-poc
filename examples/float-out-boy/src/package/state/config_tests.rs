@@ -1,8 +1,8 @@
 use super::{
     FloatOutBoyPackageState,
     config_storage::{
-        FLOAT_OUT_BOY_EEPROM_LEN, FirmwareImuMigration, FloatOutBoyEepromImage,
-        FloatOutBoyEepromImageError,
+        FLOAT_OUT_BOY_EEPROM_LEN, FirmwareImuMigration, FloatOutBoyConfigLoadOutcome,
+        FloatOutBoyEepromImage, FloatOutBoyEepromImageError,
     },
 };
 use crate::beeper::FloatOutBoyBeeperLevel;
@@ -366,6 +366,45 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
             .ride_state()
             .run_state(),
         FloatOutBoyRunState::Disabled,
+    );
+}
+
+#[test]
+fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
+    let firmware = FirmwareTest::new();
+    let failed_address = vescpkg_rs::CustomEepromAddress::from_index(2).expect("test address fits");
+    firmware.fail_eeprom_read(failed_address);
+
+    let read_failed = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    assert_eq!(
+        read_failed.config_load_outcome_for_test(),
+        FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
+    );
+    assert_eq!(
+        read_failed.serialized_config,
+        FloatOutBoyConfigImage::defaults(),
+    );
+    drop(firmware);
+
+    let firmware = FirmwareTest::new();
+    assert!(
+        firmware
+            .eeprom()
+            .write_bytes(&[0; FLOAT_OUT_BOY_EEPROM_LEN])
+            .is_ok()
+    );
+    let invalid = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    assert_eq!(
+        invalid.config_load_outcome_for_test(),
+        FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
+    );
+    assert_eq!(
+        invalid.serialized_config,
+        FloatOutBoyConfigImage::defaults(),
     );
 }
 

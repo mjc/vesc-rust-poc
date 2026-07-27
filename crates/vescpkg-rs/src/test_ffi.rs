@@ -282,6 +282,7 @@ const EEPROM_WORDS: usize = 128;
 static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_WORDS];
 static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
     [const { AtomicBool::new(false) }; EEPROM_WORDS];
+static EEPROM_READ_FAILURE: AtomicI32 = AtomicI32::new(-1);
 static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
 static EEPROM_WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static EEPROM_WRITE_FAILURE_AT_COUNT: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -507,6 +508,7 @@ fn reset_storage_and_sync() {
     for slot in &EEPROM_PRESENT {
         slot.store(false, Ordering::Relaxed);
     }
+    EEPROM_READ_FAILURE.store(-1, Ordering::Relaxed);
     EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
     EEPROM_WRITE_COUNT.store(0, Ordering::Relaxed);
     EEPROM_WRITE_FAILURE_AT_COUNT.store(usize::MAX, Ordering::Relaxed);
@@ -546,6 +548,9 @@ pub(crate) fn lock_firmware() -> FirmwareLockGuard {
 }
 
 pub unsafe fn read_eeprom_word(word: *mut u32, address: i32) -> bool {
+    if EEPROM_READ_FAILURE.load(Ordering::Relaxed) == address {
+        return false;
+    }
     let Some((stored, present)) = usize::try_from(address)
         .ok()
         .and_then(|index| EEPROM.get(index).zip(EEPROM_PRESENT.get(index)))
@@ -584,6 +589,10 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
     stored.store(*word, Ordering::Relaxed);
     present.store(true, Ordering::Relaxed);
     true
+}
+
+pub(crate) fn fail_eeprom_read(address: crate::CustomEepromAddress) {
+    EEPROM_READ_FAILURE.store(address.get(), Ordering::Relaxed);
 }
 
 pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {

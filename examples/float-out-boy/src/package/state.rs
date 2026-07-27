@@ -69,7 +69,7 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
-use config_storage::FirmwareImuMigration;
+use config_storage::{FirmwareImuMigration, FloatOutBoyConfigLoadOutcome};
 use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
@@ -133,6 +133,7 @@ struct UpsideDownRuntimeFlags {
 pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
+    config_load_outcome: FloatOutBoyConfigLoadOutcome,
     firmware_imu_migration: FirmwareImuMigration,
     data_recorder: DataRecorderState,
     alert_tracker: AlertTrackerState,
@@ -210,6 +211,7 @@ impl FloatOutBoyPackageState {
         Self {
             all_data_payloads,
             serialized_config,
+            config_load_outcome: FloatOutBoyConfigLoadOutcome::NotAttempted,
             firmware_imu_migration: FirmwareImuMigration::Pending,
             data_recorder: DataRecorderState::default(),
             alert_tracker: AlertTrackerState::default(),

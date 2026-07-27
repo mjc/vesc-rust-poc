@@ -265,6 +265,11 @@ impl FirmwareTest {
         crate::test_ffi::fail_eeprom_write(address);
     }
 
+    /// Make reads from one custom-EEPROM address fail.
+    pub fn fail_eeprom_read(&self, address: crate::CustomEepromAddress) {
+        crate::test_ffi::fail_eeprom_read(address);
+    }
+
     /// Make the next custom-EEPROM write fail after this many successful writes.
     pub fn fail_eeprom_write_after(&self, successful_writes: usize) {
         crate::test_ffi::fail_eeprom_write_after(successful_writes);

@@ -8,6 +8,14 @@ use crate::domain::{
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FloatOutBoyConfigLoadOutcome {
+    NotAttempted,
+    Persisted,
+    DefaultAfterReadFailure,
+    DefaultAfterInvalidImage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FirmwareImuMigration {
     Pending,
     NotRequired,
@@ -117,13 +125,21 @@ impl FloatOutBoyPackageState {
             .is_ok()
     }
 
-    fn persisted_config() -> FloatOutBoyConfigImage {
-        vescpkg_rs::CustomEeprom::new()
-            .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
-            .map(|bytes| FloatOutBoyEepromImage::from_bytes(&bytes))
-            .ok()
-            .and_then(|image| FloatOutBoyConfigImage::try_from(image).ok())
-            .unwrap_or_else(FloatOutBoyConfigImage::defaults)
+    fn persisted_config() -> (FloatOutBoyConfigImage, FloatOutBoyConfigLoadOutcome) {
+        let Ok(bytes) = vescpkg_rs::CustomEeprom::new().read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
+        else {
+            return (
+                FloatOutBoyConfigImage::defaults(),
+                FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
+            );
+        };
+        match FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)) {
+            Ok(config) => (config, FloatOutBoyConfigLoadOutcome::Persisted),
+            Err(_) => (
+                FloatOutBoyConfigImage::defaults(),
+                FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
+            ),
+        }
     }
 
     pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
@@ -147,7 +163,7 @@ impl FloatOutBoyPackageState {
 
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn read_serialized_config_from_eeprom(&mut self) {
-        self.serialized_config = Self::persisted_config();
+        (self.serialized_config, self.config_load_outcome) = Self::persisted_config();
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
@@ -304,5 +320,10 @@ impl FloatOutBoyPackageState {
     #[cfg(test)]
     pub(super) const fn firmware_imu_migration_for_test(&self) -> FirmwareImuMigration {
         self.firmware_imu_migration
+    }
+
+    #[cfg(test)]
+    pub(super) const fn config_load_outcome_for_test(&self) -> FloatOutBoyConfigLoadOutcome {
+        self.config_load_outcome
     }
 }
