@@ -725,4 +725,97 @@ mod tests {
         assert!(same_source_sign(negative_zero, positive));
         assert_eq!(combine_torque_offsets(negative_zero, positive), positive,);
     }
+
+    #[test]
+    fn nose_angling_covers_source_thresholds_limits_directions_and_winddown() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_tiltback_constant(AngleDegrees::from_degrees(2.0)));
+        assert!(editor.set_tiltback_constant_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(500.0),
+        )));
+        assert!(editor.set_tiltback_variable(PidScale::new(1.0)));
+        assert!(editor.set_tiltback_variable_max(AngleDegrees::from_degrees(3.0)));
+        assert!(editor.set_tiltback_variable_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(1_000.0),
+        )));
+        assert!(editor.set_nose_angling_speed(
+            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
+        ));
+
+        for (erpm, expected) in [
+            (500.0, 0.0),
+            (1_000.0, 2.0),
+            (2_000.0, 3.0),
+            (10_000.0, 5.0),
+            (-2_000.0, -3.0),
+            (-10_000.0, -5.0),
+        ] {
+            assert_eq!(
+                nose_target(&config, Rpm::from_revolutions_per_minute(erpm)),
+                AngleDegrees::from_degrees(expected),
+            );
+        }
+
+        let mut state = RideModifierState::default();
+        state.update_nose(
+            &config,
+            Rpm::from_revolutions_per_minute(10_000.0),
+            SampleRate::from_hertz(100.0),
+        );
+        assert!((state.nose.as_degrees() - 1.0).abs() < 0.000_001);
+        state.update_nose(&config, Rpm::ZERO, SampleRate::from_hertz(100.0));
+        assert_eq!(state.nose, AngleDegrees::ZERO);
+    }
+
+    #[test]
+    fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_torque_tilt_start_current(MotorCurrent::new(Current::from_amps(
+            10.0,
+        ))));
+        assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
+        assert!(editor.set_torque_tilt_regen_strength(PidScale::new(0.2)));
+        assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(3.0)));
+        assert!(editor.set_torque_tilt_on_speed(
+            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
+        ));
+        assert!(editor.set_torque_tilt_off_speed(
+            vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),
+        ));
+        let balance = config.balance();
+
+        for (current, braking, expected) in [
+            (5.0, false, 0.0),
+            (20.0, false, 1.0),
+            (100.0, false, 3.0),
+            (-20.0, true, -2.0),
+            (-100.0, true, -3.0),
+        ] {
+            assert_eq!(
+                torque_target(balance, Current::from_amps(current), braking),
+                AngleDegrees::from_degrees(expected),
+            );
+        }
+
+        let mut state = RideModifierState::default();
+        state.update_torque(
+            balance,
+            Current::from_amps(100.0),
+            false,
+            3_000.0,
+            SampleRate::from_hertz(100.0),
+        );
+        let active = state.torque.setpoint;
+        assert!(active.is_positive());
+        state.update_torque(
+            balance,
+            Current::ZERO,
+            false,
+            3_000.0,
+            SampleRate::from_hertz(100.0),
+        );
+        assert!(state.torque.setpoint < active);
+    }
 }
