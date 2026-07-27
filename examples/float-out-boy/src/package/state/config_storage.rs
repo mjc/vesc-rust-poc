@@ -16,6 +16,13 @@ pub(super) enum FloatOutBoyConfigLoadOutcome {
     DefaultAfterInvalidImage,
 }
 
+// Startup fallback logging is reachable from `package_lib_init`; an extra call
+// frame would exceed the firmware's 2 KiB Lisp evaluator stack.
+#[expect(
+    clippy::inline_always,
+    reason = "the package builder directly proves this firmware stack constraint"
+)]
+#[inline(always)]
 fn log_config_message(message: &[u8]) {
     let mut log = vescpkg_rs::FirmwareLog::<48>::new();
     log.write_bytes(message);
