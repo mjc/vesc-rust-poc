@@ -1177,3 +1177,27 @@ fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
     assert!(state.internal_leds.is_none());
     assert!(!state.internal_leds_operational());
 }
+
+#[test]
+fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut bytes = default_float_out_boy_config_bytes();
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    state.serialized_config = editable_config_from_bytes(&bytes);
+
+    state.configure_loaded_config_on_main_thread();
+
+    assert!(state.internal_leds.is_none());
+
+    state.setup_loaded_led_hardware_after_threads(
+        vescpkg_rs::AdcVoltage::new(vescpkg_rs::Voltage::from_volts(3.0)),
+        vescpkg_rs::AdcVoltage::new(vescpkg_rs::Voltage::from_volts(3.0)),
+    );
+
+    assert_eq!(
+        state.all_data_payloads().base().footpad().state(),
+        crate::FloatOutBoyFootpadState::Both,
+    );
+    assert!(state.internal_leds.is_none());
+}

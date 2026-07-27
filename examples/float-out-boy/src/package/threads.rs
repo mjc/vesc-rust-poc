@@ -264,6 +264,25 @@ pub fn start_float_out_boy_runtime_threads(
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
     let odometer = firmware.telemetry().odometer();
+    let footpad_adc1 = firmware.gpio().acquire_analog(AnalogPin::ADC1).ok();
+    let footpad_adc2 = firmware.gpio().acquire_analog(AnalogPin::ADC2).ok();
+    let footpad_voltage1 = footpad_adc1
+        .as_ref()
+        .and_then(|pin| {
+            pin.set_mode(GpioMode::Analog)
+                .ok()
+                .and_then(|()| pin.read().ok())
+        })
+        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
+    let footpad_voltage2 = footpad_adc2
+        .as_ref()
+        .and_then(|pin| {
+            pin.set_mode(GpioMode::Analog)
+                .ok()
+                .and_then(|()| pin.read().ok())
+        })
+        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
+    drop((footpad_adc1, footpad_adc2));
     if start
         .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
             initialize_float_out_boy_runtime_state(
@@ -279,7 +298,12 @@ pub fn start_float_out_boy_runtime_threads(
     }
     let threads = float_out_boy_runtime_threads()
         .map_err(|_| vescpkg_rs::PackageStartError::ThreadSpawnFailed)?;
-    start.spawn_threads(threads)
+    start.spawn_threads(threads)?;
+    start
+        .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
+            state.setup_loaded_led_hardware_after_threads(footpad_voltage1, footpad_voltage2);
+        })
+        .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
 }
 
 #[cfg(target_arch = "arm")]

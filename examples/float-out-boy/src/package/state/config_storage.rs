@@ -243,8 +243,21 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn configure_loaded_config_on_main_thread(&mut self) {
-        self.reconfigure_active_config();
+        self.refresh_balance_filter_config();
+        super::config_runtime::refresh_led_effects(self);
+        self.refresh_config_runtime_state();
+        self.firmware_imu_migration = migrate_legacy_firmware_imu_settings();
         self.alert_configured_state();
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn setup_loaded_led_hardware_after_threads(
+        &mut self,
+        adc1: vescpkg_rs::AdcVoltage,
+        adc2: vescpkg_rs::AdcVoltage,
+    ) {
+        self.refresh_footpad_runtime_state(adc1, adc2);
+        self.refresh_led_config_runtime_state();
     }
 
     pub(super) fn alert_configured_state(&mut self) {
