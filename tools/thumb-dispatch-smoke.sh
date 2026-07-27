@@ -18,7 +18,9 @@ CARGO_TARGET_DIR="$target_dir" cargo rustc \
 
 bitcode=$(find "$target_dir/$target/release/deps" -name 'vescpkg_rs_sys-*.o' -print -quit)
 test -n "$bitcode"
-llvm_dir="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+rust_host=$(rustc -vV | sed -n 's/^host: //p')
+test -n "$rust_host"
+llvm_dir="$(rustc --print sysroot)/lib/rustlib/$rust_host/bin"
 object="$target_dir/vescpkg-rs-sys.o"
 disassembly="$target_dir/vescpkg-rs-sys.asm"
 "$llvm_dir/llc" -mtriple="$target" -filetype=obj "$bitcode" -o "$object"
