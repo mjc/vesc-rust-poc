@@ -1112,6 +1112,7 @@ impl FloatOutBoyStatusDynamics {
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
         status: FloatOutBoyLedStatusUpdate,
+        sensors: (Ratio, Ratio),
         current_time: f32,
     ) -> FloatOutBoyStatusRenderState {
         let status_config = config.status();
@@ -1150,6 +1151,9 @@ impl FloatOutBoyStatusDynamics {
         };
         self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
+        if sensors.0.as_ratio() >= 1.0 || sensors.1.as_ratio() >= 1.0 {
+            self.idle_blend = 0.0;
+        }
         let idle_timeout = f32::from(status_config.idle_timeout().as_seconds());
         let idle_target = if idle_timeout > 0.0 && current_time - self.idle_time > idle_timeout {
             if self.idle_blend == 0.0 {
@@ -1291,9 +1295,10 @@ impl FloatOutBoyLedRenderer {
         fade: Ratio,
     ) {
         let status_config = config.status();
+        let sensors = self.dynamics.sensor_fades();
         let state = self
             .status_dynamics
-            .update(config, input, status, current_time);
+            .update(config, input, status, sensors, current_time);
 
         let overlay =
             |blend| FloatOutBoyLedOverlay::new(state.brightness, fade, Ratio::clamped(blend));
@@ -1322,10 +1327,8 @@ impl FloatOutBoyLedRenderer {
             );
         }
 
-        let (left, right) = self.dynamics.sensor_fades();
-        if state.idle_blend.as_ratio() < 1.0
-            && !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
-        {
+        let (left, right) = sensors;
+        if state.idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
             self.status
                 .render_footpads(left, right, input.darkride, overlay(1.0));
         }
@@ -3095,7 +3098,7 @@ mod renderer_tests {
     }
 
     #[test]
-    fn composed_status_idle_uses_strict_timeout_and_idle_bar_brightness() {
+    fn composed_status_idle_and_sensor_fade_follow_source_order() {
         let bar = |brightness, color| {
             super::FloatOutBoyLedBarConfig::new(
                 Ratio::from_ratio_const(brightness),
@@ -3164,6 +3167,25 @@ mod renderer_tests {
             );
         }
         assert_eq!(pixel(&renderer), [0, 0, 0x80, 0]);
+
+        let with_footpad = |footpad| super::FloatOutBoyLedFrameUpdate {
+            ride: super::FloatOutBoyLedUpdate {
+                footpad,
+                ..frame.ride
+            },
+            ..frame
+        };
+        for tick in 11..=13 {
+            renderer.update(
+                config,
+                with_footpad(crate::FloatOutBoyFootpadState::Left),
+                1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(pixel(&renderer), [0, 0x3a, 0x4d, 0]);
+
+        renderer.update(config, frame, 1.0 + 14.0 / 30.0);
+        assert_eq!(pixel(&renderer), [0x1c, 0x3b, 0x45, 0]);
     }
 
     #[test]
