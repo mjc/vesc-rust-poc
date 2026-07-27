@@ -9,7 +9,6 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::indexing_slicing,
-    clippy::verbose_bit_mask,
     reason = "LCM wire encoding uses fixed-width protocol offsets"
 )]
 
@@ -51,8 +50,6 @@ pub(super) struct LcmState {
     brightness_idle: u8,
     status_brightness: u8,
     lights_off_when_lifted: bool,
-    lights_enabled: bool,
-    headlights_enabled: bool,
     name: [u8; MAX_LCM_NAME_LENGTH],
     payload: [u8; MAX_LCM_PAYLOAD_LENGTH],
     payload_size: usize,
@@ -62,20 +59,13 @@ impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.
     #[inline(never)]
-    pub(super) fn new(
-        hardware_mode: u8,
-        lights_enabled: bool,
-        headlights_enabled: bool,
-        lights_off_when_lifted: bool,
-    ) -> Self {
+    pub(super) fn new(hardware_mode: u8, lights_off_when_lifted: bool) -> Self {
         Self {
             hardware_mode,
             brightness: 0,
             brightness_idle: 0,
             status_brightness: 0,
             lights_off_when_lifted,
-            lights_enabled,
-            headlights_enabled,
             name: [0; MAX_LCM_NAME_LENGTH],
             payload: [0; MAX_LCM_PAYLOAD_LENGTH],
             payload_size: 0,
@@ -96,18 +86,11 @@ impl LcmState {
             self.brightness_idle,
             self.status_brightness,
         ] = configured_brightness(config);
-        self.lights_enabled = config.is_enabled();
-        self.headlights_enabled = config.are_headlights_on();
         self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
     }
 
     const fn enabled(self) -> bool {
         self.hardware_mode & 0x2 != 0
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) const fn headlights_enabled(self) -> bool {
-        self.headlights_enabled
     }
 
     fn poll_request(&mut self, payload: &[u8]) {
@@ -140,32 +123,6 @@ impl LcmState {
         let extra = &payload[3..];
         self.payload_size = extra.len().min(MAX_LCM_PAYLOAD_LENGTH);
         self.payload[..self.payload_size].copy_from_slice(&extra[..self.payload_size]);
-    }
-
-    fn lights_control(&mut self, payload: &[u8]) -> bool {
-        // `lights_control_request` requires a four-byte mask and one value,
-        // then ignores masks outside the low byte.
-        if payload.len() < 5 {
-            return false;
-        }
-
-        let mask = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
-        if mask & 0xff == 0 {
-            return false;
-        }
-
-        let value = payload[4];
-        if mask & 0x1 != 0 {
-            self.lights_enabled = value & 0x1 != 0;
-        }
-        if mask & 0x2 != 0 {
-            self.headlights_enabled = value & 0x2 != 0;
-        }
-        true
-    }
-
-    const fn light_flags(self) -> (bool, bool) {
-        (self.lights_enabled, self.headlights_enabled)
     }
 
     fn poll_response(
@@ -260,14 +217,6 @@ impl LcmState {
         }
         packet
     }
-
-    fn lights_control_response(self) -> [u8; 3] {
-        [
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::LightsControl.id(),
-            u8::from(self.lights_enabled) | (u8::from(self.headlights_enabled) << 1),
-        ]
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,11 +298,30 @@ impl FloatOutBoyPackageState {
         if let Some(payload) =
             float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LightsControl)
         {
-            if self.lcm.lights_control(payload) {
-                let (lights_enabled, headlights_enabled) = self.lcm.light_flags();
-                self.set_led_runtime_flags(lights_enabled, headlights_enabled);
+            if payload.len() >= 5 {
+                let mask = payload[3];
+                if mask != 0 {
+                    let value = payload[4];
+                    self.set_led_runtime_flags(
+                        if mask & 1 == 0 {
+                            self.serialized_config.leds_enabled()
+                        } else {
+                            value & 1 != 0
+                        },
+                        if mask & 2 == 0 {
+                            self.serialized_config.headlights_enabled()
+                        } else {
+                            value & 2 != 0
+                        },
+                    );
+                }
             }
-            return send(&self.lcm.lights_control_response());
+            return send(&[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::LightsControl.id(),
+                u8::from(self.serialized_config.leds_enabled())
+                    | (u8::from(self.serialized_config.headlights_enabled()) << 1),
+            ]);
         }
         false
     }

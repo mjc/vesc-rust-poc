@@ -64,11 +64,11 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    pub(super) fn refresh_internal_leds_from_config(&mut self) {
-        self.destroy_internal_leds();
-        let Some((hardware, config)) = self.serialized_config.led_configs() else {
-            return;
-        };
+    pub(super) fn refresh_internal_leds_from_config(
+        &mut self,
+        hardware: FloatOutBoyHardwareLedsConfig,
+        config: FloatOutBoyLedsConfig,
+    ) {
         if hardware.uses_internal_leds()
             && !matches!(
                 self.all_data_payloads.base().footpad().state(),

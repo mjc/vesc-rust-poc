@@ -53,11 +53,15 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
     state
         .lcm
         .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
-    if let Some((_, config)) = state.serialized_config.led_configs() {
-        state.lcm.configure(config);
-    }
     #[cfg(any(test, target_arch = "arm"))]
-    state.refresh_internal_leds_from_config();
+    state.destroy_internal_leds();
+    if let Some((hardware, config)) = state.serialized_config.led_configs() {
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let _ = hardware;
+        state.lcm.configure(config);
+        #[cfg(any(test, target_arch = "arm"))]
+        state.refresh_internal_leds_from_config(hardware, config);
+    }
 }
 
 pub(super) fn refresh_led_effects(state: &mut FloatOutBoyPackageState) {

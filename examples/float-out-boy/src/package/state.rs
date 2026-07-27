@@ -211,8 +211,6 @@ impl FloatOutBoyPackageState {
             alert_tracker: AlertTrackerState::default(),
             lcm: LcmState::new(
                 serialized_config.hardware_led_mode_id(),
-                serialized_config.leds_enabled(),
-                serialized_config.headlights_enabled(),
                 serialized_config.lights_off_when_lifted(),
             ),
             #[cfg(any(test, target_arch = "arm"))]
@@ -616,12 +614,12 @@ impl FloatOutBoyPackageState {
         if self.serialized_config.hardware_led_mode_id() == 0 {
             return;
         }
-        if !self.lcm.headlights_enabled()
+        if !self.serialized_config.headlights_enabled()
             && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
             self.set_led_runtime_flags(self.serialized_config.leds_enabled(), true);
         }
-        if self.lcm.headlights_enabled()
+        if self.serialized_config.headlights_enabled()
             && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
             self.set_led_runtime_flags(self.serialized_config.leds_enabled(), false);
