@@ -7,24 +7,53 @@ use crate::domain::{
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
-fn migrate_legacy_firmware_imu_settings() {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FirmwareImuMigration {
+    Pending,
+    NotRequired,
+    Applied,
+    InvalidRead,
+    InvalidTarget,
+    Rejected {
+        proportional_gain: bool,
+        integral_gain: bool,
+        acceleration_confidence_decay: bool,
+    },
+}
+
+fn migrate_legacy_firmware_imu_settings() -> FirmwareImuMigration {
     let settings = vescpkg_rs::FirmwareSettings;
     let Ok(gain) = settings.imu_mahony_proportional_gain() else {
-        return;
+        return FirmwareImuMigration::InvalidRead;
     };
     if gain.value() <= 1.0 {
-        return;
+        return FirmwareImuMigration::NotRequired;
     }
     let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
-        return;
+        return FirmwareImuMigration::InvalidTarget;
     };
     let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
-        return;
+        return FirmwareImuMigration::InvalidTarget;
     };
-    let _ = settings.set_imu_mahony_proportional_gain(proportional_gain);
-    let _ = settings.set_imu_mahony_integral_gain(integral_gain);
-    let _ =
-        settings.set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.1));
+    let proportional_gain = settings
+        .set_imu_mahony_proportional_gain(proportional_gain)
+        .is_err();
+    let integral_gain = settings
+        .set_imu_mahony_integral_gain(integral_gain)
+        .is_err();
+    let acceleration_confidence_decay = settings
+        .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.1))
+        .is_err();
+
+    if proportional_gain || integral_gain || acceleration_confidence_decay {
+        FirmwareImuMigration::Rejected {
+            proportional_gain,
+            integral_gain,
+            acceleration_confidence_decay,
+        }
+    } else {
+        FirmwareImuMigration::Applied
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,7 +115,7 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
         // C map: `configure` migrates legacy firmware IMU settings after
         // deriving package runtime values at `third_party/float-out-boy/src/main.c:201-211`.
-        migrate_legacy_firmware_imu_settings();
+        self.firmware_imu_migration = migrate_legacy_firmware_imu_settings();
     }
 
     fn persist_active_config(&self) -> bool {
@@ -241,5 +270,10 @@ impl FloatOutBoyPackageState {
         // Target Rust must not panic if config bytes are corrupt, so keep the
         // startup default instead of dividing by zero.
         self.serialized_config.startup().loop_time_us()
+    }
+
+    #[cfg(test)]
+    pub(super) const fn firmware_imu_migration_for_test(&self) -> FirmwareImuMigration {
+        self.firmware_imu_migration
     }
 }

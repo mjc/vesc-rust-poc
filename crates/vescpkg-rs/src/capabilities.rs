@@ -109,7 +109,7 @@ pub enum FirmwareFloatSetting {
 }
 
 impl FirmwareFloatSetting {
-    const fn raw(self) -> i32 {
+    pub(crate) const fn raw(self) -> i32 {
         match self {
             Self::MotorCurrentMax => 0,
             Self::MotorCurrentMin => 1,

@@ -1,7 +1,8 @@
 use super::{
     FloatOutBoyPackageState,
     config_storage::{
-        FLOAT_OUT_BOY_EEPROM_LEN, FloatOutBoyEepromImage, FloatOutBoyEepromImageError,
+        FLOAT_OUT_BOY_EEPROM_LEN, FirmwareImuMigration, FloatOutBoyEepromImage,
+        FloatOutBoyEepromImageError,
     },
 };
 use crate::beeper::FloatOutBoyBeeperLevel;
@@ -17,8 +18,8 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    Current, ImuMahonyIntegralGain, ImuMahonyProportionalGain, MahonyPitchGain, MahonyRollGain,
-    MotorCurrent, Ratio, TimestampTicks,
+    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
 
 fn handle_config_command(
@@ -114,6 +115,10 @@ fn startup_migrates_legacy_firmware_imu_settings_like_refloat() {
     state.load_persisted_config_on_startup();
 
     assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::Applied
+    );
 }
 
 #[test]
@@ -125,6 +130,10 @@ fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloa
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
     assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::Applied
+    );
 }
 
 #[test]
@@ -138,6 +147,10 @@ fn accepted_config_replacement_keeps_current_firmware_imu_settings() {
         assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
         assert_firmware_imu_settings(&firmware, proportional_gain, 0.25, 0.8);
+        assert_eq!(
+            state.firmware_imu_migration_for_test(),
+            FirmwareImuMigration::NotRequired
+        );
     }
 }
 
@@ -151,6 +164,99 @@ fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
     assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::Rejected {
+            proportional_gain: true,
+            integral_gain: true,
+            acceleration_confidence_decay: true,
+        }
+    );
+}
+
+#[test]
+fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    for (write_results, expected_settings, expected_migration) in [
+        (
+            [false, true, true],
+            [2.0, 0.0, 0.1],
+            FirmwareImuMigration::Rejected {
+                proportional_gain: true,
+                integral_gain: false,
+                acceleration_confidence_decay: false,
+            },
+        ),
+        (
+            [true, false, true],
+            [0.4, 0.25, 0.1],
+            FirmwareImuMigration::Rejected {
+                proportional_gain: false,
+                integral_gain: true,
+                acceleration_confidence_decay: false,
+            },
+        ),
+        (
+            [true, true, false],
+            [0.4, 0.0, 0.8],
+            FirmwareImuMigration::Rejected {
+                proportional_gain: false,
+                integral_gain: false,
+                acceleration_confidence_decay: true,
+            },
+        ),
+    ] {
+        set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+        firmware.set_float_setting_write_results(&write_results);
+
+        assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+        assert_firmware_imu_settings(
+            &firmware,
+            expected_settings[0],
+            expected_settings[1],
+            expected_settings[2],
+        );
+        assert_eq!(state.firmware_imu_migration_for_test(), expected_migration);
+    }
+}
+
+#[test]
+fn invalid_legacy_firmware_imu_read_is_diagnosed_without_writes() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    firmware.set_raw_float_setting(FirmwareFloatSetting::ImuMahonyKp, f32::NAN);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+    assert!(
+        firmware
+            .settings()
+            .get_float(FirmwareFloatSetting::ImuMahonyKp)
+            .is_nan()
+    );
+    assert_f32_eq!(
+        firmware
+            .settings()
+            .imu_mahony_integral_gain()
+            .unwrap()
+            .value(),
+        0.25
+    );
+    assert_f32_eq!(
+        firmware
+            .settings()
+            .imu_acceleration_confidence_decay()
+            .as_ratio(),
+        0.8
+    );
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::InvalidRead
+    );
 }
 
 #[test]

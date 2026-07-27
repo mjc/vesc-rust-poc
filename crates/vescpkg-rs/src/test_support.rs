@@ -233,6 +233,22 @@ impl FirmwareTest {
         crate::test_ffi::set_settings_write_ok(false);
     }
 
+    /// Script successive fake firmware floating-point setting write results.
+    ///
+    /// Unscripted writes retain the global acceptance configured by
+    /// [`Self::fail_settings_writes`].
+    pub fn set_float_setting_write_results(&self, results: &[bool]) {
+        crate::test_ffi::set_float_setting_write_results(results);
+    }
+
+    /// Seed an unvalidated fake firmware floating-point setting read.
+    ///
+    /// This bypasses the public typed write boundary so dependent packages can
+    /// characterize malformed firmware values.
+    pub fn set_raw_float_setting(&self, setting: crate::FirmwareFloatSetting, value: f32) {
+        let _ = unsafe { crate::test_ffi::set_cfg_float(setting.raw(), value) };
+    }
+
     /// Make the fake firmware reject configuration persistence.
     pub fn fail_settings_store(&self) {
         crate::test_ffi::set_settings_store_ok(false);

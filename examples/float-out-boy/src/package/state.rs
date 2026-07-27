@@ -63,6 +63,7 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
+use config_storage::FirmwareImuMigration;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
@@ -123,6 +124,7 @@ struct UpsideDownRuntimeFlags {
 pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
+    firmware_imu_migration: FirmwareImuMigration,
     alert_tracker: AlertTrackerState,
     lcm: LcmState,
     #[cfg(any(test, target_arch = "arm"))]
@@ -196,6 +198,7 @@ impl FloatOutBoyPackageState {
         Self {
             all_data_payloads,
             serialized_config,
+            firmware_imu_migration: FirmwareImuMigration::Pending,
             alert_tracker: AlertTrackerState::default(),
             lcm: LcmState::new(
                 serialized_config.hardware_led_mode_id(),
