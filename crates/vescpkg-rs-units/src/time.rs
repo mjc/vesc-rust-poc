@@ -22,6 +22,14 @@ impl TimestampTicks {
     pub const fn wrapping_duration_since(self, earlier: Self) -> SystemTicks {
         SystemTicks::from_ticks(self.as_ticks().wrapping_sub(earlier.as_ticks()))
     }
+
+    /// Convert this firmware timestamp to VESC's floating-point seconds representation.
+    #[must_use]
+    pub fn as_vesc_seconds(self) -> VescSeconds {
+        VescSeconds::from_seconds(system_ticks_as_secs_f32(SystemTicks::from_ticks(
+            self.as_ticks(),
+        )))
+    }
 }
 
 impl SampleRate {

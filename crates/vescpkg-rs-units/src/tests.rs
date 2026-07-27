@@ -374,6 +374,16 @@ fn system_tick_seconds_follow_the_vesc_tick_rate() {
 }
 
 #[test]
+fn timestamp_ticks_convert_to_vesc_seconds() {
+    assert_f32_eq!(
+        TimestampTicks::from_ticks(15_000)
+            .as_vesc_seconds()
+            .as_seconds(),
+        1.5
+    );
+}
+
+#[test]
 fn timestamp_delta_preserves_vesc_unsigned_wraparound() {
     let then = TimestampTicks::from_ticks(u32::MAX - 4);
     let now = TimestampTicks::from_ticks(5);
