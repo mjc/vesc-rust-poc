@@ -84,6 +84,22 @@ impl FloatOutBoyEepromImage {
         self.0
     }
 
+    fn load() -> Result<Self, vescpkg_rs::EepromError> {
+        vescpkg_rs::CustomEeprom::new()
+            .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
+            .map(|bytes| Self::from_bytes(&bytes))
+    }
+
+    fn store(self) -> Result<(), vescpkg_rs::EepromError> {
+        let eeprom = vescpkg_rs::CustomEeprom::new();
+        let signature_offset = vescpkg_rs::EepromWordOffset::from_index(0);
+        let payload_offset = vescpkg_rs::EepromWordOffset::from_index(1);
+
+        eeprom.write_at(signature_offset, vescpkg_rs::EepromWord::from_u32(0))?;
+        eeprom.write_bytes_at_offset(payload_offset, self.payload_bytes())?;
+        eeprom.write_at(signature_offset, self.signature_word())
+    }
+
     const fn signature_word(self) -> vescpkg_rs::EepromWord {
         let [first, second, third, fourth, ..] = self.0;
         vescpkg_rs::EepromWord::from_ne_bytes([first, second, third, fourth])
@@ -113,27 +129,17 @@ impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
 
 impl FloatOutBoyPackageState {
     fn write_config_to_eeprom(config: &FloatOutBoyConfigImage) -> bool {
-        let image = FloatOutBoyEepromImage::from(*config);
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        let signature_offset = vescpkg_rs::EepromWordOffset::from_index(0);
-        let payload_offset = vescpkg_rs::EepromWordOffset::from_index(1);
-
-        eeprom
-            .write_at(signature_offset, vescpkg_rs::EepromWord::from_u32(0))
-            .and_then(|()| eeprom.write_bytes_at_offset(payload_offset, image.payload_bytes()))
-            .and_then(|()| eeprom.write_at(signature_offset, image.signature_word()))
-            .is_ok()
+        FloatOutBoyEepromImage::from(*config).store().is_ok()
     }
 
     fn persisted_config() -> (FloatOutBoyConfigImage, FloatOutBoyConfigLoadOutcome) {
-        let Ok(bytes) = vescpkg_rs::CustomEeprom::new().read_image::<FLOAT_OUT_BOY_EEPROM_LEN>()
-        else {
+        let Ok(image) = FloatOutBoyEepromImage::load() else {
             return (
                 FloatOutBoyConfigImage::defaults(),
                 FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
             );
         };
-        match FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)) {
+        match FloatOutBoyConfigImage::try_from(image) {
             Ok(config) => (config, FloatOutBoyConfigLoadOutcome::Persisted),
             Err(_) => (
                 FloatOutBoyConfigImage::defaults(),
