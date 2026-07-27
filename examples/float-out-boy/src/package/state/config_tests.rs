@@ -310,6 +310,9 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
         FloatOutBoyAppDataCommand::ConfigSave,
         &[],
     ));
+    let mut log = [0; 32];
+    let len = firmware.copy_last_log(&mut log);
+    assert_eq!(&log[..len], b"Config written: 276B");
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
@@ -432,6 +435,9 @@ fn config_save_failure_has_no_write_acknowledgement() {
     ));
     assert_eq!(state.tick_beeper(), None);
     assert_eq!(firmware.eeprom().read(address), None);
+    let mut log = [0; 32];
+    let len = firmware.copy_last_log(&mut log);
+    assert_eq!(&log[..len], b"Failed to write config.");
 }
 
 #[test]

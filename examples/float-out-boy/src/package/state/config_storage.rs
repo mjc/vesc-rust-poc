@@ -33,6 +33,17 @@ fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
     let _ = log.flush();
 }
 
+fn log_config_store_result(stored: bool) {
+    let message = if stored {
+        b"Config written: 276B".as_slice()
+    } else {
+        b"Failed to write config.".as_slice()
+    };
+    let mut log = vescpkg_rs::FirmwareLog::<32>::new();
+    log.write_bytes(message);
+    let _ = log.flush();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FirmwareImuMigration {
     Pending,
@@ -155,7 +166,9 @@ impl FloatOutBoyPackageState {
     }
 
     fn write_config_to_eeprom(config: &FloatOutBoyConfigImage) -> bool {
-        FloatOutBoyEepromImage::from(*config).store().is_ok()
+        let stored = FloatOutBoyEepromImage::from(*config).store().is_ok();
+        log_config_store_result(stored);
+        stored
     }
 
     fn persisted_config() -> (FloatOutBoyConfigImage, FloatOutBoyConfigLoadOutcome) {
