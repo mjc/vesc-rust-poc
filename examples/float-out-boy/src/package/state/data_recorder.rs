@@ -457,9 +457,6 @@ impl FloatOutBoyPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Experiment).is_some() {
-            return true;
-        }
         let Some(payload) =
             float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::DataRecordRequest)
         else {

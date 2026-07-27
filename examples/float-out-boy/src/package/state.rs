@@ -110,6 +110,11 @@ fn float_out_boy_command_payload(
     }
 }
 
+fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
+    float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::PrintInfo).is_some()
+        || float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Experiment).is_some()
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct BeeperRuntimeFlags {
     pin_configured: bool,
@@ -716,7 +721,8 @@ impl FloatOutBoyPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        self.handle_charging_state_packet(now, bytes)
+        float_out_boy_source_noop(bytes)
+            || self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
             || self.handle_config_command(bytes)
             || self.handle_flywheel_packet(bytes)

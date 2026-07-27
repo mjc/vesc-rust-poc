@@ -165,6 +165,18 @@ fn experiment_command_is_recognized_as_the_source_noop() {
 }
 
 #[test]
+fn print_info_command_is_recognized_as_the_source_noop() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let (handled, sent) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::PrintInfo, &[]),
+    );
+
+    assert!(handled);
+    assert!(sent.is_empty());
+}
+
+#[test]
 fn unavailable_recorder_fails_closed_across_commands_flags_and_capability() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     state.disable_data_recorder_for_test();
