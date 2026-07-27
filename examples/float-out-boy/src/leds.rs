@@ -1042,6 +1042,35 @@ pub struct FloatOutBoyLedStripFrame {
     pixels: [FloatOutBoyLedPixel; MAX_LED_STRIP_PIXELS],
 }
 
+/// Refloat status-bar progress source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatOutBoyStatusProgress {
+    /// Battery progress, with a red low end.
+    Battery,
+    /// Duty progress, with a red high end.
+    Duty,
+}
+
+/// Shared brightness and blend inputs for one LED overlay.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatOutBoyLedOverlay {
+    strip_brightness: Ratio,
+    on_off_fade: Ratio,
+    blend: Ratio,
+}
+
+impl FloatOutBoyLedOverlay {
+    /// Build checked overlay inputs.
+    #[must_use]
+    pub const fn new(strip_brightness: Ratio, on_off_fade: Ratio, blend: Ratio) -> Self {
+        Self {
+            strip_brightness,
+            on_off_fade,
+            blend,
+        }
+    }
+}
+
 impl FloatOutBoyLedStripFrame {
     /// Build a cleared frame for one strip configuration.
     #[must_use]
@@ -1084,6 +1113,203 @@ impl FloatOutBoyLedStripFrame {
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         let target = FloatOutBoyLedPixel::from_named(bar.primary_color());
         self.render_target(target, brightness, blend);
+    }
+
+    /// Paint Refloat's left/right footpad indicator over this strip.
+    pub fn render_footpads(
+        &mut self,
+        left: Ratio,
+        right: Ratio,
+        reverse_roles: bool,
+        overlay: FloatOutBoyLedOverlay,
+    ) {
+        let len = usize::from(self.config.count());
+        if len == 0 {
+            return;
+        }
+        let offset = len
+            .saturating_add(1)
+            .checked_div(2)
+            .unwrap_or_default()
+            .saturating_sub(1);
+        let right_offset = len.saturating_sub(offset).saturating_sub(1);
+        let (left, right) = if reverse_roles {
+            (right.as_ratio(), left.as_ratio())
+        } else {
+            (left.as_ratio(), right.as_ratio())
+        };
+        let blend = Ratio::clamped(overlay.blend.as_ratio().min(left.max(right)));
+        let color = FloatOutBoyLedPixel {
+            channels: [0, 0xc0, 0xff, 0],
+        };
+
+        for index in 0..len {
+            let mut dim = 0.0_f32;
+            if left > 0.0 && index <= offset {
+                dim = if index == offset { 0.6 * left } else { left };
+            }
+            if right > 0.0 && index >= right_offset {
+                let right_dim = if index == right_offset {
+                    0.6 * right
+                } else {
+                    right
+                };
+                dim = dim.max(right_dim);
+            }
+            let brightness = Ratio::clamped(
+                overlay.strip_brightness.as_ratio() * dim * overlay.on_off_fade.as_ratio(),
+            );
+            self.render_pixel_blended(index, color, brightness, blend);
+        }
+    }
+
+    /// Paint Refloat's battery or duty progress display over this strip.
+    pub fn render_status_progress(
+        &mut self,
+        value: f32,
+        kind: FloatOutBoyStatusProgress,
+        red_percentage: Ratio,
+        reverse: bool,
+        overlay: FloatOutBoyLedOverlay,
+    ) {
+        let len = usize::from(self.config.count());
+        let len_float = f32::from(u16::try_from(len).unwrap_or_default());
+        let progress = len_float * value;
+        let offset = usize::from(crate::wire::saturating_trunc_f32_to_u8(progress));
+        let remaining = (progress - vescpkg_rs::floor(progress)) * 0.7;
+        let red_count = usize::from(crate::wire::saturating_trunc_f32_to_u8(vescpkg_rs::round(
+            len_float * red_percentage.as_ratio(),
+        )));
+        let red_offset = len.saturating_sub(red_count);
+        let red = FloatOutBoyLedPixel {
+            channels: [0xff, 0x38, 0x28, 0],
+        };
+        let base = match kind {
+            FloatOutBoyStatusProgress::Battery => FloatOutBoyLedPixel {
+                channels: [0x90, 0x90, 0x90, 0],
+            },
+            FloatOutBoyStatusProgress::Duty => FloatOutBoyLedPixel {
+                channels: [0xff, 0xb0, 0x30, 0],
+            },
+        };
+        let low_battery = matches!(kind, FloatOutBoyStatusProgress::Battery)
+            && -vescpkg_rs::floor(-progress)
+                <= f32::from(u16::try_from(red_count).unwrap_or_default());
+
+        for index in 0..len {
+            let (target, dim) = if index <= offset {
+                let target = if (matches!(kind, FloatOutBoyStatusProgress::Duty)
+                    && index >= red_offset)
+                    || low_battery
+                {
+                    red
+                } else {
+                    base
+                };
+                (target, if index == offset { remaining } else { 1.0 })
+            } else {
+                (FloatOutBoyLedPixel::default(), 1.0)
+            };
+            let physical_index = if reverse {
+                len.saturating_sub(index).saturating_sub(1)
+            } else {
+                index
+            };
+            let brightness = Ratio::clamped(
+                overlay.strip_brightness.as_ratio() * dim * overlay.on_off_fade.as_ratio(),
+            );
+            self.render_pixel_blended(physical_index, target, brightness, overlay.blend);
+        }
+    }
+
+    /// Paint Refloat's disabled red pulse.
+    pub fn render_disabled(&mut self, strip_brightness: Ratio, on_off_fade: Ratio, time: f32) {
+        let len = usize::from(self.config.count());
+        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+            return;
+        };
+        let len_float = f32::from(len_u16);
+        let time = time / 2.0;
+        let progress = refloat_cosine_progress(time);
+        let center = len_float / 3.0;
+        let length = len_float / 2.0 - center;
+        let offset = length * (1.0 - progress);
+        let feather = len_float / 4.0;
+        let ratio = center / length;
+        let fade = if time < ratio { time / ratio } else { 1.0 };
+        let red = FloatOutBoyLedPixel {
+            channels: [0xff, 0, 0, 0],
+        };
+        let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
+
+        for index in 0..len {
+            let index_float = f32::from(u16::try_from(index).unwrap_or_default());
+            let start = ((index_float - offset + 1.0) / feather).clamp(0.0, 1.0);
+            let end = ((len_float - offset - index_float) / feather).clamp(0.0, 1.0);
+            let target = FloatOutBoyLedPixel::blend(
+                FloatOutBoyLedPixel::default(),
+                red,
+                start.min(end) * fade,
+            );
+            self.render_pixel(index, target, brightness);
+        }
+    }
+
+    /// Paint Refloat's status-confirm pulse over this strip.
+    pub fn render_confirmation(
+        &mut self,
+        strip_brightness: Ratio,
+        on_off_fade: Ratio,
+        progress: f32,
+    ) {
+        let len = usize::from(self.config.count());
+        let len_float = f32::from(u16::try_from(len).unwrap_or_default());
+        let progress = progress.min(1.0);
+        let blend_time = 0.06;
+        let blend = if progress <= blend_time {
+            progress / blend_time
+        } else if progress >= 1.0 - blend_time {
+            (1.0 - progress) / blend_time
+        } else {
+            1.0
+        };
+        let period = 1.0 - blend_time;
+        let half_period = period * 0.5;
+        let progress = (progress - blend_time).min(period);
+        let mut pulse = if progress <= half_period {
+            progress / half_period * 1.5
+        } else {
+            (period - progress) / half_period * 1.5
+        };
+        if pulse > 1.0 {
+            pulse = 2.0 - pulse;
+        }
+        pulse *= pulse;
+
+        let sides = len_float * 0.1;
+        let center = len_float * 0.125;
+        let length = len_float * 0.5 - sides - center;
+        let offset = sides + length * (1.0 - pulse);
+        let feather = len_float * 0.25;
+        let confirm = FloatOutBoyLedPixel {
+            channels: [0xa0, 0x40, 0xff, 0],
+        };
+        let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
+
+        for index in 0..len {
+            let index_float = f32::from(u16::try_from(index).unwrap_or_default());
+            let distance = if index_float < len_float * 0.5 {
+                index_float - offset + 1.0
+            } else {
+                len_float - offset - index_float
+            };
+            let target = FloatOutBoyLedPixel::blend(
+                FloatOutBoyLedPixel::default(),
+                confirm,
+                (distance / feather).clamp(0.0, 1.0),
+            );
+            self.render_pixel_blended(index, target, brightness, Ratio::clamped(blend));
+        }
     }
 
     /// Render one currently implemented Refloat bar animation.
@@ -1287,8 +1513,18 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_pixel(&mut self, index: usize, target: FloatOutBoyLedPixel, brightness: Ratio) {
+        self.render_pixel_blended(index, target, brightness, Ratio::from_ratio_const(1.0));
+    }
+
+    fn render_pixel_blended(
+        &mut self,
+        index: usize,
+        target: FloatOutBoyLedPixel,
+        brightness: Ratio,
+        blend: Ratio,
+    ) {
         if let Some(pixel) = self.pixels.get_mut(index) {
-            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+            *pixel = pixel.scaled_and_blended(target, brightness, blend);
         }
     }
 
@@ -2015,6 +2251,135 @@ mod renderer_tests {
                 "{transition:?}"
             );
         }
+    }
+
+    #[test]
+    fn footpad_and_status_progress_pixels_match_refloat() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            5,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let channels = |frame: &super::FloatOutBoyLedStripFrame| {
+            core::array::from_fn(|index| {
+                frame
+                    .physical_pixel(index)
+                    .map(super::FloatOutBoyLedPixel::channels)
+                    .unwrap_or_default()
+            })
+        };
+        let overlay = super::FloatOutBoyLedOverlay::new(
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(1.0),
+        );
+
+        let mut footpads = super::FloatOutBoyLedStripFrame::new(config);
+        footpads.render_footpads(
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+            false,
+            overlay,
+        );
+        assert_eq!(
+            channels(&footpads),
+            [
+                [0, 0xc0, 0xff, 0],
+                [0, 0xc0, 0xff, 0],
+                [0, 0x73, 0x99, 0],
+                [0, 0x60, 0x80, 0],
+                [0, 0x60, 0x80, 0],
+            ]
+        );
+
+        let mut battery = super::FloatOutBoyLedStripFrame::new(config);
+        battery.render_status_progress(
+            0.45,
+            super::FloatOutBoyStatusProgress::Battery,
+            Ratio::from_ratio_const(0.4),
+            false,
+            overlay,
+        );
+        assert_eq!(
+            channels(&battery),
+            [
+                [0x90, 0x90, 0x90, 0],
+                [0x90, 0x90, 0x90, 0],
+                [0x19, 0x19, 0x19, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ]
+        );
+
+        let mut duty_reversed = super::FloatOutBoyLedStripFrame::new(config);
+        duty_reversed.render_status_progress(
+            0.8,
+            super::FloatOutBoyStatusProgress::Duty,
+            Ratio::from_ratio_const(0.4),
+            true,
+            overlay,
+        );
+        assert_eq!(
+            channels(&duty_reversed),
+            [
+                [0, 0, 0, 0],
+                [0xff, 0x38, 0x28, 0],
+                [0xff, 0xb0, 0x30, 0],
+                [0xff, 0xb0, 0x30, 0],
+                [0xff, 0xb0, 0x30, 0],
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_and_confirmation_pixels_match_refloat() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            5,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let channels = |frame: &super::FloatOutBoyLedStripFrame| {
+            core::array::from_fn(|index| {
+                frame
+                    .physical_pixel(index)
+                    .map(super::FloatOutBoyLedPixel::channels)
+                    .unwrap_or_default()
+            })
+        };
+
+        let mut disabled = super::FloatOutBoyLedStripFrame::new(config);
+        disabled.render_disabled(
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(1.0),
+            1.0,
+        );
+        assert_eq!(
+            channels(&disabled),
+            [
+                [0x1d, 0, 0, 0],
+                [0x3f, 0, 0, 0],
+                [0x3f, 0, 0, 0],
+                [0x3f, 0, 0, 0],
+                [0x1d, 0, 0, 0],
+            ]
+        );
+
+        let mut confirmation = super::FloatOutBoyLedStripFrame::new(config);
+        confirmation.render_confirmation(
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(1.0),
+            0.5,
+        );
+        assert_eq!(
+            channels(&confirmation),
+            [
+                [0, 0, 0, 0],
+                [0x4e, 0x1f, 0x7d, 0],
+                [0xa0, 0x40, 0xff, 0],
+                [0x4e, 0x1f, 0x7d, 0],
+                [0, 0, 0, 0],
+            ]
+        );
     }
 
     #[test]
