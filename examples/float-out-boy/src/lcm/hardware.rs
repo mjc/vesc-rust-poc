@@ -13,6 +13,71 @@ use crate::leds::{
 
 use super::mode::FloatOutBoyLedMode;
 
+/// Logical role of one configured internal LED strip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatOutBoyLedStripRole {
+    /// Status/sensor strip.
+    Status,
+    /// Front strip.
+    Front,
+    /// Rear strip.
+    Rear,
+}
+
+/// A validated source-compatible ordering of the internal strips.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloatOutBoyInternalLedLayout {
+    roles: [FloatOutBoyLedStripRole; 3],
+    role_count: usize,
+    status_offset: Option<usize>,
+    front_offset: Option<usize>,
+    rear_offset: Option<usize>,
+    pixel_count: usize,
+}
+
+impl FloatOutBoyInternalLedLayout {
+    /// Return configured nonempty roles in physical order.
+    #[must_use]
+    pub fn roles(&self) -> &[FloatOutBoyLedStripRole] {
+        self.roles.get(..self.role_count).unwrap_or_default()
+    }
+
+    /// Return one role's offset in the shared physical pixel sequence.
+    #[must_use]
+    pub const fn offset(self, role: FloatOutBoyLedStripRole) -> Option<usize> {
+        match role {
+            FloatOutBoyLedStripRole::Status => self.status_offset,
+            FloatOutBoyLedStripRole::Front => self.front_offset,
+            FloatOutBoyLedStripRole::Rear => self.rear_offset,
+        }
+    }
+
+    /// Return the complete physical pixel count.
+    #[must_use]
+    pub const fn pixel_count(self) -> usize {
+        self.pixel_count
+    }
+}
+
+/// Internal LED layout validation failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatOutBoyInternalLedLayoutError {
+    /// Selected front and rear strips exceed Refloat's 60-pixel renderer map.
+    FrontAndRearCountExceedsMaximum,
+}
+
+impl core::fmt::Display for FloatOutBoyInternalLedLayoutError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::FrontAndRearCountExceedsMaximum => {
+                formatter.write_str("front and rear LED count exceeds 60")
+            }
+        }
+    }
+}
+
+impl core::error::Error for FloatOutBoyInternalLedLayoutError {}
+
 /// Float Out Boy hardware LED configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyHardwareLedsConfig {
@@ -132,6 +197,73 @@ impl FloatOutBoyHardwareLedsConfig {
     pub const fn uses_external_leds(self) -> bool {
         self.mode.uses_external_leds()
     }
+
+    /// Build Refloat's nonempty status/front/rear physical strip ordering.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when selected front and rear strips exceed Refloat's
+    /// 60-pixel animation-map limit.
+    pub fn internal_layout(
+        self,
+    ) -> Result<FloatOutBoyInternalLedLayout, FloatOutBoyInternalLedLayoutError> {
+        let mut layout = FloatOutBoyInternalLedLayout {
+            roles: [FloatOutBoyLedStripRole::Status; 3],
+            role_count: 0,
+            status_offset: None,
+            front_offset: None,
+            rear_offset: None,
+            pixel_count: 0,
+        };
+
+        for order in [
+            FloatOutBoyLedStripOrder::First,
+            FloatOutBoyLedStripOrder::Second,
+            FloatOutBoyLedStripOrder::Third,
+        ] {
+            let selected = if self.status.order() == order && self.status.count() > 0 {
+                Some((FloatOutBoyLedStripRole::Status, self.status.count()))
+            } else if self.front.order() == order && self.front.count() > 0 {
+                Some((FloatOutBoyLedStripRole::Front, self.front.count()))
+            } else if self.rear.order() == order && self.rear.count() > 0 {
+                Some((FloatOutBoyLedStripRole::Rear, self.rear.count()))
+            } else {
+                None
+            };
+            let Some((role, count)) = selected else {
+                continue;
+            };
+            let Some(slot) = layout.roles.get_mut(layout.role_count) else {
+                continue;
+            };
+            *slot = role;
+            match role {
+                FloatOutBoyLedStripRole::Status => {
+                    layout.status_offset = Some(layout.pixel_count);
+                }
+                FloatOutBoyLedStripRole::Front => {
+                    layout.front_offset = Some(layout.pixel_count);
+                }
+                FloatOutBoyLedStripRole::Rear => {
+                    layout.rear_offset = Some(layout.pixel_count);
+                }
+            }
+            layout.role_count = layout.role_count.saturating_add(1);
+            layout.pixel_count = layout.pixel_count.saturating_add(usize::from(count));
+        }
+
+        let front_count = layout
+            .front_offset
+            .map_or(0, |_| usize::from(self.front.count()));
+        let rear_count = layout
+            .rear_offset
+            .map_or(0, |_| usize::from(self.rear.count()));
+        if front_count.saturating_add(rear_count) > 60 {
+            return Err(FloatOutBoyInternalLedLayoutError::FrontAndRearCountExceedsMaximum);
+        }
+
+        Ok(layout)
+    }
 }
 
 /// Float Out Boy hardware configuration.
@@ -156,7 +288,10 @@ impl FloatOutBoyHardwareConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{FloatOutBoyHardwareConfig, FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
+    use super::{
+        FloatOutBoyHardwareConfig, FloatOutBoyHardwareLedsConfig,
+        FloatOutBoyInternalLedLayoutError, FloatOutBoyLedMode, FloatOutBoyLedStripRole,
+    };
     use crate::leds::{
         FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
         FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
@@ -253,5 +388,78 @@ mod tests {
             FloatOutBoyLedColorOrder::Rgb
         );
         assert!(hardware.leds().rear_strip().is_reversed());
+    }
+
+    #[test]
+    fn internal_layout_orders_nonempty_strips_with_refloat_priority() {
+        let first = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            2,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let second = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::Second,
+            3,
+            FloatOutBoyLedColorOrder::Rgb,
+        );
+        let duplicate_first = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            4,
+            FloatOutBoyLedColorOrder::Grbw,
+        );
+        let config = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+            .with_status_strip(first)
+            .with_front_strip(duplicate_first)
+            .with_rear_strip(second);
+
+        let layout = config.internal_layout().expect("valid internal layout");
+
+        assert_eq!(
+            layout.roles(),
+            &[
+                FloatOutBoyLedStripRole::Status,
+                FloatOutBoyLedStripRole::Rear
+            ]
+        );
+        assert_eq!(layout.offset(FloatOutBoyLedStripRole::Status), Some(0));
+        assert_eq!(layout.offset(FloatOutBoyLedStripRole::Rear), Some(2));
+        assert_eq!(layout.offset(FloatOutBoyLedStripRole::Front), None);
+        assert_eq!(layout.pixel_count(), 5);
+    }
+
+    #[test]
+    fn internal_layout_rejects_only_selected_front_rear_overflow() {
+        let disabled = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::None,
+            255,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let front = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            31,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let rear = FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::Second,
+            30,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let config = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+            .with_status_strip(disabled)
+            .with_front_strip(front)
+            .with_rear_strip(rear);
+
+        assert_eq!(
+            config.internal_layout(),
+            Err(FloatOutBoyInternalLedLayoutError::FrontAndRearCountExceedsMaximum)
+        );
+
+        let empty = config
+            .with_front_strip(disabled)
+            .with_rear_strip(disabled)
+            .internal_layout()
+            .expect("order none omits even nonzero strips");
+        assert!(empty.roles().is_empty());
+        assert_eq!(empty.pixel_count(), 0);
     }
 }
