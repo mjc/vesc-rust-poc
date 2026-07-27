@@ -27,6 +27,23 @@ const MAX_LCM_NAME_LENGTH: usize = 20;
 const MAX_LCM_PAYLOAD_LENGTH: usize = 64;
 const POLL_RESPONSE_CAPACITY: usize = 2 + 3 + 6 + 3 + MAX_LCM_PAYLOAD_LENGTH;
 
+fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
+    if !config.is_enabled() {
+        return [0; 3];
+    }
+
+    let front = config.front().brightness();
+    let (active, status) = if config.are_headlights_on() {
+        (
+            config.headlights().brightness(),
+            config.status().brightness_headlights_on(),
+        )
+    } else {
+        (front, config.status().brightness_headlights_off())
+    };
+    [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0) as u8)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LcmState {
     hardware_mode: u8,
@@ -74,26 +91,11 @@ impl LcmState {
             return;
         }
 
-        if config.is_enabled() {
-            let front = config.front().brightness().as_ratio();
-            self.brightness = ((if config.are_headlights_on() {
-                config.headlights().brightness().as_ratio()
-            } else {
-                front
-            }) * 100.0) as u8;
-            self.brightness_idle = (front * 100.0) as u8;
-            self.status_brightness = ((if config.are_headlights_on() {
-                config.status().brightness_headlights_on()
-            } else {
-                config.status().brightness_headlights_off()
-            })
-            .as_ratio()
-                * 100.0) as u8;
-        } else {
-            self.brightness = 0;
-            self.brightness_idle = 0;
-            self.status_brightness = 0;
-        }
+        [
+            self.brightness,
+            self.brightness_idle,
+            self.status_brightness,
+        ] = configured_brightness(config);
         self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
     }
 
