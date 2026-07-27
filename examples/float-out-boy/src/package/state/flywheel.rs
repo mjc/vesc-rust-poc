@@ -266,6 +266,7 @@ impl FloatOutBoyPackageState {
         self.set_ride_mode(FloatOutBoyMode::Normal);
         self.flywheel.deactivate();
         self.read_config_from_eeprom();
+        self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 
     pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {

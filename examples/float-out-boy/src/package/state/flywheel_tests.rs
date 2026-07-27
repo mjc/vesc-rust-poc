@@ -296,10 +296,12 @@ fn flywheel_reuses_calibration_until_valid_forced_recalibration() {
 fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations() {
     for run_state in [FloatOutBoyRunState::Ready, FloatOutBoyRunState::Running] {
         let firmware = FirmwareTest::new();
+        firmware.set_clock_ticks(42);
         let mut state = FloatOutBoyPackageState::new(ready_at(
             AngleDegrees::from_degrees(80.0),
             AngleDegrees::ZERO,
         ));
+        state.idle_ticks = TimestampTicks::from_ticks(7);
         assert!(
             state
                 .serialized_config
@@ -318,17 +320,19 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
 
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
-            &mut || TimestampTicks::from_ticks(0),
+            &mut || TimestampTicks::from_ticks(99),
             &mut |_bytes| true,
             &flywheel_packet(&[0x81, 90, 50, 30, 20, 1]),
         ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
         set_ride_state(&mut state, run_state);
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
-            &mut || TimestampTicks::from_ticks(0),
+            &mut || TimestampTicks::from_ticks(99),
             &mut |_bytes| true,
             &flywheel_packet(&[0x80, 0, 0, 0, 0, 0]),
         ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
 
         assert_eq!(
             state
