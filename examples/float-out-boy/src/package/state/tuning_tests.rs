@@ -220,14 +220,7 @@ fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
         firmware.telemetry(),
         &mut now,
         &mut send,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::Booster.id(),
-            0xA3,
-            0x04,
-            0x21,
-            0xF2,
-        ],
+        BOOSTER_PACKET,
     ));
 
     let balance = state.serialized_config.balance();
@@ -303,27 +296,7 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
         firmware.telemetry(),
         &mut now,
         &mut send,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RuntimeTune.id(),
-            0xA3,
-            0x21,
-            0xA3,
-            0x54,
-            0xB9,
-            0x20,
-            0x71,
-            0xD4,
-            0xA5,
-            0x43,
-            0x21,
-            0xFF,
-            0x86,
-            0xA5,
-            0x47,
-            0x63,
-            0x82,
-        ],
+        RUNTIME_TUNE_PACKET,
     ));
 
     let mut expected_balance_filter = balance_filter_before_tune;
@@ -446,15 +419,7 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
         firmware.telemetry(),
         &mut now,
         &mut send,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::TuneTilt.id(),
-            1,
-            15,
-            85,
-            25,
-            30,
-        ],
+        TILT_TUNE_PACKET,
     ));
 
     let bytes = state.serialized_config.as_bytes();
@@ -488,24 +453,7 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
         firmware.telemetry(),
         &mut now,
         &mut send,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::TuneOther.id(),
-            0xFE,
-            25,
-            20,
-            15,
-            25,
-            7,
-            110,
-            30,
-            20,
-            25,
-            35,
-            40,
-            50,
-            8,
-        ],
+        OTHER_TUNE_PACKET,
     ));
 
     let bytes = state.serialized_config.as_bytes();
