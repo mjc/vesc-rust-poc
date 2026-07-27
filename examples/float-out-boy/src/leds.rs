@@ -1048,6 +1048,36 @@ pub struct FloatOutBoyLedStatusUpdate {
     pub moving: bool,
 }
 
+/// One coherent 30 Hz renderer snapshot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatOutBoyLedFrameUpdate {
+    /// Ride and transition inputs.
+    pub ride: FloatOutBoyLedUpdate,
+    /// Status-strip inputs sampled for the same frame.
+    pub status: FloatOutBoyLedStatusUpdate,
+}
+
+impl FloatOutBoyLedFrameUpdate {
+    /// Combine ride and status values sampled for one frame.
+    #[must_use]
+    pub const fn new(ride: FloatOutBoyLedUpdate, status: FloatOutBoyLedStatusUpdate) -> Self {
+        Self { ride, status }
+    }
+
+    /// Build a frame input when only ride behavior is under test.
+    #[must_use]
+    pub const fn ride_only(ride: FloatOutBoyLedUpdate) -> Self {
+        Self::new(
+            ride,
+            FloatOutBoyLedStatusUpdate {
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
+            },
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyStatusDynamics {
     brightness: f32,
@@ -1160,29 +1190,13 @@ impl FloatOutBoyLedRenderer {
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
-        input: FloatOutBoyLedUpdate,
+        frame: FloatOutBoyLedFrameUpdate,
         current_time: f32,
     ) {
-        self.update_with_status(
-            config,
-            input,
-            current_time,
-            FloatOutBoyLedStatusUpdate {
-                battery_level: 0.0,
-                duty_cycle: 0.0,
-                moving: true,
-            },
-        );
-    }
-
-    /// Advance and compose all three frames, including Refloat's status overlays.
-    pub fn update_with_status(
-        &mut self,
-        config: FloatOutBoyLedsConfig,
-        input: FloatOutBoyLedUpdate,
-        current_time: f32,
-        status: FloatOutBoyLedStatusUpdate,
-    ) {
+        let FloatOutBoyLedFrameUpdate {
+            ride: input,
+            status,
+        } = frame;
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
         self.dynamics.update(config, input);
@@ -2835,13 +2849,15 @@ mod renderer_tests {
         .with_status_strip(strip)
         .with_front_strip(strip)
         .with_rear_strip(strip);
-        let input = |run_state, distance| super::FloatOutBoyLedUpdate {
-            run_state,
-            mode: crate::FloatOutBoyMode::Normal,
-            darkride: false,
-            footpad: crate::FloatOutBoyFootpadState::None,
-            pitch_degrees: 1.0,
-            distance,
+        let input = |run_state, distance| {
+            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+                run_state,
+                mode: crate::FloatOutBoyMode::Normal,
+                darkride: false,
+                footpad: crate::FloatOutBoyFootpadState::None,
+                pitch_degrees: 1.0,
+                distance,
+            })
         };
         let first = |frame: &super::FloatOutBoyLedStripFrame| {
             frame
@@ -2950,18 +2966,22 @@ mod renderer_tests {
             crate::lcm::FloatOutBoyLedMode::Internal,
         )
         .with_status_strip(strip);
-        let input = |footpad| super::FloatOutBoyLedUpdate {
-            run_state: crate::FloatOutBoyRunState::Running,
-            mode: crate::FloatOutBoyMode::Normal,
-            darkride: false,
-            footpad,
-            pitch_degrees: 0.0,
-            distance: 0.0,
-        };
-        let status = |duty| super::FloatOutBoyLedStatusUpdate {
-            battery_level: 0.45,
-            duty_cycle: duty,
-            moving: true,
+        let input = |footpad, duty| {
+            super::FloatOutBoyLedFrameUpdate::new(
+                super::FloatOutBoyLedUpdate {
+                    run_state: crate::FloatOutBoyRunState::Running,
+                    mode: crate::FloatOutBoyMode::Normal,
+                    darkride: false,
+                    footpad,
+                    pitch_degrees: 0.0,
+                    distance: 0.0,
+                },
+                super::FloatOutBoyLedStatusUpdate {
+                    battery_level: 0.45,
+                    duty_cycle: duty,
+                    moving: true,
+                },
+            )
         };
         let channels = |renderer: &super::FloatOutBoyLedRenderer| {
             core::array::from_fn(|index| {
@@ -2975,11 +2995,10 @@ mod renderer_tests {
 
         let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
         for tick in 1..=10 {
-            renderer.update_with_status(
+            renderer.update(
                 config,
-                input(crate::FloatOutBoyFootpadState::None),
+                input(crate::FloatOutBoyFootpadState::None, 0.0),
                 f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
-                status(0.0),
             );
         }
         assert_eq!(
@@ -2994,11 +3013,10 @@ mod renderer_tests {
         );
 
         for tick in 11..=17 {
-            renderer.update_with_status(
+            renderer.update(
                 config,
-                input(crate::FloatOutBoyFootpadState::None),
+                input(crate::FloatOutBoyFootpadState::None, 0.9),
                 f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
-                status(0.9),
             );
         }
         assert_eq!(
@@ -3013,11 +3031,10 @@ mod renderer_tests {
         );
 
         renderer.start_confirmation(17.0 / 30.0);
-        renderer.update_with_status(
+        renderer.update(
             config,
-            input(crate::FloatOutBoyFootpadState::Both),
+            input(crate::FloatOutBoyFootpadState::Both, 0.0),
             17.0 / 30.0 + 0.4,
-            status(0.0),
         );
         assert_eq!(
             channels(&renderer),
