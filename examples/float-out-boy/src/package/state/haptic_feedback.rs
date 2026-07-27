@@ -193,7 +193,7 @@ fn strength_scale(config: FloatOutBoyHapticConfig<'_>, speed: Speed) -> f32 {
         .max_strength_speed()
         .as_kilometers_per_hour()
         .max(1.0);
-    let speed = speed.as_kilometers_per_hour();
+    let speed = speed.as_kilometers_per_hour().abs();
     let minimum = config.min_strength().as_ratio();
     let linear = (1.0 - config.strength_curvature().as_ratio()) * (1.0 - minimum) / maximum_speed;
     let quadratic = (1.0 - minimum - linear * maximum_speed) / (maximum_speed * maximum_speed);
@@ -269,6 +269,16 @@ mod tests {
         assert_f32_eq!(config.min_strength().as_ratio(), 0.2);
         assert!((config.max_strength_speed().as_kilometers_per_hour() - 30.0).abs() < 0.0001);
         assert_f32_eq!(config.strength_curvature().as_ratio(), 0.6);
+    }
+
+    #[test]
+    fn haptic_strength_scaling_uses_speed_magnitude_in_reverse() {
+        let image = FloatOutBoyConfigImage::defaults();
+        let config = image.haptic();
+        let forward = strength_scale(config, Speed::from_meters_per_second(5.0));
+        let reverse = strength_scale(config, Speed::from_meters_per_second(-5.0));
+
+        assert_f32_eq!(reverse, forward);
     }
 
     #[test]
