@@ -464,6 +464,35 @@ mod tests {
     }
 
     #[test]
+    fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
+        let payloads = sample_all_data_payloads();
+        let legacy = encode_float_out_boy_get_realtime_data_response(&payloads);
+
+        for (offset, expected) in [
+            (24, 1.0),
+            (28, 0.0),
+            (32, -1.0),
+            (36, 2.0),
+            (40, -2.0),
+            (44, 3.0),
+        ] {
+            assert_f32_be(&legacy, offset, expected);
+        }
+
+        let command_31 = encode_float_out_boy_realtime_data_response(
+            &payloads,
+            TimestampTicks::from_ticks(0),
+        );
+        let bytes = command_31.as_bytes();
+        assert!((decode_normal_float16([bytes[44], bytes[45]]) - 1.0).abs() < 0.001);
+        assert_eq!(&bytes[46..48], &[0, 0]);
+        assert!((decode_normal_float16([bytes[48], bytes[49]]) + 1.0).abs() < 0.001);
+        assert!((decode_normal_float16([bytes[50], bytes[51]]) - 2.0).abs() < 0.001);
+        assert!((decode_normal_float16([bytes[52], bytes[53]]) + 2.0).abs() < 0.001);
+        assert!((decode_normal_float16([bytes[54], bytes[55]]) - 3.0).abs() < 0.001);
+    }
+
+    #[test]
     fn float32_auto_zeros_small_normal_like_float_out_boy() {
         let value = 1.25e-38_f32;
         let mut bytes = [0xff; 4];
