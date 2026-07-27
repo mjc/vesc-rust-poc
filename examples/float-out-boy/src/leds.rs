@@ -1142,20 +1142,8 @@ impl FloatOutBoyStatusDynamics {
         }
     }
 
-    fn update(
-        &mut self,
-        config: FloatOutBoyLedsConfig,
-        input: FloatOutBoyLedUpdate,
-        status: FloatOutBoyLedStatusUpdate,
-        sensors: (Ratio, Ratio),
-        reset_idle: bool,
-        current_time: f32,
-    ) -> FloatOutBoyStatusRenderState {
+    fn update_brightness(&mut self, config: FloatOutBoyLedsConfig) -> Ratio {
         let status_config = config.status();
-        if reset_idle || !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
-            self.idle_time = current_time;
-        }
-
         let mut target_brightness = if config.are_headlights_on() {
             status_config.brightness_headlights_on()
         } else {
@@ -1169,6 +1157,22 @@ impl FloatOutBoyStatusDynamics {
             );
         }
         self.brightness = rate_limit(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
+        Ratio::clamped(self.brightness)
+    }
+
+    fn update(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        status: FloatOutBoyLedStatusUpdate,
+        sensors: (Ratio, Ratio),
+        reset_idle: bool,
+        current_time: f32,
+    ) -> FloatOutBoyStatusRenderState {
+        let status_config = config.status();
+        if reset_idle || !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+            self.idle_time = current_time;
+        }
 
         let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
             && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
@@ -1294,23 +1298,6 @@ impl FloatOutBoyLedRenderer {
             return;
         }
         let fade = self.dynamics.on_off_fade();
-        if matches!(input.run_state, crate::FloatOutBoyRunState::Disabled) {
-            let status_brightness = if config.are_headlights_on() {
-                config.status().brightness_headlights_on()
-            } else {
-                config.status().brightness_headlights_off()
-            };
-            self.status
-                .render_disabled(status_brightness, fade, current_time);
-            self.front
-                .render_disabled(self.front_bar.brightness(), fade, current_time);
-            self.rear
-                .render_disabled(self.rear_bar.brightness(), fade, current_time);
-            return;
-        }
-
-        let status_state =
-            self.compose_status(config, input, current_time, status, fade, upright_changed);
         if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
             || (!was_upright && upright)
         {
@@ -1319,8 +1306,9 @@ impl FloatOutBoyLedRenderer {
         let status_on_front = config.shows_status_on_front_when_lifted()
             && matches!(input.run_state, crate::FloatOutBoyRunState::Ready)
             && upright;
+        let status_brightness = self.status_dynamics.update_brightness(config);
         let front_target = if status_on_front {
-            status_state.brightness.as_ratio()
+            status_brightness.as_ratio()
         } else if upright && config.turns_lights_off_when_lifted() {
             0.0
         } else {
@@ -1338,6 +1326,18 @@ impl FloatOutBoyLedRenderer {
             f32::from(u8::from(status_on_front)),
             3.0 / 30.0,
         );
+        if matches!(input.run_state, crate::FloatOutBoyRunState::Disabled) {
+            self.status
+                .render_disabled(status_brightness, fade, current_time);
+            self.front
+                .render_disabled(Ratio::clamped(self.front_brightness), fade, current_time);
+            self.rear
+                .render_disabled(Ratio::clamped(self.rear_brightness), fade, current_time);
+            return;
+        }
+
+        let status_state =
+            self.compose_status(config, input, current_time, status, fade, upright_changed);
         if config.shows_status_on_front_when_lifted() && self.status_on_front_blend > 0.0 {
             let front_idle = config.turns_lights_off_when_lifted()
                 && current_time - self.status_on_front_idle_time > 3.0;
@@ -3476,6 +3476,72 @@ mod renderer_tests {
         dynamics.update(config, running, 10.25);
 
         assert_eq!(dynamics.headlights(), (-0.5, false, true));
+    }
+
+    #[test]
+    fn disabled_front_stays_dark_while_lifted_like_refloat() {
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = super::FloatOutBoyStatusBarConfig::new(
+            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar)
+            .enabled()
+            .lights_off_when_lifted();
+        let strip = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            1,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_front_strip(strip);
+        let frame = |run_state| {
+            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+                run_state,
+                mode: crate::FloatOutBoyMode::Normal,
+                darkride: false,
+                footpad: crate::FloatOutBoyFootpadState::None,
+                pitch_degrees: 61.0,
+                distance: 0.0,
+            })
+        };
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+        for tick in 1..=12 {
+            renderer.update(
+                config,
+                frame(crate::FloatOutBoyRunState::Ready),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        renderer.update(
+            config,
+            frame(crate::FloatOutBoyRunState::Disabled),
+            13.0 / 30.0,
+        );
+        renderer.update(
+            config,
+            frame(crate::FloatOutBoyRunState::Disabled),
+            14.0 / 30.0,
+        );
+
+        assert_eq!(
+            renderer
+                .front()
+                .physical_pixel(0)
+                .map(super::FloatOutBoyLedPixel::channels),
+            Some([0; 4])
+        );
     }
 
     #[test]
