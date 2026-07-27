@@ -580,6 +580,43 @@ mod tests {
     }
 
     #[test]
+    fn light_control_relay_is_safely_capped_at_refloats_64_byte_storage() {
+        let firmware = FirmwareTest::new();
+        let mut state = external_state();
+        let mut command = vec![101, 26, 10, 20, 30];
+        command.extend(0_u8..70);
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || vescpkg_rs::prelude::TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &command,
+        ));
+
+        let response = dispatch(&mut state, &firmware, &[101, 24]);
+        assert_eq!(response.len(), 14 + MAX_LCM_PAYLOAD_LENGTH);
+        assert_eq!(&response[14..], &(0_u8..64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn refloat_reserved_lcm_debug_command_remains_undispatched() {
+        let firmware = FirmwareTest::new();
+        let mut state = external_state();
+        let mut sent = false;
+
+        assert!(!state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || vescpkg_rs::prelude::TimestampTicks::from_ticks(0),
+            &mut |_| {
+                sent = true;
+                true
+            },
+            &[101, FloatOutBoyAppDataCommand::LcmDebug.id()],
+        ));
+        assert!(!sent);
+    }
+
+    #[test]
     fn shorter_lcm_name_replaces_the_previous_name_without_a_stale_suffix() {
         let firmware = FirmwareTest::new();
         let mut state = external_state();
