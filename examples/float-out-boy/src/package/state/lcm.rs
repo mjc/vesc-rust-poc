@@ -497,6 +497,65 @@ mod tests {
     }
 
     #[test]
+    fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(
+            crate::package::test_support::sample_all_data_payloads_with_ride_state(
+                FloatOutBoyRunState::Ready,
+                FloatOutBoyMode::Normal,
+            ),
+        );
+        let payloads = state.all_data_payloads;
+        let base = payloads.base();
+        state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+            crate::domain::FloatOutBoyAllDataBasePayload::new(
+                base.balance_current(),
+                base.attitude(),
+                base.status(),
+                crate::domain::FloatOutBoyFootpadSample::new(
+                    vescpkg_rs::prelude::Voltage::ZERO,
+                    vescpkg_rs::prelude::Voltage::ZERO,
+                    crate::domain::FloatOutBoyFootpadState::None,
+                ),
+                base.setpoints(),
+                base.booster_current(),
+                base.motor(),
+            ),
+            payloads.mode2(),
+            payloads.mode3(),
+            payloads.mode4(),
+        );
+        let mut config = state.serialized_config.as_bytes().to_vec();
+        config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+        assert!(state.store_serialized_config(&config));
+        let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            vescpkg_rs::prelude::OdometerMeters::from_meters(0),
+            1.0,
+            |_| {},
+            || true,
+        );
+        let before = state.internal_led_renderer_for_test().unwrap();
+
+        dispatch(
+            &mut state,
+            &firmware,
+            &[
+                101,
+                FloatOutBoyAppDataCommand::LightsControl.id(),
+                0,
+                0,
+                0,
+                2,
+                0,
+            ],
+        );
+
+        assert_eq!(state.internal_led_renderer_for_test(), Some(before));
+    }
+
+    #[test]
     fn light_control_payload_is_forwarded_once_by_poll_and_device_info_echoes_name() {
         let firmware = FirmwareTest::new();
         let mut state = external_state();

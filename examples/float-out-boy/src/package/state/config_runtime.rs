@@ -59,3 +59,11 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
     #[cfg(any(test, target_arch = "arm"))]
     state.refresh_internal_leds_from_config();
 }
+
+pub(super) fn refresh_led_effects(state: &mut FloatOutBoyPackageState) {
+    if let Some((_, config)) = state.serialized_config.led_configs() {
+        state.lcm.configure(config);
+        #[cfg(any(test, target_arch = "arm"))]
+        state.update_internal_led_config(config);
+    }
+}

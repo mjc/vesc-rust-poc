@@ -507,7 +507,7 @@ impl FloatOutBoyPackageState {
         let mut editor = self.serialized_config.editor();
         editor.set_leds_enabled(lights_enabled);
         editor.set_headlights_enabled(headlights_enabled);
-        self.refresh_led_config_runtime_state();
+        config_runtime::refresh_led_effects(self);
     }
 
     /// Handle one app-data packet in the firmware callback context.

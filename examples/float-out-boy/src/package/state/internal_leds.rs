@@ -79,6 +79,19 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    pub(super) fn update_internal_led_config(&mut self, config: FloatOutBoyLedsConfig) {
+        #[cfg(test)]
+        let runtime = self.internal_leds.as_mut();
+        #[cfg(target_arch = "arm")]
+        let runtime = self
+            .internal_leds
+            .as_mut()
+            .and_then(RuntimeAllocation::runtime_mut);
+        if let Some(runtime) = runtime {
+            runtime.config = config;
+        }
+    }
+
     pub(crate) fn destroy_internal_leds(&mut self) {
         #[cfg(test)]
         if let Some(runtime) = self.internal_leds.as_mut() {
@@ -111,6 +124,11 @@ impl FloatOutBoyPackageState {
             .as_ref()
             .and_then(RuntimeAllocation::runtime);
         runtime.is_some_and(|runtime| runtime.driver.is_operational())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn internal_led_renderer_for_test(&self) -> Option<FloatOutBoyLedRenderer> {
+        self.internal_leds.as_ref().map(|runtime| runtime.renderer)
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.
