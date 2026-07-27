@@ -921,3 +921,19 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
         15.0,
     );
 }
+
+#[test]
+fn storing_led_config_replaces_internal_renderer_immediately() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut bytes = default_float_out_boy_config_bytes();
+
+    assert!(state.internal_leds.is_none());
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    assert!(state.store_serialized_config(&bytes));
+    assert!(state.internal_leds.is_some());
+
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Off.id();
+    assert!(state.store_serialized_config(&bytes));
+    assert!(state.internal_leds.is_none());
+}

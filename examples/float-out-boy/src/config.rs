@@ -6,6 +6,16 @@ use crate::balance::LoopConfig;
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
 #[cfg(any(test, target_arch = "arm"))]
+use crate::{
+    lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
+    leds::{
+        FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
+        FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+        FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder, FloatOutBoyLedTransition,
+        FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig, FloatOutBoyStatusBarIdleTimeout,
+    },
+};
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
@@ -85,6 +95,104 @@ mod generated_field_tests {
     }
 }
 
+#[cfg(test)]
+mod led_config_tests {
+    use crate::{
+        lcm::FloatOutBoyLedMode,
+        leds::{
+            FloatOutBoyLedAnimationMode, FloatOutBoyLedColor, FloatOutBoyLedColorOrder,
+            FloatOutBoyLedPin, FloatOutBoyLedPinConfig, FloatOutBoyLedStripOrder,
+            FloatOutBoyLedTransition,
+        },
+    };
+
+    use super::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
+
+    #[test]
+    fn decodes_refloat_1_2_1_default_led_config() {
+        let (hardware, leds) = FloatOutBoyConfigImage::defaults()
+            .led_configs()
+            .expect("generated default LED fields are valid");
+
+        assert_eq!(hardware.mode(), FloatOutBoyLedMode::Off);
+        assert_eq!(hardware.pin(), FloatOutBoyLedPin::B7);
+        assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::PullupTo5v);
+        assert_eq!(
+            (
+                hardware.status_strip().order(),
+                hardware.status_strip().count(),
+                hardware.status_strip().color_order(),
+                hardware.status_strip().is_reversed(),
+            ),
+            (
+                FloatOutBoyLedStripOrder::First,
+                10,
+                FloatOutBoyLedColorOrder::Grb,
+                false,
+            )
+        );
+        assert!(leds.is_enabled());
+        assert!(leds.are_headlights_on());
+        assert_eq!(leds.headlights_transition(), FloatOutBoyLedTransition::Fade);
+        assert_eq!(leds.direction_transition(), FloatOutBoyLedTransition::Fade);
+        assert!(leds.turns_lights_off_when_lifted());
+        assert!(leds.shows_status_on_front_when_lifted());
+        assert_eq!(
+            leds.front().animation_mode(),
+            FloatOutBoyLedAnimationMode::KnightRider
+        );
+        assert_eq!(leds.front().primary_color(), FloatOutBoyLedColor::Red);
+        assert_eq!(leds.rear().primary_color(), FloatOutBoyLedColor::Azure);
+        assert_eq!(
+            leds.headlights().primary_color(),
+            FloatOutBoyLedColor::WhiteFull
+        );
+        assert_eq!(leds.taillights().primary_color(), FloatOutBoyLedColor::Red);
+        assert!(leds.status().shows_sensors_while_running());
+        assert_eq!(leds.status().idle_timeout().as_seconds(), 0);
+    }
+
+    #[test]
+    fn decodes_hardware_mode_from_refloat_byte_227() {
+        let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
+        bytes[224] = FloatOutBoyLedColor::Fuchsia.id();
+        bytes[227] = FloatOutBoyLedMode::Both.id();
+        bytes[228] = FloatOutBoyLedPin::C9.id();
+        bytes[229] = FloatOutBoyLedPinConfig::NoPullup.id();
+        bytes[230] = FloatOutBoyLedStripOrder::Third.id();
+        bytes[232] = FloatOutBoyLedColorOrder::Wrgb.id();
+        bytes[233] = 1;
+
+        let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
+        let (hardware, _) = image.led_configs().expect("valid LED fields");
+
+        assert_eq!(image.hardware_led_mode_id(), FloatOutBoyLedMode::Both.id());
+        assert_eq!(hardware.mode(), FloatOutBoyLedMode::Both);
+        assert_eq!(hardware.pin(), FloatOutBoyLedPin::C9);
+        assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::NoPullup);
+        assert_eq!(
+            hardware.status_strip().order(),
+            FloatOutBoyLedStripOrder::Third
+        );
+        assert_eq!(
+            hardware.status_strip().color_order(),
+            FloatOutBoyLedColorOrder::Wrgb
+        );
+        assert!(hardware.status_strip().is_reversed());
+    }
+
+    #[test]
+    fn rejects_out_of_range_refloat_led_enums() {
+        for offset in [177, 181, 184, 227, 228, 229, 230, 232] {
+            let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
+            bytes[offset] = u8::MAX;
+            let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
+
+            assert!(image.led_configs().is_none(), "offset {offset}");
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub(crate) struct FloatOutBoyConfigImage(CustomConfigImage<FLOAT_OUT_BOY_CONFIG_LEN>);
@@ -129,12 +237,12 @@ impl FloatOutBoyConfigImage {
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
     const BEEPER_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 242);
 
-    // Generated `hardware.leds.mode` is the first field in the final hardware
-    // block at `third_party/float-out-boy/src/conf/settings.xml:4049-4064`.
+    // Generated `hardware.leds.mode` follows the 52-byte `leds` block beginning
+    // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
     const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> = vescpkg_rs::generated_custom_config_field!(
         CustomConfigEnumField<FloatOutBoyHardwareLedMode>,
         len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 224
+        offset: 227
     );
     // These fields immediately follow `braketilt_lingering` in the generated
     // `SerOrder` at `third_party/float-out-boy/src/conf/settings.xml:4134-4140`.
@@ -193,6 +301,13 @@ impl FloatOutBoyConfigImage {
         Self::HARDWARE_LED_MODE_FIELD
             .read(&self.0)
             .map_or(0, |mode| mode.0)
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn led_configs(
+        &self,
+    ) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
+        FloatOutBoyLedConfigDecoder::new(self.as_bytes()).decode()
     }
 
     pub(crate) fn leds_enabled(&self) -> bool {
@@ -465,6 +580,246 @@ struct FloatOutBoyHardwareLedMode(u8);
 impl From<u8> for FloatOutBoyHardwareLedMode {
     fn from(value: u8) -> Self {
         Self(value)
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+struct FloatOutBoyLedConfigDecoder<'a> {
+    bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN],
+    offset: usize,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl<'a> FloatOutBoyLedConfigDecoder<'a> {
+    const fn new(bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> Self {
+        Self { bytes, offset: 175 }
+    }
+
+    fn decode(mut self) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
+        let on = self.boolean()?;
+        let headlights_on = self.boolean()?;
+        let headlights_transition = self.transition()?;
+        let direction_transition = self.transition()?;
+        let lights_off_when_lifted = self.boolean()?;
+        let status_on_front_when_lifted = self.boolean()?;
+        let front = self.bar()?;
+        let rear = self.bar()?;
+        let headlights = self.bar()?;
+        let taillights = self.bar()?;
+        let brightness_headlights_off = self.ratio(10_000.0)?;
+        let brightness_headlights_on = self.ratio(10_000.0)?;
+        let show_sensors = self.boolean()?;
+        let duty_threshold = self.ratio(10_000.0)?;
+        let red_bar_percentage = self.ratio(10_000.0)?;
+        let idle_timeout = self.u16()?;
+        let status_idle = self.bar()?;
+        let mode = self.mode()?;
+        let pin = self.pin()?;
+        let pin_config = self.pin_config()?;
+        let status_strip = self.strip()?;
+        let front_strip = self.strip()?;
+        let rear_strip = self.strip()?;
+
+        let status = FloatOutBoyStatusBarConfig::new(
+            FloatOutBoyStatusBarIdleTimeout::from_seconds(idle_timeout),
+            duty_threshold,
+            red_bar_percentage,
+            brightness_headlights_on,
+            brightness_headlights_off,
+        );
+        let status = if show_sensors {
+            status.showing_sensors_while_running()
+        } else {
+            status
+        };
+        let leds =
+            FloatOutBoyLedsConfig::new(headlights, taillights, front, rear, status, status_idle)
+                .with_headlights_transition(headlights_transition)
+                .with_direction_transition(direction_transition);
+        let leds = if on { leds.enabled() } else { leds };
+        let leds = if headlights_on {
+            leds.with_headlights_on()
+        } else {
+            leds
+        };
+        let leds = if lights_off_when_lifted {
+            leds.lights_off_when_lifted()
+        } else {
+            leds
+        };
+        let leds = if status_on_front_when_lifted {
+            leds.status_on_front_when_lifted()
+        } else {
+            leds
+        };
+        let hardware = FloatOutBoyHardwareLedsConfig::new(mode)
+            .with_pin(pin)
+            .with_pin_config(pin_config)
+            .with_status_strip(status_strip)
+            .with_front_strip(front_strip)
+            .with_rear_strip(rear_strip);
+
+        (self.offset == 242).then_some((hardware, leds))
+    }
+
+    fn byte(&mut self) -> Option<u8> {
+        let value = self.bytes.get(self.offset).copied();
+        self.offset = self.offset.saturating_add(1);
+        value
+    }
+
+    fn boolean(&mut self) -> Option<bool> {
+        self.byte().map(|value| value != 0)
+    }
+
+    fn u16(&mut self) -> Option<u16> {
+        let high = self.byte()?;
+        let low = self.byte()?;
+        Some(u16::from_be_bytes([high, low]))
+    }
+
+    fn ratio(&mut self, scale: f32) -> Option<Ratio> {
+        self.u16()
+            .and_then(|value| Ratio::from_ratio(f32::from(value) / scale).ok())
+    }
+
+    fn bar(&mut self) -> Option<FloatOutBoyLedBarConfig> {
+        let animation_mode = self.animation_mode()?;
+        Some(FloatOutBoyLedBarConfig::new(
+            self.ratio(10_000.0)?,
+            self.color()?,
+            self.color()?,
+            animation_mode,
+            FloatOutBoyLedAnimationSpeed::from_units(f32::from(self.u16()?) / 1_000.0),
+        ))
+    }
+
+    fn strip(&mut self) -> Option<FloatOutBoyLedStripConfig> {
+        let strip =
+            FloatOutBoyLedStripConfig::new(self.strip_order()?, self.byte()?, self.color_order()?);
+        if self.boolean()? {
+            Some(strip.with_reverse(true))
+        } else {
+            Some(strip)
+        }
+    }
+
+    fn transition(&mut self) -> Option<FloatOutBoyLedTransition> {
+        [
+            FloatOutBoyLedTransition::Fade,
+            FloatOutBoyLedTransition::FadeOutIn,
+            FloatOutBoyLedTransition::Cipher,
+            FloatOutBoyLedTransition::MonoCipher,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn animation_mode(&mut self) -> Option<FloatOutBoyLedAnimationMode> {
+        [
+            FloatOutBoyLedAnimationMode::Solid,
+            FloatOutBoyLedAnimationMode::Fade,
+            FloatOutBoyLedAnimationMode::Pulse,
+            FloatOutBoyLedAnimationMode::Strobe,
+            FloatOutBoyLedAnimationMode::KnightRider,
+            FloatOutBoyLedAnimationMode::Felony,
+            FloatOutBoyLedAnimationMode::RainbowCycle,
+            FloatOutBoyLedAnimationMode::RainbowFade,
+            FloatOutBoyLedAnimationMode::RainbowRoll,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn color(&mut self) -> Option<FloatOutBoyLedColor> {
+        [
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::WhiteFull,
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::WhiteSingle,
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Ferrari,
+            FloatOutBoyLedColor::Flame,
+            FloatOutBoyLedColor::Coral,
+            FloatOutBoyLedColor::Sunset,
+            FloatOutBoyLedColor::Sunrise,
+            FloatOutBoyLedColor::Gold,
+            FloatOutBoyLedColor::Orange,
+            FloatOutBoyLedColor::Yellow,
+            FloatOutBoyLedColor::Banana,
+            FloatOutBoyLedColor::Lime,
+            FloatOutBoyLedColor::Acid,
+            FloatOutBoyLedColor::Sage,
+            FloatOutBoyLedColor::Green,
+            FloatOutBoyLedColor::Mint,
+            FloatOutBoyLedColor::Tiffany,
+            FloatOutBoyLedColor::Cyan,
+            FloatOutBoyLedColor::Steel,
+            FloatOutBoyLedColor::Sky,
+            FloatOutBoyLedColor::Azure,
+            FloatOutBoyLedColor::Sapphire,
+            FloatOutBoyLedColor::Blue,
+            FloatOutBoyLedColor::Violet,
+            FloatOutBoyLedColor::Amethyst,
+            FloatOutBoyLedColor::Magenta,
+            FloatOutBoyLedColor::Pink,
+            FloatOutBoyLedColor::Fuchsia,
+            FloatOutBoyLedColor::Lavender,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn mode(&mut self) -> Option<FloatOutBoyLedMode> {
+        [
+            FloatOutBoyLedMode::Off,
+            FloatOutBoyLedMode::Internal,
+            FloatOutBoyLedMode::External,
+            FloatOutBoyLedMode::Both,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn pin(&mut self) -> Option<FloatOutBoyLedPin> {
+        [
+            FloatOutBoyLedPin::B6,
+            FloatOutBoyLedPin::B7,
+            FloatOutBoyLedPin::C9,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn pin_config(&mut self) -> Option<FloatOutBoyLedPinConfig> {
+        [
+            FloatOutBoyLedPinConfig::PullupTo5v,
+            FloatOutBoyLedPinConfig::NoPullup,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn strip_order(&mut self) -> Option<FloatOutBoyLedStripOrder> {
+        [
+            FloatOutBoyLedStripOrder::None,
+            FloatOutBoyLedStripOrder::First,
+            FloatOutBoyLedStripOrder::Second,
+            FloatOutBoyLedStripOrder::Third,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
+    }
+
+    fn color_order(&mut self) -> Option<FloatOutBoyLedColorOrder> {
+        [
+            FloatOutBoyLedColorOrder::Grb,
+            FloatOutBoyLedColorOrder::Grbw,
+            FloatOutBoyLedColorOrder::Rgb,
+            FloatOutBoyLedColorOrder::Wrgb,
+        ]
+        .get(usize::from(self.byte()?))
+        .copied()
     }
 }
 

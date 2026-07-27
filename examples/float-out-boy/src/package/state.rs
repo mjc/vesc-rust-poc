@@ -18,6 +18,14 @@ use crate::domain::{
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
+use crate::{
+    lcm::FloatOutBoyHardwareLedsConfig,
+    leds::{
+        FloatOutBoyLedFrameUpdate, FloatOutBoyLedRenderer, FloatOutBoyLedStatusUpdate,
+        FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
+    },
+};
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::OdometerMeters;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
@@ -123,6 +131,13 @@ struct UpsideDownRuntimeFlags {
     started: bool,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FloatOutBoyInternalLedRuntime {
+    renderer: FloatOutBoyLedRenderer,
+    config: FloatOutBoyLedsConfig,
+}
+
 /// Float Out Boy package state.
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
@@ -192,6 +207,8 @@ pub struct FloatOutBoyPackageState {
     aux_odometer: OdometerMeters,
     #[cfg(any(test, target_arch = "arm"))]
     aux_backup_failures: u32,
+    #[cfg(any(test, target_arch = "arm"))]
+    internal_leds: Option<FloatOutBoyInternalLedRuntime>,
     #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
 }
@@ -273,6 +290,8 @@ impl FloatOutBoyPackageState {
             #[cfg(any(test, target_arch = "arm"))]
             aux_backup_failures: 0,
             #[cfg(any(test, target_arch = "arm"))]
+            internal_leds: None,
+            #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
     }
@@ -332,6 +351,66 @@ impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn initialize_aux_odometer(&mut self, odometer: OdometerMeters) {
         self.aux_odometer = odometer;
+    }
+
+    /// Replace the pure internal LED runtime during setup or reconfiguration.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn configure_internal_leds(
+        &mut self,
+        hardware: FloatOutBoyHardwareLedsConfig,
+        config: FloatOutBoyLedsConfig,
+    ) {
+        self.internal_leds = Some(FloatOutBoyInternalLedRuntime {
+            renderer: FloatOutBoyLedRenderer::new(hardware, config, 0.0),
+            config,
+        });
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) fn refresh_internal_leds_from_config(&mut self) {
+        self.internal_leds = None;
+        let Some((hardware, config)) = self.serialized_config.led_configs() else {
+            return;
+        };
+        if hardware.uses_internal_leds() {
+            self.configure_internal_leds(hardware, config);
+        }
+    }
+
+    /// Sample one coherent firmware snapshot, render it, and expose it for one paint.
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn render_internal_leds(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        current_time: f32,
+        paint: impl FnOnce(&FloatOutBoyLedRenderer),
+    ) {
+        let base = self.all_data_payloads.base();
+        let ride_state = base.status().ride_state();
+        let frame = FloatOutBoyLedFrameUpdate::new(
+            FloatOutBoyLedUpdate {
+                run_state: ride_state.run_state(),
+                mode: ride_state.mode(),
+                darkride: matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active),
+                footpad: base.footpad().state(),
+                pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
+                distance: telemetry.signed_trip_distance().distance().as_meters(),
+            },
+            FloatOutBoyLedStatusUpdate {
+                battery_level: telemetry.battery_level().as_fraction(),
+                duty_cycle: telemetry.duty_cycle().ratio().as_ratio(),
+                moving: telemetry
+                    .electrical_speed()
+                    .rpm()
+                    .as_revolutions_per_minute()
+                    .abs()
+                    > 100.0,
+            },
+        );
+        if let Some(runtime) = self.internal_leds.as_mut() {
+            runtime.renderer.update(runtime.config, frame, current_time);
+            paint(&runtime.renderer);
+        }
     }
 
     /// Return whether the source-backed auxiliary backup threshold has been crossed.

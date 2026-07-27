@@ -234,6 +234,8 @@ fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(201),
+        0.0,
+        |_| {},
         || true,
     );
 

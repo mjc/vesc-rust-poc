@@ -113,6 +113,8 @@ impl FloatOutBoyPackageState {
         self.serialized_config = *config;
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
+        #[cfg(any(test, target_arch = "arm"))]
+        self.refresh_internal_leds_from_config();
         // C map: `configure` migrates legacy firmware IMU settings after
         // deriving package runtime values at `third_party/float-out-boy/src/main.c:201-211`.
         self.firmware_imu_migration = migrate_legacy_firmware_imu_settings();

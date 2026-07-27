@@ -1202,7 +1202,7 @@ impl FloatOutBoyStatusDynamics {
 }
 
 /// Pure composed status/front/rear frames for one internal LED configuration.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedRenderer {
     dynamics: FloatOutBoyLedDynamics,
     status_dynamics: FloatOutBoyStatusDynamics,
@@ -1530,7 +1530,7 @@ impl FloatOutBoyLedRenderer {
 }
 
 /// Allocation-free pixels for one configured internal LED strip.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyLedStripFrame {
     config: FloatOutBoyLedStripConfig,
     pixels: [FloatOutBoyLedPixel; MAX_LED_STRIP_PIXELS],

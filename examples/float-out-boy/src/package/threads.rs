@@ -211,9 +211,12 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
     odometer: OdometerMeters,
+    current_time: f32,
+    paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
     store_backup: impl FnOnce() -> bool,
 ) -> Option<bool> {
     state.refresh_motor_runtime_state(telemetry);
+    state.render_internal_leds(telemetry, current_time, paint_leds);
     state
         .aux_backup_due(odometer)
         .then(store_backup)
@@ -347,10 +350,16 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
             while !threads.should_terminate() {
                 let odometer = firmware.telemetry().odometer();
                 let telemetry = firmware.telemetry();
+                let current_time = firmware.clock().uptime().as_seconds();
                 let _ = ctx.with_state_mut(|state| {
-                    tick_float_out_boy_aux_thread_with(state, telemetry, odometer, || {
-                        firmware.inputs().store_backup().is_ok()
-                    })
+                    tick_float_out_boy_aux_thread_with(
+                        state,
+                        telemetry,
+                        odometer,
+                        current_time,
+                        |_| {},
+                        || firmware.inputs().store_backup().is_ok(),
+                    )
                 });
                 threads.sleep_for(Duration::from_micros(u64::from(
                     FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
@@ -798,6 +807,8 @@ mod tests {
             &mut state,
             firmware.telemetry(),
             OdometerMeters::from_meters(1_201),
+            0.0,
+            |_| {},
             || {
                 stores += 1;
                 true
@@ -806,6 +817,63 @@ mod tests {
 
         assert_eq!(result, Some(true));
         assert_eq!(stores, 1);
+    }
+
+    #[test]
+    fn aux_tick_renders_and_paints_one_internal_led_frame() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        let bar = crate::leds::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            crate::leds::FloatOutBoyLedColor::Blue,
+            crate::leds::FloatOutBoyLedColor::Black,
+            crate::leds::FloatOutBoyLedAnimationMode::Solid,
+            crate::leds::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = crate::leds::FloatOutBoyStatusBarConfig::new(
+            crate::leds::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(1.0),
+        );
+        let config =
+            crate::leds::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled();
+        let strip = crate::leds::FloatOutBoyLedStripConfig::new(
+            crate::leds::FloatOutBoyLedStripOrder::First,
+            1,
+            crate::leds::FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_front_strip(strip);
+        state.configure_internal_leds(hardware, config);
+        let mut paints = 0;
+        let mut painted = [0; 4];
+
+        let result = tick_float_out_boy_aux_thread_with(
+            &mut state,
+            firmware.telemetry(),
+            OdometerMeters::from_meters(0),
+            1.0 / 30.0,
+            |renderer| {
+                paints += 1;
+                painted = renderer
+                    .front()
+                    .physical_pixel(0)
+                    .map(crate::leds::FloatOutBoyLedPixel::channels)
+                    .unwrap_or_default();
+            },
+            || true,
+        );
+
+        assert_eq!(result, None);
+        assert_eq!(paints, 1);
+        assert_eq!(painted, [0, 0, 0x1a, 0]);
     }
 
     #[test]
@@ -819,6 +887,8 @@ mod tests {
             &mut state,
             firmware.telemetry(),
             OdometerMeters::from_meters(1_200),
+            0.0,
+            |_| {},
             || {
                 stores += 1;
                 true
@@ -842,6 +912,8 @@ mod tests {
             &mut state,
             firmware.telemetry(),
             OdometerMeters::from_meters(1_201),
+            0.0,
+            |_| {},
             || false,
         );
 
