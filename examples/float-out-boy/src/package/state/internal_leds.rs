@@ -32,13 +32,18 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
     driver: FloatOutBoyInternalLedDriver,
 }
 
+#[must_use]
+fn timestamp_seconds(system_time_ticks: TimestampTicks) -> f32 {
+    let [low0, low1, high0, high1] = system_time_ticks.as_ticks().to_le_bytes();
+    let low = f32::from(u16::from_le_bytes([low0, low1]));
+    let high = f32::from(u16::from_le_bytes([high0, high1]));
+    let ticks_per_second = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+    (high * 65_536.0 + low) / ticks_per_second
+}
+
 impl FloatOutBoyPackageState {
     pub(super) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
-        let [low0, low1, high0, high1] = system_time_ticks.as_ticks().to_le_bytes();
-        let low = f32::from(u16::from_le_bytes([low0, low1]));
-        let high = f32::from(u16::from_le_bytes([high0, high1]));
-        let ticks_per_second = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
-        let current_time = (high * 65_536.0 + low) / ticks_per_second;
+        let current_time = timestamp_seconds(system_time_ticks);
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
