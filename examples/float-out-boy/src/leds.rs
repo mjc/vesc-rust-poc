@@ -853,6 +853,15 @@ impl FloatOutBoyLedStripFrame {
             self.render_felony(bar, on_off_fade, time);
             return;
         }
+        if matches!(
+            bar.animation_mode(),
+            FloatOutBoyLedAnimationMode::RainbowCycle
+                | FloatOutBoyLedAnimationMode::RainbowFade
+                | FloatOutBoyLedAnimationMode::RainbowRoll
+        ) {
+            self.render_rainbow(bar, on_off_fade, time);
+            return;
+        }
         let target = match bar.animation_mode() {
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color())
@@ -913,6 +922,63 @@ impl FloatOutBoyLedStripFrame {
         }
     }
 
+    fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+        match bar.animation_mode() {
+            FloatOutBoyLedAnimationMode::RainbowCycle => {
+                let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0)
+                    .checked_rem(10)
+                    .unwrap_or_default();
+                let hue = crate::wire::saturating_trunc_f32_to_u8(f32::from(step) * 25.5);
+                self.render_target(
+                    refloat_hue_to_pixel(hue),
+                    brightness,
+                    Ratio::from_ratio_const(1.0),
+                );
+            }
+            FloatOutBoyLedAnimationMode::RainbowFade => {
+                let hue = crate::wire::saturating_trunc_f32_to_u8(
+                    vescpkg_rs::remainder(time, 1.0) * 255.0,
+                );
+                self.render_target(
+                    refloat_hue_to_pixel(hue),
+                    brightness,
+                    Ratio::from_ratio_const(1.0),
+                );
+            }
+            FloatOutBoyLedAnimationMode::RainbowRoll => {
+                let len = usize::from(self.config.count());
+                let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+                    return;
+                };
+                let offset = vescpkg_rs::remainder(time, 1.0) * 255.0;
+                for (index, pixel) in self
+                    .pixels
+                    .get_mut(..len)
+                    .unwrap_or_default()
+                    .iter_mut()
+                    .enumerate()
+                {
+                    let index = u16::try_from(index).unwrap_or_default();
+                    let hue = crate::wire::saturating_trunc_f32_to_u8(
+                        255.0 / f32::from(len_u16) * f32::from(index) + offset,
+                    );
+                    *pixel = pixel.scaled_and_blended(
+                        refloat_hue_to_pixel(hue),
+                        brightness,
+                        Ratio::from_ratio_const(1.0),
+                    );
+                }
+            }
+            FloatOutBoyLedAnimationMode::Solid
+            | FloatOutBoyLedAnimationMode::Fade
+            | FloatOutBoyLedAnimationMode::Pulse
+            | FloatOutBoyLedAnimationMode::Strobe
+            | FloatOutBoyLedAnimationMode::KnightRider
+            | FloatOutBoyLedAnimationMode::Felony => {}
+        }
+    }
+
     fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
         let len = usize::from(self.config.count());
         for pixel in self.pixels.get_mut(..len).unwrap_or_default() {
@@ -931,6 +997,32 @@ fn refloat_cosine_progress(time: f32) -> f32 {
         1.0 - cosine
     } else {
         cosine
+    }
+}
+
+fn refloat_hue_to_pixel(hue: u8) -> FloatOutBoyLedPixel {
+    let normalized = f32::from(hue) / 255.0 * 3.0;
+    let red = vescpkg_rs::remainder(normalized + 0.5, 3.0);
+    let green = vescpkg_rs::remainder(normalized + 2.5, 3.0);
+    let blue = vescpkg_rs::remainder(normalized + 1.5, 3.0);
+    let tweak = |channel: f32, exponent: f32| {
+        if channel < 1.0 {
+            1.0 - vescpkg_rs::pow(1.0 - channel, exponent)
+        } else if channel < 2.0 {
+            1.0 + vescpkg_rs::pow(channel - 1.0, exponent)
+        } else {
+            0.0
+        }
+    };
+    let channel =
+        |value| crate::wire::saturating_trunc_f32_to_u8(refloat_cosine_progress(value) * 255.0);
+    FloatOutBoyLedPixel {
+        channels: [
+            channel(tweak(red, 3.2)),
+            channel(tweak(green, 2.4)),
+            channel(tweak(blue, 2.2)),
+            0,
+        ],
     }
 }
 
@@ -1188,6 +1280,72 @@ mod renderer_tests {
         assert_eq!(
             core::array::from_fn(|index| frame.physical_pixel(index)),
             [Some(blue), Some(blue), Some(black), Some(red), Some(red)]
+        );
+    }
+
+    #[test]
+    fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            4,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let bar = |mode| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                FloatOutBoyLedColor::Black,
+                FloatOutBoyLedColor::Black,
+                mode,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+
+        frame.render_bar(
+            bar(super::FloatOutBoyLedAnimationMode::RainbowCycle),
+            Ratio::from_ratio_const(1.0),
+            0.9,
+        );
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel {
+                channels: [0x7e, 0x00, 0xfe, 0]
+            })
+        );
+
+        frame.render_bar(
+            bar(super::FloatOutBoyLedAnimationMode::RainbowFade),
+            Ratio::from_ratio_const(1.0),
+            0.25,
+        );
+        assert_eq!(
+            frame.physical_pixel(0),
+            Some(FloatOutBoyLedPixel {
+                channels: [0xfe, 0x79, 0x00, 0]
+            })
+        );
+
+        frame.render_bar(
+            bar(super::FloatOutBoyLedAnimationMode::RainbowRoll),
+            Ratio::from_ratio_const(1.0),
+            0.0,
+        );
+        assert_eq!(
+            core::array::from_fn(|index| frame.physical_pixel(index)),
+            [
+                Some(FloatOutBoyLedPixel {
+                    channels: [0xf7, 0x00, 0xe2, 0]
+                }),
+                Some(FloatOutBoyLedPixel {
+                    channels: [0xfe, 0x79, 0x00, 0]
+                }),
+                Some(FloatOutBoyLedPixel {
+                    channels: [0x00, 0xff, 0x00, 0]
+                }),
+                Some(FloatOutBoyLedPixel {
+                    channels: [0x00, 0x80, 0xfd, 0]
+                }),
+            ]
         );
     }
 }

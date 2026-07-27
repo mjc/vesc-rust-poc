@@ -21,6 +21,12 @@ pub fn cos(x: f32) -> f32 {
     libm::cosf(x)
 }
 
+/// Raises one single-precision value to a single-precision power.
+#[must_use]
+pub fn pow(base: f32, exponent: f32) -> f32 {
+    libm::powf(base, exponent)
+}
+
 /// Computes the IEEE remainder after division for single-precision inputs.
 #[must_use]
 pub fn remainder(x: f32, modulus: f32) -> f32 {
@@ -53,7 +59,7 @@ pub fn sqrt(x: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{asin, cos, remainder, round, sin, sqrt, tan};
+    use super::{asin, cos, pow, remainder, round, sin, sqrt, tan};
 
     fn approx_eq(left: f32, right: f32) {
         assert!(
@@ -96,6 +102,7 @@ mod tests {
             assert_eq!(round(value), libm::roundf(value));
             assert_eq!(remainder(value, 2.0), libm::fmodf(value, 2.0));
         }
+        assert_eq!(pow(0.5, 3.2), libm::powf(0.5, 3.2));
     }
 
     #[test]
