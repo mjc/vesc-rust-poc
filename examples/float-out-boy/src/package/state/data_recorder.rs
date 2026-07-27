@@ -18,7 +18,6 @@ const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
 const HEADER_RESPONSE_LEN: usize = 159;
 const DATA_RESPONSE_CAPACITY: usize = 511;
-const DATA_RECORD_DATA_COMMAND_ID: u8 = 43;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
@@ -486,6 +485,7 @@ impl FloatOutBoyPackageState {
             DataRecorderRequest::SendHeader => {
                 self.data_recorder.stop();
                 let mut response = DATA_RECORD_HEADER_BYTES;
+                response[1] = FloatOutBoyAppDataCommand::DataRecordHeader.id();
                 let sample_count =
                     u32::try_from(self.data_recorder.sample_count()).unwrap_or(u32::MAX);
                 response[2..6].copy_from_slice(&sample_count.to_be_bytes());
@@ -502,7 +502,7 @@ impl FloatOutBoyPackageState {
                 float_out_boy_realtime_push_u8(
                     &mut response,
                     &mut index,
-                    DATA_RECORD_DATA_COMMAND_ID,
+                    FloatOutBoyAppDataCommand::DataRecordData.id(),
                 );
                 float_out_boy_realtime_push_u32(&mut response, &mut index, offset);
                 let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);
@@ -529,7 +529,7 @@ impl FloatOutBoyPackageState {
     }
 }
 
-const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\x2a\0\0\0\0\x0a\
+const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0a\
     \x0amotor.erpm\
     \x11motor.dir_current\
     \x10motor.duty_cycle\
