@@ -380,7 +380,15 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         base.setpoints().board().angle().as_degrees(),
         expected_engage_setpoint
     );
-    assert_f32_eq!(base.setpoints().remote().angle().as_degrees(), 0.0);
+    for setpoint in [
+        base.setpoints().atr(),
+        base.setpoints().brake_tilt(),
+        base.setpoints().torque_tilt(),
+        base.setpoints().turn_tilt(),
+        base.setpoints().remote(),
+    ] {
+        assert_f32_eq!(setpoint.angle().as_degrees(), 0.0);
+    }
     assert_eq!(
         state.balance_loop.pid.integral_current.current(),
         Current::ZERO
