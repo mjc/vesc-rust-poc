@@ -137,6 +137,12 @@ struct LedRuntimeOverrides {
     headlights_enabled: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LedRuntimeStatus {
+    enabled: bool,
+    headlights_enabled: bool,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct UpsideDownRuntimeFlags {
     enabled: bool,
@@ -563,15 +569,17 @@ impl FloatOutBoyPackageState {
         config_runtime::refresh_leds(self);
     }
 
-    fn led_runtime_flags(&self) -> (bool, bool) {
-        (
-            self.led_runtime_overrides
+    fn led_runtime_status(&self) -> LedRuntimeStatus {
+        LedRuntimeStatus {
+            enabled: self
+                .led_runtime_overrides
                 .enabled
                 .unwrap_or_else(|| self.serialized_config.leds_enabled()),
-            self.led_runtime_overrides
+            headlights_enabled: self
+                .led_runtime_overrides
                 .headlights_enabled
                 .unwrap_or_else(|| self.serialized_config.headlights_enabled()),
-        )
+        }
     }
 
     fn effective_led_config(
@@ -583,18 +591,18 @@ impl FloatOutBoyPackageState {
         self.serialized_config
             .led_configs()
             .map(|(hardware, config)| {
-                let (enabled, headlights_enabled) = self.led_runtime_flags();
+                let status = self.led_runtime_status();
                 (
                     hardware,
-                    config.with_runtime_status(enabled, headlights_enabled),
+                    config.with_runtime_status(status.enabled, status.headlights_enabled),
                 )
             })
     }
 
-    fn set_led_runtime_flags(&mut self, lights_enabled: bool, headlights_enabled: bool) {
+    fn set_led_runtime_status(&mut self, status: LedRuntimeStatus) {
         self.led_runtime_overrides = LedRuntimeOverrides {
-            enabled: Some(lights_enabled),
-            headlights_enabled: Some(headlights_enabled),
+            enabled: Some(status.enabled),
+            headlights_enabled: Some(status.headlights_enabled),
         };
         config_runtime::refresh_led_effects(self);
     }
@@ -706,14 +714,22 @@ impl FloatOutBoyPackageState {
         if self.serialized_config.hardware_led_mode_id() == 0 {
             return;
         }
-        let (lights_enabled, headlights_enabled) = self.led_runtime_flags();
-        if !headlights_enabled && self.headlights_on_konami.check(footpad, system_time_ticks) {
+        let status = self.led_runtime_status();
+        if !status.headlights_enabled && self.headlights_on_konami.check(footpad, system_time_ticks)
+        {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_flags(lights_enabled, true);
+            self.set_led_runtime_status(LedRuntimeStatus {
+                headlights_enabled: true,
+                ..status
+            });
         }
-        if headlights_enabled && self.headlights_off_konami.check(footpad, system_time_ticks) {
+        if status.headlights_enabled && self.headlights_off_konami.check(footpad, system_time_ticks)
+        {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_flags(lights_enabled, false);
+            self.set_led_runtime_status(LedRuntimeStatus {
+                headlights_enabled: false,
+                ..status
+            });
         }
     }
 

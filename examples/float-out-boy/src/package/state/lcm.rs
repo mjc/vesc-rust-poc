@@ -302,28 +302,26 @@ impl FloatOutBoyPackageState {
                 let mask = payload[3];
                 if mask != 0 {
                     let value = payload[4];
-                    let (lights_enabled, headlights_enabled) = self.led_runtime_flags();
-                    self.set_led_runtime_flags(
-                        if mask & 1 == 0 {
-                            lights_enabled
+                    let status = self.led_runtime_status();
+                    self.set_led_runtime_status(super::LedRuntimeStatus {
+                        enabled: if mask & 1 == 0 {
+                            status.enabled
                         } else {
                             value & 1 != 0
                         },
-                        if mask & 2 == 0 {
-                            headlights_enabled
+                        headlights_enabled: if mask & 2 == 0 {
+                            status.headlights_enabled
                         } else {
                             value & 2 != 0
                         },
-                    );
+                    });
                 }
             }
+            let status = self.led_runtime_status();
             return send(&[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::LightsControl.id(),
-                {
-                    let (lights_enabled, headlights_enabled) = self.led_runtime_flags();
-                    u8::from(lights_enabled) | (u8::from(headlights_enabled) << 1)
-                },
+                u8::from(status.enabled) | (u8::from(status.headlights_enabled) << 1),
             ]);
         }
         false
