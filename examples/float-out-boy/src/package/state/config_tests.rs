@@ -386,6 +386,9 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
         read_failed.serialized_config,
         FloatOutBoyConfigImage::defaults(),
     );
+    let mut log = [0; 64];
+    let len = firmware.copy_last_log(&mut log);
+    assert_eq!(&log[..len], b"Failed to read config, using defaults.");
     drop(firmware);
 
     let firmware = FirmwareTest::new();
@@ -405,6 +408,12 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     assert_eq!(
         invalid.serialized_config,
         FloatOutBoyConfigImage::defaults(),
+    );
+    let mut log = [0; 64];
+    let len = firmware.copy_last_log(&mut log);
+    assert_eq!(
+        &log[..len],
+        b"Failed to deserialize config, using defaults.",
     );
 }
 

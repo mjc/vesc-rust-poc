@@ -89,6 +89,11 @@ impl FirmwareTest {
         *self.firmware.eeprom()
     }
 
+    /// Copy the most recent firmware log message into `output`.
+    pub fn copy_last_log(&self, output: &mut [u8]) -> usize {
+        crate::test_ffi::copy_last_log(output)
+    }
+
     /// Access the same byte-addressed NVM capability used on hardware.
     #[must_use]
     pub const fn nvm(&self) -> crate::Nvm {

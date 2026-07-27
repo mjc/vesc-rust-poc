@@ -29,6 +29,9 @@ const LBM_VALUE_SHIFT: u32 = 4;
 const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
 const LBM_INT_TAG: u32 = 0x08;
 const LBM_FLOAT_VALUE: u32 = 0x10;
+const LOG_CAPACITY: usize = 128;
+static LOG_BYTES: [AtomicU8; LOG_CAPACITY] = [const { AtomicU8::new(0) }; LOG_CAPACITY];
+static LOG_LEN: AtomicUsize = AtomicUsize::new(0);
 
 const fn decode_lbm_integer(value: LbmValue) -> i32 {
     value.0.cast_signed() >> LBM_VALUE_SHIFT
@@ -36,7 +39,17 @@ const fn decode_lbm_integer(value: LbmValue) -> i32 {
 
 /// Host replacement for the firmware `%s` logging path.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
-    !message.is_null()
+    if message.is_null() {
+        return false;
+    }
+    // SAFETY: the firmware logging contract requires a readable NUL-terminated string.
+    let message = unsafe { CStr::from_ptr(message) }.to_bytes();
+    let len = message.len().min(LOG_CAPACITY);
+    for (slot, byte) in LOG_BYTES.iter().zip(message).take(len) {
+        slot.store(*byte, Ordering::Relaxed);
+    }
+    LOG_LEN.store(len, Ordering::Release);
+    true
 }
 
 pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
@@ -505,6 +518,7 @@ fn reset_imu_and_threads() {
 }
 
 fn reset_storage_and_sync() {
+    LOG_LEN.store(0, Ordering::Relaxed);
     for slot in &EEPROM_PRESENT {
         slot.store(false, Ordering::Relaxed);
     }
@@ -532,6 +546,14 @@ fn reset_storage_and_sync() {
     SEMAPHORE_TIMEOUT_FAILURE.store(false, Ordering::Relaxed);
     SHUTDOWN_DISABLE_SUPPORTED.store(true, Ordering::Relaxed);
     SHUTDOWN_DISABLED.store(false, Ordering::Relaxed);
+}
+
+pub(crate) fn copy_last_log(output: &mut [u8]) -> usize {
+    let len = LOG_LEN.load(Ordering::Acquire).min(output.len());
+    for (output, stored) in output.iter_mut().zip(&LOG_BYTES).take(len) {
+        *output = stored.load(Ordering::Relaxed);
+    }
+    len
 }
 
 pub(crate) fn lock_firmware() -> FirmwareLockGuard {
