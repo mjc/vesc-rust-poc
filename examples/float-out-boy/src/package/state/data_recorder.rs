@@ -217,13 +217,21 @@ impl DataRecorderState {
             return;
         }
         if !self.empty && self.head == self.tail {
-            self.tail = (self.tail + 1) % capacity;
+            self.tail = self
+                .tail
+                .checked_add(1)
+                .filter(|next| *next < capacity)
+                .unwrap_or(0);
         }
         let Some(offset) = self.head.checked_mul(SAMPLE_SIZE) else {
             return;
         };
         if self.write(offset, &sample.encode()) {
-            self.head = (self.head + 1) % capacity;
+            self.head = self
+                .head
+                .checked_add(1)
+                .filter(|next| *next < capacity)
+                .unwrap_or(0);
             self.empty = false;
         }
     }
