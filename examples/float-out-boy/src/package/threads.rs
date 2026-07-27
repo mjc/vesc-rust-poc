@@ -367,6 +367,16 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
         {
             let firmware = ctx.firmware();
             let threads = firmware.threads();
+            while !threads.should_terminate()
+                && !ctx
+                    .with_state_mut(|state| state.startup_configured())
+                    .unwrap_or(false)
+            {
+                threads.sleep_for(Duration::from_millis(1));
+            }
+            if threads.should_terminate() {
+                return;
+            }
             let (footpad_voltage1, footpad_voltage2) = read_float_out_boy_footpads(firmware.gpio());
             let _ = ctx.with_state_mut(|state| {
                 state.setup_loaded_led_hardware_after_threads(footpad_voltage1, footpad_voltage2);

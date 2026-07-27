@@ -248,6 +248,12 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
         self.firmware_imu_migration = migrate_legacy_firmware_imu_settings();
         self.alert_configured_state();
+        self.startup_configured = true;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) const fn startup_configured(&self) -> bool {
+        self.startup_configured
     }
 
     #[cfg(any(test, target_arch = "arm"))]
