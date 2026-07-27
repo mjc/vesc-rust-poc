@@ -76,6 +76,38 @@ enum DataRecorderActivity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DataRecorderRequest {
+    SetActivity(DataRecorderActivity),
+    SetAutostart(bool),
+    SetAutostop(bool),
+    SendHeader,
+    SendData { offset: u32 },
+    Ignore,
+}
+
+impl DataRecorderRequest {
+    fn parse(payload: &[u8]) -> Self {
+        match payload {
+            [1, 1, value, ..] => {
+                let activity = if *value > 0 {
+                    DataRecorderActivity::Recording
+                } else {
+                    DataRecorderActivity::Stopped
+                };
+                Self::SetActivity(activity)
+            }
+            [1, 2, value, ..] => Self::SetAutostart(*value > 0),
+            [1, 3, value, ..] => Self::SetAutostop(*value > 0),
+            [2, 1, ..] => Self::SendHeader,
+            [2, 2, a, b, c, d, ..] => Self::SendData {
+                offset: u32::from_be_bytes([*a, *b, *c, *d]),
+            },
+            _ => Self::Ignore,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DataRecorderState {
     availability: DataRecorderAvailability,
     activity: DataRecorderActivity,
@@ -283,12 +315,20 @@ impl FloatOutBoyPackageState {
             return true;
         }
 
-        match payload {
-            [1, 1, value, ..] if *value > 0 => self.data_recorder.start(),
-            [1, 1, ..] => self.data_recorder.stop(),
-            [1, 2, value, ..] => self.data_recorder.autostart = *value > 0,
-            [1, 3, value, ..] => self.data_recorder.autostop = *value > 0,
-            [2, 1, ..] => {
+        match DataRecorderRequest::parse(payload) {
+            DataRecorderRequest::SetActivity(DataRecorderActivity::Recording) => {
+                self.data_recorder.start();
+            }
+            DataRecorderRequest::SetActivity(DataRecorderActivity::Stopped) => {
+                self.data_recorder.stop();
+            }
+            DataRecorderRequest::SetAutostart(enabled) => {
+                self.data_recorder.autostart = enabled;
+            }
+            DataRecorderRequest::SetAutostop(enabled) => {
+                self.data_recorder.autostop = enabled;
+            }
+            DataRecorderRequest::SendHeader => {
                 self.data_recorder.stop();
                 let mut response = DATA_RECORD_HEADER_BYTES;
                 let sample_count =
@@ -296,8 +336,7 @@ impl FloatOutBoyPackageState {
                 response[2..6].copy_from_slice(&sample_count.to_be_bytes());
                 let _ = send(&response);
             }
-            [2, 2, a, b, c, d, ..] => {
-                let offset = u32::from_be_bytes([*a, *b, *c, *d]);
+            DataRecorderRequest::SendData { offset } => {
                 let mut response = [0; DATA_RESPONSE_CAPACITY];
                 let mut index = 0;
                 float_out_boy_realtime_push_u8(
@@ -329,7 +368,7 @@ impl FloatOutBoyPackageState {
                     }
                 }
             }
-            _ => {}
+            DataRecorderRequest::Ignore => {}
         }
         true
     }
