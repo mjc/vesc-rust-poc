@@ -698,6 +698,79 @@ fn flywheel_rejection_matrix_never_mutates_package_state() {
 }
 
 #[test]
+fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
+    let mut konami = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+    set_footpad(&mut konami, FloatOutBoyFootpadState::Left);
+    konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(1_501));
+    set_footpad(&mut konami, FloatOutBoyFootpadState::Right);
+    konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(3_002));
+    assert_eq!(
+        konami
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Normal,
+    );
+
+    for (index, footpad) in [
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        set_footpad(&mut konami, footpad);
+        konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(
+            4_503 + u32::try_from(index).unwrap_or(u32::MAX) * 1_501,
+        ));
+    }
+
+    let mut direct = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+    assert!(direct.handle_flywheel_packet(&flywheel_packet(&[0x82, 0, 0, 0, 0, 1,])));
+
+    assert_eq!(
+        konami
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Flywheel,
+    );
+    assert_eq!(konami.serialized_config, direct.serialized_config);
+    assert_eq!(
+        konami.runtime_balance_loop_config(),
+        direct.runtime_balance_loop_config()
+    );
+    assert_eq!(
+        konami.flywheel_attitude(
+            FloatOutBoyMode::Flywheel,
+            AngleDegrees::from_degrees(80.0),
+            AngleDegrees::ZERO,
+        ),
+        direct.flywheel_attitude(
+            FloatOutBoyMode::Flywheel,
+            AngleDegrees::from_degrees(80.0),
+            AngleDegrees::ZERO,
+        ),
+    );
+}
+
+#[test]
 fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
     let firmware = FirmwareTest::new();
     firmware.set_imu_ready(true);
