@@ -815,6 +815,23 @@ mod tests {
     }
 
     #[test]
+    fn zero_variable_nose_rate_stays_finite_instead_of_propagating_refloat_nan() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_tiltback_constant(AngleDegrees::from_degrees(2.0)));
+        assert!(editor.set_tiltback_constant_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(500.0),
+        )));
+        assert!(editor.set_tiltback_variable(PidScale::new(0.0)));
+        assert!(editor.set_tiltback_variable_max(AngleDegrees::ZERO));
+
+        let target = nose_target(&config, Rpm::from_revolutions_per_minute(2_000.0));
+
+        assert_eq!(target, AngleDegrees::from_degrees(2.0));
+        assert!(target.as_degrees().is_finite());
+    }
+
+    #[test]
     fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         let mut config = FloatOutBoyConfigImage::defaults();
         let mut editor = config.editor();
