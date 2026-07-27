@@ -263,6 +263,12 @@ impl DataRecorderState {
 }
 
 impl FloatOutBoyPackageState {
+    #[cfg(test)]
+    pub(super) fn disable_data_recorder_for_test(&mut self) {
+        self.data_recorder.availability = DataRecorderAvailability::Unavailable;
+        self.data_recorder.stop();
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
