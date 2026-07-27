@@ -1037,6 +1037,17 @@ fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
     }
 }
 
+/// Values used only by Refloat's status-strip composition.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatOutBoyLedStatusUpdate {
+    /// Remaining battery fraction.
+    pub battery_level: f32,
+    /// Raw VESC duty-cycle fraction.
+    pub duty_cycle: f32,
+    /// Whether motor distance changed during this update.
+    pub moving: bool,
+}
+
 /// Pure composed status/front/rear frames for one internal LED configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatOutBoyLedRenderer {
@@ -1047,6 +1058,9 @@ pub struct FloatOutBoyLedRenderer {
     front_bar: FloatOutBoyLedBarConfig,
     rear_bar: FloatOutBoyLedBarConfig,
     animation_start: f32,
+    status_brightness: f32,
+    status_duty_blend: f32,
+    confirmation_start: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1078,6 +1092,9 @@ impl FloatOutBoyLedRenderer {
             front_bar: config.front(),
             rear_bar: config.rear(),
             animation_start: 0.0,
+            status_brightness: 0.0,
+            status_duty_blend: 0.0,
+            confirmation_start: -1.0,
         }
     }
 
@@ -1087,6 +1104,26 @@ impl FloatOutBoyLedRenderer {
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
         current_time: f32,
+    ) {
+        self.update_with_status(
+            config,
+            input,
+            current_time,
+            FloatOutBoyLedStatusUpdate {
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
+            },
+        );
+    }
+
+    /// Advance and compose all three frames, including Refloat's status overlays.
+    pub fn update_with_status(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        current_time: f32,
+        status: FloatOutBoyLedStatusUpdate,
     ) {
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
@@ -1111,6 +1148,8 @@ impl FloatOutBoyLedRenderer {
             return;
         }
 
+        self.compose_status(config, input, current_time, status, fade);
+
         let animation_time = current_time - self.animation_start;
         self.front.render_bar(self.front_bar, fade, animation_time);
         self.rear.render_bar(self.rear_bar, fade, animation_time);
@@ -1128,6 +1167,91 @@ impl FloatOutBoyLedRenderer {
         };
         self.compose_headlights(transition);
         self.compose_direction(transition);
+    }
+
+    /// Begin Refloat's 0.8-second status-confirm animation.
+    pub fn start_confirmation(&mut self, current_time: f32) {
+        self.confirmation_start = current_time;
+    }
+
+    fn compose_status(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        current_time: f32,
+        status: FloatOutBoyLedStatusUpdate,
+        fade: Ratio,
+    ) {
+        let status_config = config.status();
+        let target_brightness = if config.are_headlights_on() {
+            status_config.brightness_headlights_on()
+        } else {
+            status_config.brightness_headlights_off()
+        };
+        self.status_brightness = rate_limit(
+            self.status_brightness,
+            target_brightness.as_ratio(),
+            3.0 / 30.0,
+        );
+
+        let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
+            && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+        {
+            (status.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
+        } else {
+            0.0
+        };
+        let duty_threshold = status_config.duty_threshold().as_ratio().max(0.15);
+        let duty_target = if duty > duty_threshold {
+            1.0
+        } else if duty < duty_threshold - 0.1 {
+            0.0
+        } else {
+            self.status_duty_blend
+        };
+        self.status_duty_blend =
+            rate_limit(self.status_duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
+
+        let overlay = |blend| {
+            FloatOutBoyLedOverlay::new(
+                Ratio::clamped(self.status_brightness),
+                fade,
+                Ratio::clamped(blend),
+            )
+        };
+        if self.status_duty_blend < 1.0 {
+            self.status.render_status_progress(
+                status.battery_level.clamp(0.0, 1.0),
+                FloatOutBoyStatusProgress::Battery,
+                status_config.red_bar_percentage(),
+                false,
+                overlay(1.0),
+            );
+        }
+        if self.status_duty_blend > 0.0 {
+            self.status.render_status_progress(
+                duty,
+                FloatOutBoyStatusProgress::Duty,
+                status_config.red_bar_percentage(),
+                false,
+                overlay(self.status_duty_blend),
+            );
+        }
+
+        let (left, right) = self.dynamics.sensor_fades();
+        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+            self.status
+                .render_footpads(left, right, input.darkride, overlay(1.0));
+        }
+
+        let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
+        if (0.0..=1.0).contains(&confirmation_progress) {
+            self.status.render_confirmation(
+                Ratio::clamped(self.status_brightness),
+                fade,
+                confirmation_progress,
+            );
+        }
     }
 
     fn compose_headlights(&mut self, transition: FloatOutBoyFrameTransition) {
@@ -2762,6 +2886,126 @@ mod renderer_tests {
         );
         assert_eq!(first(cancelled.front()), [0, 0, 0xff, 0]);
         assert_eq!(first(cancelled.rear()), [0, 0xff, 0, 0]);
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one sequential trace proves the coupled status fade, duty blend, and confirmation layers"
+    )]
+    fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
+        let bar = |color| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                color,
+                FloatOutBoyLedColor::Black,
+                super::FloatOutBoyLedAnimationMode::Solid,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = super::FloatOutBoyLedsConfig::new(
+            bar(FloatOutBoyLedColor::WhiteRgb),
+            bar(FloatOutBoyLedColor::Red),
+            bar(FloatOutBoyLedColor::Black),
+            bar(FloatOutBoyLedColor::Black),
+            super::FloatOutBoyStatusBarConfig::new(
+                super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+                Ratio::from_ratio_const(0.2),
+                Ratio::from_ratio_const(0.4),
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            ),
+            bar(FloatOutBoyLedColor::Blue),
+        )
+        .enabled();
+        let strip = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            5,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_status_strip(strip);
+        let input = |footpad| super::FloatOutBoyLedUpdate {
+            run_state: crate::FloatOutBoyRunState::Running,
+            mode: crate::FloatOutBoyMode::Normal,
+            darkride: false,
+            footpad,
+            pitch_degrees: 0.0,
+            distance: 0.0,
+        };
+        let status = |duty| super::FloatOutBoyLedStatusUpdate {
+            battery_level: 0.45,
+            duty_cycle: duty,
+            moving: true,
+        };
+        let channels = |renderer: &super::FloatOutBoyLedRenderer| {
+            core::array::from_fn(|index| {
+                renderer
+                    .status()
+                    .physical_pixel(index)
+                    .map(super::FloatOutBoyLedPixel::channels)
+                    .unwrap_or_default()
+            })
+        };
+
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+        for tick in 1..=10 {
+            renderer.update_with_status(
+                config,
+                input(crate::FloatOutBoyFootpadState::None),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+                status(0.0),
+            );
+        }
+        assert_eq!(
+            channels(&renderer),
+            [
+                [0x90, 0x90, 0x90, 0],
+                [0x90, 0x90, 0x90, 0],
+                [0x19, 0x19, 0x19, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ]
+        );
+
+        for tick in 11..=17 {
+            renderer.update_with_status(
+                config,
+                input(crate::FloatOutBoyFootpadState::None),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+                status(0.9),
+            );
+        }
+        assert_eq!(
+            channels(&renderer),
+            [
+                [0xff, 0xb0, 0x30, 0],
+                [0xff, 0xb0, 0x30, 0],
+                [0xff, 0xb0, 0x30, 0],
+                [0xff, 0x38, 0x28, 0],
+                [0xff, 0x38, 0x28, 0],
+            ]
+        );
+
+        renderer.start_confirmation(17.0 / 30.0);
+        renderer.update_with_status(
+            config,
+            input(crate::FloatOutBoyFootpadState::Both),
+            17.0 / 30.0 + 0.4,
+            status(0.0),
+        );
+        assert_eq!(
+            channels(&renderer),
+            [
+                [0, 0, 0, 0],
+                [0x4e, 0x1f, 0x7d, 0],
+                [0xa0, 0x40, 0xff, 0],
+                [0x4e, 0x1f, 0x7d, 0],
+                [0, 0, 0, 0],
+            ]
+        );
     }
 
     #[test]
