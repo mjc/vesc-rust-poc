@@ -98,7 +98,9 @@ fn float_out_boy_set_cfg_payload_with_state(
     let stored = state.store_serialized_config(config.as_bytes());
     #[cfg(any(test, target_arch = "arm"))]
     if stored {
-        state.start_internal_led_confirmation(vescpkg_rs::FirmwareClock::current_timestamp());
+        let now = vescpkg_rs::FirmwareClock::current_timestamp();
+        state.refresh_idle_epoch(now);
+        state.start_internal_led_confirmation(now);
     }
     stored
 }

@@ -527,8 +527,18 @@ impl FloatOutBoyPackageState {
         self.balance_filter = balance_filter;
     }
 
-    fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
+    pub(super) fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
         self.idle_ticks = now;
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_idle_epoch_for_test(&mut self, now: TimestampTicks) {
+        self.idle_ticks = now;
+    }
+
+    #[cfg(test)]
+    pub(super) const fn idle_epoch_for_test(&self) -> TimestampTicks {
+        self.idle_ticks
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

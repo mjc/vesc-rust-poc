@@ -10,7 +10,7 @@ use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{ConfigBytes, StatefulCustomConfigCallback};
+use vescpkg_rs::{ConfigBytes, StatefulCustomConfigCallback, TimestampTicks};
 
 fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     let mut config = default_float_out_boy_config_bytes();
@@ -127,6 +127,7 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(1_500);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    state.replace_idle_epoch_for_test(TimestampTicks::from_ticks(7));
     let mut incoming = default_float_out_boy_config_bytes();
     incoming[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     incoming.edit_float_out_boy_config(|config| {
@@ -140,6 +141,10 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
     // `third_party/float-out-boy/src/main.c:2368`; generated `conf/confparser.c:187-190` rejects a
     // bad signature before reading the field bytes.
     assert_eq!(*current.as_bytes(), incoming);
+    assert_eq!(
+        state.idle_epoch_for_test(),
+        TimestampTicks::from_ticks(1_500)
+    );
     assert_eq!(state.internal_led_confirmation_start_for_test(), Some(0.15));
 }
 
