@@ -833,6 +833,7 @@ pub struct FloatOutBoyLedDynamics {
     right_sensor: f32,
     headlights_state: FloatOutBoyHeadlightsState,
     headlights_split: f32,
+    headlights_time: f32,
     direction_forward: bool,
     direction_split: f32,
     split_distance: f32,
@@ -850,6 +851,7 @@ impl FloatOutBoyLedDynamics {
             right_sensor: 0.0,
             headlights_state: FloatOutBoyHeadlightsState::Off,
             headlights_split: 1.0,
+            headlights_time: 0.0,
             direction_forward: true,
             direction_split: 1.0,
             split_distance: distance,
@@ -861,7 +863,12 @@ impl FloatOutBoyLedDynamics {
         clippy::too_many_lines,
         reason = "the ordered Refloat state update stays contiguous for source comparison"
     )]
-    pub fn update(&mut self, config: FloatOutBoyLedsConfig, input: FloatOutBoyLedUpdate) {
+    pub fn update(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        current_time: f32,
+    ) {
         let FloatOutBoyLedUpdate {
             run_state,
             mode,
@@ -940,6 +947,7 @@ impl FloatOutBoyLedDynamics {
         let was_headlights_transitioning = transitioning;
         if headlights_should != headlights_on && !transitioning {
             self.headlights_split = -1.0;
+            self.headlights_time = current_time;
             self.headlights_state = if headlights_should {
                 FloatOutBoyHeadlightsState::TransitioningOn
             } else {
@@ -951,8 +959,10 @@ impl FloatOutBoyLedDynamics {
             } else {
                 1.0
             };
+            let elapsed = current_time - self.headlights_time;
             self.headlights_split =
-                (self.headlights_split + direction * 2.0 / 30.0).clamp(-1.0, 1.0);
+                (self.headlights_split + direction * elapsed * 2.0).clamp(-1.0, 1.0);
+            self.headlights_time = current_time;
             if self.headlights_split >= 1.0
                 || (headlights_should == headlights_on && self.headlights_split <= -1.0)
             {
@@ -1276,7 +1286,7 @@ impl FloatOutBoyLedRenderer {
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
         let was_upright = self.dynamics.is_board_upright();
-        self.dynamics.update(config, input);
+        self.dynamics.update(config, input, current_time);
         let upright = self.dynamics.is_board_upright();
         let upright_changed = upright != was_upright;
 
@@ -3434,13 +3444,50 @@ mod renderer_tests {
     }
 
     #[test]
+    fn headlight_transition_uses_elapsed_time_like_refloat() {
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = super::FloatOutBoyStatusBarConfig::new(
+            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar)
+            .enabled()
+            .with_headlights_on();
+        let running = super::FloatOutBoyLedUpdate {
+            run_state: crate::FloatOutBoyRunState::Running,
+            mode: crate::FloatOutBoyMode::Normal,
+            darkride: false,
+            footpad: crate::FloatOutBoyFootpadState::None,
+            pitch_degrees: 0.0,
+            distance: 0.0,
+        };
+        let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
+
+        dynamics.update(config, running, 10.0);
+        dynamics.update(config, running, 10.25);
+
+        assert_eq!(dynamics.headlights(), (-0.5, false, true));
+    }
+
+    #[test]
     #[expect(
         clippy::too_many_lines,
         reason = "one sequential trace verifies the coupled Refloat state-machine boundaries"
     )]
     fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
+        let mut current_time = 0.0_f32;
         macro_rules! update {
-            ($state:expr, $config:expr, $run:expr, $mode:expr, $darkride:expr, $footpad:expr, $pitch:expr, $distance:expr $(,)?) => {
+            ($state:expr, $config:expr, $run:expr, $mode:expr, $darkride:expr, $footpad:expr, $pitch:expr, $distance:expr $(,)?) => {{
+                current_time += 1.0 / 30.0;
                 $state.update(
                     $config,
                     super::FloatOutBoyLedUpdate {
@@ -3451,8 +3498,9 @@ mod renderer_tests {
                         pitch_degrees: $pitch,
                         distance: $distance,
                     },
+                    current_time,
                 )
-            };
+            }};
         }
         let bar = super::FloatOutBoyLedBarConfig::new(
             Ratio::from_ratio_const(1.0),
