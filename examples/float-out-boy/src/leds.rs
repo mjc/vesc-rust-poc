@@ -934,6 +934,7 @@ impl FloatOutBoyLedDynamics {
             FloatOutBoyHeadlightsState::TransitioningOn
                 | FloatOutBoyHeadlightsState::TransitioningOff
         );
+        let was_headlights_transitioning = transitioning;
         if headlights_should != headlights_on && !transitioning {
             self.headlights_split = -1.0;
             self.headlights_state = if headlights_should {
@@ -962,6 +963,7 @@ impl FloatOutBoyLedDynamics {
         }
 
         if matches!(run_state, crate::FloatOutBoyRunState::Running)
+            && !was_headlights_transitioning
             && !matches!(
                 self.headlights_state,
                 FloatOutBoyHeadlightsState::TransitioningOn
@@ -1032,6 +1034,175 @@ fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
         value + step
     } else {
         value - step
+    }
+}
+
+/// Pure composed status/front/rear frames for one internal LED configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloatOutBoyLedRenderer {
+    dynamics: FloatOutBoyLedDynamics,
+    status: FloatOutBoyLedStripFrame,
+    front: FloatOutBoyLedStripFrame,
+    rear: FloatOutBoyLedStripFrame,
+    front_bar: FloatOutBoyLedBarConfig,
+    rear_bar: FloatOutBoyLedBarConfig,
+    animation_start: f32,
+}
+
+impl FloatOutBoyLedRenderer {
+    /// Build cleared frames and source-default front/rear bar roles.
+    #[must_use]
+    pub fn new(
+        hardware: crate::lcm::FloatOutBoyHardwareLedsConfig,
+        config: FloatOutBoyLedsConfig,
+        distance: f32,
+    ) -> Self {
+        Self {
+            dynamics: FloatOutBoyLedDynamics::new(distance),
+            status: FloatOutBoyLedStripFrame::new(hardware.status_strip()),
+            front: FloatOutBoyLedStripFrame::new(hardware.front_strip()),
+            rear: FloatOutBoyLedStripFrame::new(hardware.rear_strip()),
+            front_bar: config.front(),
+            rear_bar: config.rear(),
+            animation_start: 0.0,
+        }
+    }
+
+    /// Advance and compose the front/rear frame in Refloat's transition order.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the initial source-ordered composition is split in the following refactor"
+    )]
+    pub fn update(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        current_time: f32,
+    ) {
+        let old_headlights = self.dynamics.headlights();
+        let old_direction = self.dynamics.direction();
+        self.dynamics.update(config, input);
+
+        if matches!(input.run_state, crate::FloatOutBoyRunState::Startup) {
+            return;
+        }
+        let fade = self.dynamics.on_off_fade();
+        if matches!(input.run_state, crate::FloatOutBoyRunState::Disabled) {
+            let status_brightness = if config.are_headlights_on() {
+                config.status().brightness_headlights_on()
+            } else {
+                config.status().brightness_headlights_off()
+            };
+            self.status
+                .render_disabled(status_brightness, fade, current_time);
+            self.front
+                .render_disabled(self.front_bar.brightness(), fade, current_time);
+            self.rear
+                .render_disabled(self.rear_bar.brightness(), fade, current_time);
+            return;
+        }
+
+        let animation_time = current_time - self.animation_start;
+        self.front.render_bar(self.front_bar, fade, animation_time);
+        self.rear.render_bar(self.rear_bar, fade, animation_time);
+
+        let headlights = self.dynamics.headlights();
+        let direction = self.dynamics.direction();
+        let seed = crate::wire::saturating_trunc_f32_to_u32(self.animation_start);
+        if headlights.2 {
+            let headlights_should = matches!(input.run_state, crate::FloatOutBoyRunState::Running)
+                && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+                && config.are_headlights_on();
+            let (front_target, rear_target) =
+                select_front_rear_bars(config, headlights_should, old_direction.1);
+            self.front.render_transition(
+                config.headlights_transition(),
+                headlights.0,
+                seed,
+                self.front_bar,
+                front_target,
+                fade,
+            );
+            self.rear.render_transition(
+                config.headlights_transition(),
+                headlights.0,
+                seed,
+                self.rear_bar,
+                rear_target,
+                fade,
+            );
+        } else if old_headlights.2 {
+            let (front_target, rear_target) =
+                select_front_rear_bars(config, headlights.1, direction.1);
+            self.front.render_transition(
+                config.headlights_transition(),
+                headlights.0,
+                seed,
+                self.front_bar,
+                front_target,
+                fade,
+            );
+            self.rear.render_transition(
+                config.headlights_transition(),
+                headlights.0,
+                seed,
+                self.rear_bar,
+                rear_target,
+                fade,
+            );
+            self.front_bar = front_target;
+            self.rear_bar = rear_target;
+            self.animation_start = current_time;
+        }
+
+        if headlights.1 && !headlights.2 && direction.0.to_bits() != old_direction.0.to_bits() {
+            let (front_target, rear_target) =
+                select_front_rear_bars(config, true, !old_direction.1);
+            let progress = if old_direction.1 {
+                -direction.0
+            } else {
+                direction.0
+            };
+            self.front.render_transition(
+                config.direction_transition(),
+                progress,
+                seed,
+                self.front_bar,
+                front_target,
+                fade,
+            );
+            self.rear.render_transition(
+                config.direction_transition(),
+                progress,
+                seed,
+                self.rear_bar,
+                rear_target,
+                fade,
+            );
+            if direction.1 != old_direction.1 {
+                self.front_bar = front_target;
+                self.rear_bar = rear_target;
+                self.animation_start = current_time;
+            }
+        }
+    }
+
+    /// Return the composed status strip frame.
+    #[must_use]
+    pub const fn status(&self) -> &FloatOutBoyLedStripFrame {
+        &self.status
+    }
+
+    /// Return the composed front strip frame.
+    #[must_use]
+    pub const fn front(&self) -> &FloatOutBoyLedStripFrame {
+        &self.front
+    }
+
+    /// Return the composed rear strip frame.
+    #[must_use]
+    pub const fn rear(&self) -> &FloatOutBoyLedStripFrame {
+        &self.rear
     }
 }
 
@@ -2447,6 +2618,94 @@ mod renderer_tests {
                 "headlights={headlights_on} forward={direction_forward}"
             );
         }
+    }
+
+    #[test]
+    fn front_rear_renderer_composes_headlight_and_direction_transitions() {
+        let bar = |color| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                color,
+                FloatOutBoyLedColor::Black,
+                super::FloatOutBoyLedAnimationMode::Solid,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = super::FloatOutBoyLedsConfig::new(
+            bar(FloatOutBoyLedColor::WhiteRgb),
+            bar(FloatOutBoyLedColor::Red),
+            bar(FloatOutBoyLedColor::Blue),
+            bar(FloatOutBoyLedColor::Green),
+            super::FloatOutBoyStatusBarConfig::new(
+                super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+                Ratio::from_ratio_const(0.9),
+                Ratio::from_ratio_const(0.1),
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            ),
+            bar(FloatOutBoyLedColor::Black),
+        )
+        .enabled()
+        .with_headlights_on();
+        let strip = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            3,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_status_strip(strip)
+        .with_front_strip(strip)
+        .with_rear_strip(strip);
+        let input = |run_state, distance| super::FloatOutBoyLedUpdate {
+            run_state,
+            mode: crate::FloatOutBoyMode::Normal,
+            darkride: false,
+            footpad: crate::FloatOutBoyFootpadState::None,
+            pitch_degrees: 1.0,
+            distance,
+        };
+        let first = |frame: &super::FloatOutBoyLedStripFrame| {
+            frame
+                .physical_pixel(0)
+                .map(super::FloatOutBoyLedPixel::channels)
+                .unwrap_or_default()
+        };
+
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+        for tick in 1..=10 {
+            renderer.update(
+                config,
+                input(crate::FloatOutBoyRunState::Ready, 0.0),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(first(renderer.front()), [0, 0, 0xff, 0]);
+        assert_eq!(first(renderer.rear()), [0, 0xff, 0, 0]);
+
+        renderer.update(
+            config,
+            input(crate::FloatOutBoyRunState::Running, 0.0),
+            11.0 / 30.0,
+        );
+        for tick in 12..=42 {
+            renderer.update(
+                config,
+                input(crate::FloatOutBoyRunState::Running, 0.0),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(first(renderer.front()), [0xff, 0xff, 0xff, 0]);
+        assert_eq!(first(renderer.rear()), [0xff, 0, 0, 0]);
+
+        renderer.update(
+            config,
+            input(crate::FloatOutBoyRunState::Running, -1.0),
+            43.0 / 30.0,
+        );
+        assert_eq!(first(renderer.front()), [0xff, 0, 0, 0]);
+        assert_eq!(first(renderer.rear()), [0xff, 0xff, 0xff, 0]);
     }
 
     #[test]
