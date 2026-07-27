@@ -148,6 +148,56 @@ fn atr_step(
     step
 }
 
+fn turn_target(
+    state: &TurnTiltState,
+    config: crate::config::FloatOutBoyBalanceConfig<'_>,
+    erpm: Rpm,
+) -> AngleDegrees {
+    let abs_erpm = erpm.abs().as_revolutions_per_minute();
+    let mut target = if config.turn_tilt_strength().value() == 0.0
+        || state.yaw_aggregate.abs() < config.turn_tilt_start_angle()
+        || state.abs_yaw_change < AngleDegrees::from_degrees(0.04)
+    {
+        0.0
+    } else {
+        let mut target = state.abs_yaw_change.as_degrees() * config.turn_tilt_strength().value();
+        let boost = if abs_erpm
+            < config
+                .turn_tilt_erpm_boost_end()
+                .as_revolutions_per_minute()
+        {
+            1.0 + abs_erpm * f32::from(config.turn_tilt_erpm_boost())
+                / 100.0
+                / config
+                    .turn_tilt_erpm_boost_end()
+                    .as_revolutions_per_minute()
+        } else {
+            1.0 + f32::from(config.turn_tilt_erpm_boost()) / 100.0
+        };
+        target *= boost;
+        let damper = if abs_erpm < 2_000.0 { 0.5 } else { 1.0 };
+        target *= (1.0
+            + damper * state.yaw_aggregate.abs().as_degrees()
+                / config.turn_tilt_yaw_aggregate().as_degrees())
+        .min(2.0);
+        target.clamp(
+            -config.turn_tilt_angle_limit().as_degrees(),
+            config.turn_tilt_angle_limit().as_degrees(),
+        )
+    };
+    if abs_erpm
+        < config
+            .turn_tilt_start_erpm()
+            .rpm()
+            .as_revolutions_per_minute()
+    {
+        target = 0.0;
+    } else {
+        target *= erpm.signum();
+    }
+    AngleDegrees::from_degrees(target)
+}
+
 impl TurnTiltState {
     fn aggregate(&mut self, yaw: AngleDegrees) {
         // C map: yaw filtering and aggregation run before the state switch at
@@ -482,52 +532,10 @@ impl RideModifierState {
     ) {
         // C map: turn target gates, boosts, direction, and ramp mirror
         // `third_party/float-out-boy/src/turn_tilt.c:74-130`.
-        let abs_erpm = erpm.abs().as_revolutions_per_minute();
-        let mut target = if config.turn_tilt_strength().value() == 0.0
-            || self.turn.yaw_aggregate.abs() < config.turn_tilt_start_angle()
-            || self.turn.abs_yaw_change < AngleDegrees::from_degrees(0.04)
-        {
-            0.0
-        } else {
-            let mut target =
-                self.turn.abs_yaw_change.as_degrees() * config.turn_tilt_strength().value();
-            let boost = if abs_erpm
-                < config
-                    .turn_tilt_erpm_boost_end()
-                    .as_revolutions_per_minute()
-            {
-                1.0 + abs_erpm * f32::from(config.turn_tilt_erpm_boost())
-                    / 100.0
-                    / config
-                        .turn_tilt_erpm_boost_end()
-                        .as_revolutions_per_minute()
-            } else {
-                1.0 + f32::from(config.turn_tilt_erpm_boost()) / 100.0
-            };
-            target *= boost;
-            let damper = if abs_erpm < 2_000.0 { 0.5 } else { 1.0 };
-            target *= (1.0
-                + damper * self.turn.yaw_aggregate.abs().as_degrees()
-                    / config.turn_tilt_yaw_aggregate().as_degrees())
-            .min(2.0);
-            target.clamp(
-                -config.turn_tilt_angle_limit().as_degrees(),
-                config.turn_tilt_angle_limit().as_degrees(),
-            )
-        };
-        if abs_erpm
-            < config
-                .turn_tilt_start_erpm()
-                .rpm()
-                .as_revolutions_per_minute()
-        {
-            target = 0.0;
-        } else {
-            target *= erpm.signum();
-        }
+        let target = turn_target(&self.turn, config, erpm);
         smooth_ramp(
             &mut self.turn.angle,
-            AngleDegrees::from_degrees(target),
+            target,
             loop_step(config.turn_tilt_speed(), sample_rate),
             0.04,
         );
