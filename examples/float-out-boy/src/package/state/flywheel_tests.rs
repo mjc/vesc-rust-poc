@@ -857,8 +857,9 @@ fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
     );
-    let persisted = *state.serialized_config.as_bytes();
-    assert!(state.store_serialized_config(&persisted));
+    let requested = state.serialized_config;
+    assert!(state.store_serialized_config(requested.as_bytes()));
+    let persisted = state.serialized_config;
     assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1])));
 
     set_ride_state(&mut state, FloatOutBoyRunState::Running);
@@ -877,14 +878,38 @@ fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
         state.serialized_config.balance().kp().as_amps_per_degree(),
         9.0
     );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Flywheel,
+    );
 
-    set_footpad(&mut state, FloatOutBoyFootpadState::None);
+    set_footpad(&mut state, FloatOutBoyFootpadState::Left);
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(2));
 
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);
-    assert_f32_eq!(
-        state.serialized_config.balance().kp().as_amps_per_degree(),
-        12.0
+    assert_eq!(state.serialized_config, persisted);
+    assert!(state.apply_motor_control(
+        firmware.motor(),
+        ride_state.run_state(),
+        TimestampTicks::from_ticks(3),
+    ));
+    assert!(firmware.commanded_current().current().is_zero());
+
+    state.all_data_payloads = ready_at(AngleDegrees::from_degrees(80.0), AngleDegrees::ZERO);
+    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1])));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Flywheel,
     );
 }
