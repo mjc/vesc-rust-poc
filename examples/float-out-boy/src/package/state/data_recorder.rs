@@ -330,6 +330,11 @@ impl DataRecorderState {
 }
 
 impl FloatOutBoyPackageState {
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn stop_data_recorder(&mut self) {
+        self.data_recorder.stop();
+    }
+
     #[cfg(all(not(test), target_arch = "arm"))]
     pub(crate) fn initialize_data_recorder(
         &mut self,

@@ -47,6 +47,23 @@ fn recorder_control_updates_live_realtime_flags() {
 }
 
 #[test]
+fn package_stop_clears_live_recorder_activity() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
+    );
+
+    crate::package::stop(&mut state);
+
+    let (_, sent) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
+    );
+    assert_eq!(sent[0][3] & 0x01, 0);
+}
+
+#[test]
 fn recorder_samples_and_streams_source_wire_packets() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let _ = handle(

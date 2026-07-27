@@ -39,6 +39,7 @@ fn finish_startup(
 
 #[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn stop(state: &mut FloatOutBoyPackageState) {
+    state.stop_data_recorder();
     state.destroy_internal_leds();
 }
 
