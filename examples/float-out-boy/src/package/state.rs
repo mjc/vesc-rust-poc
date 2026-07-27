@@ -124,7 +124,8 @@ struct UpsideDownRuntimeFlags {
 }
 
 /// Float Out Boy package state.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
 pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
@@ -448,7 +449,7 @@ impl FloatOutBoyPackageState {
 
     /// Return the current all-data payload snapshot.
     #[must_use]
-    pub const fn all_data_payloads(self) -> FloatOutBoyAllDataPayloads {
+    pub const fn all_data_payloads(&self) -> FloatOutBoyAllDataPayloads {
         self.all_data_payloads
     }
 

@@ -185,6 +185,8 @@ pub struct PackageStart<'info> {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     callback_recorder: Option<CallbackRecorder>,
     extension_image_pinned: bool,
+    #[cfg(target_arch = "arm")]
+    data_recorder_buffer_taken: bool,
     _info: core::marker::PhantomData<&'info mut crate::LoaderInfo>,
 }
 
@@ -239,6 +241,8 @@ impl<'info> PackageStart<'info> {
             state_type: None,
             callback_recorder: None,
             extension_image_pinned: false,
+            #[cfg(target_arch = "arm")]
+            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -250,6 +254,8 @@ impl<'info> PackageStart<'info> {
             state_type: None,
             callback_recorder: None,
             extension_image_pinned: false,
+            #[cfg(target_arch = "arm")]
+            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -262,6 +268,8 @@ impl<'info> PackageStart<'info> {
             #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             callback_recorder: None,
             extension_image_pinned: false,
+            #[cfg(target_arch = "arm")]
+            data_recorder_buffer_taken: false,
             _info: core::marker::PhantomData,
         }
     }
@@ -269,6 +277,20 @@ impl<'info> PackageStart<'info> {
     fn raw_info_mut(&mut self) -> Option<&mut ffi::LibInfo> {
         // SAFETY: `PackageStart` owns the exclusive loader borrow for `'info`.
         unsafe { crate::loader_info_mut(self.info.cast()) }
+    }
+
+    /// Take this lifecycle's recorder buffer on compatible special firmware.
+    ///
+    /// The linked firmware exposes one global buffer without a claim service.
+    /// Only one native recorder package may be loaded at a time.
+    #[cfg(target_arch = "arm")]
+    pub fn take_data_recorder_buffer(&mut self) -> Option<crate::FirmwareDataRecorderBuffer> {
+        if self.state_type.is_none()
+            || core::mem::replace(&mut self.data_recorder_buffer_taken, true)
+        {
+            return None;
+        }
+        crate::FirmwareDataRecorderBuffer::discover()
     }
 
     /// Install the default package stop hook into loader metadata.

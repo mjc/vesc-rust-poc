@@ -43,7 +43,13 @@ fn allocate_float_out_boy_startup_state(
     start.install_runtime_state_with(
         FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup()),
         FloatOutBoyPackageState::load_persisted_config_on_startup,
-    )
+    )?;
+    let buffer = start.take_data_recorder_buffer();
+    start
+        .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
+            state.initialize_data_recorder(buffer);
+        })
+        .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
 }
 
 /// Allocate and install Float Out Boy startup state using firmware memory.

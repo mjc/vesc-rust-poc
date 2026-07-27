@@ -42,7 +42,6 @@ impl DataRecorderSample {
         bytes
     }
 
-    #[cfg(test)]
     fn decode(bytes: [u8; SAMPLE_SIZE]) -> Self {
         let timestamp_bytes = bytes
             .get(..4)
@@ -107,7 +106,8 @@ impl DataRecorderRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     availability: DataRecorderAvailability,
     activity: DataRecorderActivity,
@@ -118,6 +118,8 @@ pub(super) struct DataRecorderState {
     empty: bool,
     #[cfg(test)]
     buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
+    #[cfg(all(not(test), target_arch = "arm"))]
+    buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
 }
 
 impl Default for DataRecorderState {
@@ -136,16 +138,32 @@ impl Default for DataRecorderState {
             empty: true,
             #[cfg(test)]
             buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
+            #[cfg(all(not(test), target_arch = "arm"))]
+            buffer: None,
         }
     }
 }
 
 impl DataRecorderState {
-    pub(super) const fn has_capability(self) -> bool {
+    #[cfg(all(not(test), target_arch = "arm"))]
+    fn initialize(&mut self, buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>) {
+        self.buffer = buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE);
+        self.availability = if self.buffer.is_some() {
+            DataRecorderAvailability::Available
+        } else {
+            DataRecorderAvailability::Unavailable
+        };
+        self.stop();
+        self.head = 0;
+        self.tail = 0;
+        self.empty = true;
+    }
+
+    pub(super) const fn has_capability(&self) -> bool {
         matches!(self.availability, DataRecorderAvailability::Available)
     }
 
-    pub(super) const fn flags(self) -> FloatOutBoyDataRecorderFlags {
+    pub(super) const fn flags(&self) -> FloatOutBoyDataRecorderFlags {
         if !self.has_capability() {
             return FloatOutBoyDataRecorderFlags::inactive();
         }
@@ -194,75 +212,124 @@ impl DataRecorderState {
         if !self.has_capability() || !matches!(self.activity, DataRecorderActivity::Recording) {
             return;
         }
-        #[cfg(test)]
-        {
-            if !self.empty && self.head == self.tail {
-                self.tail = (self.tail + 1) % TEST_SAMPLE_CAPACITY;
-            }
-            let Some(offset) = self.head.checked_mul(SAMPLE_SIZE) else {
-                return;
-            };
-            let Some(end) = offset.checked_add(SAMPLE_SIZE) else {
-                return;
-            };
-            let Some(target) = self.buffer.get_mut(offset..end) else {
-                return;
-            };
-            target.copy_from_slice(&sample.encode());
-            self.head = (self.head + 1) % TEST_SAMPLE_CAPACITY;
+        let capacity = self.capacity();
+        if capacity == 0 {
+            return;
+        }
+        if !self.empty && self.head == self.tail {
+            self.tail = (self.tail + 1) % capacity;
+        }
+        let Some(offset) = self.head.checked_mul(SAMPLE_SIZE) else {
+            return;
+        };
+        if self.write(offset, &sample.encode()) {
+            self.head = (self.head + 1) % capacity;
             self.empty = false;
         }
-        #[cfg(not(test))]
-        let _ = sample;
     }
 
-    fn sample_count(self) -> usize {
+    fn sample_count(&self) -> usize {
         if self.empty {
             0
         } else if self.head == self.tail {
-            Self::capacity()
+            self.capacity()
         } else if self.head > self.tail {
             self.head.saturating_sub(self.tail)
         } else {
             self.head
-                .checked_add(Self::capacity())
+                .checked_add(self.capacity())
                 .and_then(|count| count.checked_sub(self.tail))
                 .unwrap_or(0)
         }
     }
 
-    const fn capacity() -> usize {
+    fn capacity(&self) -> usize {
         #[cfg(test)]
         {
+            let _ = self.availability;
             TEST_SAMPLE_CAPACITY
         }
-        #[cfg(not(test))]
+        #[cfg(all(not(test), target_arch = "arm"))]
         {
+            self.buffer
+                .as_ref()
+                .map_or(0, |buffer| buffer.len() / SAMPLE_SIZE)
+        }
+        #[cfg(all(not(test), not(target_arch = "arm")))]
+        {
+            let _ = self.availability;
             0
         }
     }
 
-    fn sample_at(self, index: usize) -> Option<DataRecorderSample> {
-        if index >= self.sample_count() || Self::capacity() == 0 {
+    fn sample_at(&self, index: usize) -> Option<DataRecorderSample> {
+        let capacity = self.capacity();
+        if index >= self.sample_count() || capacity == 0 {
             return None;
         }
+        let slot = self.tail.checked_add(index)?.checked_rem(capacity)?;
+        let offset = slot.checked_mul(SAMPLE_SIZE)?;
+        let mut bytes = [0; SAMPLE_SIZE];
+        self.read(offset, &mut bytes)
+            .then(|| DataRecorderSample::decode(bytes))
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
         #[cfg(test)]
         {
-            let slot = self.tail.checked_add(index)? % Self::capacity();
-            let offset = slot.checked_mul(SAMPLE_SIZE)?;
-            let end = offset.checked_add(SAMPLE_SIZE)?;
-            let mut bytes = [0; SAMPLE_SIZE];
-            bytes.copy_from_slice(self.buffer.get(offset..end)?);
-            Some(DataRecorderSample::decode(bytes))
+            let Some(end) = offset.checked_add(bytes.len()) else {
+                return false;
+            };
+            let Some(target) = self.buffer.get_mut(offset..end) else {
+                return false;
+            };
+            target.copy_from_slice(bytes);
+            true
         }
-        #[cfg(not(test))]
+        #[cfg(all(not(test), target_arch = "arm"))]
         {
-            None
+            self.buffer
+                .as_mut()
+                .is_some_and(|buffer| buffer.write(offset, bytes))
+        }
+    }
+
+    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
+        #[cfg(test)]
+        {
+            let Some(end) = offset.checked_add(bytes.len()) else {
+                return false;
+            };
+            let Some(source) = self.buffer.get(offset..end) else {
+                return false;
+            };
+            bytes.copy_from_slice(source);
+            true
+        }
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            self.buffer
+                .as_ref()
+                .is_some_and(|buffer| buffer.read(offset, bytes))
+        }
+        #[cfg(all(not(test), not(target_arch = "arm")))]
+        {
+            let _ = (self.availability, offset, bytes);
+            false
         }
     }
 }
 
 impl FloatOutBoyPackageState {
+    #[cfg(all(not(test), target_arch = "arm"))]
+    pub(crate) fn initialize_data_recorder(
+        &mut self,
+        buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
+    ) {
+        self.data_recorder.initialize(buffer);
+    }
+
     #[cfg(test)]
     pub(super) fn disable_data_recorder_for_test(&mut self) {
         self.data_recorder.availability = DataRecorderAvailability::Unavailable;

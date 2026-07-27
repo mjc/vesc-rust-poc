@@ -4,12 +4,9 @@ use vescpkg_rs::{FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorE
 
 #[test]
 fn recorder_descriptor_accepts_the_exact_refloat_firmware_region() {
-    let descriptor = FirmwareDataRecorderDescriptor::try_from_words([
-        0xcafe_1111,
-        0x1000_0000,
-        0x0000_f800,
-    ])
-    .expect("exact Refloat recorder firmware descriptor");
+    let descriptor =
+        FirmwareDataRecorderDescriptor::try_from_words([0xcafe_1111, 0x1000_0000, 0x0000_f800])
+            .expect("exact Refloat recorder firmware descriptor");
 
     assert_eq!(descriptor.start_address(), 0x1000_0000);
     assert_eq!(descriptor.len(), 0x0000_f800);
