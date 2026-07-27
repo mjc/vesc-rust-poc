@@ -115,6 +115,7 @@ impl LcmState {
             return;
         }
 
+        self.name.fill(0);
         for (index, byte) in payload
             .iter()
             .copied()
@@ -516,6 +517,20 @@ mod tests {
         assert_eq!(
             dispatch(&mut state, &firmware, &[101, 27]),
             [101, 27, b'L', b'C', b'M', 0]
+        );
+    }
+
+    #[test]
+    fn shorter_lcm_name_replaces_the_previous_name_without_a_stale_suffix() {
+        let firmware = FirmwareTest::new();
+        let mut state = external_state();
+
+        dispatch(&mut state, &firmware, &[101, 24, b'L', b'O', b'N', b'G', 0]);
+        dispatch(&mut state, &firmware, &[101, 24, b'N']);
+
+        assert_eq!(
+            dispatch(&mut state, &firmware, &[101, 27]),
+            [101, 27, b'N', 0]
         );
     }
 
