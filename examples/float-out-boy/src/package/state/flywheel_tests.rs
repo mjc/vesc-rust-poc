@@ -292,52 +292,63 @@ fn flywheel_reuses_calibration_until_valid_forced_recalibration() {
 }
 
 #[test]
-fn flywheel_stop_restores_the_persisted_config() {
-    let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(ready_at(
-        AngleDegrees::from_degrees(80.0),
-        AngleDegrees::ZERO,
-    ));
-    assert!(
-        state
-            .serialized_config
-            .editor()
-            .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
-    );
-    assert!(state.serialized_config.editor().set_beeper_enabled(true));
-    let persisted = *state.serialized_config.as_bytes();
-    assert!(state.store_serialized_config(&persisted));
+fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations() {
+    for run_state in [FloatOutBoyRunState::Ready, FloatOutBoyRunState::Running] {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(ready_at(
+            AngleDegrees::from_degrees(80.0),
+            AngleDegrees::ZERO,
+        ));
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
+        );
+        assert!(state.serialized_config.editor().set_beeper_enabled(true));
+        let requested = state.serialized_config;
+        assert!(state.store_serialized_config(requested.as_bytes()));
+        let persisted = state.serialized_config;
+        let duty_threshold = state.runtime_duty_pushback_threshold();
+        let duty_angle = state.runtime_duty_pushback_angle();
+        let duty_step = state.runtime_duty_pushback_step();
+        let return_step = state.runtime_tiltback_return_step();
+        let balance = state.runtime_balance_loop_config();
 
-    assert!(state.handle_packet_with_telemetry(
-        firmware.telemetry(),
-        &mut || TimestampTicks::from_ticks(0),
-        &mut |_bytes| true,
-        &flywheel_packet(&[0x81, 90, 50, 30, 20, 1]),
-    ));
-    assert!(state.handle_packet_with_telemetry(
-        firmware.telemetry(),
-        &mut || TimestampTicks::from_ticks(0),
-        &mut |_bytes| true,
-        &flywheel_packet(&[0x80, 0, 0, 0, 0, 0]),
-    ));
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_bytes| true,
+            &flywheel_packet(&[0x81, 90, 50, 30, 20, 1]),
+        ));
+        set_ride_state(&mut state, run_state);
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_bytes| true,
+            &flywheel_packet(&[0x80, 0, 0, 0, 0, 0]),
+        ));
 
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .mode(),
-        FloatOutBoyMode::Normal,
-    );
-    assert_f32_eq!(
-        state.serialized_config.balance().kp().as_amps_per_degree(),
-        12.0
-    );
-    assert_eq!(
-        state.take_beeper_level(),
-        Some(FloatOutBoyBeeperLevel::High)
-    );
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .mode(),
+            FloatOutBoyMode::Normal,
+        );
+        assert_eq!(state.serialized_config, persisted);
+        assert_eq!(state.runtime_duty_pushback_threshold(), duty_threshold);
+        assert_eq!(state.runtime_duty_pushback_angle(), duty_angle);
+        assert_eq!(state.runtime_duty_pushback_step(), duty_step);
+        assert_eq!(state.runtime_tiltback_return_step(), return_step);
+        assert_eq!(state.runtime_balance_loop_config(), balance);
+        assert_eq!(
+            state.take_beeper_level(),
+            Some(FloatOutBoyBeeperLevel::High)
+        );
+    }
 }
 
 #[test]
