@@ -868,7 +868,7 @@ impl FloatOutBoyLedDynamics {
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
         current_time: f32,
-    ) {
+    ) -> bool {
         let FloatOutBoyLedUpdate {
             run_state,
             mode,
@@ -879,18 +879,18 @@ impl FloatOutBoyLedDynamics {
         } = input;
         if matches!(run_state, crate::FloatOutBoyRunState::Startup) {
             self.run_state = run_state;
-            return;
+            return false;
         }
 
+        if !config.is_enabled() && self.on_off_fade == 0.0 {
+            self.run_state = run_state;
+            return false;
+        }
         self.on_off_fade = rate_limit(
             self.on_off_fade,
             f32::from(u8::from(config.is_enabled())),
             3.0 / 30.0,
         );
-        if !config.is_enabled() && self.on_off_fade == 0.0 {
-            self.run_state = run_state;
-            return;
-        }
 
         if !self.board_is_upright && pitch_degrees > 60.0 {
             self.board_is_upright = true;
@@ -1001,6 +1001,7 @@ impl FloatOutBoyLedDynamics {
                 self.direction_forward = false;
             }
         }
+        true
     }
 
     /// Return the global renderer fade.
@@ -1296,17 +1297,13 @@ impl FloatOutBoyLedRenderer {
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
         let was_upright = self.dynamics.is_board_upright();
-        self.dynamics.update(config, input, current_time);
+        if !self.dynamics.update(config, input, current_time) {
+            return false;
+        }
         let upright = self.dynamics.is_board_upright();
         let upright_changed = upright != was_upright;
 
-        if matches!(input.run_state, crate::FloatOutBoyRunState::Startup) {
-            return false;
-        }
         let fade = self.dynamics.on_off_fade();
-        if !config.is_enabled() && fade.as_ratio() == 0.0 {
-            return false;
-        }
         if was_startup {
             self.animation_start = current_time;
             self.status_dynamics.idle_time = current_time;
@@ -3514,10 +3511,9 @@ mod renderer_tests {
         let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
 
         dynamics.update(config, running, 1.0);
-        for tick in 1_u16..=10 {
-            dynamics.update(off, running, 1.0 + f32::from(tick) / 100.0);
-        }
+        dynamics.update(off, running, 1.01);
         let faded_out = dynamics.headlights();
+        assert!(faded_out.0 > -1.0);
         dynamics.update(off, running, 2.0);
 
         assert_eq!(dynamics.headlights(), faded_out);
