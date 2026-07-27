@@ -519,6 +519,7 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
     );
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
+    let setpoints_before_stop = state.all_data_payloads().base().setpoints();
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -534,6 +535,12 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Roll);
+    // Upstream `state_stop` leaves modifier state intact; READY suppresses motor
+    // output, and the next `engage` clears it through `reset_runtime_vars`.
+    assert_eq!(
+        state.all_data_payloads().base().setpoints(),
+        setpoints_before_stop
+    );
     assert!(!state.apply_requested_motor_current(telemetry.motor()));
     assert_eq!(telemetry.current_command_count(), 0);
 }
