@@ -146,6 +146,14 @@ impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
 }
 
 impl FloatOutBoyPackageState {
+    fn acknowledge_command_config_write(&mut self, now: &mut impl FnMut() -> TimestampTicks) {
+        self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+        #[cfg(any(test, target_arch = "arm"))]
+        self.start_internal_led_confirmation(now());
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let _ = now;
+    }
+
     fn write_config_to_eeprom(config: &FloatOutBoyConfigImage) -> bool {
         FloatOutBoyEepromImage::from(*config).store().is_ok()
     }
@@ -205,8 +213,6 @@ impl FloatOutBoyPackageState {
         bytes: &[u8],
         now: &mut impl FnMut() -> TimestampTicks,
     ) -> bool {
-        #[cfg(not(any(test, target_arch = "arm")))]
-        let _ = now;
         let [package_id, command, payload @ ..] = bytes else {
             return false;
         };
@@ -220,9 +226,7 @@ impl FloatOutBoyPackageState {
         match command {
             FloatOutBoyAppDataCommand::ConfigSave => {
                 if self.persist_active_config() {
-                    self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
-                    #[cfg(any(test, target_arch = "arm"))]
-                    self.start_internal_led_confirmation(now());
+                    self.acknowledge_command_config_write(now);
                 }
             }
             FloatOutBoyAppDataCommand::ConfigRestore => self.load_persisted_config_on_startup(),
@@ -247,11 +251,7 @@ impl FloatOutBoyPackageState {
                     config.editor().set_disabled(*disabled != 0);
                     self.replace_active_config(&config);
                     if self.persist_active_config() {
-                        self.alert_beeper(FloatOutBoyBeeperAlert::Short(
-                            FloatOutBoyBeeperCount::ONE,
-                        ));
-                        #[cfg(any(test, target_arch = "arm"))]
-                        self.start_internal_led_confirmation(now());
+                        self.acknowledge_command_config_write(now);
                     }
                 }
             }
