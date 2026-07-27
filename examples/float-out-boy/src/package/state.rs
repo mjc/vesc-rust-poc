@@ -730,7 +730,7 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
-            || self.handle_handtest_packet(bytes)
+            || self.handle_handtest_packet(now, bytes)
             || self.handle_config_command(bytes, now)
             || self.handle_flywheel_packet(bytes)
             || tuning::handle_runtime_tune_packet(self, now, bytes)

@@ -4,6 +4,7 @@ use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyAppDataCommand, FloatOutBoyMode, FloatOutBoyRideState, FloatOutBoyRunState,
 };
+use vescpkg_rs::prelude::TimestampTicks;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -59,13 +60,16 @@ impl FloatOutBoyHandtestRequest {
         }
     }
 
-    fn apply_to(self, state: &mut FloatOutBoyPackageState) {
+    fn apply_to(self, state: &mut FloatOutBoyPackageState) -> bool {
         // C map: `cmd_handtest` only applies when the board is READY and mode
         // is NORMAL or HANDTEST at `third_party/float-out-boy/src/main.c:1426-1430`.
         let ride_state = state.all_data_payloads.base().status().ride_state();
         if let Some(mode) = self.mode_for(ride_state) {
             state.set_ride_mode(mode);
             state.apply_handtest_config(self);
+            true
+        } else {
+            false
         }
     }
 
@@ -120,13 +124,20 @@ fn float_out_boy_payloads_with_ride_state(
 }
 
 impl FloatOutBoyPackageState {
-    pub(super) fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
+    pub(super) fn handle_handtest_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Float Out Boy C dispatches it at `third_party/float-out-boy/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/float-out-boy/src/main.c:1421-1430`.
         match FloatOutBoyHandtestRequest::from_packet(bytes) {
             Some(request) => {
-                request.apply_to(self);
+                if request.apply_to(self) && matches!(request, FloatOutBoyHandtestRequest::Disable)
+                {
+                    self.refresh_idle_epoch(now());
+                }
                 true
             }
             None => false,
@@ -248,11 +259,14 @@ mod tests {
         ));
         let original_config = *state.serialized_config();
 
-        assert!(state.handle_handtest_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::HandTest.id(),
-            1,
-        ]));
+        assert!(state.handle_handtest_packet(
+            &mut || TimestampTicks::from_ticks(0),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                1,
+            ]
+        ));
         assert_eq!(
             state
                 .all_data_payloads()
@@ -273,11 +287,14 @@ mod tests {
             expected_handtest_config.as_bytes()
         );
 
-        assert!(state.handle_handtest_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::HandTest.id(),
-            0,
-        ]));
+        assert!(state.handle_handtest_packet(
+            &mut || TimestampTicks::from_ticks(0),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                0,
+            ]
+        ));
         assert_eq!(
             state
                 .all_data_payloads()
@@ -288,6 +305,40 @@ mod tests {
             FloatOutBoyMode::Normal
         );
         assert_eq!(state.serialized_config(), &original_config);
+    }
+
+    #[test]
+    fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+        state.idle_ticks = TimestampTicks::from_ticks(7);
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(42),
+            &mut |_| true,
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                1,
+            ],
+        ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(42),
+            &mut |_| true,
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                0,
+            ],
+        ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
     }
 
     #[test]
@@ -306,16 +357,22 @@ mod tests {
         assert!(volatile.editor().set_kp(AngleCurrentGain::new(-9.0)));
         state.replace_serialized_config_for_test(&volatile);
 
-        assert!(state.handle_handtest_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::HandTest.id(),
-            1,
-        ]));
-        assert!(state.handle_handtest_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::HandTest.id(),
-            0,
-        ]));
+        assert!(state.handle_handtest_packet(
+            &mut || TimestampTicks::from_ticks(0),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                1,
+            ]
+        ));
+        assert!(state.handle_handtest_packet(
+            &mut || TimestampTicks::from_ticks(0),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::HandTest.id(),
+                0,
+            ]
+        ));
 
         assert_f32_eq!(
             state.serialized_config.balance().kp().as_amps_per_degree(),
