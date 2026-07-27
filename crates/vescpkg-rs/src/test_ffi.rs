@@ -25,6 +25,15 @@ use vescpkg_rs_sys::raw::{
 };
 use vescpkg_rs_sys::{FaultCode, HardwareType, LbmValue, VescPin, VescPinMode};
 
+const LBM_VALUE_SHIFT: u32 = 4;
+const LBM_VALUE_TAG_MASK: u32 = (1 << LBM_VALUE_SHIFT) - 1;
+const LBM_INT_TAG: u32 = 0x08;
+const LBM_FLOAT_VALUE: u32 = 0x10;
+
+const fn decode_lbm_integer(value: LbmValue) -> i32 {
+    value.0.cast_signed() >> LBM_VALUE_SHIFT
+}
+
 /// Host replacement for the firmware `%s` logging path.
 pub unsafe fn printf_data(message: *const c_char) -> bool {
     !message.is_null()
@@ -655,22 +664,22 @@ pub(crate) fn set_nvm_supported(supported: bool) {
 }
 
 pub unsafe fn lbm_is_number(value: LbmValue) -> bool {
-    value.0 & 0x0f == 0x08 || value.0 == 0x10
+    value.0 & LBM_VALUE_TAG_MASK == LBM_INT_TAG || value.0 == LBM_FLOAT_VALUE
 }
 
 pub unsafe fn lbm_dec_as_u32(value: LbmValue) -> u32 {
-    (value.0.cast_signed() >> 4).cast_unsigned()
+    decode_lbm_integer(value).cast_unsigned()
 }
 
 pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
-    value.0.cast_signed() >> 4
+    decode_lbm_integer(value)
 }
 
 pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
-    if value.0 == 0x10 {
+    if value.0 == LBM_FLOAT_VALUE {
         f32::from_bits(LBM_FLOAT_BITS.load(Ordering::Relaxed))
-    } else if value.0 & 0x0f == 0x08 {
-        (value.0.cast_signed() >> 4) as f32
+    } else if value.0 & LBM_VALUE_TAG_MASK == LBM_INT_TAG {
+        decode_lbm_integer(value) as f32
     } else {
         0.0
     }
@@ -681,12 +690,12 @@ pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
 }
 
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
-    LbmValue(value.wrapping_shl(4).cast_unsigned() | 0x08)
+    LbmValue(value.wrapping_shl(LBM_VALUE_SHIFT).cast_unsigned() | LBM_INT_TAG)
 }
 
 pub unsafe fn lbm_enc_float(value: f32) -> LbmValue {
     LBM_FLOAT_BITS.store(value.to_bits(), Ordering::Relaxed);
-    LbmValue(0x10)
+    LbmValue(LBM_FLOAT_VALUE)
 }
 
 pub unsafe fn lbm_dec_char(value: LbmValue) -> u8 {
