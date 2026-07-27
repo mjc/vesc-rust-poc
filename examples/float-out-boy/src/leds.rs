@@ -1096,6 +1096,28 @@ struct FloatOutBoyStatusRenderState {
     idle_animation_time: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FloatOutBoyStatusIdleLayer {
+    Animate(FloatOutBoyLedBarConfig, f32),
+    Black,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FloatOutBoyStatusLayers {
+    brightness: Ratio,
+    fade: Ratio,
+    blend: Ratio,
+    idle_blend: Ratio,
+    idle: FloatOutBoyStatusIdleLayer,
+    reverse: bool,
+    red_percentage: Ratio,
+    battery: f32,
+    duty: f32,
+    duty_blend: Ratio,
+    sensors: (Ratio, Ratio),
+    confirmation_progress: f32,
+}
+
 impl FloatOutBoyStatusDynamics {
     const fn new() -> Self {
         Self {
@@ -1357,44 +1379,23 @@ impl FloatOutBoyLedRenderer {
             self.status_dynamics
                 .update(config, input, status, sensors, reset_idle, current_time);
 
-        let overlay =
-            |blend| FloatOutBoyLedOverlay::new(state.brightness, fade, Ratio::clamped(blend));
-        if state.idle_blend.as_ratio() > 0.0 {
-            let mut idle_bar = config.status_idle();
-            idle_bar.brightness = state.brightness;
-            self.status
-                .render_bar(idle_bar, fade, state.idle_animation_time);
-        }
-        if state.idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() < 1.0 {
-            self.status.render_status_progress(
-                status.battery_level.clamp(0.0, 1.0),
-                FloatOutBoyStatusProgress::Battery,
-                status_config.red_bar_percentage(),
-                false,
-                overlay(1.0 - state.idle_blend.as_ratio()),
-            );
-        }
-        if state.idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() > 0.0 {
-            self.status.render_status_progress(
-                state.duty,
-                FloatOutBoyStatusProgress::Duty,
-                status_config.red_bar_percentage(),
-                false,
-                overlay(state.duty_blend.as_ratio()),
-            );
-        }
-
-        let (left, right) = sensors;
-        if state.idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
-            self.status
-                .render_footpads(left, right, false, overlay(1.0));
-        }
-
-        let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
-        if (0.0..=1.0).contains(&confirmation_progress) {
-            self.status
-                .render_confirmation(state.brightness, fade, confirmation_progress);
-        }
+        self.status.render_status_layers(FloatOutBoyStatusLayers {
+            brightness: state.brightness,
+            fade,
+            blend: Ratio::from_ratio_const(1.0),
+            idle_blend: state.idle_blend,
+            idle: FloatOutBoyStatusIdleLayer::Animate(
+                config.status_idle(),
+                state.idle_animation_time,
+            ),
+            reverse: false,
+            red_percentage: status_config.red_bar_percentage(),
+            battery: status.battery_level.clamp(0.0, 1.0),
+            duty: state.duty,
+            duty_blend: state.duty_blend,
+            sensors,
+            confirmation_progress: (current_time - self.confirmation_start) / 0.8,
+        });
         state
     }
 
@@ -1410,46 +1411,20 @@ impl FloatOutBoyLedRenderer {
         if blend.as_ratio() <= 0.0 {
             return;
         }
-        let idle_blend = Ratio::clamped(self.status_on_front_idle_blend);
-        let brightness = Ratio::clamped(self.front_brightness);
-        if idle_blend.as_ratio() > 0.0 {
-            self.front.render_target(
-                FloatOutBoyLedPixel::default(),
-                Ratio::clamped(brightness.as_ratio() * fade.as_ratio()),
-                blend,
-            );
-        }
-        let overlay = |amount| FloatOutBoyLedOverlay::new(brightness, fade, amount);
-        if idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() < 1.0 {
-            self.front.render_status_progress(
-                status.battery_level.clamp(0.0, 1.0),
-                FloatOutBoyStatusProgress::Battery,
-                config.status().red_bar_percentage(),
-                true,
-                overlay(Ratio::clamped(
-                    blend.as_ratio().min(1.0 - idle_blend.as_ratio()),
-                )),
-            );
-        }
-        if idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() > 0.0 {
-            self.front.render_status_progress(
-                state.duty,
-                FloatOutBoyStatusProgress::Duty,
-                config.status().red_bar_percentage(),
-                true,
-                overlay(state.duty_blend),
-            );
-        }
-        let (left, right) = self.dynamics.sensor_fades();
-        if idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
-            self.front
-                .render_footpads(left, right, true, overlay(blend));
-        }
-        let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
-        if (0.0..=1.0).contains(&confirmation_progress) {
-            self.front
-                .render_confirmation(brightness, fade, confirmation_progress);
-        }
+        self.front.render_status_layers(FloatOutBoyStatusLayers {
+            brightness: Ratio::clamped(self.front_brightness),
+            fade,
+            blend,
+            idle_blend: Ratio::clamped(self.status_on_front_idle_blend),
+            idle: FloatOutBoyStatusIdleLayer::Black,
+            reverse: true,
+            red_percentage: config.status().red_bar_percentage(),
+            battery: status.battery_level.clamp(0.0, 1.0),
+            duty: state.duty,
+            duty_blend: state.duty_blend,
+            sensors: self.dynamics.sensor_fades(),
+            confirmation_progress: (current_time - self.confirmation_start) / 0.8,
+        });
     }
 
     fn compose_headlights(&mut self, transition: FloatOutBoyFrameTransition) {
@@ -1679,6 +1654,65 @@ impl FloatOutBoyLedStripFrame {
                 overlay.strip_brightness.as_ratio() * dim * overlay.on_off_fade.as_ratio(),
             );
             self.render_pixel_blended(index, color, brightness, blend);
+        }
+    }
+
+    fn render_status_layers(&mut self, layers: FloatOutBoyStatusLayers) {
+        let FloatOutBoyStatusLayers {
+            brightness,
+            fade,
+            blend,
+            idle_blend,
+            idle,
+            reverse,
+            red_percentage,
+            battery,
+            duty,
+            duty_blend,
+            sensors: (left, right),
+            confirmation_progress,
+        } = layers;
+
+        if idle_blend.as_ratio() > 0.0 {
+            match idle {
+                FloatOutBoyStatusIdleLayer::Animate(mut bar, time) => {
+                    bar.brightness = brightness;
+                    self.render_bar(bar, fade, time);
+                }
+                FloatOutBoyStatusIdleLayer::Black => self.render_target(
+                    FloatOutBoyLedPixel::default(),
+                    Ratio::clamped(brightness.as_ratio() * fade.as_ratio()),
+                    blend,
+                ),
+            }
+        }
+
+        let overlay = |amount| FloatOutBoyLedOverlay::new(brightness, fade, amount);
+        if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() < 1.0 {
+            self.render_status_progress(
+                battery,
+                FloatOutBoyStatusProgress::Battery,
+                red_percentage,
+                reverse,
+                overlay(Ratio::clamped(
+                    blend.as_ratio().min(1.0 - idle_blend.as_ratio()),
+                )),
+            );
+        }
+        if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() > 0.0 {
+            self.render_status_progress(
+                duty,
+                FloatOutBoyStatusProgress::Duty,
+                red_percentage,
+                reverse,
+                overlay(duty_blend),
+            );
+        }
+        if idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
+            self.render_footpads(left, right, reverse, overlay(blend));
+        }
+        if (0.0..=1.0).contains(&confirmation_progress) {
+            self.render_confirmation(brightness, fade, confirmation_progress);
         }
     }
 
