@@ -104,9 +104,7 @@ fn push_fault_name(
             .as_bytes(),
     );
     float_out_boy_realtime_push_u8(buffer, index, u8::try_from(name.len()).unwrap_or(u8::MAX));
-    for byte in name {
-        float_out_boy_realtime_push_u8(buffer, index, *byte);
-    }
+    crate::wire::push_bytes(buffer, index, name);
 }
 
 fn bounded_fault_name(name: &[u8]) -> &[u8] {

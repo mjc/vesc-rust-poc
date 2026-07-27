@@ -160,17 +160,11 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_ids_response()
 }
 
 fn float_out_boy_response_push_bytes(bytes: &mut [u8], index: &mut usize, values: &[u8]) {
-    values
-        .iter()
-        .copied()
-        .for_each(|byte| float_out_boy_response_push_u8(bytes, index, byte));
+    crate::wire::push_bytes(bytes, index, values);
 }
 
 fn float_out_boy_response_push_u8(bytes: &mut [u8], index: &mut usize, value: u8) {
-    if let Some(slot) = bytes.get_mut(*index) {
-        *slot = value;
-    }
-    *index = index.saturating_add(1);
+    crate::wire::push_u8(bytes, index, value);
 }
 
 #[cfg(test)]

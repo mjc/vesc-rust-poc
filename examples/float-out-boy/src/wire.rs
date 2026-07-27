@@ -13,20 +13,23 @@ pub(crate) fn push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
     *ind = ind.saturating_add(1);
 }
 
+pub(crate) fn push_bytes(buffer: &mut [u8], ind: &mut usize, values: &[u8]) {
+    values
+        .iter()
+        .copied()
+        .for_each(|byte| push_u8(buffer, ind, byte));
+}
+
 pub(crate) fn push_u16(buffer: &mut [u8], ind: &mut usize, value: u16) {
     // C map: `buffer_append_uint16` writes big-endian unsigned integers at
     // `third_party/float-out-boy/src/conf/buffer.c:62-67`.
-    for byte in value.to_be_bytes() {
-        push_u8(buffer, ind, byte);
-    }
+    push_bytes(buffer, ind, &value.to_be_bytes());
 }
 
 pub(crate) fn push_u32(buffer: &mut [u8], ind: &mut usize, value: u32) {
     // C map: `buffer_append_uint32` writes big-endian unsigned integers at
     // `third_party/float-out-boy/src/conf/buffer.c:83-90`.
-    for byte in value.to_be_bytes() {
-        push_u8(buffer, ind, byte);
-    }
+    push_bytes(buffer, ind, &value.to_be_bytes());
 }
 
 pub(crate) fn push_float32_auto(buffer: &mut [u8], ind: &mut usize, value: f32) {
