@@ -1082,6 +1082,9 @@ impl FloatOutBoyLedFrameUpdate {
 struct FloatOutBoyStatusDynamics {
     brightness: f32,
     duty_blend: f32,
+    idle_blend: f32,
+    idle_time: f32,
+    animation_start: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1089,6 +1092,8 @@ struct FloatOutBoyStatusRenderState {
     brightness: Ratio,
     duty: f32,
     duty_blend: Ratio,
+    idle_blend: Ratio,
+    idle_animation_time: f32,
 }
 
 impl FloatOutBoyStatusDynamics {
@@ -1096,6 +1101,9 @@ impl FloatOutBoyStatusDynamics {
         Self {
             brightness: 0.0,
             duty_blend: 0.0,
+            idle_blend: 0.0,
+            idle_time: 0.0,
+            animation_start: 0.0,
         }
     }
 
@@ -1104,13 +1112,25 @@ impl FloatOutBoyStatusDynamics {
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
         status: FloatOutBoyLedStatusUpdate,
+        current_time: f32,
     ) -> FloatOutBoyStatusRenderState {
         let status_config = config.status();
-        let target_brightness = if config.are_headlights_on() {
+        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+            self.idle_time = current_time;
+        }
+
+        let mut target_brightness = if config.are_headlights_on() {
             status_config.brightness_headlights_on()
         } else {
             status_config.brightness_headlights_off()
         };
+        if self.idle_blend > 0.0 {
+            target_brightness = Ratio::clamped(
+                target_brightness
+                    .as_ratio()
+                    .min(config.status_idle().brightness().as_ratio()),
+            );
+        }
         self.brightness = rate_limit(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
 
         let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
@@ -1130,10 +1150,26 @@ impl FloatOutBoyStatusDynamics {
         };
         self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
+        let idle_timeout = f32::from(status_config.idle_timeout().as_seconds());
+        let idle_target = if idle_timeout > 0.0 && current_time - self.idle_time > idle_timeout {
+            if self.idle_blend == 0.0 {
+                self.animation_start = current_time;
+            }
+            1.0
+        } else {
+            0.0
+        };
+        self.idle_blend = rate_limit(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
+        if status.moving {
+            self.idle_time = current_time;
+        }
+
         FloatOutBoyStatusRenderState {
             brightness: Ratio::clamped(self.brightness),
             duty,
             duty_blend: Ratio::clamped(self.duty_blend),
+            idle_blend: Ratio::clamped(self.idle_blend),
+            idle_animation_time: current_time - self.animation_start,
         }
     }
 }
@@ -1255,20 +1291,28 @@ impl FloatOutBoyLedRenderer {
         fade: Ratio,
     ) {
         let status_config = config.status();
-        let state = self.status_dynamics.update(config, input, status);
+        let state = self
+            .status_dynamics
+            .update(config, input, status, current_time);
 
         let overlay =
             |blend| FloatOutBoyLedOverlay::new(state.brightness, fade, Ratio::clamped(blend));
-        if state.duty_blend.as_ratio() < 1.0 {
+        if state.idle_blend.as_ratio() > 0.0 {
+            let mut idle_bar = config.status_idle();
+            idle_bar.brightness = state.brightness;
+            self.status
+                .render_bar(idle_bar, fade, state.idle_animation_time);
+        }
+        if state.idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() < 1.0 {
             self.status.render_status_progress(
                 status.battery_level.clamp(0.0, 1.0),
                 FloatOutBoyStatusProgress::Battery,
                 status_config.red_bar_percentage(),
                 false,
-                overlay(1.0),
+                overlay(1.0 - state.idle_blend.as_ratio()),
             );
         }
-        if state.duty_blend.as_ratio() > 0.0 {
+        if state.idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() > 0.0 {
             self.status.render_status_progress(
                 state.duty,
                 FloatOutBoyStatusProgress::Duty,
@@ -1279,7 +1323,9 @@ impl FloatOutBoyLedRenderer {
         }
 
         let (left, right) = self.dynamics.sensor_fades();
-        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+        if state.idle_blend.as_ratio() < 1.0
+            && !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
+        {
             self.status
                 .render_footpads(left, right, input.darkride, overlay(1.0));
         }
@@ -3046,6 +3092,78 @@ mod renderer_tests {
                 [0, 0, 0, 0],
             ]
         );
+    }
+
+    #[test]
+    fn composed_status_idle_uses_strict_timeout_and_idle_bar_brightness() {
+        let bar = |brightness, color| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(brightness),
+                color,
+                FloatOutBoyLedColor::Black,
+                super::FloatOutBoyLedAnimationMode::Solid,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = super::FloatOutBoyLedsConfig::new(
+            bar(1.0, FloatOutBoyLedColor::WhiteRgb),
+            bar(1.0, FloatOutBoyLedColor::Red),
+            bar(1.0, FloatOutBoyLedColor::Black),
+            bar(1.0, FloatOutBoyLedColor::Black),
+            super::FloatOutBoyStatusBarConfig::new(
+                super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1),
+                Ratio::from_ratio_const(0.9),
+                Ratio::from_ratio_const(0.1),
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            ),
+            bar(0.5, FloatOutBoyLedColor::Blue),
+        )
+        .enabled();
+        let strip = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            1,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_status_strip(strip);
+        let frame = super::FloatOutBoyLedFrameUpdate::new(
+            super::FloatOutBoyLedUpdate {
+                run_state: crate::FloatOutBoyRunState::Ready,
+                mode: crate::FloatOutBoyMode::Normal,
+                darkride: false,
+                footpad: crate::FloatOutBoyFootpadState::None,
+                pitch_degrees: 0.0,
+                distance: 0.0,
+            },
+            super::FloatOutBoyLedStatusUpdate {
+                battery_level: 1.0,
+                duty_cycle: 0.0,
+                moving: false,
+            },
+        );
+        let pixel = |renderer: &super::FloatOutBoyLedRenderer| {
+            renderer
+                .status()
+                .physical_pixel(0)
+                .map(super::FloatOutBoyLedPixel::channels)
+                .unwrap_or_default()
+        };
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+
+        renderer.update(config, frame, 1.0);
+        assert_eq!(pixel(&renderer), [1, 1, 1, 0]);
+
+        for tick in 1..=10 {
+            renderer.update(
+                config,
+                frame,
+                1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(pixel(&renderer), [0, 0, 0x80, 0]);
     }
 
     #[test]
