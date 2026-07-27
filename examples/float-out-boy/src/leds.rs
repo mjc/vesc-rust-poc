@@ -2647,6 +2647,10 @@ mod renderer_tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture covers settled, reversed, and cancelled transition traces"
+    )]
     fn front_rear_renderer_composes_headlight_and_direction_transitions() {
         let bar = |color| {
             super::FloatOutBoyLedBarConfig::new(
@@ -2732,6 +2736,32 @@ mod renderer_tests {
         );
         assert_eq!(first(renderer.front()), [0xff, 0, 0, 0]);
         assert_eq!(first(renderer.rear()), [0xff, 0xff, 0xff, 0]);
+
+        let mut cancelled = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+        for tick in 1..=10 {
+            cancelled.update(
+                config,
+                input(crate::FloatOutBoyRunState::Ready, 0.0),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        cancelled.update(
+            config,
+            input(crate::FloatOutBoyRunState::Running, 0.0),
+            11.0 / 30.0,
+        );
+        cancelled.update(
+            config,
+            input(crate::FloatOutBoyRunState::Running, 0.0),
+            12.0 / 30.0,
+        );
+        cancelled.update(
+            config,
+            input(crate::FloatOutBoyRunState::Ready, 0.0),
+            13.0 / 30.0,
+        );
+        assert_eq!(first(cancelled.front()), [0, 0, 0xff, 0]);
+        assert_eq!(first(cancelled.rear()), [0, 0xff, 0, 0]);
     }
 
     #[test]
