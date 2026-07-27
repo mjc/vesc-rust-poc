@@ -67,8 +67,7 @@ impl FloatOutBoyHandtestRequest {
             match self {
                 Self::Enable => state.apply_handtest_safety_config(),
                 Self::Disable => {
-                    state.read_config_from_eeprom();
-                    state.alert_configured_state();
+                    state.restore_and_configure_from_eeprom();
                     state.idle_ticks = vescpkg_rs::FirmwareClock::current_timestamp();
                 }
             }

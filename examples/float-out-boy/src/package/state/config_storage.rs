@@ -230,10 +230,14 @@ impl FloatOutBoyPackageState {
         self.read_config_from_eeprom();
     }
 
+    pub(super) fn restore_and_configure_from_eeprom(&mut self) {
+        self.read_config_from_eeprom();
+        self.alert_configured_state();
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
-        self.restore_persisted_config();
-        self.alert_configured_state();
+        self.restore_and_configure_from_eeprom();
         self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 
