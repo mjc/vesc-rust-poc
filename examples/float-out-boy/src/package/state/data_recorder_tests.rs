@@ -60,7 +60,16 @@ fn package_stop_clears_live_recorder_activity() {
         &mut state,
         &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
     );
-    assert_eq!(sent[0][3] & 0x01, 0);
+    assert_eq!(sent[0][3] & 0x07, 0);
+
+    let (_, sent) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::Info, &[2, 0]),
+    );
+    assert_eq!(
+        u32::from_be_bytes([sent[0][55], sent[0][56], sent[0][57], sent[0][58]]) & (1 << 31),
+        0
+    );
 }
 
 #[test]

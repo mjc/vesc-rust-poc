@@ -292,6 +292,17 @@ impl DataRecorderState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
+    fn shutdown(&mut self) {
+        self.stop();
+        self.availability = DataRecorderAvailability::Unavailable;
+        self.ring.clear();
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            self.buffer = None;
+        }
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: DataRecorderSample) {
         if !self.has_capability() || !matches!(self.activity, DataRecorderActivity::Recording) {
             return;
@@ -390,7 +401,7 @@ impl DataRecorderState {
 impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn stop_data_recorder(&mut self) {
-        self.data_recorder.stop();
+        self.data_recorder.shutdown();
     }
 
     #[cfg(all(not(test), target_arch = "arm"))]
