@@ -7,6 +7,26 @@ use crate::domain::{
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
+fn migrate_legacy_firmware_imu_settings() {
+    let settings = vescpkg_rs::FirmwareSettings;
+    let Ok(gain) = settings.imu_mahony_proportional_gain() else {
+        return;
+    };
+    if gain.value() <= 1.0 {
+        return;
+    }
+    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
+        return;
+    };
+    let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
+        return;
+    };
+    let _ = settings.set_imu_mahony_proportional_gain(proportional_gain);
+    let _ = settings.set_imu_mahony_integral_gain(integral_gain);
+    let _ =
+        settings.set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.1));
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct FloatOutBoyEepromImage([u8; FLOAT_OUT_BOY_EEPROM_LEN]);
 
@@ -64,6 +84,9 @@ impl FloatOutBoyPackageState {
         self.serialized_config = *config;
         self.refresh_balance_filter_config();
         self.refresh_config_runtime_state();
+        // C map: `configure` migrates legacy firmware IMU settings after
+        // deriving package runtime values at `third_party/float-out-boy/src/main.c:201-211`.
+        migrate_legacy_firmware_imu_settings();
     }
 
     fn persist_active_config(&self) -> bool {
@@ -77,24 +100,6 @@ impl FloatOutBoyPackageState {
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
-
-        let settings = vescpkg_rs::FirmwareSettings;
-        let Ok(gain) = settings.imu_mahony_proportional_gain() else {
-            return;
-        };
-        if gain.value() <= 1.0 {
-            return;
-        }
-        let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
-            return;
-        };
-        let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
-            return;
-        };
-        let _ = settings.set_imu_mahony_proportional_gain(proportional_gain);
-        let _ = settings.set_imu_mahony_integral_gain(integral_gain);
-        let _ = settings
-            .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.1));
     }
 
     pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {

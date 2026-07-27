@@ -43,6 +43,49 @@ fn drain_one_short_beep(state: &mut FloatOutBoyPackageState) -> Vec<(u32, FloatO
         .collect()
 }
 
+fn set_firmware_imu_settings(
+    firmware: &FirmwareTest,
+    proportional_gain: f32,
+    integral_gain: f32,
+    acceleration_confidence_decay: f32,
+) {
+    let settings = firmware.settings();
+    settings
+        .set_imu_mahony_proportional_gain(
+            ImuMahonyProportionalGain::try_new(proportional_gain).unwrap(),
+        )
+        .unwrap();
+    settings
+        .set_imu_mahony_integral_gain(ImuMahonyIntegralGain::try_new(integral_gain).unwrap())
+        .unwrap();
+    settings
+        .set_imu_acceleration_confidence_decay(
+            Ratio::from_ratio(acceleration_confidence_decay).unwrap(),
+        )
+        .unwrap();
+}
+
+fn assert_firmware_imu_settings(
+    firmware: &FirmwareTest,
+    proportional_gain: f32,
+    integral_gain: f32,
+    acceleration_confidence_decay: f32,
+) {
+    let settings = firmware.settings();
+    assert_f32_eq!(
+        settings.imu_mahony_proportional_gain().unwrap().value(),
+        proportional_gain
+    );
+    assert_f32_eq!(
+        settings.imu_mahony_integral_gain().unwrap().value(),
+        integral_gain
+    );
+    assert_f32_eq!(
+        settings.imu_acceleration_confidence_decay().as_ratio(),
+        acceleration_confidence_decay
+    );
+}
+
 #[test]
 fn configured_loop_time_uses_float_out_boy_hertz_config() {
     let _firmware = FirmwareTest::new();
@@ -65,26 +108,49 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
 #[test]
 fn startup_migrates_legacy_firmware_imu_settings_like_refloat() {
     let firmware = FirmwareTest::new();
-    let settings = firmware.settings();
-    settings
-        .set_imu_mahony_proportional_gain(ImuMahonyProportionalGain::try_new(2.0).unwrap())
-        .unwrap();
-    settings
-        .set_imu_mahony_integral_gain(ImuMahonyIntegralGain::try_new(0.25).unwrap())
-        .unwrap();
-    settings
-        .set_imu_acceleration_confidence_decay(Ratio::from_ratio_const(0.8))
-        .unwrap();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     state.load_persisted_config_on_startup();
 
-    assert_f32_eq!(
-        settings.imu_mahony_proportional_gain().unwrap().value(),
-        0.4
-    );
-    assert_f32_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.0);
-    assert_f32_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.1);
+    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+}
+
+#[test]
+fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloat() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+}
+
+#[test]
+fn accepted_config_replacement_keeps_current_firmware_imu_settings() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    for proportional_gain in [0.5, 1.0] {
+        set_firmware_imu_settings(&firmware, proportional_gain, 0.25, 0.8);
+
+        assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+        assert_firmware_imu_settings(&firmware, proportional_gain, 0.25, 0.8);
+    }
+}
+
+#[test]
+fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    firmware.fail_settings_writes();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+    assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
 }
 
 #[test]
