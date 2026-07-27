@@ -752,6 +752,54 @@ impl FloatOutBoyLedStripConfig {
     }
 }
 
+// Refloat stores each strip length in one byte.
+const MAX_LED_STRIP_PIXELS: usize = 255;
+
+/// Allocation-free pixels for one configured internal LED strip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FloatOutBoyLedStripFrame {
+    config: FloatOutBoyLedStripConfig,
+    pixels: [FloatOutBoyLedPixel; MAX_LED_STRIP_PIXELS],
+}
+
+impl FloatOutBoyLedStripFrame {
+    /// Build a cleared frame for one strip configuration.
+    #[must_use]
+    pub const fn new(config: FloatOutBoyLedStripConfig) -> Self {
+        Self {
+            config,
+            pixels: [FloatOutBoyLedPixel { channels: [0; 4] }; MAX_LED_STRIP_PIXELS],
+        }
+    }
+
+    /// Set one logical renderer pixel when it is inside the configured strip.
+    pub fn set_logical_pixel(&mut self, index: usize, pixel: FloatOutBoyLedPixel) -> bool {
+        if index >= usize::from(self.config.count()) {
+            return false;
+        }
+        let Some(target) = self.pixels.get_mut(index) else {
+            return false;
+        };
+        *target = pixel;
+        true
+    }
+
+    /// Return one pixel in physical strip order.
+    #[must_use]
+    pub fn physical_pixel(&self, index: usize) -> Option<FloatOutBoyLedPixel> {
+        let len = usize::from(self.config.count());
+        if index >= len {
+            return None;
+        }
+        let logical_index = if self.config.is_reversed() {
+            len.checked_sub(index)?.checked_sub(1)?
+        } else {
+            index
+        };
+        self.pixels.get(logical_index).copied()
+    }
+}
+
 #[cfg(test)]
 mod renderer_tests {
     use super::{FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPixel};
@@ -850,5 +898,29 @@ mod renderer_tests {
                 &[expected; 4]
             );
         }
+    }
+
+    #[test]
+    fn strip_frame_maps_logical_pixels_to_checked_physical_order() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            3,
+            FloatOutBoyLedColorOrder::Grb,
+        )
+        .with_reverse(true);
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+        let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
+        let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
+
+        assert!(frame.set_logical_pixel(0, red));
+        assert!(frame.set_logical_pixel(2, blue));
+        assert!(!frame.set_logical_pixel(3, red));
+        assert_eq!(frame.physical_pixel(0), Some(blue));
+        assert_eq!(
+            frame.physical_pixel(1),
+            Some(FloatOutBoyLedPixel::default())
+        );
+        assert_eq!(frame.physical_pixel(2), Some(red));
+        assert_eq!(frame.physical_pixel(3), None);
     }
 }
