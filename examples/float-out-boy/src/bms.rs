@@ -66,16 +66,40 @@ impl FloatOutBoyBmsSample {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
+    fn try_new(
+        cell_low_voltage: f32,
+        cell_high_voltage: f32,
+        cell_low_temperature: i32,
+        cell_high_temperature: i32,
+        bms_high_temperature: i32,
+        message_age: f32,
+    ) -> Option<Self> {
+        [cell_low_voltage, cell_high_voltage, message_age]
+            .into_iter()
+            .all(f32::is_finite)
+            .then(|| {
+                Self::new(
+                    Voltage::from_volts(cell_low_voltage),
+                    Voltage::from_volts(cell_high_voltage),
+                    FloatOutBoyBmsTemperature::from_degrees_celsius(cell_low_temperature),
+                    FloatOutBoyBmsTemperature::from_degrees_celsius(cell_high_temperature),
+                    FloatOutBoyBmsTemperature::from_degrees_celsius(bms_high_temperature),
+                    VescSeconds::from_seconds(message_age),
+                )
+            })
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
     fn from_lisp_args(args: &LispArgs<'_>) -> Option<Self> {
         (args.len() > 5).then_some(())?;
-        Some(Self::new(
-            Voltage::from_volts(args.get(0)?.decode_number_as_f32()?),
-            Voltage::from_volts(args.get(1)?.decode_number_as_f32()?),
-            FloatOutBoyBmsTemperature::from_degrees_celsius(args.get(2)?.decode_number_as_i32()?),
-            FloatOutBoyBmsTemperature::from_degrees_celsius(args.get(3)?.decode_number_as_i32()?),
-            FloatOutBoyBmsTemperature::from_degrees_celsius(args.get(4)?.decode_number_as_i32()?),
-            VescSeconds::from_seconds(args.get(5)?.decode_number_as_f32()?),
-        ))
+        Self::try_new(
+            args.get(0)?.decode_number_as_f32()?,
+            args.get(1)?.decode_number_as_f32()?,
+            args.get(2)?.decode_number_as_i32()?,
+            args.get(3)?.decode_number_as_i32()?,
+            args.get(4)?.decode_number_as_i32()?,
+            args.get(5)?.decode_number_as_f32()?,
+        )
     }
 }
 
@@ -259,6 +283,38 @@ mod tests {
         )
     }
 
+    fn enabled_state() -> FloatOutBoyPackageState {
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
+        // Generated Float Out Boy v1.2.1 order places `bms.enabled` after the final
+        // haptic field and before the BMS thresholds at settings.xml:4076-4082.
+        config[265] = 1;
+        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        state
+    }
+
+    fn encoded_sample() -> [LispValue; 6] {
+        [
+            LispValue::from_i32(3),
+            LispValue::from_i32(4),
+            LispValue::from_i32(-2),
+            LispValue::from_i32(43),
+            LispValue::from_i32(55),
+            LispValue::from_i32(1),
+        ]
+    }
+
+    fn decoded_integer_sample() -> FloatOutBoyBmsSample {
+        FloatOutBoyBmsSample::new(
+            Voltage::from_volts(3.0),
+            Voltage::from_volts(4.0),
+            FloatOutBoyBmsTemperature::from_degrees_celsius(-2),
+            FloatOutBoyBmsTemperature::from_degrees_celsius(43),
+            FloatOutBoyBmsTemperature::from_degrees_celsius(55),
+            VescSeconds::from_seconds(1.0),
+        )
+    }
+
     #[test]
     fn default_bms_thresholds_decode_like_float_out_boy_generated_config() {
         let config = FloatOutBoyConfigImage::defaults();
@@ -433,16 +489,92 @@ mod tests {
 
     #[test]
     fn ext_bms_returns_true_when_bms_integration_is_enabled() {
-        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-        let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-        // Generated Float Out Boy v1.2.1 order places `bms.enabled` after the final
-        // haptic field and before the BMS thresholds at settings.xml:4076-4082.
-        config[265] = 1;
-        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        let mut state = enabled_state();
 
         let value = ExtBms::call(&mut state, LispArgs::empty());
 
         assert_eq!(value, LispValue::true_value());
+    }
+
+    #[test]
+    fn ext_bms_complete_sample_replaces_every_field_atomically() {
+        let mut state = enabled_state();
+        let values = encoded_sample();
+
+        let value = ExtBms::call(&mut state, LispArgs::from_values(&values));
+
+        assert_eq!(value, LispValue::true_value());
+        assert_eq!(state.bms_sample_for_test(), decoded_integer_sample());
+    }
+
+    #[test]
+    fn ext_bms_short_calls_do_not_partially_replace_the_sample() {
+        let values = encoded_sample();
+        for len in 0..6 {
+            let mut state = enabled_state();
+            let before = state.bms_sample_for_test();
+
+            let value = ExtBms::call(&mut state, LispArgs::from_values(&values[..len]));
+
+            assert_eq!(value, LispValue::true_value());
+            assert_eq!(state.bms_sample_for_test(), before, "argument count {len}");
+        }
+    }
+
+    #[test]
+    fn ext_bms_ignores_extra_arguments_like_refloat() {
+        let mut state = enabled_state();
+        let sample_values = encoded_sample();
+        let mut values = [LispValue::nil(); 7];
+        values[..6].copy_from_slice(&sample_values);
+
+        let value = ExtBms::call(&mut state, LispArgs::from_values(&values));
+
+        assert_eq!(value, LispValue::true_value());
+        assert_eq!(state.bms_sample_for_test(), decoded_integer_sample());
+    }
+
+    #[test]
+    fn bms_sample_rejects_non_finite_numeric_inputs() {
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(
+                FloatOutBoyBmsSample::try_new(invalid, 4.1, -2, 43, 55, 0.2),
+                None
+            );
+            assert_eq!(
+                FloatOutBoyBmsSample::try_new(2.8, invalid, -2, 43, 55, 0.2),
+                None
+            );
+            assert_eq!(
+                FloatOutBoyBmsSample::try_new(2.8, 4.1, -2, 43, 55, invalid),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn ext_bms_invalid_type_leaves_the_sample_unchanged() {
+        let mut state = enabled_state();
+        let before = state.bms_sample_for_test();
+        let mut values = encoded_sample();
+        values[0] = LispValue::nil();
+
+        let value = ExtBms::call(&mut state, LispArgs::from_values(&values));
+
+        assert_eq!(value, LispValue::true_value());
+        assert_eq!(state.bms_sample_for_test(), before);
+    }
+
+    #[test]
+    fn ext_bms_disabled_complete_call_does_not_replace_the_sample() {
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let before = state.bms_sample_for_test();
+        let values = encoded_sample();
+
+        let value = ExtBms::call(&mut state, LispArgs::from_values(&values));
+
+        assert_eq!(value, LispValue::nil());
+        assert_eq!(state.bms_sample_for_test(), before);
     }
 
     #[test]

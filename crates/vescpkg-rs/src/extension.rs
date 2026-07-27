@@ -28,6 +28,7 @@ const fn is_integer(value: u32) -> bool {
 }
 
 /// A `LispBM` value that can only be produced by the SDK's typed argument API.
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LispValue(LbmValue);
 
@@ -913,6 +914,18 @@ impl LispArgs<'static> {
 }
 
 impl LispArgs<'_> {
+    /// Construct extension arguments from encoded values in host tests.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn from_values(values: &[LispValue]) -> LispArgs<'_> {
+        // SAFETY: `LispValue` is transparent over `LbmValue`, so the slice has
+        // identical element layout and retains the caller's lifetime.
+        let values = unsafe {
+            core::slice::from_raw_parts(values.as_ptr().cast::<LbmValue>(), values.len())
+        };
+        LispArgs { values }
+    }
+
     fn from_raw(args: *mut u32, arg_count: u32) -> Option<Self> {
         let len = usize::try_from(arg_count).ok()?;
         if len == 0 {

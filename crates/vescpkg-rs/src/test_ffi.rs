@@ -669,6 +669,8 @@ pub unsafe fn lbm_dec_as_i32(value: LbmValue) -> i32 {
 pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
     if value.0 == 0x10 {
         f32::from_bits(LBM_FLOAT_BITS.load(Ordering::Relaxed))
+    } else if value.0 & 0x0f == 0x08 {
+        (value.0.cast_signed() >> 4) as f32
     } else {
         0.0
     }
