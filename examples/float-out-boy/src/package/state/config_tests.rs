@@ -107,12 +107,12 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
 }
 
 #[test]
-fn startup_state_load_defers_configure_until_the_main_thread_like_refloat() {
+fn main_thread_config_load_defers_configure_side_effects_like_refloat() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
-    state.load_persisted_config_before_threads();
+    state.load_persisted_config_on_main_thread();
 
     assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
 }

@@ -236,7 +236,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(in crate::package) fn load_persisted_config_before_threads(&mut self) {
+    pub(in crate::package) fn load_persisted_config_on_main_thread(&mut self) {
         self.read_serialized_config_from_eeprom();
         self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
