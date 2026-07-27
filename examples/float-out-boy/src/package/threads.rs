@@ -614,6 +614,25 @@ mod tests {
     }
 
     #[test]
+    fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
+        for (remote_type, expected) in [(0, true), (1, true), (2, false)] {
+            let mut state =
+                FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+            let mut config = default_float_out_boy_config_bytes();
+            config[79] = remote_type;
+            config[242] = 0;
+            assert!(state.store_serialized_config(&config));
+
+            assert_eq!(
+                state.take_beeper_configuration_request(),
+                expected,
+                "remote_type={remote_type}"
+            );
+            assert!(!state.take_beeper_configuration_request());
+        }
+    }
+
+    #[test]
     fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_boy() {
         let firmware = FirmwareTest::new().with_runtime_motor(
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(3_000.0)),
