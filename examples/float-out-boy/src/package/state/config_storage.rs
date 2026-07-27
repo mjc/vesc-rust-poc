@@ -250,6 +250,8 @@ impl FloatOutBoyPackageState {
                         self.alert_beeper(FloatOutBoyBeeperAlert::Short(
                             FloatOutBoyBeeperCount::ONE,
                         ));
+                        #[cfg(any(test, target_arch = "arm"))]
+                        self.start_internal_led_confirmation(now());
                     }
                 }
             }

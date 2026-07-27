@@ -559,6 +559,28 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
 }
 
 #[test]
+fn successful_lock_starts_led_confirmation_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut bytes = default_float_out_boy_config_bytes();
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    assert!(state.store_serialized_config(&bytes));
+    let packet = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FloatOutBoyAppDataCommand::Lock.id(),
+        1,
+    ];
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(1_500),
+        &mut |_bytes| true,
+        &packet,
+    ));
+    assert_eq!(state.internal_led_confirmation_start_for_test(), Some(0.15));
+}
+
+#[test]
 fn lock_is_ignored_while_running_like_float_out_boy() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
