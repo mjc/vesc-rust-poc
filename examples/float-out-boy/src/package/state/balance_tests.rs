@@ -577,3 +577,49 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
     assert_eq!(telemetry.duty_command_count(), 0);
     assert_eq!(telemetry.brake_current_command_count(), 0);
 }
+
+#[test]
+fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
+    let (telemetry, mut state) = normal_algorithm_trace_fixture();
+    state
+        .remote_control
+        .set_input(crate::domain::FloatOutBoyRealtimeRemoteInput::new(
+            SignedRatio::from_ratio_const(0.5),
+        ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
+    });
+
+    assert!(tick_realtime_data(&mut state, &telemetry, 0));
+    assert!(tick_realtime_data(&mut state, &telemetry, 1));
+    let base = state.all_data_payloads().base();
+    let expected_remote = 0.02 * 25.0 / 100.0;
+    let expected_board = 1.5 + expected_remote;
+    let balance = state.balance_config_for_test();
+    let setpoint_error = expected_board - 2.0;
+    let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick();
+    let ki_limit = balance.ki_limit().current().as_amps();
+    let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
+        ki_limit * unclamped_i.signum()
+    } else {
+        unclamped_i
+    };
+    let current_limit = state.motor_current_max.current().as_amps();
+    let expected_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
+        .clamp(-current_limit, current_limit)
+        * 0.2;
+
+    assert!((base.setpoints().remote().angle().as_degrees() - expected_remote).abs() < 0.000_001);
+    assert!((base.setpoints().board().angle().as_degrees() - expected_board).abs() < 0.000_001);
+    assert!(state.apply_motor_control(
+        telemetry.motor(),
+        base.status().ride_state().run_state(),
+        TimestampTicks::from_ticks(1),
+    ));
+    assert!(
+        (telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.000_1,
+        "actual={} expected={expected_current}",
+        telemetry.commanded_current().current().as_amps(),
+    );
+}
