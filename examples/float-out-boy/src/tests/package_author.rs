@@ -34,15 +34,18 @@ use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::LoaderInfo;
 
 #[test]
-fn test_package_lib_init_uses_side_effect_free_registration_tail() {
+fn test_package_lib_init_installs_state_without_running_registration_tail() {
+    let _runtime_state = crate::package::test_support::lock_float_out_boy_runtime_state();
     let mut info = LoaderInfo::new();
 
     assert!(crate::package_lib_init(&raw mut info));
     // Upstream Float Out Boy v1.2.1 installs `stop`/`Data *` at
     // `third_party/float-out-boy/src/main.c:2431-2432` before the registration tail at
-    // `third_party/float-out-boy/src/main.c:2456-2459`; the test build keeps that tail side-effect free.
-    assert!(!info.has_stop_handler());
-    assert!(info.argument().is_none());
+    // `third_party/float-out-boy/src/main.c:2456-2459`; the test build installs
+    // the real state boundary while keeping that registration tail side-effect free.
+    assert!(info.has_stop_handler());
+    assert!(info.argument().is_some());
+    assert!(vescpkg_rs::test_support::stop_package(&mut info));
 }
 
 #[test]

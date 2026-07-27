@@ -64,8 +64,7 @@ pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageS
 pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    let _ = start;
-    finish_startup(Ok(()), || {})
+    startup::install_float_out_boy_package_state(start)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

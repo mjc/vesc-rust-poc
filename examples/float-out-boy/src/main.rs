@@ -122,6 +122,11 @@ mod tests {
 
     #[test]
     fn package_lib_init_runs_float_out_boy_start() {
-        assert!(super::package_lib_init(core::ptr::null_mut::<LoaderInfo>()));
+        let _runtime_state = crate::package::test_support::lock_float_out_boy_runtime_state();
+        let mut info = LoaderInfo::new();
+
+        assert!(super::package_lib_init(&raw mut info));
+        assert!(info.argument().is_some());
+        assert!(vescpkg_rs::test_support::stop_package(&mut info));
     }
 }
