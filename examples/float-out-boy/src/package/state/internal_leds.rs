@@ -33,7 +33,7 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
 }
 
 impl FloatOutBoyPackageState {
-    pub(super) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
+    pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
         let current_time = system_time_ticks.as_vesc_seconds().as_seconds();
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();

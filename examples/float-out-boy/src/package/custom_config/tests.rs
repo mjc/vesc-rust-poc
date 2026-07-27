@@ -3,12 +3,13 @@ use super::{
     lock_test_float_out_boy_config_state,
 };
 use crate::config::FLOAT_OUT_BOY_CONFIG_LEN;
-use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
+use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyMode, FloatOutBoyRunState};
 use crate::package::FloatOutBoyPackageState;
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, default_float_out_boy_config_bytes, editable_config_from_state,
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
+use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ConfigBytes, StatefulCustomConfigCallback};
 
 fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
@@ -123,8 +124,11 @@ fn custom_config_current_callback_reads_state_serialized_config() {
 
 #[test]
 fn custom_config_set_callback_stores_serialized_config_in_state() {
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let firmware = FirmwareTest::new();
+    firmware.set_clock_ticks(1_500);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut incoming = default_float_out_boy_config_bytes();
+    incoming[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_meta_is_default(false));
     });
@@ -136,6 +140,7 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
     // `third_party/float-out-boy/src/main.c:2368`; generated `conf/confparser.c:187-190` rejects a
     // bad signature before reading the field bytes.
     assert_eq!(*current.as_bytes(), incoming);
+    assert_eq!(state.internal_led_confirmation_start_for_test(), Some(0.15));
 }
 
 #[test]

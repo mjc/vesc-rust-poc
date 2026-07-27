@@ -95,7 +95,12 @@ fn float_out_boy_set_cfg_payload_with_state(
     // `conf/confparser.c:187-190` rejects bad signatures before field reads.
     // This byte-image step is intentionally only the deserialization/storage
     // part; EEPROM write and `configure(d)` remain separate parity work.
-    state.store_serialized_config(config.as_bytes())
+    let stored = state.store_serialized_config(config.as_bytes());
+    #[cfg(any(test, target_arch = "arm"))]
+    if stored {
+        state.start_internal_led_confirmation(vescpkg_rs::FirmwareClock::current_timestamp());
+    }
+    stored
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

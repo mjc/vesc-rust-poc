@@ -76,6 +76,13 @@ pub struct FirmwareClock {
 }
 
 impl FirmwareClock {
+    /// Return the current firmware system timestamp without retaining a clock handle.
+    #[cfg(not(test))]
+    #[must_use]
+    pub fn current_timestamp() -> TimestampTicks {
+        AppDataApi::new(crate::bindings::RealBindings).system_timestamp()
+    }
+
     #[cfg(not(test))]
     pub(crate) fn new() -> Self {
         Self {
@@ -87,7 +94,7 @@ impl FirmwareClock {
     #[cfg(not(test))]
     #[must_use]
     pub fn now(&self) -> TimestampTicks {
-        self.api.system_timestamp()
+        Self::current_timestamp()
     }
 
     /// Return firmware uptime in the native floating-point seconds domain.
