@@ -1,15 +1,16 @@
 use super::*;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyRideState,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyRealtimeBalanceCurrent,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRideState,
 };
 use crate::package::test_support::{
     imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
-    sample_all_data_payloads_with_ride_state,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use vescpkg_rs::prelude::{
-    AngleCurrentGain, AngleDegrees, AngleRadians, AngularVelocity, DutyCycle, RateCurrentGain,
-    Ratio, SignedRatio, Temperature, TemperatureLimitStart, Voltage,
+    AngleCurrentGain, AngleDegrees, AngleRadians, AngularVelocity, Current, DutyCycle,
+    MotorCurrent, RateCurrentGain, Ratio, SignedRatio, Temperature, TemperatureLimitStart, Voltage,
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw, WireByte};
@@ -767,6 +768,73 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
             AngleDegrees::from_degrees(80.0),
             AngleDegrees::ZERO,
         ),
+    );
+}
+
+#[test]
+fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_ready(true);
+    firmware.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(79.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    firmware.set_imu_angular_rate(imu_angular_rate(
+        imu_roll_rate(AngularVelocity::ZERO),
+        imu_pitch_rate(AngularVelocity::ZERO),
+        imu_yaw_rate(AngularVelocity::ZERO),
+    ));
+    let mut state = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 80, 30, 0, 100, 1,])));
+    set_ride_state(&mut state, FloatOutBoyRunState::Running);
+    set_footpad(&mut state, FloatOutBoyFootpadState::None);
+    let payloads = state.all_data_payloads;
+    let base = payloads.base();
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+        FloatOutBoyAllDataBasePayload::new(
+            FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::ZERO)),
+            base.attitude(),
+            base.status(),
+            base.footpad(),
+            base.setpoints(),
+            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::ZERO)),
+            base.motor(),
+        ),
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    );
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(1),
+        firmware.telemetry(),
+        firmware.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert!(state.apply_requested_motor_current(firmware.motor()));
+
+    let base = state.all_data_payloads().base();
+    let error = base.setpoints().board().angle().as_degrees()
+        - base.attitude().balance_pitch().angle_degrees().as_degrees();
+    let expected = error * 8.0 * 0.2;
+    let actual = firmware.commanded_current().current().as_amps();
+    // The calibrated 80° reference minus the live 79° pitch produces +1°.
+    // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 0.2 output
+    // smoothing from rest, the final motor command follows the signed
+    // setpoint error exactly.
+    assert!(expected < 0.0, "error={error}");
+    assert!(base.booster_current().current().is_zero());
+    assert!(
+        (actual - expected).abs() < 0.000_1,
+        "actual={actual}, expected={expected}, base={base:?}",
     );
 }
 
