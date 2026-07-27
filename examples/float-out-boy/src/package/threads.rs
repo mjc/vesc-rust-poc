@@ -104,7 +104,7 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyMainThreadTick {
     sleep_us: u32,
-    configure_beeper: bool,
+    beeper_configuration_level: Option<vescpkg_rs::DigitalOutputLevel>,
     beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
 
@@ -112,12 +112,12 @@ pub(crate) struct FloatOutBoyMainThreadTick {
 impl FloatOutBoyMainThreadTick {
     const fn new(
         sleep_us: u32,
-        configure_beeper: bool,
+        beeper_configuration_level: Option<vescpkg_rs::DigitalOutputLevel>,
         beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
     ) -> Self {
         Self {
             sleep_us,
-            configure_beeper,
+            beeper_configuration_level,
             beeper_level,
         }
     }
@@ -131,11 +131,7 @@ impl FloatOutBoyMainThreadTick {
     }
 
     const fn beeper_configuration_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
-        if self.configure_beeper {
-            Some(vescpkg_rs::DigitalOutputLevel::Low)
-        } else {
-            None
-        }
+        self.beeper_configuration_level
     }
 }
 
@@ -181,7 +177,9 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
 
     FloatOutBoyMainThreadTick::new(
         state.configured_loop_time_us(),
-        state.take_beeper_configuration_request(),
+        state
+            .take_beeper_configuration_request()
+            .then_some(vescpkg_rs::DigitalOutputLevel::Low),
         beeper_level,
     )
 }
