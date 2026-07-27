@@ -479,10 +479,8 @@ mod tests {
             assert_f32_be(&legacy, offset, expected);
         }
 
-        let command_31 = encode_float_out_boy_realtime_data_response(
-            &payloads,
-            TimestampTicks::from_ticks(0),
-        );
+        let command_31 =
+            encode_float_out_boy_realtime_data_response(&payloads, TimestampTicks::from_ticks(0));
         let bytes = command_31.as_bytes();
         assert!((decode_normal_float16([bytes[44], bytes[45]]) - 1.0).abs() < 0.001);
         assert_eq!(&bytes[46..48], &[0, 0]);

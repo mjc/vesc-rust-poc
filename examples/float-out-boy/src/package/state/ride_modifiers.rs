@@ -688,14 +688,26 @@ mod tests {
         );
 
         assert_eq!(state.nose, AngleDegrees::from_degrees(1.0));
-        assert_eq!(setpoints.turn_tilt().angle(), AngleDegrees::from_degrees(2.0 * 0.995));
-        assert_eq!(setpoints.torque_tilt().angle(), AngleDegrees::from_degrees(3.0 * 0.995));
-        assert_eq!(setpoints.atr().angle(), AngleDegrees::from_degrees(4.0 * 0.995));
+        assert_eq!(
+            setpoints.turn_tilt().angle(),
+            AngleDegrees::from_degrees(2.0 * 0.995)
+        );
+        assert_eq!(
+            setpoints.torque_tilt().angle(),
+            AngleDegrees::from_degrees(3.0 * 0.995)
+        );
+        assert_eq!(
+            setpoints.atr().angle(),
+            AngleDegrees::from_degrees(4.0 * 0.995)
+        );
         assert_eq!(
             setpoints.brake_tilt().angle(),
             AngleDegrees::from_degrees(5.0 * 0.995)
         );
-        assert_eq!(state.atr.angle.target, AngleDegrees::from_degrees(4.0 * 0.99));
+        assert_eq!(
+            state.atr.angle.target,
+            AngleDegrees::from_degrees(4.0 * 0.99)
+        );
         assert_eq!(state.brake.target, AngleDegrees::from_degrees(5.0 * 0.99));
         assert_eq!(
             setpoints.board().angle(),
@@ -772,9 +784,11 @@ mod tests {
         assert!(editor.set_tiltback_variable_erpm(ElectricalSpeed::new(
             Rpm::from_revolutions_per_minute(1_000.0),
         )));
-        assert!(editor.set_nose_angling_speed(
-            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
-        ));
+        assert!(
+            editor.set_nose_angling_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(
+                100.0
+            ),)
+        );
 
         for (erpm, expected) in [
             (500.0, 0.0),
@@ -805,18 +819,20 @@ mod tests {
     fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         let mut config = FloatOutBoyConfigImage::defaults();
         let mut editor = config.editor();
-        assert!(editor.set_torque_tilt_start_current(MotorCurrent::new(Current::from_amps(
-            10.0,
-        ))));
+        assert!(editor.set_torque_tilt_start_current(MotorCurrent::new(Current::from_amps(10.0,))));
         assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
         assert!(editor.set_torque_tilt_regen_strength(PidScale::new(0.2)));
         assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(3.0)));
-        assert!(editor.set_torque_tilt_on_speed(
-            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
-        ));
-        assert!(editor.set_torque_tilt_off_speed(
-            vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),
-        ));
+        assert!(
+            editor.set_torque_tilt_on_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(
+                100.0
+            ),)
+        );
+        assert!(
+            editor.set_torque_tilt_off_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(
+                50.0
+            ),)
+        );
         let balance = config.balance();
 
         for (current, braking, expected) in [
@@ -862,12 +878,12 @@ mod tests {
         assert!(editor.set_atr_threshold_down(AngleDegrees::ZERO));
         assert!(editor.set_atr_speed_boost(PidScale::new(0.5)));
         assert!(editor.set_atr_angle_limit(AngleDegrees::from_degrees(3.0)));
-        assert!(editor.set_atr_on_speed(
-            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
-        ));
-        assert!(editor.set_atr_off_speed(
-            vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),
-        ));
+        assert!(
+            editor.set_atr_on_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),)
+        );
+        assert!(
+            editor.set_atr_off_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),)
+        );
         assert!(editor.set_atr_amps_accel_ratio(PidScale::new(1.0)));
         assert!(editor.set_atr_amps_decel_ratio(PidScale::new(1.0)));
         let balance = config.balance();
@@ -983,7 +999,14 @@ mod tests {
             ..input()
         };
         for _ in 0..100 {
-            state.update_brake(balance, braking, true, 3_000.0, 1.0, SampleRate::from_hertz(100.0));
+            state.update_brake(
+                balance,
+                braking,
+                true,
+                3_000.0,
+                1.0,
+                SampleRate::from_hertz(100.0),
+            );
         }
         let sustained = state.brake.setpoint;
         assert!(sustained.is_positive());
