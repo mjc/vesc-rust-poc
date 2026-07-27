@@ -6,9 +6,9 @@ use super::limits::{
 };
 use super::{
     AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyChargingState,
-    FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyPackageState,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
+    FloatOutBoyBeeperCount, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
+    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyPackageState,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
@@ -1706,6 +1706,5 @@ pub(super) fn refresh(
         runtime.booster_current,
         base.motor(),
     );
-    state.all_data_payloads =
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    state.all_data_payloads = payloads.with_base(base);
 }

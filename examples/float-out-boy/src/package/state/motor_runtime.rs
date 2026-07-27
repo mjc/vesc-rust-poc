@@ -2,9 +2,8 @@ use super::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use super::limits::TractionLossLimits;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
-    FloatOutBoyFocIdCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
-    FloatOutBoyRealtimeMotorCurrents,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyFocIdCurrent,
+    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
@@ -151,8 +150,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
         base.booster_current(),
         motor,
     );
-    state.all_data_payloads =
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    state.all_data_payloads = payloads.with_base(base);
 }
 
 #[cfg(test)]

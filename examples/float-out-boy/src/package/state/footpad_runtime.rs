@@ -1,7 +1,6 @@
 use super::FloatOutBoyPackageState;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
 };
 use vescpkg_rs::prelude::AdcVoltage;
 
@@ -34,8 +33,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, adc1: AdcVoltage, adc
         base.booster_current(),
         base.motor(),
     );
-    state.all_data_payloads =
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    state.all_data_payloads = payloads.with_base(base);
 }
 
 #[inline]

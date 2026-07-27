@@ -1,7 +1,7 @@
 use super::FloatOutBoyPackageState;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyRideState, FloatOutBoyRunState,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyRideState,
+    FloatOutBoyRunState,
 };
 
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
@@ -45,8 +45,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
         base.booster_current(),
         base.motor(),
     );
-    state.all_data_payloads =
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    state.all_data_payloads = payloads.with_base(base);
 }
 
 pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {

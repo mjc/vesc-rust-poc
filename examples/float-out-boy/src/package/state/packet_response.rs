@@ -269,11 +269,7 @@ mod tests {
             0,
         ];
 
-        assert!(state.send_all_data_packet_response(
-            faulted.telemetry(),
-            &mut |_| true,
-            &request,
-        ));
+        assert!(state.send_all_data_packet_response(faulted.telemetry(), &mut |_| true, &request,));
         drop(faulted);
 
         let healthy = FirmwareTest::new();

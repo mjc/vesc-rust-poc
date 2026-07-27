@@ -734,6 +734,12 @@ impl FloatOutBoyAllDataPayloads {
         self.base
     }
 
+    /// Return a payload snapshot with replacement base fields.
+    #[must_use]
+    pub const fn with_base(self, base: FloatOutBoyAllDataBasePayload) -> Self {
+        Self::new(base, self.mode2, self.mode3, self.mode4)
+    }
+
     /// Return mode 2 all-data extension fields.
     #[must_use]
     pub const fn mode2(self) -> FloatOutBoyAllDataMode2Payload {
