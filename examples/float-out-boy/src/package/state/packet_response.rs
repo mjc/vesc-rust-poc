@@ -7,9 +7,8 @@ use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyBeepReason,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeReservedFlags,
+    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeReservedFlags,
     FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
@@ -155,9 +154,7 @@ impl FloatOutBoyPackageState {
                     payloads
                 };
                 let response = payloads.encode_response(request);
-                self.all_data_payloads = self
-                    .all_data_payloads
-                    .with_beep_reason(FloatOutBoyBeepReason::None);
+                self.all_data_payloads = self.all_data_payloads.without_beep_reason();
                 send(response.as_bytes())
             }
         }

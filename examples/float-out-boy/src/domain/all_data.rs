@@ -751,12 +751,15 @@ impl FloatOutBoyAllDataPayloads {
         )
     }
 
-    /// Return a payload snapshot with a replacement one-shot beep reason.
+    /// Return a payload snapshot with the one-shot beep reason consumed.
     #[must_use]
-    pub const fn with_beep_reason(self, beep_reason: FloatOutBoyBeepReason) -> Self {
+    pub const fn without_beep_reason(self) -> Self {
         Self::new(
             FloatOutBoyAllDataBasePayload {
-                status: FloatOutBoyAllDataStatus::new(self.base.status.ride_state(), beep_reason),
+                status: FloatOutBoyAllDataStatus::new(
+                    self.base.status.ride_state(),
+                    FloatOutBoyBeepReason::None,
+                ),
                 ..self.base
             },
             self.mode2,
