@@ -36,8 +36,7 @@ enum FloatOutBoyRuntimeThread {
 impl FloatOutBoyRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
-            Self::Main => 2048,
-            Self::Aux => 1024,
+            Self::Main | Self::Aux => 2048,
         }
     }
 
@@ -61,8 +60,10 @@ impl FloatOutBoyRuntimeThread {
 ///
 /// Upstream passes its position-independent `float_out_boy_thd` and `aux_thd` to spawn
 /// with working areas of 1536 and 1024 bytes at
-/// third_party/float-out-boy/src/main.c:2438-2445. The Rust main-loop call chain is
-/// larger, so it reserves 2048 bytes. VESC forwards these byte counts directly
+/// third_party/float-out-boy/src/main.c:2438-2445. The Rust main loop reserves
+/// 2048 bytes for its larger call chain. The auxiliary thread also reserves 2048
+/// bytes because it performs Refloat's post-spawn LED hardware setup without
+/// consuming the loader's fixed 2048-byte evaluator stack. VESC forwards these byte counts directly
 /// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
 fn float_out_boy_runtime_threads() -> Result<
@@ -259,30 +260,26 @@ fn initialize_float_out_boy_runtime_state(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
+fn read_float_out_boy_footpads(gpio: &vescpkg_rs::Gpio) -> (AdcVoltage, AdcVoltage) {
+    let read = |pin| {
+        gpio.acquire_analog(pin)
+            .ok()
+            .and_then(|pin| {
+                pin.set_mode(GpioMode::Analog)
+                    .ok()
+                    .and_then(|()| pin.read().ok())
+            })
+            .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
+    };
+    (read(AnalogPin::ADC1), read(AnalogPin::ADC2))
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
 pub fn start_float_out_boy_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let firmware = vescpkg_rs::Firmware::new();
     let odometer = firmware.telemetry().odometer();
-    let footpad_adc1 = firmware.gpio().acquire_analog(AnalogPin::ADC1).ok();
-    let footpad_adc2 = firmware.gpio().acquire_analog(AnalogPin::ADC2).ok();
-    let footpad_voltage1 = footpad_adc1
-        .as_ref()
-        .and_then(|pin| {
-            pin.set_mode(GpioMode::Analog)
-                .ok()
-                .and_then(|()| pin.read().ok())
-        })
-        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
-    let footpad_voltage2 = footpad_adc2
-        .as_ref()
-        .and_then(|pin| {
-            pin.set_mode(GpioMode::Analog)
-                .ok()
-                .and_then(|()| pin.read().ok())
-        })
-        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
-    drop((footpad_adc1, footpad_adc2));
     if start
         .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
             initialize_float_out_boy_runtime_state(
@@ -298,12 +295,7 @@ pub fn start_float_out_boy_runtime_threads(
     }
     let threads = float_out_boy_runtime_threads()
         .map_err(|_| vescpkg_rs::PackageStartError::ThreadSpawnFailed)?;
-    start.spawn_threads(threads)?;
-    start
-        .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
-            state.setup_loaded_led_hardware_after_threads(footpad_voltage1, footpad_voltage2);
-        })
-        .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
+    start.spawn_threads(threads)
 }
 
 #[cfg(target_arch = "arm")]
@@ -326,24 +318,8 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
-                let footpad_adc1 = firmware.gpio().acquire_analog(AnalogPin::ADC1).ok();
-                let footpad_adc2 = firmware.gpio().acquire_analog(AnalogPin::ADC2).ok();
-                let footpad_voltage1 = footpad_adc1
-                    .as_ref()
-                    .and_then(|pin| {
-                        pin.set_mode(GpioMode::Analog)
-                            .ok()
-                            .and_then(|()| pin.read().ok())
-                    })
-                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
-                let footpad_voltage2 = footpad_adc2
-                    .as_ref()
-                    .and_then(|pin| {
-                        pin.set_mode(GpioMode::Analog)
-                            .ok()
-                            .and_then(|()| pin.read().ok())
-                    })
-                    .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO));
+                let (footpad_voltage1, footpad_voltage2) =
+                    read_float_out_boy_footpads(firmware.gpio());
                 let tick = ctx.with_state_mut(|state| {
                     state.refresh_controller_input(firmware.inputs());
                     tick_float_out_boy_main_thread_with(
@@ -389,6 +365,10 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
         {
             let firmware = ctx.firmware();
             let threads = firmware.threads();
+            let (footpad_voltage1, footpad_voltage2) = read_float_out_boy_footpads(firmware.gpio());
+            let _ = ctx.with_state_mut(|state| {
+                state.setup_loaded_led_hardware_after_threads(footpad_voltage1, footpad_voltage2);
+            });
             if let Ok(priority) = ThreadPriority::try_new(-1) {
                 let _ = threads.set_priority(priority);
             }
@@ -444,7 +424,7 @@ mod tests {
         // The current ARM call chain reaches 1480 bytes before ChibiOS's
         // thread metadata, saved contexts, and interrupt reserve.
         assert_eq!(super::FloatOutBoyRuntimeThread::Main.stack_bytes(), 2048);
-        assert_eq!(super::FloatOutBoyRuntimeThread::Aux.stack_bytes(), 1024);
+        assert_eq!(super::FloatOutBoyRuntimeThread::Aux.stack_bytes(), 2048);
     }
 
     #[test]
