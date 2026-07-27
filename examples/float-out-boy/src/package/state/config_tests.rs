@@ -916,6 +916,42 @@ fn interrupted_config_write_cannot_boot_a_mixed_image() {
     );
 }
 
+fn assert_interrupted_config_write_fails_safe(successful_writes: usize) {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut old = default_float_out_boy_config_bytes();
+    old.edit_float_out_boy_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
+    });
+    assert!(state.store_serialized_config(&old));
+    let old = state.serialized_config;
+
+    firmware.fail_eeprom_write_after(successful_writes);
+    let mut new = default_float_out_boy_config_bytes();
+    new.edit_float_out_boy_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(5.0)));
+    });
+    assert!(!state.store_serialized_config(&new));
+
+    let restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    let expected = if successful_writes == 0 {
+        old
+    } else {
+        FloatOutBoyConfigImage::defaults()
+    };
+    assert_eq!(restarted.serialized_config, expected);
+    assert_eq!(state.serialized_config, old);
+}
+
+#[test]
+fn interrupted_config_write_fails_safe_at_every_commit_phase() {
+    for successful_writes in [0, 1, 80] {
+        assert_interrupted_config_write_fails_safe(successful_writes);
+    }
+}
+
 #[test]
 fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
     let firmware = FirmwareTest::new();

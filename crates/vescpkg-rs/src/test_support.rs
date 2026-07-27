@@ -265,6 +265,11 @@ impl FirmwareTest {
         crate::test_ffi::fail_eeprom_write(address);
     }
 
+    /// Make the next custom-EEPROM write fail after this many successful writes.
+    pub fn fail_eeprom_write_after(&self, successful_writes: usize) {
+        crate::test_ffi::fail_eeprom_write_after(successful_writes);
+    }
+
     /// Configure whether firmware IMU startup has completed.
     pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);

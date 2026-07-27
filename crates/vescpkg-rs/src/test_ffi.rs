@@ -283,6 +283,8 @@ static EEPROM: [AtomicU32; EEPROM_WORDS] = [const { AtomicU32::new(0) }; EEPROM_
 static EEPROM_PRESENT: [AtomicBool; EEPROM_WORDS] =
     [const { AtomicBool::new(false) }; EEPROM_WORDS];
 static EEPROM_WRITE_FAILURE: AtomicI32 = AtomicI32::new(-1);
+static EEPROM_WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static EEPROM_WRITE_FAILURE_AT_COUNT: AtomicUsize = AtomicUsize::new(usize::MAX);
 const NVM_BYTES: usize = 256;
 static NVM: [AtomicU8; NVM_BYTES] = [const { AtomicU8::new(0) }; NVM_BYTES];
 static NVM_FAILURE: AtomicBool = AtomicBool::new(false);
@@ -506,6 +508,8 @@ fn reset_storage_and_sync() {
         slot.store(false, Ordering::Relaxed);
     }
     EEPROM_WRITE_FAILURE.store(-1, Ordering::Relaxed);
+    EEPROM_WRITE_COUNT.store(0, Ordering::Relaxed);
+    EEPROM_WRITE_FAILURE_AT_COUNT.store(usize::MAX, Ordering::Relaxed);
     for byte in &NVM {
         byte.store(0, Ordering::Relaxed);
     }
@@ -567,7 +571,10 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
     else {
         return false;
     };
-    if EEPROM_WRITE_FAILURE.load(Ordering::Relaxed) == address {
+    let write_count = EEPROM_WRITE_COUNT.fetch_add(1, Ordering::Relaxed);
+    if EEPROM_WRITE_FAILURE.load(Ordering::Relaxed) == address
+        || EEPROM_WRITE_FAILURE_AT_COUNT.load(Ordering::Relaxed) == write_count
+    {
         return false;
     }
     // SAFETY: the fake firmware accepts either null or one readable word.
@@ -581,6 +588,13 @@ pub unsafe fn store_eeprom_word(word: *mut u32, address: i32) -> bool {
 
 pub(crate) fn fail_eeprom_write(address: crate::CustomEepromAddress) {
     EEPROM_WRITE_FAILURE.store(address.get(), Ordering::Relaxed);
+}
+
+pub(crate) fn fail_eeprom_write_after(successful_writes: usize) {
+    let failure = EEPROM_WRITE_COUNT
+        .load(Ordering::Relaxed)
+        .saturating_add(successful_writes);
+    EEPROM_WRITE_FAILURE_AT_COUNT.store(failure, Ordering::Relaxed);
 }
 
 pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
