@@ -8,6 +8,7 @@ use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
 const ALERTS_RESPONSE_CAPACITY: usize = 511;
 const FAULT_NAME_MAX_BYTES: usize = 50;
+const FAULT_NAME_PREFIX_BYTES: usize = 11;
 
 impl FloatOutBoyPackageState {
     pub(super) fn handle_alert_packet(
@@ -109,8 +110,8 @@ fn push_fault_name(
 }
 
 fn bounded_fault_name(name: &[u8]) -> &[u8] {
-    let name = if name.len() > 11 && name.first() == Some(&b'F') {
-        name.get(11..).unwrap_or(name)
+    let name = if name.len() > FAULT_NAME_PREFIX_BYTES && name.first() == Some(&b'F') {
+        name.get(FAULT_NAME_PREFIX_BYTES..).unwrap_or(name)
     } else {
         name
     };
