@@ -169,6 +169,7 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
         .ride_state()
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
+    state.sample_data_recorder(system_time_ticks);
     let beeper_level = state
         .take_beeper_level()
         .map(crate::beeper::FloatOutBoyBeeperLevel::digital_output)

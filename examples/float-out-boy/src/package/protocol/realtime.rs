@@ -289,7 +289,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     FloatOutBoyRealtimeDataResponse { bytes, len: ind }
 }
 
-fn realtime_value(
+pub(in crate::package) fn realtime_value(
     payloads: &FloatOutBoyAllDataPayloads,
     item: FloatOutBoyRealtimeDataItem,
     remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,

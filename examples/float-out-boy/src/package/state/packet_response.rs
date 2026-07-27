@@ -7,9 +7,9 @@ use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeReservedFlags, FloatOutBoyRealtimeTail,
+    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeReservedFlags,
+    FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
@@ -29,6 +29,7 @@ impl FloatOutBoyPackageState {
             let response = encode_float_out_boy_info_response(
                 payload,
                 self.serialized_config.hardware_led_mode_id(),
+                self.data_recorder.has_capability(),
             );
             return send(response.as_bytes());
         }
@@ -96,7 +97,7 @@ impl FloatOutBoyPackageState {
                     base.status().beep_reason(),
                 )
                 .with_fatal_error(self.alert_tracker.fatal_error())
-                .with_data_recorder(FloatOutBoyDataRecorderFlags::inactive());
+                .with_data_recorder(self.data_recorder.flags());
                 let tail = FloatOutBoyRealtimeTail::new(
                     self.alert_tracker.active_alerts(),
                     FloatOutBoyRealtimeReservedFlags::none(),

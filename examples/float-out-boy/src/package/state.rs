@@ -35,6 +35,9 @@ mod balance_tests;
 mod charging;
 mod config_runtime;
 mod config_storage;
+mod data_recorder;
+#[cfg(test)]
+mod data_recorder_tests;
 mod flywheel;
 #[cfg(any(test, target_arch = "arm"))]
 mod footpad_runtime;
@@ -64,6 +67,7 @@ mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
 use config_storage::FirmwareImuMigration;
+use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelOffsets;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
@@ -125,6 +129,7 @@ pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     firmware_imu_migration: FirmwareImuMigration,
+    data_recorder: DataRecorderState,
     alert_tracker: AlertTrackerState,
     lcm: LcmState,
     #[cfg(any(test, target_arch = "arm"))]
@@ -199,6 +204,7 @@ impl FloatOutBoyPackageState {
             all_data_payloads,
             serialized_config,
             firmware_imu_migration: FirmwareImuMigration::Pending,
+            data_recorder: DataRecorderState::default(),
             alert_tracker: AlertTrackerState::default(),
             lcm: LcmState::new(
                 serialized_config.hardware_led_mode_id(),
@@ -702,6 +708,7 @@ impl FloatOutBoyPackageState {
             || self.handle_rc_move_packet(bytes)
             || self.handle_alert_packet(telemetry, send, bytes)
             || self.handle_lcm_packet(telemetry, send, bytes)
+            || self.handle_data_recorder_packet(send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)

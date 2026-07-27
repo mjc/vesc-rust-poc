@@ -857,9 +857,11 @@ fn apply_transition_activity(
     });
     if transition.state_stopped {
         state.disengage_ticks = system_time_ticks;
+        state.trigger_data_recorder(false);
         state.ride_flags.flywheel_abort |= activity.normal.flywheel_both_footpads;
     } else if transition.state_engaged {
         state.engage_ticks = system_time_ticks;
+        state.trigger_data_recorder(true);
     }
     if matches!(activity.input.run_state, FloatOutBoyRunState::Running) && !transition.state_stopped
     {
