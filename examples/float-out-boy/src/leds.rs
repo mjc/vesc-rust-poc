@@ -1224,35 +1224,17 @@ impl FloatOutBoyLedStripFrame {
 
     /// Paint Refloat's disabled red pulse.
     pub fn render_disabled(&mut self, strip_brightness: Ratio, on_off_fade: Ratio, time: f32) {
-        let len = usize::from(self.config.count());
-        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
-            return;
-        };
-        let len_float = f32::from(len_u16);
-        let time = time / 2.0;
-        let progress = refloat_cosine_progress(time);
-        let center = len_float / 3.0;
-        let length = len_float / 2.0 - center;
-        let offset = length * (1.0 - progress);
-        let feather = len_float / 4.0;
-        let ratio = center / length;
-        let fade = if time < ratio { time / ratio } else { 1.0 };
         let red = FloatOutBoyLedPixel {
             channels: [0xff, 0, 0, 0],
         };
         let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
-
-        for index in 0..len {
-            let index_float = f32::from(u16::try_from(index).unwrap_or_default());
-            let start = ((index_float - offset + 1.0) / feather).clamp(0.0, 1.0);
-            let end = ((len_float - offset - index_float) / feather).clamp(0.0, 1.0);
-            let target = FloatOutBoyLedPixel::blend(
-                FloatOutBoyLedPixel::default(),
-                red,
-                start.min(end) * fade,
-            );
-            self.render_pixel(index, target, brightness);
-        }
+        self.render_pulse_shape(
+            red,
+            FloatOutBoyLedPixel::default(),
+            brightness,
+            time / 2.0,
+            3.0,
+        );
     }
 
     /// Paint Refloat's status-confirm pulse over this strip.
@@ -1529,22 +1511,32 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+        self.render_pulse_shape(primary, secondary, brightness, time, 5.0);
+    }
+
+    fn render_pulse_shape(
+        &mut self,
+        primary: FloatOutBoyLedPixel,
+        secondary: FloatOutBoyLedPixel,
+        brightness: Ratio,
+        time: f32,
+        center_divisor: f32,
+    ) {
         let len = usize::from(self.config.count());
         let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
             return;
         };
         let len_float = f32::from(len_u16);
         let progress = refloat_cosine_progress(time);
-        let center = len_float / 5.0;
+        let center = len_float / center_divisor;
         let length = len_float / 2.0 - center;
         let offset = length * (1.0 - progress);
         let feather = len_float / 4.0;
         let ratio = center / length;
         let fade = if time < ratio { time / ratio } else { 1.0 };
-        let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
-        let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
-        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
-
         for (index, pixel) in self
             .pixels
             .get_mut(..len)
