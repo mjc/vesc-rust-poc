@@ -818,4 +818,171 @@ mod tests {
         );
         assert!(state.torque.setpoint < active);
     }
+
+    #[test]
+    fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_atr_strength_up(PidScale::new(1.0)));
+        assert!(editor.set_atr_strength_down(PidScale::new(1.0)));
+        assert!(editor.set_atr_threshold_up(AngleDegrees::ZERO));
+        assert!(editor.set_atr_threshold_down(AngleDegrees::ZERO));
+        assert!(editor.set_atr_speed_boost(PidScale::new(0.5)));
+        assert!(editor.set_atr_angle_limit(AngleDegrees::from_degrees(3.0)));
+        assert!(editor.set_atr_on_speed(
+            vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
+        ));
+        assert!(editor.set_atr_off_speed(
+            vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),
+        ));
+        assert!(editor.set_atr_amps_accel_ratio(PidScale::new(1.0)));
+        assert!(editor.set_atr_amps_decel_ratio(PidScale::new(1.0)));
+        let balance = config.balance();
+        let mut state = RideModifierState::default();
+        let accelerating = RideModifierInput {
+            motor_erpm: Rpm::from_revolutions_per_minute(4_000.0),
+            filtered_current: Current::from_amps(30.0),
+            motor_current: MotorCurrent::new(Current::from_amps(30.0)),
+            ..input()
+        };
+
+        for _ in 0..200 {
+            state.update_atr(
+                balance,
+                accelerating,
+                false,
+                4_000.0,
+                1.0,
+                SampleRate::from_hertz(100.0),
+            );
+        }
+        let accelerating_setpoint = state.atr.angle.setpoint;
+        assert!(accelerating_setpoint.is_positive());
+        assert!(accelerating_setpoint <= AngleDegrees::from_degrees(3.0));
+        assert!((state.atr.speed_boost - 1.0 / 7.0).abs() < 0.000_001);
+
+        let braking = RideModifierInput {
+            filtered_current: Current::from_amps(-30.0),
+            motor_current: MotorCurrent::new(Current::from_amps(-30.0)),
+            ..accelerating
+        };
+        for _ in 0..400 {
+            state.update_atr(
+                balance,
+                braking,
+                true,
+                4_000.0,
+                1.0,
+                SampleRate::from_hertz(100.0),
+            );
+        }
+        assert!(state.atr.angle.setpoint.is_negative());
+        assert!(state.atr.angle.setpoint >= AngleDegrees::from_degrees(-3.0));
+        assert_eq!(state.atr.speed_boost, 0.0);
+
+        let before_recovery = state.atr.angle.setpoint;
+        for _ in 0..1_000 {
+            state.update_atr(
+                balance,
+                RideModifierInput {
+                    filtered_current: Current::from_amps(8.0),
+                    motor_current: MotorCurrent::new(Current::from_amps(8.0)),
+                    ..accelerating
+                },
+                false,
+                4_000.0,
+                1.0,
+                SampleRate::from_hertz(100.0),
+            );
+        }
+        assert!(state.atr.angle.setpoint > before_recovery);
+    }
+
+    #[test]
+    fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
+        let mut config = FloatOutBoyConfigImage::defaults();
+        let mut editor = config.editor();
+        assert!(editor.set_brake_tilt_strength(PidScale::new(10.0)));
+        assert!(editor.set_brake_tilt_lingering(PidScale::new(2.0)));
+        assert!(editor.set_turn_tilt_strength(PidScale::new(100.0)));
+        assert!(editor.set_turn_tilt_angle_limit(AngleDegrees::from_degrees(3.0)));
+        assert!(editor.set_turn_tilt_start_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(1_000.0),
+        )));
+        let balance = config.balance();
+        let mut state = RideModifierState {
+            turn: TurnTiltState {
+                yaw_aggregate: AngleDegrees::from_degrees(20.0),
+                abs_yaw_change: AngleDegrees::from_degrees(0.1),
+                ..TurnTiltState::default()
+            },
+            ..RideModifierState::default()
+        };
+
+        assert_eq!(
+            turn_target(
+                &state.turn,
+                balance,
+                Rpm::from_revolutions_per_minute(500.0),
+            ),
+            AngleDegrees::ZERO,
+        );
+        assert_eq!(
+            turn_target(
+                &state.turn,
+                balance,
+                Rpm::from_revolutions_per_minute(3_000.0),
+            ),
+            AngleDegrees::from_degrees(3.0),
+        );
+        assert_eq!(
+            turn_target(
+                &state.turn,
+                balance,
+                Rpm::from_revolutions_per_minute(-3_000.0),
+            ),
+            AngleDegrees::from_degrees(-3.0),
+        );
+
+        let braking = RideModifierInput {
+            balance_pitch: AngleDegrees::from_degrees(5.0),
+            motor_current: MotorCurrent::new(Current::from_amps(-5.0)),
+            ..input()
+        };
+        for _ in 0..100 {
+            state.update_brake(balance, braking, true, 3_000.0, 1.0, SampleRate::from_hertz(100.0));
+        }
+        let sustained = state.brake.setpoint;
+        assert!(sustained.is_positive());
+        for _ in 0..100 {
+            state.update_brake(
+                balance,
+                RideModifierInput {
+                    motor_current: MotorCurrent::new(Current::ZERO),
+                    ..braking
+                },
+                false,
+                3_000.0,
+                1.0,
+                SampleRate::from_hertz(100.0),
+            );
+        }
+        assert!(state.brake.setpoint < sustained);
+
+        state.update_turn(
+            balance,
+            Rpm::from_revolutions_per_minute(3_000.0),
+            SampleRate::from_hertz(100.0),
+        );
+        let active_turn = state.turn.angle.setpoint;
+        assert!(active_turn.is_positive());
+        state.turn.yaw_aggregate = AngleDegrees::ZERO;
+        state.turn.abs_yaw_change = AngleDegrees::ZERO;
+        state.update_turn(
+            balance,
+            Rpm::from_revolutions_per_minute(3_000.0),
+            SampleRate::from_hertz(100.0),
+        );
+        assert!(state.turn.angle.setpoint < active_turn);
+    }
 }
