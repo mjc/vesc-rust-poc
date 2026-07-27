@@ -20,7 +20,7 @@ const HEADER_RESPONSE_LEN: usize = 159;
 const DATA_RESPONSE_CAPACITY: usize = 511;
 const DATA_RECORD_DATA_COMMAND_ID: u8 = 43;
 #[cfg(test)]
-const TEST_SAMPLE_CAPACITY: usize = 4;
+const TEST_SAMPLE_CAPACITY: usize = 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DataRecorderSample {

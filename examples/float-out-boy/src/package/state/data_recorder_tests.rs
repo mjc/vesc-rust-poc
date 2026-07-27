@@ -98,7 +98,7 @@ fn recorder_control_preserves_autostart_and_autostop_policy() {
 fn recorder_triggers_and_overwrites_the_oldest_sample_like_refloat() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     state.trigger_data_recorder(true);
-    for timestamp in 1..=5 {
+    for timestamp in 1..=25 {
         state.sample_data_recorder(TimestampTicks::from_ticks(timestamp));
     }
     state.trigger_data_recorder(false);
@@ -110,7 +110,7 @@ fn recorder_triggers_and_overwrites_the_oldest_sample_like_refloat() {
     );
     assert_eq!(
         u32::from_be_bytes([header[0][2], header[0][3], header[0][4], header[0][5]]),
-        4
+        24
     );
 
     let (_, data) = handle(
@@ -283,4 +283,40 @@ fn engage_and_disengage_cover_every_autostart_autostop_combination() {
         );
         assert_eq!(disengaged[0][3] & 1 != 0, expected_after_disengage);
     }
+}
+
+#[test]
+fn data_response_paginates_at_the_refloat_send_buffer_boundary() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
+    );
+    for timestamp in 1..=24 {
+        state.sample_data_recorder(TimestampTicks::from_ticks(timestamp));
+    }
+
+    let (_, first_page) = handle(
+        &mut state,
+        &request(
+            FloatOutBoyAppDataCommand::DataRecordRequest,
+            &[2, 2, 0, 0, 0, 0],
+        ),
+    );
+    assert_eq!(first_page[0].len(), 506);
+    assert_eq!(&first_page[0][2..6], &[0, 0, 0, 0]);
+    assert_eq!(&first_page[0][6..10], &[0, 0, 0, 1]);
+    assert_eq!(&first_page[0][481..485], &[0, 0, 0, 20]);
+
+    let (_, second_page) = handle(
+        &mut state,
+        &request(
+            FloatOutBoyAppDataCommand::DataRecordRequest,
+            &[2, 2, 0, 0, 0, 20],
+        ),
+    );
+    assert_eq!(second_page[0].len(), 106);
+    assert_eq!(&second_page[0][2..6], &[0, 0, 0, 20]);
+    assert_eq!(&second_page[0][6..10], &[0, 0, 0, 21]);
+    assert_eq!(&second_page[0][81..85], &[0, 0, 0, 24]);
 }
