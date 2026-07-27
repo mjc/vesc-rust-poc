@@ -53,9 +53,13 @@ impl FloatOutBoyInternalLedDriver {
         self.pulse_count = pulse_count;
         let hardware = self.hardware;
         let Some(pulses) = self.pulses_mut(pulse_count) else {
+            self.pulse_count = 0;
+            self.release_pulses();
             return false;
         };
         let Some((reset, data)) = pulses.split_last_mut() else {
+            self.pulse_count = 0;
+            self.release_pulses();
             return false;
         };
         data.fill(WS2812_ZERO);
