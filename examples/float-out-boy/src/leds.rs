@@ -562,6 +562,51 @@ pub struct FloatOutBoyLedsConfig {
     status_idle: FloatOutBoyLedBarConfig,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FloatOutBoyLedRuntimeStatus {
+    enabled: bool,
+    headlights_enabled: bool,
+}
+
+impl FloatOutBoyLedRuntimeStatus {
+    #[must_use]
+    pub(crate) const fn new(enabled: bool, headlights_enabled: bool) -> Self {
+        Self {
+            enabled,
+            headlights_enabled,
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn with_headlights_enabled(mut self, enabled: bool) -> Self {
+        self.headlights_enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub(crate) const fn headlights_enabled(self) -> bool {
+        self.headlights_enabled
+    }
+
+    #[must_use]
+    pub(crate) const fn apply(self, mut config: FloatOutBoyLedsConfig) -> FloatOutBoyLedsConfig {
+        config.on = self.enabled;
+        config.headlights_on = self.headlights_enabled;
+        config
+    }
+}
+
 impl FloatOutBoyLedsConfig {
     /// Build a typed Float Out Boy LEDs config.
     #[must_use]
@@ -602,17 +647,6 @@ impl FloatOutBoyLedsConfig {
     #[must_use]
     pub const fn with_headlights_on(mut self) -> Self {
         self.headlights_on = true;
-        self
-    }
-
-    #[must_use]
-    pub(crate) const fn with_runtime_status(
-        mut self,
-        enabled: bool,
-        headlights_enabled: bool,
-    ) -> Self {
-        self.on = enabled;
-        self.headlights_on = headlights_enabled;
         self
     }
 
