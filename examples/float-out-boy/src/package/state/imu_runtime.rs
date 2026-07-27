@@ -410,8 +410,10 @@ fn refresh_flywheel_readiness(
     };
     let ready_stop = matches!(run_state, FloatOutBoyRunState::Ready)
         && matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-        && (state.ride_flags.flywheel_abort
-            || matches!(base.footpad().state(), FloatOutBoyFootpadState::Both));
+        && state.flywheel.should_stop(matches!(
+            base.footpad().state(),
+            FloatOutBoyFootpadState::Both
+        ));
     let run_state = if ready_stop {
         state.restore_flywheel_config();
         state
@@ -858,7 +860,9 @@ fn apply_transition_activity(
     if transition.state_stopped {
         state.disengage_ticks = system_time_ticks;
         state.trigger_data_recorder(false);
-        state.ride_flags.flywheel_abort |= activity.normal.flywheel_both_footpads;
+        state
+            .flywheel
+            .latch_abort(activity.normal.flywheel_both_footpads);
     } else if transition.state_engaged {
         state.engage_ticks = system_time_ticks;
         state.trigger_data_recorder(true);

@@ -5,7 +5,7 @@ use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsSample;
-use crate::config::{FloatOutBoyConfigImage, FloatOutBoyFlywheelConfig};
+use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
@@ -71,7 +71,7 @@ mod tuning_tests;
 use alert_tracker::AlertTrackerState;
 use config_storage::FirmwareImuMigration;
 use data_recorder::DataRecorderState;
-use flywheel::FloatOutBoyFlywheelOffsets;
+use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState};
 #[cfg(test)]
@@ -118,7 +118,6 @@ struct BeeperRuntimeFlags {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct RideRuntimeFlags {
-    flywheel_abort: bool,
     traction_control: bool,
 }
 
@@ -150,8 +149,7 @@ pub struct FloatOutBoyPackageState {
     beeper_flags: BeeperRuntimeFlags,
     #[cfg(any(test, target_arch = "arm"))]
     bms: bms_runtime::BmsRuntimeState,
-    flywheel_offsets: FloatOutBoyFlywheelOffsets,
-    flywheel_runtime_config: Option<FloatOutBoyFlywheelConfig>,
+    flywheel: FloatOutBoyFlywheelRuntime,
     ride_flags: RideRuntimeFlags,
     motor_control: FloatOutBoyMotorControl,
     balance_filter: BalanceFilter,
@@ -229,8 +227,7 @@ impl FloatOutBoyPackageState {
             beeper_flags: BeeperRuntimeFlags::default(),
             #[cfg(any(test, target_arch = "arm"))]
             bms: bms_runtime::BmsRuntimeState::source_startup(),
-            flywheel_offsets: FloatOutBoyFlywheelOffsets::source_startup(),
-            flywheel_runtime_config: None,
+            flywheel: FloatOutBoyFlywheelRuntime::source_startup(),
             ride_flags: RideRuntimeFlags::default(),
             motor_control: FloatOutBoyMotorControl::new(),
             balance_filter: BalanceFilter::source_startup(),
