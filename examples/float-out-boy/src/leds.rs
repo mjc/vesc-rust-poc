@@ -2363,6 +2363,24 @@ mod renderer_tests {
     use super::{FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPixel};
     use vescpkg_rs::prelude::Ratio;
 
+    fn white_led_config(idle_timeout_seconds: u16) -> super::FloatOutBoyLedsConfig {
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = super::FloatOutBoyStatusBarConfig::new(
+            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(idle_timeout_seconds),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled()
+    }
+
     #[test]
     fn named_led_colors_match_refloat_1_2_1_rgba_channels() {
         let cases = [
@@ -3455,23 +3473,7 @@ mod renderer_tests {
 
     #[test]
     fn headlight_transition_uses_elapsed_time_like_refloat() {
-        let bar = super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            FloatOutBoyLedColor::WhiteRgb,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        );
-        let status = super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
-            Ratio::from_ratio_const(0.9),
-            Ratio::from_ratio_const(0.1),
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(0.5),
-        );
-        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar)
-            .enabled()
-            .with_headlights_on();
+        let config = white_led_config(0).with_headlights_on();
         let running = super::FloatOutBoyLedUpdate {
             run_state: crate::FloatOutBoyRunState::Running,
             mode: crate::FloatOutBoyMode::Normal,
@@ -3490,23 +3492,7 @@ mod renderer_tests {
 
     #[test]
     fn disabled_front_stays_dark_while_lifted_like_refloat() {
-        let bar = super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            FloatOutBoyLedColor::WhiteRgb,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        );
-        let status = super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
-            Ratio::from_ratio_const(0.9),
-            Ratio::from_ratio_const(0.1),
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(0.5),
-        );
-        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar)
-            .enabled()
-            .lights_off_when_lifted();
+        let config = white_led_config(0).lights_off_when_lifted();
         let strip = super::FloatOutBoyLedStripConfig::new(
             super::FloatOutBoyLedStripOrder::First,
             1,
@@ -3556,21 +3542,7 @@ mod renderer_tests {
 
     #[test]
     fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
-        let bar = super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            FloatOutBoyLedColor::WhiteRgb,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        );
-        let status = super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1),
-            Ratio::from_ratio_const(0.9),
-            Ratio::from_ratio_const(0.1),
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(0.5),
-        );
-        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled();
+        let config = white_led_config(1);
         let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
             crate::lcm::FloatOutBoyLedMode::Internal,
         );
