@@ -795,6 +795,246 @@ impl FloatOutBoyLedStripConfig {
 // Refloat stores each strip length in one byte.
 const MAX_LED_STRIP_PIXELS: usize = 255;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatOutBoyHeadlightsState {
+    Off,
+    TransitioningOn,
+    On,
+    TransitioningOff,
+}
+
+/// Inputs copied into one pure 30 Hz LED state update.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatOutBoyLedUpdate {
+    /// Current package run state.
+    pub run_state: crate::FloatOutBoyRunState,
+    /// Current package operating mode.
+    pub mode: crate::FloatOutBoyMode,
+    /// Whether darkride is active.
+    pub darkride: bool,
+    /// Current decoded footpad state.
+    pub footpad: crate::FloatOutBoyFootpadState,
+    /// Current board pitch in degrees.
+    pub pitch_degrees: f32,
+    /// Current motor distance.
+    pub distance: f32,
+}
+
+/// Pure 30 Hz state for Refloat's lifted-board, footpad, and direction decisions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatOutBoyLedDynamics {
+    run_state: crate::FloatOutBoyRunState,
+    board_is_upright: bool,
+    on_off_fade: f32,
+    left_sensor: f32,
+    right_sensor: f32,
+    headlights_state: FloatOutBoyHeadlightsState,
+    headlights_split: f32,
+    direction_forward: bool,
+    direction_split: f32,
+    split_distance: f32,
+}
+
+impl FloatOutBoyLedDynamics {
+    /// Build source-compatible LED state before the first non-startup update.
+    #[must_use]
+    pub const fn new(distance: f32) -> Self {
+        Self {
+            run_state: crate::FloatOutBoyRunState::Startup,
+            board_is_upright: false,
+            on_off_fade: 0.0,
+            left_sensor: 0.0,
+            right_sensor: 0.0,
+            headlights_state: FloatOutBoyHeadlightsState::Off,
+            headlights_split: 1.0,
+            direction_forward: true,
+            direction_split: 1.0,
+            split_distance: distance,
+        }
+    }
+
+    /// Advance the pure renderer decisions by one source-rate 30 Hz tick.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the ordered Refloat state update stays contiguous for source comparison"
+    )]
+    pub fn update(&mut self, config: FloatOutBoyLedsConfig, input: FloatOutBoyLedUpdate) {
+        let FloatOutBoyLedUpdate {
+            run_state,
+            mode,
+            darkride,
+            footpad,
+            pitch_degrees,
+            distance,
+        } = input;
+        if matches!(run_state, crate::FloatOutBoyRunState::Startup) {
+            return;
+        }
+
+        self.on_off_fade = rate_limit(
+            self.on_off_fade,
+            f32::from(u8::from(config.is_enabled())),
+            3.0 / 30.0,
+        );
+
+        if !self.board_is_upright && pitch_degrees > 60.0 {
+            self.board_is_upright = true;
+        } else if self.board_is_upright && pitch_degrees < 50.0 {
+            self.board_is_upright = false;
+        }
+
+        if run_state != self.run_state {
+            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled) {
+                self.on_off_fade = 0.0;
+            }
+            if matches!(run_state, crate::FloatOutBoyRunState::Running)
+                && !matches!(
+                    self.headlights_state,
+                    FloatOutBoyHeadlightsState::TransitioningOn
+                        | FloatOutBoyHeadlightsState::TransitioningOff
+                )
+            {
+                self.direction_forward = pitch_degrees >= 0.0;
+                self.direction_split = if self.direction_forward { 1.0 } else { -1.0 };
+            } else if matches!(run_state, crate::FloatOutBoyRunState::Disabled) {
+                self.on_off_fade = 0.0;
+            }
+        }
+        self.run_state = run_state;
+
+        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
+        let (left, right) = if config.status().shows_sensors_while_running() || !running {
+            (
+                (!running
+                    && matches!(
+                        footpad,
+                        crate::FloatOutBoyFootpadState::Left | crate::FloatOutBoyFootpadState::Both
+                    ))
+                    || matches!(footpad, crate::FloatOutBoyFootpadState::Left),
+                (!running
+                    && matches!(
+                        footpad,
+                        crate::FloatOutBoyFootpadState::Right
+                            | crate::FloatOutBoyFootpadState::Both
+                    ))
+                    || matches!(footpad, crate::FloatOutBoyFootpadState::Right),
+            )
+        } else {
+            (false, false)
+        };
+        self.left_sensor = rate_limit(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
+        self.right_sensor = rate_limit(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
+
+        let headlights_should = matches!(run_state, crate::FloatOutBoyRunState::Running)
+            && !matches!(mode, crate::FloatOutBoyMode::Flywheel)
+            && config.are_headlights_on();
+        let headlights_on = matches!(self.headlights_state, FloatOutBoyHeadlightsState::On);
+        let transitioning = matches!(
+            self.headlights_state,
+            FloatOutBoyHeadlightsState::TransitioningOn
+                | FloatOutBoyHeadlightsState::TransitioningOff
+        );
+        if headlights_should != headlights_on && !transitioning {
+            self.headlights_split = -1.0;
+            self.headlights_state = if headlights_should {
+                FloatOutBoyHeadlightsState::TransitioningOn
+            } else {
+                FloatOutBoyHeadlightsState::TransitioningOff
+            };
+        } else if transitioning {
+            let direction = if headlights_should == headlights_on {
+                -1.0
+            } else {
+                1.0
+            };
+            self.headlights_split =
+                (self.headlights_split + direction * 2.0 / 30.0).clamp(-1.0, 1.0);
+            if self.headlights_split >= 1.0
+                || (headlights_should == headlights_on && self.headlights_split <= -1.0)
+            {
+                self.headlights_state = if headlights_should {
+                    FloatOutBoyHeadlightsState::On
+                } else {
+                    FloatOutBoyHeadlightsState::Off
+                };
+                self.split_distance = distance;
+            }
+        }
+
+        if matches!(run_state, crate::FloatOutBoyRunState::Running)
+            && !matches!(
+                self.headlights_state,
+                FloatOutBoyHeadlightsState::TransitioningOn
+                    | FloatOutBoyHeadlightsState::TransitioningOff
+            )
+        {
+            let distance_change = if darkride {
+                self.split_distance - distance
+            } else {
+                distance - self.split_distance
+            };
+            self.direction_split = (self.direction_split + distance_change * 2.0).clamp(-1.0, 1.0);
+            self.split_distance = distance;
+            if self.direction_split >= 1.0 {
+                self.direction_forward = true;
+            } else if self.direction_split <= -1.0 {
+                self.direction_forward = false;
+            }
+        }
+    }
+
+    /// Return the global renderer fade.
+    #[must_use]
+    pub fn on_off_fade(self) -> Ratio {
+        Ratio::clamped(self.on_off_fade)
+    }
+
+    /// Return the left/right footpad indicator fades.
+    #[must_use]
+    pub fn sensor_fades(self) -> (Ratio, Ratio) {
+        (
+            Ratio::clamped(self.left_sensor),
+            Ratio::clamped(self.right_sensor),
+        )
+    }
+
+    /// Return whether the lifted-board hysteresis is on its upright side.
+    #[must_use]
+    pub const fn is_board_upright(self) -> bool {
+        self.board_is_upright
+    }
+
+    /// Return the current headlight transition split and settled state.
+    #[must_use]
+    pub const fn headlights(self) -> (f32, bool, bool) {
+        (
+            self.headlights_split,
+            matches!(self.headlights_state, FloatOutBoyHeadlightsState::On),
+            matches!(
+                self.headlights_state,
+                FloatOutBoyHeadlightsState::TransitioningOn
+                    | FloatOutBoyHeadlightsState::TransitioningOff
+            ),
+        )
+    }
+
+    /// Return the current travel-direction split and settled direction.
+    #[must_use]
+    pub const fn direction(self) -> (f32, bool) {
+        (self.direction_split, self.direction_forward)
+    }
+}
+
+fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
+    if (target - value).abs() < step {
+        target
+    } else if target > value {
+        value + step
+    } else {
+        value - step
+    }
+}
+
 /// Allocation-free pixels for one configured internal LED strip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloatOutBoyLedStripFrame {
@@ -1775,5 +2015,194 @@ mod renderer_tests {
                 "{transition:?}"
             );
         }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one sequential trace verifies the coupled Refloat state-machine boundaries"
+    )]
+    fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
+        macro_rules! update {
+            ($state:expr, $config:expr, $run:expr, $mode:expr, $darkride:expr, $footpad:expr, $pitch:expr, $distance:expr $(,)?) => {
+                $state.update(
+                    $config,
+                    super::FloatOutBoyLedUpdate {
+                        run_state: $run,
+                        mode: $mode,
+                        darkride: $darkride,
+                        footpad: $footpad,
+                        pitch_degrees: $pitch,
+                        distance: $distance,
+                    },
+                )
+            };
+        }
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::Solid,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let status = super::FloatOutBoyStatusBarConfig::new(
+            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            Ratio::from_ratio_const(0.9),
+            Ratio::from_ratio_const(0.1),
+            Ratio::from_ratio_const(1.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        let config = super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar)
+            .enabled()
+            .with_headlights_on();
+        let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Startup,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::Left,
+            70.0,
+            0.0,
+        );
+        assert_f32_eq!(dynamics.on_off_fade().as_ratio(), 0.0);
+        assert!(!dynamics.is_board_upright());
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Ready,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::Left,
+            61.0,
+            0.0,
+        );
+        assert_f32_eq!(dynamics.on_off_fade().as_ratio(), 0.1);
+        assert_f32_eq!(dynamics.sensor_fades().0.as_ratio(), 1.0 / 3.0);
+        assert!(dynamics.is_board_upright());
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Ready,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::None,
+            50.0,
+            0.0,
+        );
+        assert!(dynamics.is_board_upright());
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Ready,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::None,
+            49.0,
+            0.0,
+        );
+        assert!(!dynamics.is_board_upright());
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Running,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::Both,
+            -1.0,
+            0.0,
+        );
+        assert_eq!(dynamics.direction(), (-1.0, false));
+        assert_f32_eq!(dynamics.sensor_fades().0.as_ratio(), 0.0);
+        assert_eq!(dynamics.headlights(), (-1.0, false, true));
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Running,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::None,
+            -1.0,
+            0.0,
+        );
+        assert!(dynamics.headlights().0 > -1.0);
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Ready,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::None,
+            -1.0,
+            0.0,
+        );
+        assert_eq!(dynamics.headlights(), (-1.0, false, false));
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Running,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::None,
+            -1.0,
+            0.0,
+        );
+        for _ in 0..31 {
+            update!(
+                dynamics,
+                config,
+                crate::FloatOutBoyRunState::Running,
+                crate::FloatOutBoyMode::Normal,
+                false,
+                crate::FloatOutBoyFootpadState::None,
+                -1.0,
+                0.0,
+            );
+        }
+        assert_eq!(dynamics.headlights(), (1.0, true, false));
+
+        update!(
+            dynamics,
+            config,
+            crate::FloatOutBoyRunState::Running,
+            crate::FloatOutBoyMode::Normal,
+            true,
+            crate::FloatOutBoyFootpadState::None,
+            -1.0,
+            1.0,
+        );
+        assert_eq!(dynamics.direction(), (-1.0, false));
+
+        let showing_config = super::FloatOutBoyLedsConfig::new(
+            bar,
+            bar,
+            bar,
+            bar,
+            status.showing_sensors_while_running(),
+            bar,
+        )
+        .enabled();
+        let mut showing_dynamics = super::FloatOutBoyLedDynamics::new(0.0);
+        update!(
+            showing_dynamics,
+            showing_config,
+            crate::FloatOutBoyRunState::Running,
+            crate::FloatOutBoyMode::Normal,
+            false,
+            crate::FloatOutBoyFootpadState::Both,
+            0.0,
+            0.0,
+        );
+        assert_eq!(
+            showing_dynamics.sensor_fades(),
+            (Ratio::from_ratio_const(0.0), Ratio::from_ratio_const(0.0))
+        );
     }
 }

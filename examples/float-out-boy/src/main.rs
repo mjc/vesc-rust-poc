@@ -88,6 +88,8 @@ mod config;
 pub mod domain;
 pub mod extensions;
 pub mod footpad;
+pub use domain::{FloatOutBoyMode, FloatOutBoyRunState};
+pub use footpad::FloatOutBoyFootpadState;
 pub mod lcm;
 pub mod leds;
 mod motor_control;
