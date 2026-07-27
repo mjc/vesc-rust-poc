@@ -295,6 +295,8 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
         #[cfg(all(not(test), target_arch = "arm"))]
         {
             let firmware = ctx.firmware();
+            let _ =
+                ctx.with_state_mut(FloatOutBoyPackageState::configure_loaded_config_on_main_thread);
             run_float_out_boy_main_thread_with(firmware.threads(), || {
                 let system_time_ticks = firmware.clock().now();
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at

@@ -118,7 +118,7 @@ fn startup_state_load_defers_configure_until_the_main_thread_like_refloat() {
 }
 
 #[test]
-fn startup_configure_alerts_the_persisted_disabled_state_like_refloat() {
+fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut persisted = state.serialized_config;
