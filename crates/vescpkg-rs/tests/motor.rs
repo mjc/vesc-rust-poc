@@ -180,7 +180,14 @@ fn motor_exposes_typed_handbrake_commands() {
             .unwrap()
     };
     drop(pwm_lease);
-    assert_eq!(telemetry.firmware_fault_description(), Some("TEST_FAULT"));
+    assert_eq!(
+        telemetry.firmware_fault_description(),
+        Some("FAULT_CODE_OVER_TEMP_FET"),
+    );
+    assert_eq!(
+        telemetry.firmware_fault_description_for(FirmwareFaultId::OverVoltage.wire_code()),
+        Some("FAULT_CODE_OVER_VOLTAGE"),
+    );
     assert_eq!(
         telemetry.motor_current_unfiltered().current().as_amps(),
         12.0

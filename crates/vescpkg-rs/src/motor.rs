@@ -8,9 +8,9 @@ use crate::types::{
     AverageMotorCurrent, AverageMotorTemperature, AveragePower, AverageVehicleSpeed,
     BatteryCellCount, BatteryLevel, BatteryLevelSnapshot, BrakeCurrent, BrakeCurrentRelative,
     CurrentOffDelay, CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle,
-    DutyCycleLimit, ElectricalSpeed, EnergyCounterReset, FirmwareFault, HandbrakeCurrent,
-    HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature, MotorCurrent,
-    MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
+    DutyCycleLimit, ElectricalSpeed, EnergyCounterReset, FirmwareFault, FirmwareFaultWireCode,
+    HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
+    MotorCurrent, MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
     PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
     PidPosition, PidPositionOffsetPersistence, QCurrent, QVoltage, SignedTripDistance,
     TachometerReset, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
@@ -205,6 +205,9 @@ pub trait MotorTelemetryBindings {
     ///
     /// The string is owned by firmware and must not outlive the telemetry borrow.
     fn firmware_fault_description(&self) -> Option<&str>;
+
+    /// Borrow the firmware-provided description for one encoded fault code.
+    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer, optionally resetting it.
@@ -411,6 +414,10 @@ impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
 
     fn firmware_fault_description(&self) -> Option<&str> {
         (**self).firmware_fault_description()
+    }
+
+    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str> {
+        (**self).firmware_fault_description_for(code)
     }
 
     fn input_voltage(&self) -> InputVoltage {
@@ -889,6 +896,15 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
         unsafe { CStr::from_ptr(ptr) }.to_str().ok()
     }
 
+    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str> {
+        let fault = vescpkg_rs_sys::FaultCode(i32::from(code.wire_code()));
+        let ptr = unsafe { crate::ffi::mc_fault_to_string(fault) };
+        if ptr.is_null() {
+            return None;
+        }
+        unsafe { CStr::from_ptr(ptr) }.to_str().ok()
+    }
+
     fn input_voltage(&self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(unsafe {
             crate::ffi::mc_get_input_voltage_filtered()
@@ -1143,6 +1159,9 @@ pub trait MotorTelemetry: private::MotorTelemetry {
     ///
     /// The string is owned by firmware and must not outlive the telemetry borrow.
     fn firmware_fault_description(&self) -> Option<&str>;
+
+    /// Borrow the firmware-provided description for one encoded fault code.
+    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str>;
     /// Return the filtered controller input voltage.
     fn input_voltage(&self) -> InputVoltage;
     /// Return the relative motor tachometer with an explicit read/reset policy.
@@ -1529,6 +1548,11 @@ impl<B: MotorTelemetryBindings> MotorTelemetryApi<B> {
         self.bindings.firmware_fault_description()
     }
 
+    /// Borrow the firmware-provided description for one encoded fault code.
+    pub fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str> {
+        self.bindings.firmware_fault_description_for(code)
+    }
+
     /// Return the filtered controller input voltage.
     pub fn input_voltage(&self) -> InputVoltage {
         self.bindings.input_voltage()
@@ -1749,6 +1773,10 @@ impl<B: MotorTelemetryBindings> MotorTelemetry for MotorTelemetryApi<B> {
 
     fn firmware_fault_description(&self) -> Option<&str> {
         self.firmware_fault_description()
+    }
+
+    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str> {
+        self.firmware_fault_description_for(code)
     }
 
     fn input_voltage(&self) -> InputVoltage {

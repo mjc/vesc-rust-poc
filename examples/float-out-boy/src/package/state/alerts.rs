@@ -99,7 +99,7 @@ fn push_fault_name(
 
     let name = bounded_fault_name(
         telemetry
-            .firmware_fault_description()
+            .firmware_fault_description_for(code)
             .unwrap_or_default()
             .as_bytes(),
     );

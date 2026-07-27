@@ -2079,8 +2079,12 @@ pub unsafe fn mc_dccal_done() -> bool {
     true
 }
 
-pub unsafe fn mc_fault_to_string(_fault: FaultCode) -> *const c_char {
-    c"TEST_FAULT".as_ptr().cast()
+pub unsafe fn mc_fault_to_string(fault: FaultCode) -> *const c_char {
+    match fault.0 {
+        1 => c"FAULT_CODE_OVER_VOLTAGE".as_ptr().cast(),
+        5 => c"FAULT_CODE_OVER_TEMP_FET".as_ptr().cast(),
+        _ => c"TEST_FAULT".as_ptr().cast(),
+    }
 }
 
 pub unsafe fn mc_set_pwm_callback(_callback: Option<unsafe extern "C" fn()>) -> bool {

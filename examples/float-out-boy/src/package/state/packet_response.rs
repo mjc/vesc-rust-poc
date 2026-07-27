@@ -295,12 +295,56 @@ mod tests {
             ],
         ));
 
-        let name = b"TEST_FAULT";
+        let name = b"OVER_TEMP_FET";
         assert_eq!(&packet[..11], &[101, 35, 0, 0, 0, 1, 0, 0, 0, 0, 5]);
         assert_eq!(packet[11], u8::try_from(name.len()).unwrap_or(u8::MAX));
-        assert_eq!(&packet[12..22], name);
-        assert_eq!(&packet[22..31], &[1, 0, 0, 0, 42, 1, 1, 5, 10]);
-        assert_eq!(&packet[31..], name);
+        assert_eq!(&packet[12..25], name);
+        assert_eq!(&packet[25..34], &[1, 0, 0, 0, 42, 1, 1, 5, 13]);
+        assert_eq!(&packet[34..], name);
+    }
+
+    #[test]
+    fn alerts_list_uses_each_historical_fault_code_for_its_name() {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let firmware = FirmwareTest::new()
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverVoltage));
+        state.refresh_runtime_state(
+            firmware.telemetry(),
+            firmware.imu(),
+            TimestampTicks::from_ticks(1),
+        );
+        let firmware = firmware
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
+        state.refresh_runtime_state(
+            firmware.telemetry(),
+            firmware.imu(),
+            TimestampTicks::from_ticks(2),
+        );
+        let mut packet = Vec::new();
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(2),
+            &mut |bytes| {
+                packet.extend_from_slice(bytes);
+                true
+            },
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::AlertsList.id(),
+            ],
+        ));
+
+        assert!(
+            packet
+                .windows(b"OVER_VOLTAGE".len())
+                .any(|name| name == b"OVER_VOLTAGE")
+        );
+        assert!(
+            packet
+                .windows(b"OVER_TEMP_FET".len())
+                .any(|name| name == b"OVER_TEMP_FET")
+        );
     }
 
     #[test]
