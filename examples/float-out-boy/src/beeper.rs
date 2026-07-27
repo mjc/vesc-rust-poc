@@ -133,6 +133,9 @@ impl FloatOutBoyBeeper {
     }
 
     pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        // Refloat's unused `beeper_enable` helper also drives low here, but
+        // `configure` assigns the flag directly and can leave the pin high.
+        // Keep the intended fail-safe behavior instead of reproducing that bug.
         if self.enabled && !enabled {
             self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
@@ -324,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn disabling_an_active_beeper_drives_the_pin_low_like_refloat() {
+    fn disabling_an_active_beeper_avoids_refloats_stuck_high_bug() {
         let mut beeper = FloatOutBoyBeeper::new(true);
         beeper.on(true);
         assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
