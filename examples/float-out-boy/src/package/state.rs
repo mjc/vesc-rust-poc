@@ -498,6 +498,11 @@ impl FloatOutBoyPackageState {
         config_runtime::refresh(self);
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn refresh_led_config_runtime_state(&mut self) {
+        config_runtime::refresh_leds(self);
+    }
+
     /// Handle one app-data packet in the firmware callback context.
     ///
     /// Upstream `on_command_received` dispatches commands at

@@ -6,12 +6,6 @@ use crate::domain::{
 
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     state
-        .lcm
-        .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
-    if let Some((_, config)) = state.serialized_config.led_configs() {
-        state.lcm.configure(config);
-    }
-    state
         .beeper
         .set_enabled(state.serialized_config.beeper_enabled());
     let payloads = state.all_data_payloads;
@@ -53,4 +47,15 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     );
     state.all_data_payloads =
         FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+}
+
+pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
+    state
+        .lcm
+        .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
+    if let Some((_, config)) = state.serialized_config.led_configs() {
+        state.lcm.configure(config);
+    }
+    #[cfg(any(test, target_arch = "arm"))]
+    state.refresh_internal_leds_from_config();
 }
