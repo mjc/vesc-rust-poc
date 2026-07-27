@@ -631,6 +631,22 @@ mod tests {
     }
 
     #[test]
+    fn enabling_the_beeper_after_startup_acquires_ppm_instead_of_reproducing_refloats_bug() {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = default_float_out_boy_config_bytes();
+        config[79] = 2;
+        config[242] = 0;
+        assert!(state.store_serialized_config(&config));
+        assert!(!state.take_beeper_configuration_request());
+
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+
+        assert!(state.take_beeper_configuration_request());
+        assert!(!state.take_beeper_configuration_request());
+    }
+
+    #[test]
     fn beeper_transition_wins_when_pin_setup_occurs_on_the_same_tick() {
         let tick = super::FloatOutBoyMainThreadTick::new(
             1,
