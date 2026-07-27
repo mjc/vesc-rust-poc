@@ -207,8 +207,15 @@ fn motor_runtime_tracks_typed_float_out_boy_wheelslip_duty_inputs() {
 }
 
 #[test]
-fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
+fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     let firmware = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_234.0)),
+            VehicleSpeed::new(Speed::from_meters_per_second(5.5)),
+            TotalMotorCurrent::new(Current::from_amps(12.0)),
+            InputCurrent::new(Current::from_amps(6.0)),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.25)),
+        )
         .with_motor_current_limits(
             MotorCurrentLimit::new(Current::from_amps(42.0)),
             MotorCurrentLimit::new(Current::from_amps(17.0)),
@@ -225,20 +232,31 @@ fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
         .set_input_current_min(InputCurrent::new(Current::from_amps(13.0)))
         .unwrap();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-
-    // The source aux loop reads the live motor/config values before its LED and
-    // backup side effects; exercise that complete tick order (`main.c:796-806`,
-    // `main.c:1131-1155`) rather than only the refresh helper.
+    let initial_electrical_speed = state.all_data_payloads.base().motor().electrical_speed();
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));
     let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
         &mut state,
         firmware.telemetry(),
-        OdometerMeters::from_meters(201),
-        0.0,
+        OdometerMeters::from_meters(0),
+        TimestampTicks::from_ticks(5_000),
+        0.5,
         |_| {},
         || true,
     );
+    assert_eq!(
+        state.motor_current_max,
+        MotorCurrentLimit::new(Current::ZERO)
+    );
 
+    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+        &mut state,
+        firmware.telemetry(),
+        OdometerMeters::from_meters(0),
+        TimestampTicks::from_ticks(5_001),
+        0.501,
+        |_| {},
+        || true,
+    );
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::from_amps(42.0))
@@ -262,6 +280,10 @@ fn motor_runtime_refreshes_live_limits_before_auxiliary_side_effects() {
     assert_eq!(
         state.motor_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
+    );
+    assert_eq!(
+        state.all_data_payloads.base().motor().electrical_speed(),
+        initial_electrical_speed
     );
 }
 

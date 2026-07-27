@@ -500,6 +500,7 @@ mod tests {
             &mut state,
             firmware.telemetry(),
             vescpkg_rs::prelude::OdometerMeters::from_meters(0),
+            vescpkg_rs::prelude::TimestampTicks::from_ticks(0),
             1.0,
             |_| {},
             || true,

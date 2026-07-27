@@ -91,6 +91,8 @@ use transition::{
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
 #[cfg(any(test, target_arch = "arm"))]
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
+#[cfg(any(test, target_arch = "arm"))]
+const FLOAT_OUT_BOY_AUX_MOTOR_CONFIG_REFRESH_TICKS: u32 = 5_000;
 
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
@@ -186,10 +188,14 @@ pub struct FloatOutBoyPackageState {
     mosfet_temperature_limit_start: TemperatureLimitStart,
     motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
+    #[cfg(test)]
+    motor_config_initialized: bool,
     #[cfg(any(test, target_arch = "arm"))]
     aux_odometer: OdometerMeters,
     #[cfg(any(test, target_arch = "arm"))]
     aux_backup_failures: u32,
+    #[cfg(any(test, target_arch = "arm"))]
+    aux_motor_config_refresh_ticks: TimestampTicks,
     #[cfg(test)]
     internal_leds: Option<FloatOutBoyInternalLedRuntime>,
     #[cfg(target_arch = "arm")]
@@ -262,10 +268,14 @@ impl FloatOutBoyPackageState {
             mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
             battery_cell_count: None,
+            #[cfg(test)]
+            motor_config_initialized: false,
             #[cfg(any(test, target_arch = "arm"))]
             aux_odometer: OdometerMeters::from_meters(0),
             #[cfg(any(test, target_arch = "arm"))]
             aux_backup_failures: 0,
+            #[cfg(any(test, target_arch = "arm"))]
+            aux_motor_config_refresh_ticks: TimestampTicks::from_ticks(0),
             #[cfg(test)]
             internal_leds: None,
             #[cfg(target_arch = "arm")]
@@ -359,6 +369,22 @@ impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn record_aux_backup_failure(&mut self) {
         self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn refresh_aux_motor_config_runtime_state(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        now: TimestampTicks,
+    ) {
+        if now
+            .wrapping_duration_since(self.aux_motor_config_refresh_ticks)
+            .as_ticks()
+            > FLOAT_OUT_BOY_AUX_MOTOR_CONFIG_REFRESH_TICKS
+        {
+            self.refresh_motor_config_runtime_state(telemetry);
+            self.aux_motor_config_refresh_ticks = now;
+        }
     }
 
     #[cfg(test)]
@@ -716,7 +742,22 @@ impl FloatOutBoyPackageState {
 
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+        #[cfg(test)]
+        {
+            if !self.motor_config_initialized {
+                self.refresh_motor_config_runtime_state(telemetry);
+            }
+        }
         motor_runtime::refresh(self, telemetry);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn refresh_motor_config_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+        motor_runtime::refresh_config(self, telemetry);
+        #[cfg(test)]
+        {
+            self.motor_config_initialized = true;
+        }
     }
 
     #[cfg(any(test, target_arch = "arm"))]

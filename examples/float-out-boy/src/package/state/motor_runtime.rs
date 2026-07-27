@@ -1,4 +1,6 @@
-use super::{FloatOutBoyPackageState, limits::TractionLossLimits};
+use super::FloatOutBoyPackageState;
+#[cfg(any(test, target_arch = "arm"))]
+use super::limits::TractionLossLimits;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
     FloatOutBoyFocIdCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
@@ -73,6 +75,21 @@ impl FloatOutBoyMotorCurrentFilter {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
+    state.duty_max_with_margin = telemetry
+        .duty_cycle_limit()
+        .reduced_by(TractionLossLimits::FLOAT_OUT_BOY.duty_margin);
+    state.motor_current_max = telemetry.drive_current_limit();
+    state.motor_current_min = telemetry.brake_current_limit();
+    let settings = vescpkg_rs::FirmwareSettings;
+    state.battery_current_max = settings.input_current_max();
+    state.battery_current_min = settings.input_current_min();
+    state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
+    state.motor_temperature_limit_start = telemetry.motor_temperature_limit_start();
+    state.battery_cell_count = telemetry.battery_cell_count();
+}
+
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
@@ -86,20 +103,8 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
-    state.duty_max_with_margin = telemetry
-        .duty_cycle_limit()
-        .reduced_by(TractionLossLimits::FLOAT_OUT_BOY.duty_margin);
-    state.motor_current_max = telemetry.drive_current_limit();
-    state.motor_current_min = telemetry.brake_current_limit();
-    // Input-current limits are live configuration values, not motor telemetry.
-    let settings = vescpkg_rs::FirmwareSettings;
-    state.battery_current_max = settings.input_current_max();
-    state.battery_current_min = settings.input_current_min();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
-    state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
-    state.motor_temperature_limit_start = telemetry.motor_temperature_limit_start();
-    state.battery_cell_count = telemetry.battery_cell_count();
     state.motor_current_filter.configure(
         state.serialized_config.motor_current_filter_frequency(),
         state.serialized_config.startup().sample_rate(),
