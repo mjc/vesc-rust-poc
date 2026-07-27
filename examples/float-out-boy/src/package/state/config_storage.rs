@@ -15,6 +15,23 @@ pub(super) enum FloatOutBoyConfigLoadOutcome {
     DefaultAfterInvalidImage,
 }
 
+fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
+    let message = match outcome {
+        FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure => {
+            b"Failed to read config, using defaults.".as_slice()
+        }
+        FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage => {
+            b"Failed to deserialize config, using defaults.".as_slice()
+        }
+        FloatOutBoyConfigLoadOutcome::NotAttempted | FloatOutBoyConfigLoadOutcome::Persisted => {
+            return;
+        }
+    };
+    let mut log = vescpkg_rs::FirmwareLog::<48>::new();
+    log.write_bytes(message);
+    let _ = log.flush();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FirmwareImuMigration {
     Pending,
@@ -170,6 +187,7 @@ impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn read_serialized_config_from_eeprom(&mut self) {
         (self.serialized_config, self.config_load_outcome) = Self::persisted_config();
+        log_config_load_fallback(self.config_load_outcome);
     }
 
     pub(super) fn read_config_from_eeprom(&mut self) {
