@@ -650,19 +650,29 @@ mod tests {
     #[test]
     fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_out_boy() {
         let mut state = RideModifierState {
-            atr: AtrState {
+            nose: AngleDegrees::from_degrees(1.0),
+            turn: TurnTiltState {
                 angle: SmoothAngle {
                     setpoint: AngleDegrees::from_degrees(2.0),
+                    ..SmoothAngle::default()
+                },
+                ..TurnTiltState::default()
+            },
+            atr: AtrState {
+                angle: SmoothAngle {
+                    target: AngleDegrees::from_degrees(4.0),
+                    setpoint: AngleDegrees::from_degrees(4.0),
                     ..SmoothAngle::default()
                 },
                 ..AtrState::default()
             },
             brake: SmoothAngle {
-                setpoint: AngleDegrees::from_degrees(1.0),
+                target: AngleDegrees::from_degrees(5.0),
+                setpoint: AngleDegrees::from_degrees(5.0),
                 ..SmoothAngle::default()
             },
             torque: SmoothAngle {
-                setpoint: AngleDegrees::from_degrees(4.0),
+                setpoint: AngleDegrees::from_degrees(3.0),
                 ..SmoothAngle::default()
             },
             ..RideModifierState::default()
@@ -677,9 +687,19 @@ mod tests {
             },
         );
 
+        assert_eq!(state.nose, AngleDegrees::from_degrees(1.0));
+        assert_eq!(setpoints.turn_tilt().angle(), AngleDegrees::from_degrees(2.0 * 0.995));
+        assert_eq!(setpoints.torque_tilt().angle(), AngleDegrees::from_degrees(3.0 * 0.995));
+        assert_eq!(setpoints.atr().angle(), AngleDegrees::from_degrees(4.0 * 0.995));
+        assert_eq!(
+            setpoints.brake_tilt().angle(),
+            AngleDegrees::from_degrees(5.0 * 0.995)
+        );
+        assert_eq!(state.atr.angle.target, AngleDegrees::from_degrees(4.0 * 0.99));
+        assert_eq!(state.brake.target, AngleDegrees::from_degrees(5.0 * 0.99));
         assert_eq!(
             setpoints.board().angle(),
-            AngleDegrees::from_degrees(4.0 * 0.995)
+            AngleDegrees::from_degrees(1.0 + 2.0 * 0.995 + (4.0 + 5.0) * 0.995),
         );
     }
 
@@ -700,6 +720,7 @@ mod tests {
             },
             ..RideModifierState::default()
         };
+        let retained = state;
         let config = FloatOutBoyConfigImage::defaults();
         let setpoints = state.advance(
             &config,
@@ -711,8 +732,20 @@ mod tests {
             },
         );
 
+        assert_eq!(state, retained);
         assert_eq!(setpoints.board().angle(), AngleDegrees::from_degrees(3.0));
         assert_eq!(setpoints.remote().angle(), AngleDegrees::from_degrees(-1.0));
+        assert_eq!(
+            state
+                .runtime_setpoints(RideModifierInput {
+                    base_setpoint: AngleDegrees::from_degrees(4.0),
+                    remote_setpoint: AngleDegrees::from_degrees(-1.0),
+                    ..input()
+                })
+                .board()
+                .angle(),
+            AngleDegrees::from_degrees(9.0),
+        );
     }
 
     #[test]
