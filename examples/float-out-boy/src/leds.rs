@@ -1389,7 +1389,14 @@ impl FloatOutBoyLedRenderer {
 
     /// Begin Refloat's 0.8-second status-confirm animation.
     pub fn start_confirmation(&mut self, current_time: f32) {
-        self.confirmation_start = current_time;
+        if current_time - self.confirmation_start > 0.8 {
+            self.confirmation_start = current_time;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn confirmation_start_for_test(self) -> f32 {
+        self.confirmation_start
     }
 
     fn compose_status(

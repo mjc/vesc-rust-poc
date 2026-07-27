@@ -772,8 +772,9 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
 }
 
 #[test]
-fn headlight_konami_actions_mutate_active_led_config_like_refloat() {
+fn headlight_konami_actions_and_confirmation_match_refloat() {
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
+    set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let mut config = state.serialized_config.as_bytes().to_vec();
     config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
@@ -796,6 +797,10 @@ fn headlight_konami_actions_mutate_active_led_config_like_refloat() {
     }
 
     assert!(!state.serialized_config.headlights_enabled());
+    assert_eq!(
+        state.internal_led_confirmation_start_for_test(),
+        Some(0.7505)
+    );
 
     for (index, footpad) in [
         FloatOutBoyFootpadState::Left,
@@ -814,6 +819,10 @@ fn headlight_konami_actions_mutate_active_led_config_like_refloat() {
     }
 
     assert!(state.serialized_config.headlights_enabled());
+    assert_eq!(
+        state.internal_led_confirmation_start_for_test(),
+        Some(1.7505)
+    );
 }
 
 #[test]

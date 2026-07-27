@@ -6,7 +6,7 @@ use crate::{
         FloatOutBoyLedStatusUpdate, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
     },
 };
-use vescpkg_rs::MotorTelemetry;
+use vescpkg_rs::{MotorTelemetry, SYSTEM_TICK_RATE_HZ, TimestampTicks};
 
 use super::FloatOutBoyPackageState;
 
@@ -33,6 +33,24 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
 }
 
 impl FloatOutBoyPackageState {
+    pub(super) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
+        let [low0, low1, high0, high1] = system_time_ticks.as_ticks().to_le_bytes();
+        let low = f32::from(u16::from_le_bytes([low0, low1]));
+        let high = f32::from(u16::from_le_bytes([high0, high1]));
+        let ticks_per_second = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        let current_time = (high * 65_536.0 + low) / ticks_per_second;
+        #[cfg(test)]
+        let runtime = self.internal_leds.as_mut();
+        #[cfg(target_arch = "arm")]
+        let runtime = self
+            .internal_leds
+            .as_mut()
+            .and_then(RuntimeAllocation::runtime_mut);
+        if let Some(runtime) = runtime {
+            runtime.renderer.start_confirmation(current_time);
+        }
+    }
+
     /// Replace the pure internal LED runtime during setup or reconfiguration.
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn configure_internal_leds(
@@ -141,6 +159,13 @@ impl FloatOutBoyPackageState {
     #[cfg(test)]
     pub(crate) fn internal_led_renderer_for_test(&self) -> Option<FloatOutBoyLedRenderer> {
         self.internal_leds.as_ref().map(|runtime| runtime.renderer)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn internal_led_confirmation_start_for_test(&self) -> Option<f32> {
+        self.internal_leds
+            .as_ref()
+            .map(|runtime| runtime.renderer.confirmation_start_for_test())
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.

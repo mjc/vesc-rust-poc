@@ -627,6 +627,7 @@ impl FloatOutBoyPackageState {
             && (75.0..105.0).contains(&pitch)
             && self.flywheel_konami.check(footpad, system_time_ticks)
         {
+            self.start_internal_led_confirmation(system_time_ticks);
             // C map: `main.c:85-89` and `main.c:945-949`; this is the same
             // armed default flywheel command used by the native handler.
             let command = [
@@ -648,11 +649,13 @@ impl FloatOutBoyPackageState {
         if !self.serialized_config.headlights_enabled()
             && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
+            self.start_internal_led_confirmation(system_time_ticks);
             self.set_led_runtime_flags(self.serialized_config.leds_enabled(), true);
         }
         if self.serialized_config.headlights_enabled()
             && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
+            self.start_internal_led_confirmation(system_time_ticks);
             self.set_led_runtime_flags(self.serialized_config.leds_enabled(), false);
         }
     }
@@ -724,7 +727,7 @@ impl FloatOutBoyPackageState {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
             || self.handle_handtest_packet(bytes)
-            || self.handle_config_command(bytes)
+            || self.handle_config_command(bytes, now)
             || self.handle_flywheel_packet(bytes)
             || tuning::handle_runtime_tune_packet(self, bytes)
             || tuning::handle_tilt_tune_packet(self, bytes)

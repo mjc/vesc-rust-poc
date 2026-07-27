@@ -4,6 +4,7 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
 };
+use vescpkg_rs::TimestampTicks;
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
@@ -199,7 +200,13 @@ impl FloatOutBoyPackageState {
         self.read_config_from_eeprom();
     }
 
-    pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {
+    pub(super) fn handle_config_command(
+        &mut self,
+        bytes: &[u8],
+        now: &mut impl FnMut() -> TimestampTicks,
+    ) -> bool {
+        #[cfg(not(any(test, target_arch = "arm")))]
+        let _ = now;
         let [package_id, command, payload @ ..] = bytes else {
             return false;
         };
@@ -214,6 +221,8 @@ impl FloatOutBoyPackageState {
             FloatOutBoyAppDataCommand::ConfigSave => {
                 if self.persist_active_config() {
                     self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+                    #[cfg(any(test, target_arch = "arm"))]
+                    self.start_internal_led_confirmation(now());
                 }
             }
             FloatOutBoyAppDataCommand::ConfigRestore => self.load_persisted_config_on_startup(),

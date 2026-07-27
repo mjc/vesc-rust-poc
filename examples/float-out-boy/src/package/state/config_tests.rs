@@ -435,6 +435,35 @@ fn config_save_failure_has_no_write_acknowledgement() {
 }
 
 #[test]
+fn successful_config_save_starts_led_confirmation_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut bytes = default_float_out_boy_config_bytes();
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    assert!(state.store_serialized_config(&bytes));
+    let packet = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FloatOutBoyAppDataCommand::ConfigSave.id(),
+    ];
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(1_500),
+        &mut |_bytes| true,
+        &packet,
+    ));
+    assert_eq!(state.internal_led_confirmation_start_for_test(), Some(0.15));
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(2_000),
+        &mut |_bytes| true,
+        &packet,
+    ));
+    assert_eq!(state.internal_led_confirmation_start_for_test(), Some(0.15));
+}
+
+#[test]
 fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
     let firmware = FirmwareTest::new();
     let defaults = default_float_out_boy_config_bytes();
