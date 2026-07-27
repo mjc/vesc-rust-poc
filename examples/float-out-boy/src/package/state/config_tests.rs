@@ -124,8 +124,7 @@ fn startup_migrates_legacy_firmware_imu_settings_like_refloat() {
 #[test]
 fn startup_configure_alerts_the_persisted_disabled_state_like_refloat() {
     let _firmware = FirmwareTest::new();
-    let mut state =
-        FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut persisted = state.serialized_config;
     assert!(persisted.editor().set_beeper_enabled(true));
     assert!(persisted.editor().set_disabled(true));
@@ -142,10 +141,7 @@ fn startup_configure_alerts_the_persisted_disabled_state_like_refloat() {
         .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(
-        changes.last(),
-        Some(&(560, FloatOutBoyBeeperLevel::Low)),
-    );
+    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)),);
 }
 
 #[test]
@@ -949,13 +945,7 @@ fn store_serialized_config_clears_default_and_keeps_enabled_while_running_like_f
 #[test]
 fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_refloat() {
     let _firmware = FirmwareTest::new();
-    for (
-        old_beeper_enabled,
-        disabled,
-        expected_run_state,
-        expected_changes,
-        expected_last,
-    ) in [
+    for (old_beeper_enabled, disabled, expected_run_state, expected_changes, expected_last) in [
         (
             false,
             false,
