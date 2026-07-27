@@ -901,6 +901,157 @@ impl FloatOutBoyLedStripFrame {
         self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
     }
 
+    /// Render one Refloat transition over the existing source frame.
+    pub fn render_transition(
+        &mut self,
+        transition: FloatOutBoyLedTransition,
+        progress: f32,
+        seed: u32,
+        from_bar: FloatOutBoyLedBarConfig,
+        to_bar: FloatOutBoyLedBarConfig,
+        on_off_fade: Ratio,
+    ) {
+        match transition {
+            FloatOutBoyLedTransition::Fade => {
+                let blend = Ratio::clamped(progress.midpoint(1.0));
+                let brightness = Ratio::clamped(
+                    (from_bar.brightness().as_ratio()
+                        + (to_bar.brightness().as_ratio() - from_bar.brightness().as_ratio())
+                            * blend.as_ratio())
+                        * on_off_fade.as_ratio(),
+                );
+                self.render_target(transition_target(to_bar), brightness, blend);
+            }
+            FloatOutBoyLedTransition::FadeOutIn => {
+                self.render_fade_out_in(progress, to_bar, from_bar.brightness(), on_off_fade);
+            }
+            FloatOutBoyLedTransition::Cipher | FloatOutBoyLedTransition::MonoCipher => {
+                self.render_cipher(transition, progress, seed, from_bar, to_bar, on_off_fade);
+            }
+        }
+    }
+
+    fn render_fade_out_in(
+        &mut self,
+        progress: f32,
+        to_bar: FloatOutBoyLedBarConfig,
+        from_brightness: Ratio,
+        on_off_fade: Ratio,
+    ) {
+        if progress <= 0.0 {
+            let blend = Ratio::clamped(progress + 1.0);
+            let brightness = Ratio::clamped(
+                (from_brightness.as_ratio()
+                    + (to_bar.brightness().as_ratio() - from_brightness.as_ratio())
+                        * blend.as_ratio())
+                    * on_off_fade.as_ratio(),
+            );
+            self.render_target(FloatOutBoyLedPixel::default(), brightness, blend);
+            return;
+        }
+
+        let target = FloatOutBoyLedPixel::blend(
+            FloatOutBoyLedPixel::default(),
+            transition_target(to_bar),
+            progress,
+        );
+        let brightness = Ratio::clamped(
+            (from_brightness.as_ratio()
+                + (to_bar.brightness().as_ratio() - from_brightness.as_ratio()) * progress)
+                * on_off_fade.as_ratio(),
+        );
+        self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+    }
+
+    fn render_cipher(
+        &mut self,
+        transition: FloatOutBoyLedTransition,
+        progress: f32,
+        seed: u32,
+        from_bar: FloatOutBoyLedBarConfig,
+        to_bar: FloatOutBoyLedBarConfig,
+        on_off_fade: Ratio,
+    ) {
+        const MAX_CIPHER_STRIP_PIXELS: usize = 60;
+        let len = usize::from(self.config.count());
+        if len == 0 || len > MAX_CIPHER_STRIP_PIXELS {
+            return;
+        }
+
+        let mut map = [0_u8; MAX_CIPHER_STRIP_PIXELS * 2];
+        for index in 0..len {
+            let value = u8::try_from(index).unwrap_or_default();
+            if let Some(first) = map.get_mut(index) {
+                *first = value;
+            }
+            if let Some(second) = map.get_mut(index.saturating_add(len)) {
+                *second = value;
+            }
+        }
+        refloat_sattolo_shuffle(seed, map.get_mut(..len).unwrap_or_default());
+        refloat_sattolo_shuffle(
+            seed,
+            map.get_mut(len..len.saturating_mul(2)).unwrap_or_default(),
+        );
+
+        let len_i16 = i16::try_from(len).unwrap_or_default();
+        let stop = crate::wire::saturating_trunc_f32_to_i16(progress * f32::from(len_i16));
+        let target = transition_target(to_bar);
+        let mid_brightness = Ratio::clamped(
+            from_bar
+                .brightness()
+                .as_ratio()
+                .midpoint(to_bar.brightness().as_ratio())
+                * on_off_fade.as_ratio(),
+        );
+        let target_brightness =
+            Ratio::clamped(to_bar.brightness().as_ratio() * on_off_fade.as_ratio());
+
+        for index in 1_i16.saturating_sub(len_i16)..=stop {
+            if index <= 0 {
+                let source_index = usize::try_from(index.saturating_neg()).unwrap_or_default();
+                let target_index = usize::from(map.get(source_index).copied().unwrap_or_default());
+                let random_seed =
+                    u32::try_from(source_index.saturating_add(target_index)).unwrap_or_default();
+                let random = u8::try_from(refloat_random(random_seed) % 256).unwrap_or_default();
+                let pixel = if refloat_random(random_seed.wrapping_add(17)) % 8 < 3 {
+                    FloatOutBoyLedPixel::default()
+                } else if matches!(transition, FloatOutBoyLedTransition::MonoCipher) {
+                    FloatOutBoyLedPixel::blend(
+                        FloatOutBoyLedPixel::from_named(from_bar.primary_color()),
+                        target,
+                        f32::from(random) / 256.0,
+                    )
+                } else {
+                    let white = u8::try_from(
+                        (refloat_random(random_seed.wrapping_add(23)) % 128).wrapping_add(80),
+                    )
+                    .unwrap_or_default();
+                    let mut channels = refloat_hue_to_pixel(random).channels();
+                    for channel in channels.get_mut(..3).unwrap_or_default() {
+                        *channel |= white;
+                    }
+                    FloatOutBoyLedPixel { channels }
+                };
+                self.render_pixel(target_index, pixel, mid_brightness);
+            } else {
+                let offset = usize::try_from(index.saturating_sub(1)).unwrap_or_default();
+                let target_index = usize::from(
+                    map.get(len.saturating_add(offset))
+                        .copied()
+                        .unwrap_or_default(),
+                );
+                self.render_pixel(target_index, target, target_brightness);
+            }
+        }
+    }
+
+    fn render_pixel(&mut self, index: usize, target: FloatOutBoyLedPixel, brightness: Ratio) {
+        if let Some(pixel) = self.pixels.get_mut(index) {
+            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+        }
+    }
+
     fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let len = usize::from(self.config.count());
         let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
@@ -1078,6 +1229,32 @@ impl FloatOutBoyLedStripFrame {
         for pixel in self.pixels.get_mut(..len).unwrap_or_default() {
             *pixel = pixel.scaled_and_blended(target, brightness, blend);
         }
+    }
+}
+
+fn transition_target(bar: FloatOutBoyLedBarConfig) -> FloatOutBoyLedPixel {
+    let color = if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Solid) {
+        bar.primary_color()
+    } else {
+        bar.secondary_color()
+    };
+    FloatOutBoyLedPixel::from_named(color)
+}
+
+fn refloat_random(seed: u32) -> u32 {
+    seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
+}
+
+fn refloat_sattolo_shuffle(seed: u32, values: &mut [u8]) {
+    for index in (1..values.len()).rev() {
+        let divisor = u32::try_from(index).unwrap_or(1);
+        let target = usize::try_from(
+            refloat_random(seed.wrapping_add(u32::try_from(index).unwrap_or_default()))
+                .checked_rem(divisor)
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        values.swap(index, target);
     }
 }
 
@@ -1504,5 +1681,99 @@ mod renderer_tests {
                 Some([0x14, 0, 0xea, 0]),
             ]
         );
+    }
+
+    #[test]
+    fn all_transition_modes_match_refloat_frames() {
+        let bar = |brightness, primary, secondary, mode| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(brightness),
+                primary,
+                secondary,
+                mode,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let from = bar(
+            0.5,
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::Solid,
+        );
+        let to = bar(
+            1.0,
+            FloatOutBoyLedColor::Green,
+            FloatOutBoyLedColor::Yellow,
+            super::FloatOutBoyLedAnimationMode::Fade,
+        );
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            4,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+
+        let cases = [
+            (
+                super::FloatOutBoyLedTransition::Fade,
+                -0.5,
+                7,
+                [[0x87, 0x19, 0, 0]; 4],
+            ),
+            (
+                super::FloatOutBoyLedTransition::FadeOutIn,
+                0.5,
+                7,
+                [[0x5f, 0x3c, 0, 0]; 4],
+            ),
+            (
+                super::FloatOutBoyLedTransition::Cipher,
+                0.0,
+                7,
+                [
+                    [0x61, 0xbf, 0x6d, 0],
+                    [0, 0, 0, 0],
+                    [0x61, 0xbf, 0x6d, 0],
+                    [0x74, 0xbc, 0x8c, 0],
+                ],
+            ),
+            (
+                super::FloatOutBoyLedTransition::MonoCipher,
+                0.0,
+                7,
+                [
+                    [0xbf, 0x3e, 0, 0],
+                    [0, 0, 0, 0],
+                    [0xbf, 0x3e, 0, 0],
+                    [0xbf, 0x4b, 0, 0],
+                ],
+            ),
+        ];
+
+        for (transition, progress, seed, expected) in cases {
+            let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+            frame.render_solid(
+                from,
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            );
+            frame.render_transition(
+                transition,
+                progress,
+                seed,
+                from,
+                to,
+                Ratio::from_ratio_const(1.0),
+            );
+            assert_eq!(
+                core::array::from_fn(|index| {
+                    frame
+                        .physical_pixel(index)
+                        .map(super::FloatOutBoyLedPixel::channels)
+                        .unwrap_or_default()
+                }),
+                expected,
+                "{transition:?}"
+            );
+        }
     }
 }
