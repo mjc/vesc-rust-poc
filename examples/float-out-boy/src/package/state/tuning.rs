@@ -5,7 +5,7 @@ use super::{
 use crate::config::FloatOutBoyConfigEditor;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, IntegralCurrentGain,
-    MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Ratio, Rpm, WireByte,
+    MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Ratio, Rpm, TimestampTicks, WireByte,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,6 +272,7 @@ fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8])
 
 pub(super) fn handle_runtime_tune_packet(
     state: &mut FloatOutBoyPackageState,
+    now: &mut impl FnMut() -> TimestampTicks,
     bytes: &[u8],
 ) -> bool {
     let Some(payload) =
@@ -286,6 +287,7 @@ pub(super) fn handle_runtime_tune_packet(
     if !updated {
         return false;
     }
+    state.idle_ticks = now();
     true
 }
 

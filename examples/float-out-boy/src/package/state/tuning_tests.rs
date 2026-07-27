@@ -8,6 +8,26 @@ use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, TimestampTicks};
 use vescpkg_rs::test_support::FirmwareTest;
 
 #[test]
+fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    state.idle_ticks = TimestampTicks::from_ticks(7);
+    let mut now = || TimestampTicks::from_ticks(42);
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut now,
+        &mut |_| true,
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RuntimeTune.id(),
+        ],
+    ));
+
+    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+}
+
+#[test]
 fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());

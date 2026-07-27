@@ -729,7 +729,7 @@ impl FloatOutBoyPackageState {
             || self.handle_handtest_packet(bytes)
             || self.handle_config_command(bytes, now)
             || self.handle_flywheel_packet(bytes)
-            || tuning::handle_runtime_tune_packet(self, bytes)
+            || tuning::handle_runtime_tune_packet(self, now, bytes)
             || tuning::handle_tilt_tune_packet(self, bytes)
             || tuning::handle_other_tune_packet(self, bytes)
             || tuning::handle_booster_packet(self, bytes)
