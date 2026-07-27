@@ -8,12 +8,15 @@ use crate::package::FloatOutBoyPackageState;
 use vescpkg_rs::LispArgs;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::LispValue;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{VescSeconds, Voltage};
 
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub(crate) struct FloatOutBoyBmsTemperature(i32);
 
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsTemperature {
     pub(crate) const fn from_degrees_celsius(degrees_celsius: i32) -> Self {
         Self(degrees_celsius)
@@ -25,6 +28,7 @@ impl FloatOutBoyBmsTemperature {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct FloatOutBoyBmsSample {
     cell_low_voltage: Voltage,
@@ -35,6 +39,7 @@ pub(crate) struct FloatOutBoyBmsSample {
     message_age: VescSeconds,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsSample {
     pub(crate) const fn new(
         cell_low_voltage: Voltage,

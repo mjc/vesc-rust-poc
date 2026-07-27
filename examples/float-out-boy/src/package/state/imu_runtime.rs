@@ -227,18 +227,18 @@ fn refresh_ready_alert(
         return None;
     }
 
-    let connection_fault = state.bms_faults.contains(FloatOutBoyBmsFault::Connection);
-    let balance_fault = state.bms_faults.contains(FloatOutBoyBmsFault::CellBalance)
-        && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 5);
     let mut alert = None;
-    if (connection_fault || balance_fault)
-        && float_out_boy_ticks_elapsed(system_time_ticks, state.bms_alert_ticks, 15)
+    if let Some(fault) = state
+        .bms
+        .take_ready_alert_fault(system_time_ticks, state.disengage_ticks)
     {
-        state.bms_alert_ticks = system_time_ticks;
-        let reason = if connection_fault {
-            FloatOutBoyBeepReason::BmsConnection
-        } else {
-            FloatOutBoyBeepReason::CellBalance
+        let reason = match fault {
+            super::bms_runtime::BmsReadyAlertFault::Connection => {
+                FloatOutBoyBeepReason::BmsConnection
+            }
+            super::bms_runtime::BmsReadyAlertFault::CellBalance => {
+                FloatOutBoyBeepReason::CellBalance
+            }
         };
         alert = Some((
             reason,
@@ -1020,30 +1020,22 @@ fn protection_signals(
     base: &FloatOutBoyAllDataBasePayload,
 ) -> ProtectionSignals {
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_cell_over_voltage = state
-        .bms_faults
-        .contains(FloatOutBoyBmsFault::CellOverVoltage);
+    let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFault::CellOverVoltage);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_over_voltage = false;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_connection_fault = state.bms_faults.contains(FloatOutBoyBmsFault::Connection);
+    let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFault::Connection);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_connection_fault = false;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_temperature_reason = if state
-        .bms_faults
-        .contains(FloatOutBoyBmsFault::CellOverTemperature)
-    {
+    let bms_temperature_reason = if state.bms.contains(FloatOutBoyBmsFault::CellOverTemperature) {
         Some(FloatOutBoyBeepReason::CellOverTemperature)
     } else if state
-        .bms_faults
+        .bms
         .contains(FloatOutBoyBmsFault::CellUnderTemperature)
     {
         Some(FloatOutBoyBeepReason::CellUnderTemperature)
-    } else if state
-        .bms_faults
-        .contains(FloatOutBoyBmsFault::BmsOverTemperature)
-    {
+    } else if state.bms.contains(FloatOutBoyBmsFault::BmsOverTemperature) {
         Some(FloatOutBoyBeepReason::BmsOverTemperature)
     } else {
         None
@@ -1051,9 +1043,7 @@ fn protection_signals(
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_temperature_reason = None;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_cell_under_voltage = state
-        .bms_faults
-        .contains(FloatOutBoyBmsFault::CellUnderVoltage);
+    let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFault::CellUnderVoltage);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_under_voltage = false;
     let warning_margin = Temperature::from_degrees_celsius(3.0);

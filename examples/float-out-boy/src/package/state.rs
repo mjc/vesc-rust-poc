@@ -4,7 +4,6 @@ use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
 #[cfg(any(test, target_arch = "arm"))]
-use crate::bms::FloatOutBoyBmsFaults;
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::{FloatOutBoyConfigImage, FloatOutBoyFlywheelConfig};
 use crate::domain::{
@@ -32,6 +31,8 @@ mod alert_tracker;
 mod alerts;
 #[cfg(test)]
 mod balance_tests;
+#[cfg(any(test, target_arch = "arm"))]
+mod bms_runtime;
 mod charging;
 mod config_runtime;
 mod config_storage;
@@ -147,13 +148,8 @@ pub struct FloatOutBoyPackageState {
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
     beeper_flags: BeeperRuntimeFlags,
-    bms_sample: FloatOutBoyBmsSample,
     #[cfg(any(test, target_arch = "arm"))]
-    bms_faults: FloatOutBoyBmsFaults,
-    #[cfg(any(test, target_arch = "arm"))]
-    bms_start_ticks: Option<TimestampTicks>,
-    #[cfg(any(test, target_arch = "arm"))]
-    bms_alert_ticks: TimestampTicks,
+    bms: bms_runtime::BmsRuntimeState,
     flywheel_offsets: FloatOutBoyFlywheelOffsets,
     flywheel_runtime_config: Option<FloatOutBoyFlywheelConfig>,
     ride_flags: RideRuntimeFlags,
@@ -231,13 +227,8 @@ impl FloatOutBoyPackageState {
             haptic_feedback: HapticFeedbackState::new(),
             beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
             beeper_flags: BeeperRuntimeFlags::default(),
-            bms_sample: FloatOutBoyBmsSample::source_startup(),
             #[cfg(any(test, target_arch = "arm"))]
-            bms_faults: FloatOutBoyBmsFaults::NONE,
-            #[cfg(any(test, target_arch = "arm"))]
-            bms_start_ticks: None,
-            #[cfg(any(test, target_arch = "arm"))]
-            bms_alert_ticks: TimestampTicks::from_ticks(0),
+            bms: bms_runtime::BmsRuntimeState::source_startup(),
             flywheel_offsets: FloatOutBoyFlywheelOffsets::source_startup(),
             flywheel_runtime_config: None,
             ride_flags: RideRuntimeFlags::default(),
@@ -387,7 +378,7 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn record_bms_sample(&mut self, sample: FloatOutBoyBmsSample) {
-        self.bms_sample = sample;
+        self.bms.record_sample(sample);
     }
 
     pub(crate) fn alert_beeper(&mut self, alert: FloatOutBoyBeeperAlert) {
@@ -428,30 +419,18 @@ impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_bms_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         let bms = self.serialized_config.bms();
-        let enabled = bms.enabled();
-        let thresholds = bms.thresholds();
-        let start_ticks = *self.bms_start_ticks.get_or_insert(system_time_ticks);
-        let startup_timeout_elapsed = float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            start_ticks,
-            vescpkg_rs::VescSeconds::from_seconds(5.0),
-        );
-        self.bms_faults = FloatOutBoyBmsFaults::evaluate(
-            enabled,
-            self.bms_sample,
-            thresholds,
-            startup_timeout_elapsed,
-        );
+        self.bms
+            .refresh(bms.enabled(), bms.thresholds(), system_time_ticks);
     }
 
     #[cfg(test)]
     pub(crate) const fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
-        self.bms_sample
+        self.bms.sample()
     }
 
     #[cfg(test)]
-    pub(crate) const fn bms_faults_for_test(&self) -> FloatOutBoyBmsFaults {
-        self.bms_faults
+    pub(crate) const fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
+        self.bms.faults()
     }
 
     #[cfg(test)]
