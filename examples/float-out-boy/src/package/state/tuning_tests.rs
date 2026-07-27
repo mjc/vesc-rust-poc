@@ -1,11 +1,110 @@
-use super::FloatOutBoyPackageState;
+use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
 use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
 };
 use std::vec::Vec;
-use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, TimestampTicks};
+use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent, TimestampTicks};
 use vescpkg_rs::test_support::FirmwareTest;
+
+#[test]
+fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_kp(AngleCurrentGain::new(15.0))
+    );
+    let candidate = state.serialized_config;
+    assert!(state.store_serialized_config(candidate.as_bytes()));
+    let persisted_config = state.serialized_config;
+    let mut persisted_image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
+    assert!(firmware.eeprom().read_bytes(&mut persisted_image).is_ok());
+    let mut now = || TimestampTicks::from_ticks(0);
+    let mut send = |_bytes: &[u8]| true;
+    let packets: &[&[u8]] = &[
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneDefaults.id(),
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RuntimeTune.id(),
+            0xA3,
+            0x21,
+            0xA3,
+            0x54,
+            0xB9,
+            0x20,
+            0x71,
+            0xD4,
+            0xA5,
+            0x43,
+            0x21,
+            0xFF,
+            0x86,
+            0xA5,
+            0x47,
+            0x63,
+            0x82,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneTilt.id(),
+            1,
+            15,
+            85,
+            25,
+            30,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneOther.id(),
+            0xFE,
+            25,
+            20,
+            15,
+            25,
+            7,
+            110,
+            30,
+            20,
+            25,
+            35,
+            40,
+            50,
+            8,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::Booster.id(),
+            0xA3,
+            0x04,
+            0x21,
+            0xF2,
+        ],
+    ];
+
+    for packet in packets {
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut now,
+            &mut send,
+            packet,
+        ));
+        let mut current_image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
+        assert!(firmware.eeprom().read_bytes(&mut current_image).is_ok());
+        assert_eq!(current_image, persisted_image);
+    }
+
+    assert_ne!(state.serialized_config, persisted_config);
+    let restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    assert_eq!(restarted.serialized_config, persisted_config);
+}
 
 #[test]
 fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
