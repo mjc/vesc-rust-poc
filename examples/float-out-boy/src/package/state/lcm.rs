@@ -144,16 +144,16 @@ impl LcmState {
         self.payload[..self.payload_size].copy_from_slice(&extra[..self.payload_size]);
     }
 
-    fn lights_control(&mut self, payload: &[u8]) {
+    fn lights_control(&mut self, payload: &[u8]) -> bool {
         // `lights_control_request` requires a four-byte mask and one value,
         // then ignores masks outside the low byte.
         if payload.len() < 5 {
-            return;
+            return false;
         }
 
         let mask = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
         if mask & 0xff == 0 {
-            return;
+            return false;
         }
 
         let value = payload[4];
@@ -163,6 +163,11 @@ impl LcmState {
         if mask & 0x2 != 0 {
             self.headlights_enabled = value & 0x2 != 0;
         }
+        true
+    }
+
+    const fn light_flags(self) -> (bool, bool) {
+        (self.lights_enabled, self.headlights_enabled)
     }
 
     fn poll_response(
@@ -346,7 +351,13 @@ impl FloatOutBoyPackageState {
         if let Some(payload) =
             float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LightsControl)
         {
-            self.lcm.lights_control(payload);
+            if self.lcm.lights_control(payload) {
+                let (lights_enabled, headlights_enabled) = self.lcm.light_flags();
+                let mut editor = self.serialized_config.editor();
+                editor.set_leds_enabled(lights_enabled);
+                editor.set_headlights_enabled(headlights_enabled);
+                self.refresh_led_config_runtime_state();
+            }
             return send(&self.lcm.lights_control_response());
         }
         false
@@ -451,6 +462,42 @@ mod tests {
                 &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
             ),
             [101, 25, 3, 50, 50, 20, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn lights_control_mutates_active_config_and_reconfigures_lcm_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = state.serialized_config.as_bytes().to_vec();
+        config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+        assert!(state.store_serialized_config(&config));
+
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[
+                    101,
+                    FloatOutBoyAppDataCommand::LightsControl.id(),
+                    0,
+                    0,
+                    0,
+                    3,
+                    0
+                ]
+            ),
+            [101, 20, 0]
+        );
+        assert!(!state.serialized_config.leds_enabled());
+        assert!(!state.serialized_config.headlights_enabled());
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
+            ),
+            [101, 25, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         );
     }
 

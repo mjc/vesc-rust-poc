@@ -853,6 +853,14 @@ impl FloatOutBoyConfigEditor<'_> {
         self.set_flag(FloatOutBoyConfigImage::BEEPER_ENABLED_FIELD, enabled)
     }
 
+    pub(crate) fn set_leds_enabled(&mut self, enabled: bool) -> bool {
+        self.set_flag(FloatOutBoyConfigImage::LEDS_ON_FIELD, enabled)
+    }
+
+    pub(crate) fn set_headlights_enabled(&mut self, enabled: bool) -> bool {
+        self.set_flag(FloatOutBoyConfigImage::LEDS_HEADLIGHTS_ON_FIELD, enabled)
+    }
+
     #[cfg(test)]
     pub(crate) fn set_hertz(&mut self, sample_rate: SampleRate) -> bool {
         FloatOutBoyStartupConfig::HERTZ_FIELD
