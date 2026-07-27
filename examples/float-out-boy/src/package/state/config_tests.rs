@@ -920,26 +920,48 @@ fn store_serialized_config_clears_default_and_keeps_enabled_while_running_like_f
 }
 
 #[test]
-fn successful_config_write_reconfigures_and_acknowledges_like_float_out_boy() {
+fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_refloat() {
     let _firmware = FirmwareTest::new();
-    for (disabled, expected_run_state, expected_changes, expected_last) in [
+    for (
+        old_beeper_enabled,
+        disabled,
+        expected_run_state,
+        expected_changes,
+        expected_last,
+    ) in [
         (
+            false,
             false,
             FloatOutBoyRunState::Ready,
             3,
             (240, FloatOutBoyBeeperLevel::Low),
         ),
         (
+            false,
             true,
             FloatOutBoyRunState::Disabled,
             7,
             (560, FloatOutBoyBeeperLevel::Low),
+        ),
+        (
+            true,
+            true,
+            FloatOutBoyRunState::Disabled,
+            3,
+            (240, FloatOutBoyBeeperLevel::Low),
         ),
     ] {
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
             FloatOutBoyRunState::Ready,
             FloatOutBoyMode::Normal,
         ));
+        let mut active_config = state.serialized_config;
+        assert!(
+            active_config
+                .editor()
+                .set_beeper_enabled(old_beeper_enabled),
+        );
+        state.replace_active_config(&active_config);
         let mut bytes = default_float_out_boy_config_bytes();
         bytes.edit_float_out_boy_config(|config| {
             assert!(config.set_beeper_enabled(true));

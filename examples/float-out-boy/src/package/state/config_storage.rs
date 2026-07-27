@@ -342,6 +342,11 @@ impl FloatOutBoyPackageState {
         if !Self::write_config_to_eeprom(&config) {
             return false;
         }
+        // `write_cfg_to_eeprom` starts this acknowledgement before `configure`
+        // runs, so `beep_alert` rejects the configure alert while it is active.
+        self.alert_beeper(FloatOutBoyBeeperAlert::Short(
+            FloatOutBoyBeeperCount::ONE,
+        ));
         self.replace_active_config(&config);
         // After a successful write, C calls `configure(d)` at
         // `third_party/float-out-boy/src/main.c:2380-2382`, which refreshes the balance filter KP at
