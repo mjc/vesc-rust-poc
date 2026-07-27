@@ -111,8 +111,13 @@ fn float_out_boy_command_payload(
 }
 
 fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
-    float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::PrintInfo).is_some()
-        || float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Experiment).is_some()
+    matches!(
+        bytes,
+        [package_id, command_id, ..]
+            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()
+                && (*command_id == FloatOutBoyAppDataCommand::PrintInfo.id()
+                    || *command_id == FloatOutBoyAppDataCommand::Experiment.id())
+    )
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -730,7 +735,7 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
-            || self.handle_handtest_packet(now, bytes)
+            || self.handle_handtest_packet(bytes)
             || self.handle_config_command(bytes, now)
             || self.handle_flywheel_packet(bytes)
             || tuning::handle_runtime_tune_packet(self, now, bytes)
