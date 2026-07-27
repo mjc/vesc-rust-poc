@@ -130,8 +130,12 @@ impl FloatOutBoyMainThreadTick {
         self.beeper_level
     }
 
-    const fn configure_beeper(self) -> bool {
-        self.configure_beeper
+    const fn beeper_configuration_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
+        if self.configure_beeper {
+            Some(vescpkg_rs::DigitalOutputLevel::Low)
+        } else {
+            None
+        }
     }
 }
 
@@ -320,13 +324,13 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     )
                 });
                 tick.map_or(1, |tick| {
-                    if tick.configure_beeper() {
+                    if let Some(level) = tick.beeper_configuration_level() {
                         let _ = firmware
                             .gpio()
                             .acquire_digital(DigitalPin::PPM)
                             .and_then(|pin| {
                                 pin.set_mode(GpioMode::Output)?;
-                                pin.write(vescpkg_rs::DigitalOutputLevel::High)
+                                pin.write(level)
                             });
                     }
                     if let Some(level) = tick.beeper_level() {
@@ -590,8 +594,12 @@ mod tests {
             if let Some(level) = result.beeper_level() {
                 changes.push((tick, level));
             }
-            if result.configure_beeper() {
+            if result.beeper_configuration_level().is_some() {
                 configure_ticks.push(tick);
+                assert_eq!(
+                    result.beeper_configuration_level(),
+                    Some(DigitalOutputLevel::Low)
+                );
             }
         }
 
