@@ -888,6 +888,35 @@ fn failed_config_write_does_not_reconfigure_or_acknowledge() {
 }
 
 #[test]
+fn interrupted_config_write_cannot_boot_a_mixed_image() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut old = default_float_out_boy_config_bytes();
+    old.edit_float_out_boy_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
+    });
+    assert!(state.store_serialized_config(&old));
+
+    let interrupted_address =
+        vescpkg_rs::CustomEepromAddress::from_index(2).expect("test address fits");
+    firmware.fail_eeprom_write(interrupted_address);
+    let mut new = default_float_out_boy_config_bytes();
+    new.edit_float_out_boy_config(|config| {
+        assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(5.0)));
+    });
+
+    assert!(!state.store_serialized_config(&new));
+
+    let restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    assert_eq!(
+        restarted.serialized_config,
+        FloatOutBoyConfigImage::defaults(),
+    );
+}
+
+#[test]
 fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());

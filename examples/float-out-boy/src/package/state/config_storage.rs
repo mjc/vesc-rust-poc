@@ -97,7 +97,22 @@ impl FloatOutBoyPackageState {
     fn write_config_to_eeprom(config: &FloatOutBoyConfigImage) -> bool {
         let image = FloatOutBoyEepromImage::from(*config);
         let bytes = image.into_bytes();
-        vescpkg_rs::CustomEeprom::new().write_image(&bytes).is_ok()
+        let eeprom = vescpkg_rs::CustomEeprom::new();
+        let signature_offset = vescpkg_rs::EepromWordOffset::from_index(0);
+        let payload_offset = vescpkg_rs::EepromWordOffset::from_index(1);
+        let signature =
+            vescpkg_rs::EepromWord::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+        eeprom
+            .write_at(signature_offset, vescpkg_rs::EepromWord::from_u32(0))
+            .and_then(|()| {
+                eeprom.write_bytes_at_offset(
+                    payload_offset,
+                    &bytes[vescpkg_rs::EepromWord::BYTE_LEN..],
+                )
+            })
+            .and_then(|()| eeprom.write_at(signature_offset, signature))
+            .is_ok()
     }
 
     fn persisted_config() -> FloatOutBoyConfigImage {
