@@ -97,6 +97,10 @@ pub enum FloatOutBoyAppDataCommand {
     AlertsControl,
     /// Data recorder request.
     DataRecordRequest,
+    /// Data recorder header response.
+    DataRecordHeader,
+    /// Data recorder sample-data response.
+    DataRecordData,
     /// LCM debug command reserved for external debugging.
     LcmDebug,
 }
@@ -138,6 +142,8 @@ impl FloatOutBoyAppDataCommand {
             35 => Ok(Self::AlertsList),
             36 => Ok(Self::AlertsControl),
             41 => Ok(Self::DataRecordRequest),
+            42 => Ok(Self::DataRecordHeader),
+            43 => Ok(Self::DataRecordData),
             99 => Ok(Self::LcmDebug),
             value => Err(FloatOutBoyAppDataCommandError { value }),
         }
@@ -175,6 +181,8 @@ impl FloatOutBoyAppDataCommand {
             Self::AlertsList => 35,
             Self::AlertsControl => 36,
             Self::DataRecordRequest => 41,
+            Self::DataRecordHeader => 42,
+            Self::DataRecordData => 43,
             Self::LcmDebug => 99,
         }
     }
@@ -321,4 +329,21 @@ pub enum FloatOutBoyAllDataRequestError {
         /// Rejected command ID.
         value: u8,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FloatOutBoyAppDataCommand;
+
+    #[test]
+    fn recorder_response_command_ids_are_typed_like_refloat() {
+        for (command, id) in [
+            (FloatOutBoyAppDataCommand::DataRecordRequest, 41),
+            (FloatOutBoyAppDataCommand::DataRecordHeader, 42),
+            (FloatOutBoyAppDataCommand::DataRecordData, 43),
+        ] {
+            assert_eq!(command.id(), id);
+            assert_eq!(FloatOutBoyAppDataCommand::try_from_id(id), Ok(command));
+        }
+    }
 }
