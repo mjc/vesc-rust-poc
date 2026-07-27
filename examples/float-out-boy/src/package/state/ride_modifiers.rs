@@ -675,7 +675,6 @@ mod tests {
                 setpoint: AngleDegrees::from_degrees(3.0),
                 ..SmoothAngle::default()
             },
-            ..RideModifierState::default()
         };
         let config = FloatOutBoyConfigImage::defaults();
 
@@ -927,7 +926,7 @@ mod tests {
         }
         assert!(state.atr.angle.setpoint.is_negative());
         assert!(state.atr.angle.setpoint >= AngleDegrees::from_degrees(-3.0));
-        assert_eq!(state.atr.speed_boost, 0.0);
+        assert!(state.atr.speed_boost.abs() < f32::EPSILON);
 
         let before_recovery = state.atr.angle.setpoint;
         for _ in 0..1_000 {
