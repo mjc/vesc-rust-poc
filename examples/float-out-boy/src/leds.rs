@@ -1709,6 +1709,23 @@ fn transition_target(bar: FloatOutBoyLedBarConfig) -> FloatOutBoyLedPixel {
     FloatOutBoyLedPixel::from_named(color)
 }
 
+/// Select physical front/rear bars from settled headlight and travel direction state.
+#[must_use]
+pub const fn select_front_rear_bars(
+    config: FloatOutBoyLedsConfig,
+    headlights_on: bool,
+    direction_forward: bool,
+) -> (FloatOutBoyLedBarConfig, FloatOutBoyLedBarConfig) {
+    if !headlights_on {
+        return (config.front(), config.rear());
+    }
+    if direction_forward {
+        (config.headlights(), config.taillights())
+    } else {
+        (config.taillights(), config.headlights())
+    }
+}
+
 fn refloat_random(seed: u32) -> u32 {
     seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
 }
@@ -2372,6 +2389,64 @@ mod renderer_tests {
                 [0, 0, 0, 0],
             ]
         );
+    }
+
+    #[test]
+    fn front_rear_bar_selection_matches_refloat_direction_roles() {
+        let bar = |color| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                color,
+                FloatOutBoyLedColor::Black,
+                super::FloatOutBoyLedAnimationMode::Solid,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = super::FloatOutBoyLedsConfig::new(
+            bar(FloatOutBoyLedColor::WhiteRgb),
+            bar(FloatOutBoyLedColor::Red),
+            bar(FloatOutBoyLedColor::Blue),
+            bar(FloatOutBoyLedColor::Green),
+            super::FloatOutBoyStatusBarConfig::new(
+                super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+                Ratio::from_ratio_const(0.9),
+                Ratio::from_ratio_const(0.1),
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            ),
+            bar(FloatOutBoyLedColor::Black),
+        );
+
+        for (headlights_on, direction_forward, expected) in [
+            (
+                false,
+                true,
+                (FloatOutBoyLedColor::Blue, FloatOutBoyLedColor::Green),
+            ),
+            (
+                false,
+                false,
+                (FloatOutBoyLedColor::Blue, FloatOutBoyLedColor::Green),
+            ),
+            (
+                true,
+                true,
+                (FloatOutBoyLedColor::WhiteRgb, FloatOutBoyLedColor::Red),
+            ),
+            (
+                true,
+                false,
+                (FloatOutBoyLedColor::Red, FloatOutBoyLedColor::WhiteRgb),
+            ),
+        ] {
+            let (front, rear) =
+                super::select_front_rear_bars(config, headlights_on, direction_forward);
+            assert_eq!(
+                (front.primary_color(), rear.primary_color()),
+                expected,
+                "headlights={headlights_on} forward={direction_forward}"
+            );
+        }
     }
 
     #[test]
