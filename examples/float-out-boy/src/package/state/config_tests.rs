@@ -122,6 +122,33 @@ fn startup_migrates_legacy_firmware_imu_settings_like_refloat() {
 }
 
 #[test]
+fn startup_configure_alerts_the_persisted_disabled_state_like_refloat() {
+    let _firmware = FirmwareTest::new();
+    let mut state =
+        FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut persisted = state.serialized_config;
+    assert!(persisted.editor().set_beeper_enabled(true));
+    assert!(persisted.editor().set_disabled(true));
+    assert!(state.store_serialized_config(persisted.as_bytes()));
+    for _ in 0..560 {
+        let _ = state.tick_beeper();
+    }
+
+    let mut restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+
+    let changes: Vec<_> = (1..=560)
+        .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
+        .collect();
+    assert_eq!(changes.len(), 7);
+    assert_eq!(
+        changes.last(),
+        Some(&(560, FloatOutBoyBeeperLevel::Low)),
+    );
+}
+
+#[test]
 fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloat() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);

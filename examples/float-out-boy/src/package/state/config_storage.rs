@@ -233,6 +233,17 @@ impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.restore_persisted_config();
+        let run_state = self
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+        self.alert_beeper(if matches!(run_state, FloatOutBoyRunState::Disabled) {
+            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
+        } else {
+            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
+        });
         self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 
