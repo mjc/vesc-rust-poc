@@ -234,6 +234,16 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
 /// Upstream performs this between loader metadata setup
 /// (third_party/float-out-boy/src/main.c:2431-2432) and callback registration
 /// (third_party/float-out-boy/src/main.c:2455-2459).
+#[cfg(any(test, target_arch = "arm"))]
+fn initialize_float_out_boy_runtime_state(
+    state: &mut FloatOutBoyPackageState,
+    orientation: vescpkg_rs::ImuOrientation,
+    odometer: OdometerMeters,
+) {
+    state.initialize_balance_filter(orientation);
+    state.initialize_aux_odometer(odometer);
+}
+
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn start_float_out_boy_runtime_threads(
     start: &mut vescpkg_rs::PackageStart<'_>,
@@ -242,8 +252,11 @@ pub fn start_float_out_boy_runtime_threads(
     let odometer = firmware.telemetry().odometer();
     if start
         .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
-            state.initialize_balance_filter(firmware.imu().orientation());
-            state.initialize_aux_odometer(odometer);
+            initialize_float_out_boy_runtime_state(
+                state,
+                firmware.imu().orientation(),
+                odometer,
+            );
         })
         .is_none()
     {
@@ -758,6 +771,24 @@ mod tests {
             firmware.thread_sleep_durations(),
             [Duration::from_micros(33_333), Duration::ZERO]
         );
+    }
+
+    #[test]
+    fn startup_seeds_aux_backup_threshold_from_required_firmware_odometer() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyMode::Normal,
+        ));
+
+        super::initialize_float_out_boy_runtime_state(
+            &mut state,
+            firmware.imu().orientation(),
+            OdometerMeters::from_meters(42_000),
+        );
+
+        assert!(!state.aux_backup_due(OdometerMeters::from_meters(42_200)));
+        assert!(state.aux_backup_due(OdometerMeters::from_meters(42_201)));
     }
 
     #[test]
