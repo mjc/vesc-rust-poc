@@ -7,6 +7,67 @@ use std::vec::Vec;
 use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent, TimestampTicks};
 use vescpkg_rs::test_support::FirmwareTest;
 
+const TUNE_DEFAULTS_PACKET: &[u8] = &[
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::TuneDefaults.id(),
+];
+const RUNTIME_TUNE_PACKET: &[u8] = &[
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::RuntimeTune.id(),
+    0xA3,
+    0x21,
+    0xA3,
+    0x54,
+    0xB9,
+    0x20,
+    0x71,
+    0xD4,
+    0xA5,
+    0x43,
+    0x21,
+    0xFF,
+    0x86,
+    0xA5,
+    0x47,
+    0x63,
+    0x82,
+];
+const TILT_TUNE_PACKET: &[u8] = &[
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::TuneTilt.id(),
+    1,
+    15,
+    85,
+    25,
+    30,
+];
+const OTHER_TUNE_PACKET: &[u8] = &[
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::TuneOther.id(),
+    0xFE,
+    25,
+    20,
+    15,
+    25,
+    7,
+    110,
+    30,
+    20,
+    25,
+    35,
+    40,
+    50,
+    8,
+];
+const BOOSTER_PACKET: &[u8] = &[
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::Booster.id(),
+    0xA3,
+    0x04,
+    0x21,
+    0xF2,
+];
+
 #[test]
 fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     let firmware = FirmwareTest::new();
@@ -24,70 +85,15 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     assert!(firmware.eeprom().read_bytes(&mut persisted_image).is_ok());
     let mut now = || TimestampTicks::from_ticks(0);
     let mut send = |_bytes: &[u8]| true;
-    let packets: &[&[u8]] = &[
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::TuneDefaults.id(),
-        ],
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RuntimeTune.id(),
-            0xA3,
-            0x21,
-            0xA3,
-            0x54,
-            0xB9,
-            0x20,
-            0x71,
-            0xD4,
-            0xA5,
-            0x43,
-            0x21,
-            0xFF,
-            0x86,
-            0xA5,
-            0x47,
-            0x63,
-            0x82,
-        ],
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::TuneTilt.id(),
-            1,
-            15,
-            85,
-            25,
-            30,
-        ],
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::TuneOther.id(),
-            0xFE,
-            25,
-            20,
-            15,
-            25,
-            7,
-            110,
-            30,
-            20,
-            25,
-            35,
-            40,
-            50,
-            8,
-        ],
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::Booster.id(),
-            0xA3,
-            0x04,
-            0x21,
-            0xF2,
-        ],
+    let packets = [
+        TUNE_DEFAULTS_PACKET,
+        RUNTIME_TUNE_PACKET,
+        TILT_TUNE_PACKET,
+        OTHER_TUNE_PACKET,
+        BOOSTER_PACKET,
     ];
 
-    for packet in packets {
+    for packet in &packets {
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut now,
