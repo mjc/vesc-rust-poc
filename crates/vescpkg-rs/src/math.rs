@@ -21,6 +21,12 @@ pub fn cos(x: f32) -> f32 {
     libm::cosf(x)
 }
 
+/// Rounds a single-precision input down toward negative infinity.
+#[must_use]
+pub fn floor(x: f32) -> f32 {
+    libm::floorf(x)
+}
+
 /// Raises one single-precision value to a single-precision power.
 #[must_use]
 pub fn pow(base: f32, exponent: f32) -> f32 {
@@ -59,7 +65,7 @@ pub fn sqrt(x: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{asin, cos, pow, remainder, round, sin, sqrt, tan};
+    use super::{asin, cos, floor, pow, remainder, round, sin, sqrt, tan};
 
     fn approx_eq(left: f32, right: f32) {
         assert!(
@@ -100,6 +106,7 @@ mod tests {
     fn animation_math_matches_host_libm_at_boundaries() {
         for value in [-2.5, -1.0, -0.5, 0.0, 0.5, 1.0, 2.5] {
             assert_eq!(round(value), libm::roundf(value));
+            assert_eq!(floor(value), libm::floorf(value));
             assert_eq!(remainder(value, 2.0), libm::fmodf(value, 2.0));
         }
         assert_eq!(pow(0.5, 3.2), libm::powf(0.5, 3.2));

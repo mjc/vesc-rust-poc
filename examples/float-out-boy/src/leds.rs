@@ -862,6 +862,17 @@ impl FloatOutBoyLedStripFrame {
             self.render_rainbow(bar, on_off_fade, time);
             return;
         }
+        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Pulse) {
+            self.render_pulse(bar, on_off_fade, time);
+            return;
+        }
+        if matches!(
+            bar.animation_mode(),
+            FloatOutBoyLedAnimationMode::KnightRider
+        ) {
+            self.render_knight_rider(bar, on_off_fade, time);
+            return;
+        }
         let target = match bar.animation_mode() {
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color())
@@ -888,6 +899,89 @@ impl FloatOutBoyLedStripFrame {
         };
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+    }
+
+    fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let len = usize::from(self.config.count());
+        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+            return;
+        };
+        let len_float = f32::from(len_u16);
+        let progress = refloat_cosine_progress(time);
+        let center = len_float / 5.0;
+        let length = len_float / 2.0 - center;
+        let offset = length * (1.0 - progress);
+        let feather = len_float / 4.0;
+        let ratio = center / length;
+        let fade = if time < ratio { time / ratio } else { 1.0 };
+        let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+
+        for (index, pixel) in self
+            .pixels
+            .get_mut(..len)
+            .unwrap_or_default()
+            .iter_mut()
+            .enumerate()
+        {
+            let index = f32::from(u16::try_from(index).unwrap_or_default());
+            let distance_from_start = index - offset + 1.0;
+            let distance_from_end = len_float - offset - index;
+            let start = (distance_from_start / feather).clamp(0.0, 1.0);
+            let end = (distance_from_end / feather).clamp(0.0, 1.0);
+            let target = FloatOutBoyLedPixel::blend(secondary, primary, start.min(end) * fade);
+            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+        }
+    }
+
+    fn render_knight_rider(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let len = usize::from(self.config.count());
+        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+            return;
+        };
+        let len_float = f32::from(len_u16);
+        let tail = f32::from((len_u16 / 3).saturating_add(1));
+        let time = time * 0.7;
+        let backlight = if time > 0.3 { 0.08 } else { 0.0 };
+        let first = len_float * vescpkg_rs::remainder(time, 2.0) - 0.5 * len_float - 1.0;
+        let second = 1.5 * len_float - len_float * vescpkg_rs::remainder(time - 1.0, 2.0);
+        let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+
+        for (index, pixel) in self
+            .pixels
+            .get_mut(..len)
+            .unwrap_or_default()
+            .iter_mut()
+            .enumerate()
+        {
+            let index = f32::from(u16::try_from(index).unwrap_or_default());
+            let mut first_blend = backlight;
+            let first_distance = (first - index).abs();
+            if index <= first {
+                if first_distance <= tail {
+                    first_blend = (tail - first_distance) / tail;
+                }
+            } else if index < first + 1.0 {
+                first_blend = first - vescpkg_rs::floor(first);
+            }
+
+            let mut second_blend = backlight;
+            let second_distance = (second - index).abs();
+            if index >= second {
+                if second_distance <= tail {
+                    second_blend = (tail - second_distance) / tail;
+                }
+            } else if index > second - 1.0 {
+                second_blend = 1.0 - second + vescpkg_rs::floor(second);
+            }
+
+            let target =
+                FloatOutBoyLedPixel::blend(secondary, primary, first_blend.max(second_blend));
+            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+        }
     }
 
     fn render_felony(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
@@ -1345,6 +1439,69 @@ mod renderer_tests {
                 Some(FloatOutBoyLedPixel {
                     channels: [0x00, 0x80, 0xfd, 0]
                 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn pulse_and_knight_rider_match_refloat_spatial_frames() {
+        let bar = |mode| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                FloatOutBoyLedColor::Red,
+                FloatOutBoyLedColor::Blue,
+                mode,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = |count| {
+            super::FloatOutBoyLedStripConfig::new(
+                super::FloatOutBoyLedStripOrder::First,
+                count,
+                FloatOutBoyLedColorOrder::Grb,
+            )
+        };
+
+        let mut pulse = super::FloatOutBoyLedStripFrame::new(config(5));
+        pulse.render_bar(
+            bar(super::FloatOutBoyLedAnimationMode::Pulse),
+            Ratio::from_ratio_const(1.0),
+            0.5,
+        );
+        assert_eq!(
+            core::array::from_fn(|index| {
+                pulse
+                    .physical_pixel(index)
+                    .map(super::FloatOutBoyLedPixel::channels)
+            }),
+            [
+                Some([0x26, 0, 0xd8, 0]),
+                Some([0xbf, 0, 0x3f, 0]),
+                Some([0xbf, 0, 0x3f, 0]),
+                Some([0xbf, 0, 0x3f, 0]),
+                Some([0x26, 0, 0xd8, 0]),
+            ]
+        );
+
+        let mut knight_rider = super::FloatOutBoyLedStripFrame::new(config(6));
+        knight_rider.render_bar(
+            bar(super::FloatOutBoyLedAnimationMode::KnightRider),
+            Ratio::from_ratio_const(1.0),
+            1.5,
+        );
+        assert_eq!(
+            core::array::from_fn(|index| {
+                knight_rider
+                    .physical_pixel(index)
+                    .map(super::FloatOutBoyLedPixel::channels)
+            }),
+            [
+                Some([0x3b, 0, 0xc3, 0]),
+                Some([0x90, 0, 0x6e, 0]),
+                Some([0xe5, 0, 0x19, 0]),
+                Some([0x4c, 0, 0xb2, 0]),
+                Some([0x14, 0, 0xea, 0]),
+                Some([0x14, 0, 0xea, 0]),
             ]
         );
     }
