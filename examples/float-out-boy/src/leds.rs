@@ -1113,10 +1113,11 @@ impl FloatOutBoyStatusDynamics {
         input: FloatOutBoyLedUpdate,
         status: FloatOutBoyLedStatusUpdate,
         sensors: (Ratio, Ratio),
+        reset_idle: bool,
         current_time: f32,
     ) -> FloatOutBoyStatusRenderState {
         let status_config = config.status();
-        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+        if reset_idle || !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
             self.idle_time = current_time;
         }
 
@@ -1190,6 +1191,11 @@ pub struct FloatOutBoyLedRenderer {
     rear_bar: FloatOutBoyLedBarConfig,
     animation_start: f32,
     confirmation_start: f32,
+    front_brightness: f32,
+    rear_brightness: f32,
+    status_on_front_blend: f32,
+    status_on_front_idle_blend: f32,
+    status_on_front_idle_time: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1223,6 +1229,11 @@ impl FloatOutBoyLedRenderer {
             rear_bar: config.rear(),
             animation_start: 0.0,
             confirmation_start: -1.0,
+            front_brightness: config.front().brightness().as_ratio(),
+            rear_brightness: config.rear().brightness().as_ratio(),
+            status_on_front_blend: 0.0,
+            status_on_front_idle_blend: 0.0,
+            status_on_front_idle_time: 0.0,
         }
     }
 
@@ -1239,7 +1250,10 @@ impl FloatOutBoyLedRenderer {
         } = frame;
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
+        let was_upright = self.dynamics.is_board_upright();
         self.dynamics.update(config, input);
+        let upright = self.dynamics.is_board_upright();
+        let upright_changed = upright != was_upright;
 
         if matches!(input.run_state, crate::FloatOutBoyRunState::Startup) {
             return;
@@ -1260,11 +1274,52 @@ impl FloatOutBoyLedRenderer {
             return;
         }
 
-        self.compose_status(config, input, current_time, status, fade);
+        let status_state =
+            self.compose_status(config, input, current_time, status, fade, upright_changed);
+        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
+            || (!was_upright && upright)
+        {
+            self.status_on_front_idle_time = current_time;
+        }
+        let status_on_front = config.shows_status_on_front_when_lifted()
+            && matches!(input.run_state, crate::FloatOutBoyRunState::Ready)
+            && upright;
+        let front_target = if status_on_front {
+            status_state.brightness.as_ratio()
+        } else if upright && config.turns_lights_off_when_lifted() {
+            0.0
+        } else {
+            self.front_bar.brightness().as_ratio()
+        };
+        let rear_target = if upright && config.turns_lights_off_when_lifted() {
+            0.0
+        } else {
+            self.rear_bar.brightness().as_ratio()
+        };
+        self.front_brightness = rate_limit(self.front_brightness, front_target, 3.0 / 30.0);
+        self.rear_brightness = rate_limit(self.rear_brightness, rear_target, 3.0 / 30.0);
+        self.status_on_front_blend = rate_limit(
+            self.status_on_front_blend,
+            f32::from(u8::from(status_on_front)),
+            3.0 / 30.0,
+        );
+        if config.shows_status_on_front_when_lifted() && self.status_on_front_blend > 0.0 {
+            let front_idle = config.turns_lights_off_when_lifted()
+                && current_time - self.status_on_front_idle_time > 3.0;
+            self.status_on_front_idle_blend = rate_limit(
+                self.status_on_front_idle_blend,
+                f32::from(u8::from(front_idle)),
+                3.0 / 30.0,
+            );
+        }
 
         let animation_time = current_time - self.animation_start;
-        self.front.render_bar(self.front_bar, fade, animation_time);
-        self.rear.render_bar(self.rear_bar, fade, animation_time);
+        let mut front_bar = self.front_bar;
+        front_bar.brightness = Ratio::clamped(self.front_brightness);
+        let mut rear_bar = self.rear_bar;
+        rear_bar.brightness = Ratio::clamped(self.rear_brightness);
+        self.front.render_bar(front_bar, fade, animation_time);
+        self.rear.render_bar(rear_bar, fade, animation_time);
 
         let transition = FloatOutBoyFrameTransition {
             config,
@@ -1279,6 +1334,7 @@ impl FloatOutBoyLedRenderer {
         };
         self.compose_headlights(transition);
         self.compose_direction(transition);
+        self.compose_front_status(config, status, status_state, fade, current_time);
     }
 
     /// Begin Refloat's 0.8-second status-confirm animation.
@@ -1293,12 +1349,13 @@ impl FloatOutBoyLedRenderer {
         current_time: f32,
         status: FloatOutBoyLedStatusUpdate,
         fade: Ratio,
-    ) {
+        reset_idle: bool,
+    ) -> FloatOutBoyStatusRenderState {
         let status_config = config.status();
         let sensors = self.dynamics.sensor_fades();
-        let state = self
-            .status_dynamics
-            .update(config, input, status, sensors, current_time);
+        let state =
+            self.status_dynamics
+                .update(config, input, status, sensors, reset_idle, current_time);
 
         let overlay =
             |blend| FloatOutBoyLedOverlay::new(state.brightness, fade, Ratio::clamped(blend));
@@ -1330,13 +1387,68 @@ impl FloatOutBoyLedRenderer {
         let (left, right) = sensors;
         if state.idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
             self.status
-                .render_footpads(left, right, input.darkride, overlay(1.0));
+                .render_footpads(left, right, false, overlay(1.0));
         }
 
         let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
         if (0.0..=1.0).contains(&confirmation_progress) {
             self.status
                 .render_confirmation(state.brightness, fade, confirmation_progress);
+        }
+        state
+    }
+
+    fn compose_front_status(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        status: FloatOutBoyLedStatusUpdate,
+        state: FloatOutBoyStatusRenderState,
+        fade: Ratio,
+        current_time: f32,
+    ) {
+        let blend = Ratio::clamped(self.status_on_front_blend);
+        if blend.as_ratio() <= 0.0 {
+            return;
+        }
+        let idle_blend = Ratio::clamped(self.status_on_front_idle_blend);
+        let brightness = Ratio::clamped(self.front_brightness);
+        if idle_blend.as_ratio() > 0.0 {
+            self.front.render_target(
+                FloatOutBoyLedPixel::default(),
+                Ratio::clamped(brightness.as_ratio() * fade.as_ratio()),
+                blend,
+            );
+        }
+        let overlay = |amount| FloatOutBoyLedOverlay::new(brightness, fade, amount);
+        if idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() < 1.0 {
+            self.front.render_status_progress(
+                status.battery_level.clamp(0.0, 1.0),
+                FloatOutBoyStatusProgress::Battery,
+                config.status().red_bar_percentage(),
+                true,
+                overlay(Ratio::clamped(
+                    blend.as_ratio().min(1.0 - idle_blend.as_ratio()),
+                )),
+            );
+        }
+        if idle_blend.as_ratio() < 1.0 && state.duty_blend.as_ratio() > 0.0 {
+            self.front.render_status_progress(
+                state.duty,
+                FloatOutBoyStatusProgress::Duty,
+                config.status().red_bar_percentage(),
+                true,
+                overlay(state.duty_blend),
+            );
+        }
+        let (left, right) = self.dynamics.sensor_fades();
+        if idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
+            self.front
+                .render_footpads(left, right, true, overlay(blend));
+        }
+        let confirmation_progress = (current_time - self.confirmation_start) / 0.8;
+        if (0.0..=1.0).contains(&confirmation_progress) {
+            self.front
+                .render_confirmation(brightness, fade, confirmation_progress);
         }
     }
 
@@ -3186,6 +3298,102 @@ mod renderer_tests {
 
         renderer.update(config, frame, 1.0 + 14.0 / 30.0);
         assert_eq!(pixel(&renderer), [0x1c, 0x3b, 0x45, 0]);
+    }
+
+    #[test]
+    fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
+        let bar = |color| {
+            super::FloatOutBoyLedBarConfig::new(
+                Ratio::from_ratio_const(1.0),
+                color,
+                FloatOutBoyLedColor::Black,
+                super::FloatOutBoyLedAnimationMode::Solid,
+                super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            )
+        };
+        let config = super::FloatOutBoyLedsConfig::new(
+            bar(FloatOutBoyLedColor::WhiteRgb),
+            bar(FloatOutBoyLedColor::Red),
+            bar(FloatOutBoyLedColor::Blue),
+            bar(FloatOutBoyLedColor::Red),
+            super::FloatOutBoyStatusBarConfig::new(
+                super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+                Ratio::from_ratio_const(0.9),
+                Ratio::from_ratio_const(0.1),
+                Ratio::from_ratio_const(1.0),
+                Ratio::from_ratio_const(1.0),
+            ),
+            bar(FloatOutBoyLedColor::Green),
+        )
+        .enabled()
+        .lights_off_when_lifted()
+        .status_on_front_when_lifted();
+        let strip = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            1,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        )
+        .with_front_strip(strip)
+        .with_rear_strip(strip);
+        let frame = |pitch_degrees| {
+            super::FloatOutBoyLedFrameUpdate::new(
+                super::FloatOutBoyLedUpdate {
+                    run_state: crate::FloatOutBoyRunState::Ready,
+                    mode: crate::FloatOutBoyMode::Normal,
+                    darkride: false,
+                    footpad: crate::FloatOutBoyFootpadState::None,
+                    pitch_degrees,
+                    distance: 0.0,
+                },
+                super::FloatOutBoyLedStatusUpdate {
+                    battery_level: 1.0,
+                    duty_cycle: 0.0,
+                    moving: false,
+                },
+            )
+        };
+        let pixel = |strip: &super::FloatOutBoyLedStripFrame| {
+            strip
+                .physical_pixel(0)
+                .map(super::FloatOutBoyLedPixel::channels)
+                .unwrap_or_default()
+        };
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+
+        for tick in 1..=10 {
+            renderer.update(
+                config,
+                frame(61.0),
+                f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(pixel(renderer.front()), [0x90, 0x90, 0x90, 0]);
+        assert_eq!(pixel(renderer.rear()), [0, 0, 0, 0]);
+
+        let idle_boundary = 1.0 / 30.0 + 3.0;
+        renderer.update(config, frame(61.0), idle_boundary);
+        assert_eq!(pixel(renderer.front()), [0x90, 0x90, 0x90, 0]);
+        for tick in 1..=10 {
+            renderer.update(
+                config,
+                frame(61.0),
+                idle_boundary + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(pixel(renderer.front()), [0, 0, 0, 0]);
+
+        for tick in 11..=20 {
+            renderer.update(
+                config,
+                frame(49.0),
+                idle_boundary + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            );
+        }
+        assert_eq!(pixel(renderer.front()), [0, 0, 0xff, 0]);
+        assert_eq!(pixel(renderer.rear()), [0xff, 0, 0, 0]);
     }
 
     #[test]
