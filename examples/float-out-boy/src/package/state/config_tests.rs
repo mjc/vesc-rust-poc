@@ -1004,6 +1004,22 @@ fn storing_led_config_replaces_internal_renderer_immediately() {
 }
 
 #[test]
+fn failed_internal_led_teardown_retains_runtime_for_retry() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut bytes = default_float_out_boy_config_bytes();
+    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    assert!(state.store_serialized_config(&bytes));
+
+    assert!(!state.destroy_internal_leds_with(|_| false));
+    assert!(state.internal_leds.is_some());
+    assert!(!state.internal_leds_operational());
+
+    assert!(state.destroy_internal_leds_with(|_| true));
+    assert!(state.internal_leds.is_none());
+}
+
+#[test]
 fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(

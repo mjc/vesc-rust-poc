@@ -2,8 +2,8 @@ use crate::{
     domain::FloatOutBoyDarkRideState,
     lcm::FloatOutBoyHardwareLedsConfig,
     leds::{
-        FloatOutBoyLedFrameUpdate, FloatOutBoyLedRenderer, FloatOutBoyLedStatusUpdate,
-        FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
+        FloatOutBoyLedFrameUpdate, FloatOutBoyLedPin, FloatOutBoyLedRenderer,
+        FloatOutBoyLedStatusUpdate, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
     },
 };
 use vescpkg_rs::MotorTelemetry;
@@ -94,27 +94,37 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    pub(crate) fn destroy_internal_leds(&mut self) {
+    pub(crate) fn destroy_internal_leds(&mut self) -> bool {
+        self.destroy_internal_leds_with(hardware::teardown)
+    }
+
+    pub(crate) fn destroy_internal_leds_with(
+        &mut self,
+        teardown: impl FnOnce(FloatOutBoyLedPin) -> bool,
+    ) -> bool {
         #[cfg(test)]
-        if let Some(runtime) = self.internal_leds.as_mut() {
-            let _ = runtime.driver.destroy(hardware::teardown);
-        }
+        let destroyed = self
+            .internal_leds
+            .as_mut()
+            .is_none_or(|runtime| runtime.driver.destroy(teardown));
         #[cfg(target_arch = "arm")]
-        if let Some(runtime) = self.internal_leds.as_mut() {
-            if let Some(runtime) = runtime.runtime_mut() {
-                let _ = runtime.driver.destroy(hardware::teardown);
+        let destroyed = self.internal_leds.as_mut().is_none_or(|runtime| {
+            runtime
+                .runtime_mut()
+                .is_none_or(|runtime| runtime.driver.destroy(teardown))
+        });
+
+        if destroyed {
+            #[cfg(test)]
+            {
+                self.internal_leds = None;
             }
-        }
-        #[cfg(test)]
-        {
-            self.internal_leds = None;
-        }
-        #[cfg(target_arch = "arm")]
-        {
+            #[cfg(target_arch = "arm")]
             if let Some(runtime) = self.internal_leds.take() {
                 runtime.release();
             }
         }
+        destroyed
     }
 
     pub(crate) fn internal_leds_operational(&self) -> bool {
