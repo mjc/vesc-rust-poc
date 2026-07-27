@@ -849,6 +849,10 @@ impl FloatOutBoyLedStripFrame {
     /// Render one currently implemented Refloat bar animation.
     pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let time = time * bar.animation_speed().as_units();
+        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Felony) {
+            self.render_felony(bar, on_off_fade, time);
+            return;
+        }
         let target = match bar.animation_mode() {
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color())
@@ -875,6 +879,38 @@ impl FloatOutBoyLedStripFrame {
         };
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+    }
+
+    fn render_felony(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        let phase = vescpkg_rs::remainder(time, 0.15);
+        let len = usize::from(self.config.count());
+        let stop = len / 2;
+        let start = stop.saturating_add(len.checked_rem(2).unwrap_or_default());
+        let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
+        let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
+        let black = FloatOutBoyLedPixel::default();
+        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
+
+        for (index, pixel) in self
+            .pixels
+            .get_mut(..len)
+            .unwrap_or_default()
+            .iter_mut()
+            .enumerate()
+        {
+            let target = if phase < 0.05 {
+                if index < stop { primary } else { black }
+            } else if phase < 0.1 {
+                if index >= start { secondary } else { black }
+            } else if index < stop {
+                secondary
+            } else if index >= start {
+                primary
+            } else {
+                black
+            };
+            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+        }
     }
 
     fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
@@ -1110,6 +1146,48 @@ mod renderer_tests {
         assert_eq!(
             frame.physical_pixel(0),
             Some(FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red))
+        );
+    }
+
+    #[test]
+    fn felony_preserves_odd_center_blackout_across_all_three_phases() {
+        let config = super::FloatOutBoyLedStripConfig::new(
+            super::FloatOutBoyLedStripOrder::First,
+            5,
+            FloatOutBoyLedColorOrder::Grb,
+        );
+        let bar = super::FloatOutBoyLedBarConfig::new(
+            Ratio::from_ratio_const(1.0),
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::Felony,
+            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        );
+        let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
+        let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
+        let black = FloatOutBoyLedPixel::default();
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+
+        frame.render_bar(bar, Ratio::from_ratio_const(1.0), 0.0);
+        assert_eq!(
+            core::array::from_fn(|index| frame.physical_pixel(index)),
+            [Some(red), Some(red), Some(black), Some(black), Some(black)]
+        );
+        frame.render_bar(bar, Ratio::from_ratio_const(1.0), 0.051);
+        assert_eq!(
+            core::array::from_fn(|index| frame.physical_pixel(index)),
+            [
+                Some(black),
+                Some(black),
+                Some(black),
+                Some(blue),
+                Some(blue)
+            ]
+        );
+        frame.render_bar(bar, Ratio::from_ratio_const(1.0), 0.101);
+        assert_eq!(
+            core::array::from_fn(|index| frame.physical_pixel(index)),
+            [Some(blue), Some(blue), Some(black), Some(red), Some(red)]
         );
     }
 }
