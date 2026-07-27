@@ -233,6 +233,11 @@ impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.restore_persisted_config();
+        self.alert_configured_state();
+        self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
+    }
+
+    pub(super) fn alert_configured_state(&mut self) {
         let run_state = self
             .all_data_payloads
             .base()
@@ -244,7 +249,6 @@ impl FloatOutBoyPackageState {
         } else {
             FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
         });
-        self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 
     pub(super) fn handle_config_command(
@@ -365,17 +369,7 @@ impl FloatOutBoyPackageState {
         // `configure(d)` applies the new beeper setting, then acknowledges
         // disabled state with three short beeps and every other state with one
         // at `third_party/float-out-boy/src/main.c:219-227`.
-        let run_state = self
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
-        self.alert_beeper(if matches!(run_state, FloatOutBoyRunState::Disabled) {
-            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
-        } else {
-            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
-        });
+        self.alert_configured_state();
         true
     }
 
