@@ -168,10 +168,10 @@ impl FloatOutBoyPackageState {
             .as_mut()
             .and_then(RuntimeAllocation::runtime_mut);
         if let Some(runtime) = runtime {
-            runtime.renderer.update(runtime.config, frame, current_time);
-            if runtime
-                .driver
-                .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+            if runtime.renderer.update(runtime.config, frame, current_time)
+                && runtime
+                    .driver
+                    .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
             {
                 paint(&runtime.renderer);
             }

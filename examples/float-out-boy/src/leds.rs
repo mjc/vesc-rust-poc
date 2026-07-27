@@ -887,6 +887,10 @@ impl FloatOutBoyLedDynamics {
             f32::from(u8::from(config.is_enabled())),
             3.0 / 30.0,
         );
+        if !config.is_enabled() && self.on_off_fade == 0.0 {
+            self.run_state = run_state;
+            return;
+        }
 
         if !self.board_is_upright && pitch_degrees > 60.0 {
             self.board_is_upright = true;
@@ -1283,7 +1287,7 @@ impl FloatOutBoyLedRenderer {
         config: FloatOutBoyLedsConfig,
         frame: FloatOutBoyLedFrameUpdate,
         current_time: f32,
-    ) {
+    ) -> bool {
         let FloatOutBoyLedFrameUpdate {
             ride: input,
             status,
@@ -1297,7 +1301,11 @@ impl FloatOutBoyLedRenderer {
         let upright_changed = upright != was_upright;
 
         if matches!(input.run_state, crate::FloatOutBoyRunState::Startup) {
-            return;
+            return false;
+        }
+        let fade = self.dynamics.on_off_fade();
+        if !config.is_enabled() && fade.as_ratio() == 0.0 {
+            return false;
         }
         if was_startup {
             self.animation_start = current_time;
@@ -1307,7 +1315,6 @@ impl FloatOutBoyLedRenderer {
                 self.status_on_front_blend = 1.0;
             }
         }
-        let fade = self.dynamics.on_off_fade();
         if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
             || (!was_upright && upright)
         {
@@ -1343,7 +1350,7 @@ impl FloatOutBoyLedRenderer {
                 .render_disabled(Ratio::clamped(self.front_brightness), fade, current_time);
             self.rear
                 .render_disabled(Ratio::clamped(self.rear_brightness), fade, current_time);
-            return;
+            return true;
         }
 
         let status_state =
@@ -1380,6 +1387,7 @@ impl FloatOutBoyLedRenderer {
         self.compose_headlights(transition);
         self.compose_direction(transition);
         self.compose_front_status(config, status, status_state, fade, current_time);
+        true
     }
 
     /// Begin Refloat's 0.8-second status-confirm animation.
@@ -3488,6 +3496,41 @@ mod renderer_tests {
         dynamics.update(config, running, 10.25);
 
         assert_eq!(dynamics.headlights(), (-0.5, false, true));
+    }
+
+    #[test]
+    fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
+        let config = white_led_config(0).with_headlights_on();
+        let mut off = config;
+        off.on = false;
+        let running = super::FloatOutBoyLedUpdate {
+            run_state: crate::FloatOutBoyRunState::Running,
+            mode: crate::FloatOutBoyMode::Normal,
+            darkride: false,
+            footpad: crate::FloatOutBoyFootpadState::None,
+            pitch_degrees: 0.0,
+            distance: 0.0,
+        };
+        let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
+
+        dynamics.update(config, running, 1.0);
+        for tick in 1_u16..=10 {
+            dynamics.update(off, running, 1.0 + f32::from(tick) / 100.0);
+        }
+        let faded_out = dynamics.headlights();
+        dynamics.update(off, running, 2.0);
+
+        assert_eq!(dynamics.headlights(), faded_out);
+
+        let hardware = crate::lcm::FloatOutBoyHardwareLedsConfig::new(
+            crate::lcm::FloatOutBoyLedMode::Internal,
+        );
+        let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, off, 0.0);
+        assert!(!renderer.update(
+            off,
+            super::FloatOutBoyLedFrameUpdate::ride_only(running),
+            2.0,
+        ));
     }
 
     #[test]
