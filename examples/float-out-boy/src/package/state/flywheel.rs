@@ -266,6 +266,7 @@ impl FloatOutBoyPackageState {
         self.set_ride_mode(FloatOutBoyMode::Normal);
         self.flywheel.deactivate();
         self.read_config_from_eeprom();
+        self.alert_configured_state();
         self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
     }
 

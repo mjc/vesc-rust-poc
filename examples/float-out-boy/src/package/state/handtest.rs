@@ -68,6 +68,7 @@ impl FloatOutBoyHandtestRequest {
                 Self::Enable => state.apply_handtest_safety_config(),
                 Self::Disable => {
                     state.read_config_from_eeprom();
+                    state.alert_configured_state();
                     state.idle_ticks = vescpkg_rs::FirmwareClock::current_timestamp();
                 }
             }
@@ -158,6 +159,7 @@ impl FloatOutBoyPackageState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::beeper::FloatOutBoyBeeperLevel;
     use crate::domain::{
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude,
         FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
@@ -307,8 +309,12 @@ mod tests {
         ));
         let mut persisted = editable_config_from_state(&state);
         assert!(persisted.editor().set_kp(AngleCurrentGain::new(1.2)));
+        assert!(persisted.editor().set_beeper_enabled(true));
         let persisted = *persisted.as_bytes();
         assert!(state.store_serialized_config(&persisted));
+        for _ in 0..240 {
+            let _ = state.tick_beeper();
+        }
 
         let mut volatile = editable_config_from_state(&state);
         assert!(volatile.editor().set_kp(AngleCurrentGain::new(-9.0)));
@@ -328,6 +334,17 @@ mod tests {
         assert_f32_eq!(
             state.serialized_config.balance().kp().as_amps_per_degree(),
             1.2
+        );
+        let changes: Vec<_> = (1..=240)
+            .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                (80, FloatOutBoyBeeperLevel::Low),
+                (160, FloatOutBoyBeeperLevel::High),
+                (240, FloatOutBoyBeeperLevel::Low),
+            ],
         );
     }
 

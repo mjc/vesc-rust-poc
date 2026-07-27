@@ -311,6 +311,9 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         assert!(state.serialized_config.editor().set_beeper_enabled(true));
         let requested = state.serialized_config;
         assert!(state.store_serialized_config(requested.as_bytes()));
+        for _ in 0..240 {
+            let _ = state.tick_beeper();
+        }
         let persisted = state.serialized_config;
         let duty_threshold = state.runtime_duty_pushback_threshold();
         let duty_angle = state.runtime_duty_pushback_angle();
@@ -324,6 +327,9 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
             &mut |_bytes| true,
             &flywheel_packet(&[0x81, 90, 50, 30, 20, 1]),
         ));
+        for _ in 0..900 {
+            let _ = state.tick_beeper();
+        }
         assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
         set_ride_state(&mut state, run_state);
         assert!(state.handle_packet_with_telemetry(
@@ -352,6 +358,17 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         assert_eq!(
             state.take_beeper_level(),
             Some(FloatOutBoyBeeperLevel::High)
+        );
+        let changes: Vec<_> = (1..=240)
+            .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                (80, FloatOutBoyBeeperLevel::Low),
+                (160, FloatOutBoyBeeperLevel::High),
+                (240, FloatOutBoyBeeperLevel::Low),
+            ],
         );
     }
 }
