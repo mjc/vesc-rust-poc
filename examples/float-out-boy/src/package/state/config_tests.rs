@@ -16,7 +16,10 @@ use crate::package::test_support::{
 };
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{Current, MahonyPitchGain, MahonyRollGain, MotorCurrent, TimestampTicks};
+use vescpkg_rs::{
+    Current, ImuMahonyIntegralGain, ImuMahonyProportionalGain, MahonyPitchGain, MahonyRollGain,
+    MotorCurrent, Ratio, TimestampTicks,
+};
 
 fn handle_config_command(
     firmware: &FirmwareTest,
@@ -57,6 +60,31 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
     // seven float16 config fields; `configure(d)` then uses it as
     // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
     assert_eq!(state.configured_loop_time_us(), 2000);
+}
+
+#[test]
+fn startup_migrates_legacy_firmware_imu_settings_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let settings = firmware.settings();
+    settings
+        .set_imu_mahony_proportional_gain(ImuMahonyProportionalGain::try_new(2.0).unwrap())
+        .unwrap();
+    settings
+        .set_imu_mahony_integral_gain(ImuMahonyIntegralGain::try_new(0.25).unwrap())
+        .unwrap();
+    settings
+        .set_imu_acceleration_confidence_decay(Ratio::from_ratio_const(0.8))
+        .unwrap();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    state.load_persisted_config_on_startup();
+
+    assert_f32_eq!(
+        settings.imu_mahony_proportional_gain().unwrap().value(),
+        0.4
+    );
+    assert_f32_eq!(settings.imu_mahony_integral_gain().unwrap().value(), 0.0);
+    assert_f32_eq!(settings.imu_acceleration_confidence_decay().as_ratio(), 0.1);
 }
 
 #[test]

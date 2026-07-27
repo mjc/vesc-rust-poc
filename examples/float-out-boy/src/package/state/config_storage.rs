@@ -77,6 +77,24 @@ impl FloatOutBoyPackageState {
 
     pub(in crate::package) fn load_persisted_config_on_startup(&mut self) {
         self.read_config_from_eeprom();
+
+        let settings = vescpkg_rs::FirmwareSettings;
+        let Ok(gain) = settings.imu_mahony_proportional_gain() else {
+            return;
+        };
+        if gain.value() <= 1.0 {
+            return;
+        }
+        let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
+            return;
+        };
+        let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
+            return;
+        };
+        let _ = settings.set_imu_mahony_proportional_gain(proportional_gain);
+        let _ = settings.set_imu_mahony_integral_gain(integral_gain);
+        let _ = settings
+            .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.1));
     }
 
     pub(super) fn handle_config_command(&mut self, bytes: &[u8]) -> bool {
