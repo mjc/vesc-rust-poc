@@ -40,6 +40,23 @@ fn align_state_pointer<T>(
 }
 
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+unsafe fn destroy_owned_package_state<T>(state: core::ptr::NonNull<T>) {
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        // SAFETY: the caller exclusively owns the initialized state.
+        unsafe { state.as_ptr().drop_in_place() };
+        // VESC cannot unregister LispBM extensions or quiesce callbacks that
+        // already loaded this ARG. Keep the allocation as a STOPPED admission
+        // tombstone; late callbacks inspect it without touching dropped `T`.
+    }
+    #[cfg(not(target_arch = "arm"))]
+    {
+        // SAFETY: host startup allocated this state with `Box::into_raw`.
+        drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
+    }
+}
+
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     arg: *mut core::ffi::c_void,
 ) {
@@ -81,19 +98,8 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
     // SAFETY: stop owns the live state exclusively after callback and thread draining.
     let disposition = unsafe { state.as_mut() }.stop();
     if matches!(disposition, crate::PackageStopDisposition::Drop) {
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            // SAFETY: the state was initialized in place and is now exclusively owned.
-            unsafe { state.as_ptr().drop_in_place() };
-            // VESC cannot unregister LispBM extensions or quiesce callbacks that
-            // already loaded this ARG. Keep the allocation as a STOPPED admission
-            // tombstone; late callbacks inspect it without touching dropped `T`.
-        }
-        #[cfg(not(target_arch = "arm"))]
-        {
-            // SAFETY: host startup allocated this state with `Box::into_raw`.
-            drop(unsafe { crate::rust_alloc::boxed::Box::from_raw(state.as_ptr()) });
-        }
+        // SAFETY: stop owns the state exclusively and reported it safe to destroy.
+        unsafe { destroy_owned_package_state(state) };
     }
 }
 
