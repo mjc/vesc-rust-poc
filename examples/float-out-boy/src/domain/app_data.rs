@@ -40,69 +40,70 @@ impl FloatOutBoyAppDataPackageId {
 /// LCM IDs in `third_party/float-out-boy/src/lcm.h:27-33`, and charging state in
 /// `third_party/float-out-boy/src/charging.h:25`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
 pub enum FloatOutBoyAppDataCommand {
     /// Version/package info.
-    Info,
+    Info = 0,
     /// Realtime data request.
-    GetRealtimeData,
+    GetRealtimeData = 1,
     /// Runtime tune without EEPROM write.
-    RuntimeTune,
+    RuntimeTune = 2,
     /// Reset tune defaults without EEPROM write.
-    TuneDefaults,
+    TuneDefaults = 3,
     /// Save config to EEPROM.
-    ConfigSave,
+    ConfigSave = 4,
     /// Restore config from EEPROM.
-    ConfigRestore,
+    ConfigRestore = 5,
     /// Runtime startup/config change.
-    TuneOther,
+    TuneOther = 6,
     /// Idle motor movement.
-    RcMove,
+    RcMove = 7,
     /// Booster settings.
-    Booster,
+    Booster = 8,
     /// Print verbose info.
-    PrintInfo,
+    PrintInfo = 9,
     /// Compact all-data response request.
-    GetAllData,
+    GetAllData = 10,
     /// Testing/tuning experiment command.
-    Experiment,
+    Experiment = 11,
     /// Lock/disable command.
-    Lock,
+    Lock = 12,
     /// Hand-test mode command.
-    HandTest,
+    HandTest = 13,
     /// Tilt tuning command.
-    TuneTilt,
+    TuneTilt = 14,
     /// Lights-control command.
-    LightsControl,
+    LightsControl = 20,
     /// Flywheel toggle command.
-    Flywheel,
+    Flywheel = 22,
     /// LCM poll.
-    LcmPoll,
+    LcmPoll = 24,
     /// LCM light-info request.
-    LcmLightInfo,
+    LcmLightInfo = 25,
     /// LCM light-control command.
-    LcmLightControl,
+    LcmLightControl = 26,
     /// LCM device-info request.
-    LcmDeviceInfo,
+    LcmDeviceInfo = 27,
     /// Charging-state command.
-    ChargingState,
+    ChargingState = 28,
     /// LCM battery request.
-    LcmGetBattery,
+    LcmGetBattery = 29,
     /// Realtime data path.
-    RealtimeData,
+    RealtimeData = 31,
     /// Realtime data ID list.
-    RealtimeDataIds,
+    RealtimeDataIds = 32,
     /// Alert list request.
-    AlertsList,
+    AlertsList = 35,
     /// Alert control command.
-    AlertsControl,
+    AlertsControl = 36,
     /// Data recorder request.
-    DataRecordRequest,
+    DataRecordRequest = 41,
     /// Data recorder header response.
-    DataRecordHeader,
+    DataRecordHeader = 42,
     /// Data recorder sample-data response.
-    DataRecordData,
+    DataRecordData = 43,
     /// LCM debug command reserved for external debugging.
-    LcmDebug,
+    LcmDebug = 99,
 }
 
 impl FloatOutBoyAppDataCommand {
@@ -151,40 +152,12 @@ impl FloatOutBoyAppDataCommand {
 
     /// Return the Float Out Boy `v1.2.1` command ID.
     #[must_use]
+    #[expect(
+        clippy::as_conversions,
+        reason = "the repr(u8) discriminants are the source-pinned wire IDs"
+    )]
     pub const fn id(self) -> u8 {
-        match self {
-            Self::Info => 0,
-            Self::GetRealtimeData => 1,
-            Self::RuntimeTune => 2,
-            Self::TuneDefaults => 3,
-            Self::ConfigSave => 4,
-            Self::ConfigRestore => 5,
-            Self::TuneOther => 6,
-            Self::RcMove => 7,
-            Self::Booster => 8,
-            Self::PrintInfo => 9,
-            Self::GetAllData => 10,
-            Self::Experiment => 11,
-            Self::Lock => 12,
-            Self::HandTest => 13,
-            Self::TuneTilt => 14,
-            Self::LightsControl => 20,
-            Self::Flywheel => 22,
-            Self::LcmPoll => 24,
-            Self::LcmLightInfo => 25,
-            Self::LcmLightControl => 26,
-            Self::LcmDeviceInfo => 27,
-            Self::ChargingState => 28,
-            Self::LcmGetBattery => 29,
-            Self::RealtimeData => 31,
-            Self::RealtimeDataIds => 32,
-            Self::AlertsList => 35,
-            Self::AlertsControl => 36,
-            Self::DataRecordRequest => 41,
-            Self::DataRecordHeader => 42,
-            Self::DataRecordData => 43,
-            Self::LcmDebug => 99,
-        }
+        self as u8
     }
 }
 
@@ -336,11 +309,39 @@ mod tests {
     use super::FloatOutBoyAppDataCommand;
 
     #[test]
-    fn recorder_response_command_ids_are_typed_like_refloat() {
+    fn every_refloat_command_id_round_trips_through_the_typed_model() {
         for (command, id) in [
+            (FloatOutBoyAppDataCommand::Info, 0),
+            (FloatOutBoyAppDataCommand::GetRealtimeData, 1),
+            (FloatOutBoyAppDataCommand::RuntimeTune, 2),
+            (FloatOutBoyAppDataCommand::TuneDefaults, 3),
+            (FloatOutBoyAppDataCommand::ConfigSave, 4),
+            (FloatOutBoyAppDataCommand::ConfigRestore, 5),
+            (FloatOutBoyAppDataCommand::TuneOther, 6),
+            (FloatOutBoyAppDataCommand::RcMove, 7),
+            (FloatOutBoyAppDataCommand::Booster, 8),
+            (FloatOutBoyAppDataCommand::PrintInfo, 9),
+            (FloatOutBoyAppDataCommand::GetAllData, 10),
+            (FloatOutBoyAppDataCommand::Experiment, 11),
+            (FloatOutBoyAppDataCommand::Lock, 12),
+            (FloatOutBoyAppDataCommand::HandTest, 13),
+            (FloatOutBoyAppDataCommand::TuneTilt, 14),
+            (FloatOutBoyAppDataCommand::LightsControl, 20),
+            (FloatOutBoyAppDataCommand::Flywheel, 22),
+            (FloatOutBoyAppDataCommand::LcmPoll, 24),
+            (FloatOutBoyAppDataCommand::LcmLightInfo, 25),
+            (FloatOutBoyAppDataCommand::LcmLightControl, 26),
+            (FloatOutBoyAppDataCommand::LcmDeviceInfo, 27),
+            (FloatOutBoyAppDataCommand::ChargingState, 28),
+            (FloatOutBoyAppDataCommand::LcmGetBattery, 29),
+            (FloatOutBoyAppDataCommand::RealtimeData, 31),
+            (FloatOutBoyAppDataCommand::RealtimeDataIds, 32),
+            (FloatOutBoyAppDataCommand::AlertsList, 35),
+            (FloatOutBoyAppDataCommand::AlertsControl, 36),
             (FloatOutBoyAppDataCommand::DataRecordRequest, 41),
             (FloatOutBoyAppDataCommand::DataRecordHeader, 42),
             (FloatOutBoyAppDataCommand::DataRecordData, 43),
+            (FloatOutBoyAppDataCommand::LcmDebug, 99),
         ] {
             assert_eq!(command.id(), id);
             assert_eq!(FloatOutBoyAppDataCommand::try_from_id(id), Ok(command));
