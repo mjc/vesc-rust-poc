@@ -168,6 +168,21 @@ pub struct FloatOutBoyLedPixel {
     channels: [u8; 4],
 }
 
+/// Gamma-corrected physical channels in one configured strip's wire order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloatOutBoyLedPhysicalChannels {
+    bytes: [u8; 4],
+    len: usize,
+}
+
+impl FloatOutBoyLedPhysicalChannels {
+    /// Return the three or four physical channel bytes.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.get(..self.len).unwrap_or_default()
+    }
+}
+
 const NAMED_LED_COLOR_CHANNELS: [[u8; 4]; 32] = [
     [0x00, 0x00, 0x00, 0x00],
     [0xff, 0xff, 0xff, 0xff],
@@ -223,6 +238,31 @@ impl FloatOutBoyLedPixel {
     pub const fn channels(self) -> [u8; 4] {
         self.channels
     }
+
+    /// Gamma-correct and reorder this pixel for one physical strip.
+    #[must_use]
+    pub fn physical_channels(
+        self,
+        order: FloatOutBoyLedColorOrder,
+    ) -> FloatOutBoyLedPhysicalChannels {
+        let [red, green, blue, white] = self.channels.map(refloat_led_gamma);
+        let (bytes, len) = match order {
+            FloatOutBoyLedColorOrder::Grb => ([green, red, blue, 0], 3),
+            FloatOutBoyLedColorOrder::Grbw => ([green, red, blue, white], 4),
+            FloatOutBoyLedColorOrder::Rgb => ([red, green, blue, 0], 3),
+            FloatOutBoyLedColorOrder::Wrgb => ([white, red, green, blue], 4),
+        };
+        FloatOutBoyLedPhysicalChannels { bytes, len }
+    }
+}
+
+fn refloat_led_gamma(channel: u8) -> u8 {
+    let channel = u16::from(channel);
+    channel
+        .checked_mul(channel)
+        .and_then(|square| square.checked_add(channel))
+        .and_then(|value| u8::try_from(value / 256).ok())
+        .unwrap_or_default()
 }
 
 /// Float Out Boy LED animation mode.
@@ -714,7 +754,7 @@ impl FloatOutBoyLedStripConfig {
 
 #[cfg(test)]
 mod renderer_tests {
-    use super::{FloatOutBoyLedColor, FloatOutBoyLedPixel};
+    use super::{FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPixel};
 
     #[test]
     fn named_led_colors_match_refloat_1_2_1_rgba_channels() {
@@ -755,6 +795,60 @@ mod renderer_tests {
 
         for (color, channels) in cases {
             assert_eq!(FloatOutBoyLedPixel::from_named(color).channels(), channels);
+        }
+    }
+
+    #[test]
+    fn physical_channels_apply_refloat_gamma_and_color_order() {
+        let pixel = FloatOutBoyLedPixel {
+            channels: [16, 64, 128, 255],
+        };
+
+        assert_eq!(
+            pixel
+                .physical_channels(FloatOutBoyLedColorOrder::Grb)
+                .as_slice(),
+            &[16, 1, 64]
+        );
+        assert_eq!(
+            pixel
+                .physical_channels(FloatOutBoyLedColorOrder::Grbw)
+                .as_slice(),
+            &[16, 1, 64, 255]
+        );
+        assert_eq!(
+            pixel
+                .physical_channels(FloatOutBoyLedColorOrder::Rgb)
+                .as_slice(),
+            &[1, 16, 64]
+        );
+        assert_eq!(
+            pixel
+                .physical_channels(FloatOutBoyLedColorOrder::Wrgb)
+                .as_slice(),
+            &[255, 1, 16, 64]
+        );
+    }
+
+    #[test]
+    fn physical_channels_match_refloat_gamma_for_every_input() {
+        for channel in 0_u8..=u8::MAX {
+            let pixel = FloatOutBoyLedPixel {
+                channels: [channel; 4],
+            };
+            let widened = u16::from(channel);
+            let expected = widened
+                .checked_mul(widened)
+                .and_then(|square| square.checked_add(widened))
+                .and_then(|value| u8::try_from(value / 256).ok())
+                .expect("gamma stays in u8");
+
+            assert_eq!(
+                pixel
+                    .physical_channels(FloatOutBoyLedColorOrder::Wrgb)
+                    .as_slice(),
+                &[expected; 4]
+            );
         }
     }
 }
