@@ -558,6 +558,28 @@ mod tests {
     }
 
     #[test]
+    fn bms_sample_accepts_finite_numeric_extremes() {
+        assert_eq!(
+            FloatOutBoyBmsSample::try_new(
+                f32::MIN,
+                f32::MAX,
+                i32::MIN,
+                i32::MAX,
+                i32::MIN,
+                f32::MAX,
+            ),
+            Some(FloatOutBoyBmsSample::new(
+                Voltage::from_volts(f32::MIN),
+                Voltage::from_volts(f32::MAX),
+                FloatOutBoyBmsTemperature::from_degrees_celsius(i32::MIN),
+                FloatOutBoyBmsTemperature::from_degrees_celsius(i32::MAX),
+                FloatOutBoyBmsTemperature::from_degrees_celsius(i32::MIN),
+                VescSeconds::from_seconds(f32::MAX),
+            ))
+        );
+    }
+
+    #[test]
     fn ext_bms_invalid_type_leaves_the_sample_unchanged() {
         let mut state = enabled_state();
         let before = state.bms_sample_for_test();
@@ -580,6 +602,33 @@ mod tests {
 
         assert_eq!(value, LispValue::nil());
         assert_eq!(state.bms_sample_for_test(), before);
+    }
+
+    #[test]
+    fn ext_bms_disable_and_reenable_preserve_the_last_sample_like_refloat() {
+        let mut state = enabled_state();
+        let values = encoded_sample();
+        assert_eq!(
+            ExtBms::call(&mut state, LispArgs::from_values(&values)),
+            LispValue::true_value()
+        );
+        let recorded = state.bms_sample_for_test();
+
+        let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
+        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert_eq!(
+            ExtBms::call(&mut state, LispArgs::empty()),
+            LispValue::nil()
+        );
+        assert_eq!(state.bms_sample_for_test(), recorded);
+
+        config[265] = 1;
+        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert_eq!(
+            ExtBms::call(&mut state, LispArgs::empty()),
+            LispValue::true_value()
+        );
+        assert_eq!(state.bms_sample_for_test(), recorded);
     }
 
     #[test]
