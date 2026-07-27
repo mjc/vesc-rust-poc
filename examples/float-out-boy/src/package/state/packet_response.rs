@@ -7,8 +7,9 @@ use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader,
-    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeReservedFlags,
+    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyBeepReason,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
+    FloatOutBoyRealtimeReservedFlags,
     FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
@@ -123,7 +124,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn send_all_data_packet_response(
-        &self,
+        &mut self,
         telemetry: &impl MotorTelemetry,
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
@@ -154,6 +155,9 @@ impl FloatOutBoyPackageState {
                     payloads
                 };
                 let response = payloads.encode_response(request);
+                self.all_data_payloads = self
+                    .all_data_payloads
+                    .with_beep_reason(FloatOutBoyBeepReason::None);
                 send(response.as_bytes())
             }
         }
@@ -193,6 +197,7 @@ impl FloatOutBoyPackageState {
 mod tests {
     use super::*;
     use crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
+    use crate::package::test_support::sample_all_data_payloads;
     use std::vec::Vec;
     use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultId};
     use vescpkg_rs::test_support::FirmwareTest;
@@ -222,6 +227,127 @@ mod tests {
         // Float Out Boy v1.2.1 writes `d->time.now` into realtime packets at
         // `third_party/float-out-boy/src/main.c:1931`; VESC system ticks are 100 us ticks.
         assert_eq!(&packet[4..8], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn all_data_response_consumes_beep_reason_once_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let request = [
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::GetAllData.id(),
+            0,
+        ];
+        let mut first = Vec::new();
+        assert!(state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |bytes| {
+                first.extend_from_slice(bytes);
+                true
+            },
+            &request,
+        ));
+        let mut second = Vec::new();
+        assert!(state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |bytes| {
+                second.extend_from_slice(bytes);
+                true
+            },
+            &request,
+        ));
+
+        assert_ne!(first[10] >> 4, 0);
+        assert_eq!(second[10] >> 4, 0);
+    }
+
+    #[test]
+    fn all_data_fault_response_preserves_pending_beep_reason_like_refloat() {
+        let faulted = FirmwareTest::new()
+            .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let request = [
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::GetAllData.id(),
+            0,
+        ];
+
+        assert!(state.send_all_data_packet_response(
+            faulted.telemetry(),
+            &mut |_| true,
+            &request,
+        ));
+        drop(faulted);
+
+        let healthy = FirmwareTest::new();
+        let mut response = Vec::new();
+        assert!(state.send_all_data_packet_response(
+            healthy.telemetry(),
+            &mut |bytes| {
+                response.extend_from_slice(bytes);
+                true
+            },
+            &request,
+        ));
+        assert_ne!(response[10] >> 4, 0);
+    }
+
+    #[test]
+    fn rejected_all_data_send_still_consumes_beep_reason_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let request = [
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::GetAllData.id(),
+            0,
+        ];
+
+        assert!(!state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |_| false,
+            &request,
+        ));
+
+        let mut response = Vec::new();
+        assert!(state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |bytes| {
+                response.extend_from_slice(bytes);
+                true
+            },
+            &request,
+        ));
+        assert_eq!(response[10] >> 4, 0);
+    }
+
+    #[test]
+    fn malformed_all_data_request_preserves_pending_beep_reason_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+        assert!(!state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |_| true,
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::GetAllData.id(),
+            ],
+        ));
+
+        let mut response = Vec::new();
+        assert!(state.send_all_data_packet_response(
+            firmware.telemetry(),
+            &mut |bytes| {
+                response.extend_from_slice(bytes);
+                true
+            },
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::GetAllData.id(),
+                0,
+            ],
+        ));
+        assert_ne!(response[10] >> 4, 0);
     }
 
     #[test]
