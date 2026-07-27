@@ -287,7 +287,7 @@ pub(super) fn handle_runtime_tune_packet(
     if !updated {
         return false;
     }
-    state.idle_ticks = now();
+    state.refresh_idle_epoch(now());
     true
 }
 

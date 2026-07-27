@@ -522,6 +522,10 @@ impl FloatOutBoyPackageState {
         self.balance_filter = balance_filter;
     }
 
+    fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
+        self.idle_ticks = now;
+    }
+
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn refresh_config_runtime_state(&mut self) {
         config_runtime::refresh(self);
