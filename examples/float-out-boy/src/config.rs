@@ -5,7 +5,6 @@
 use crate::balance::LoopConfig;
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
-#[cfg(any(test, target_arch = "arm"))]
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
@@ -303,7 +302,6 @@ impl FloatOutBoyConfigImage {
             .map_or(0, |mode| mode.0)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn led_configs(
         &self,
     ) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
@@ -583,13 +581,11 @@ impl From<u8> for FloatOutBoyHardwareLedMode {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 struct FloatOutBoyLedConfigDecoder<'a> {
     bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN],
     offset: usize,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     const fn new(bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> Self {
         Self { bytes, offset: 175 }

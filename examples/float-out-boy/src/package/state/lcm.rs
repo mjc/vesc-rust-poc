@@ -69,8 +69,32 @@ impl LcmState {
         self.hardware_mode = hardware_mode;
     }
 
-    pub(super) const fn set_lights_off_when_lifted(&mut self, enabled: bool) {
-        self.lights_off_when_lifted = enabled;
+    pub(super) fn configure(&mut self, config: crate::leds::FloatOutBoyLedsConfig) {
+        if !self.enabled() {
+            return;
+        }
+
+        if config.is_enabled() {
+            let front = config.front().brightness().as_ratio();
+            self.brightness = ((if config.are_headlights_on() {
+                config.headlights().brightness().as_ratio()
+            } else {
+                front
+            }) * 100.0) as u8;
+            self.brightness_idle = (front * 100.0) as u8;
+            self.status_brightness = ((if config.are_headlights_on() {
+                config.status().brightness_headlights_on()
+            } else {
+                config.status().brightness_headlights_off()
+            })
+            .as_ratio()
+                * 100.0) as u8;
+        } else {
+            self.brightness = 0;
+            self.brightness_idle = 0;
+            self.status_brightness = 0;
+        }
+        self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
     }
 
     const fn enabled(self) -> bool {
@@ -407,6 +431,24 @@ mod tests {
                 &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
             ),
             [101, 20, 3]
+        );
+    }
+
+    #[test]
+    fn external_lcm_configuration_uses_serialized_led_brightness_like_refloat() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = state.serialized_config.as_bytes().to_vec();
+        config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+        assert!(state.store_serialized_config(&config));
+
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
+            ),
+            [101, 25, 3, 50, 50, 20, 0, 0, 0, 0, 0, 0]
         );
     }
 
