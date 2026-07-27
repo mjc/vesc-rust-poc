@@ -112,7 +112,7 @@ fn startup_state_load_defers_configure_until_the_main_thread_like_refloat() {
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
-    state.load_persisted_config_on_startup();
+    state.load_persisted_config_before_threads();
 
     assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
 }

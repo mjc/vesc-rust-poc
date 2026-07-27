@@ -23,7 +23,7 @@ fn install_float_out_boy_startup_state_with(
                 state,
                 FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup()),
             ),
-            FloatOutBoyPackageState::load_persisted_config_on_startup,
+            FloatOutBoyPackageState::load_persisted_config_before_threads,
         )
         .is_ok()
 }
@@ -42,7 +42,7 @@ fn allocate_float_out_boy_startup_state(
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     start.install_runtime_state_with(
         FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup()),
-        FloatOutBoyPackageState::load_persisted_config_on_startup,
+        FloatOutBoyPackageState::load_persisted_config_before_threads,
     )?;
     let buffer = start.take_data_recorder_buffer();
     start
