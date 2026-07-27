@@ -1211,6 +1211,25 @@ mod tests {
 
         assert_eq!(RETAINED_STATE_DROPS.load(Ordering::Relaxed), 0);
         assert_eq!(RETAINED_STATE.with(|_| ()), None);
+
+        let mut replacement_info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut replacement = super::PackageStart::from_lib_info(&mut replacement_info);
+        assert_eq!(replacement.install_runtime_state(RetainedState), Ok(()));
+        let replacement_stop = replacement
+            .raw_info_mut()
+            .unwrap()
+            .stop_fun
+            .expect("replacement retained state stop hook");
+        let replacement_arg = replacement.raw_info_mut().unwrap().arg;
+        assert!(replacement.finish_start(true));
+        assert_eq!(RETAINED_STATE.with(|_| ()), Some(()));
+        unsafe { replacement_stop(replacement_arg) };
+        assert_eq!(RETAINED_STATE.with(|_| ()), None);
+        assert_eq!(RETAINED_STATE_DROPS.load(Ordering::Relaxed), 0);
     }
 
     #[test]
