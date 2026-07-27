@@ -256,6 +256,7 @@ impl FloatOutBoyPackageState {
                 let mut config = self.serialized_config;
                 config.reset_tune_defaults();
                 self.replace_active_config(&config);
+                self.refresh_idle_epoch(now());
             }
             FloatOutBoyAppDataCommand::Lock => {
                 let Some(disabled) = payload.first() else {

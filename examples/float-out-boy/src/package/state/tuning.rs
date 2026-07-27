@@ -506,7 +506,11 @@ fn apply_other_input(
     updated
 }
 
-pub(super) fn handle_other_tune_packet(state: &mut FloatOutBoyPackageState, bytes: &[u8]) -> bool {
+pub(super) fn handle_other_tune_packet(
+    state: &mut FloatOutBoyPackageState,
+    now: &mut impl FnMut() -> TimestampTicks,
+    bytes: &[u8],
+) -> bool {
     let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::TuneOther)
     else {
         return false;
@@ -523,6 +527,7 @@ pub(super) fn handle_other_tune_packet(state: &mut FloatOutBoyPackageState, byte
     if !updated {
         return false;
     }
+    state.refresh_idle_epoch(now());
     true
 }
 

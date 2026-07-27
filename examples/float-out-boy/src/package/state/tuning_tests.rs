@@ -28,6 +28,81 @@ fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
 }
 
 #[test]
+fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let packets: &[&[u8]] = &[
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneDefaults.id(),
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneOther.id(),
+            0,
+            25,
+            20,
+            15,
+            25,
+            7,
+            110,
+            30,
+            20,
+            25,
+            35,
+            40,
+        ],
+    ];
+
+    for packet in packets {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.idle_ticks = TimestampTicks::from_ticks(7);
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(42),
+            &mut |_| true,
+            packet,
+        ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+    }
+}
+
+#[test]
+fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let packets: &[&[u8]] = &[
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::Booster.id(),
+            0,
+            0,
+            0,
+            0,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::TuneTilt.id(),
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],
+    ];
+
+    for packet in packets {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.idle_ticks = TimestampTicks::from_ticks(7);
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(42),
+            &mut |_| true,
+            packet,
+        ));
+        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+    }
+}
+
+#[test]
 fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
