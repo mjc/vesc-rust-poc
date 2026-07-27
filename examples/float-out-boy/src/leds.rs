@@ -578,18 +578,6 @@ impl FloatOutBoyLedRuntimeStatus {
     }
 
     #[must_use]
-    pub(crate) const fn with_enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-
-    #[must_use]
-    pub(crate) const fn with_headlights_enabled(mut self, enabled: bool) -> Self {
-        self.headlights_enabled = enabled;
-        self
-    }
-
-    #[must_use]
     pub(crate) const fn enabled(self) -> bool {
         self.enabled
     }

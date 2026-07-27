@@ -302,19 +302,9 @@ impl FloatOutBoyPackageState {
                 let mask = payload[3];
                 if mask != 0 {
                     let value = payload[4];
-                    let status = self.led_runtime_status();
-                    self.set_led_runtime_status(
-                        status
-                            .with_enabled(if mask & 1 == 0 {
-                                status.enabled()
-                            } else {
-                                value & 1 != 0
-                            })
-                            .with_headlights_enabled(if mask & 2 == 0 {
-                                status.headlights_enabled()
-                            } else {
-                                value & 2 != 0
-                            }),
+                    self.set_led_runtime_overrides(
+                        (mask & 1 != 0).then_some(value & 1 != 0),
+                        (mask & 2 != 0).then_some(value & 2 != 0),
                     );
                 }
             }
@@ -474,6 +464,43 @@ mod tests {
                 &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
             ),
             [101, 25, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn lights_control_partial_mask_tracks_unoverridden_config_field() {
+        let firmware = FirmwareTest::new();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = state.serialized_config.as_bytes().to_vec();
+        config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+        assert!(state.store_serialized_config(&config));
+
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[
+                    101,
+                    FloatOutBoyAppDataCommand::LightsControl.id(),
+                    0,
+                    0,
+                    0,
+                    1,
+                    0
+                ]
+            ),
+            [101, 20, 2]
+        );
+
+        config[176] = 0;
+        assert!(state.store_serialized_config(&config));
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
+            ),
+            [101, 20, 0]
         );
     }
 

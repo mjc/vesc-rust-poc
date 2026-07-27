@@ -564,21 +564,14 @@ impl FloatOutBoyPackageState {
     }
 
     fn led_runtime_status(&self) -> crate::leds::FloatOutBoyLedRuntimeStatus {
-        let configured = crate::leds::FloatOutBoyLedRuntimeStatus::new(
-            self.serialized_config.leds_enabled(),
-            self.serialized_config.headlights_enabled(),
-        );
-        configured
-            .with_enabled(
-                self.led_runtime_overrides
-                    .enabled
-                    .unwrap_or_else(|| configured.enabled()),
-            )
-            .with_headlights_enabled(
-                self.led_runtime_overrides
-                    .headlights_enabled
-                    .unwrap_or_else(|| configured.headlights_enabled()),
-            )
+        crate::leds::FloatOutBoyLedRuntimeStatus::new(
+            self.led_runtime_overrides
+                .enabled
+                .unwrap_or_else(|| self.serialized_config.leds_enabled()),
+            self.led_runtime_overrides
+                .headlights_enabled
+                .unwrap_or_else(|| self.serialized_config.headlights_enabled()),
+        )
     }
 
     fn effective_led_config(
@@ -595,11 +588,17 @@ impl FloatOutBoyPackageState {
             })
     }
 
-    fn set_led_runtime_status(&mut self, status: crate::leds::FloatOutBoyLedRuntimeStatus) {
-        self.led_runtime_overrides = LedRuntimeOverrides {
-            enabled: Some(status.enabled()),
-            headlights_enabled: Some(status.headlights_enabled()),
-        };
+    fn set_led_runtime_overrides(
+        &mut self,
+        enabled: Option<bool>,
+        headlights_enabled: Option<bool>,
+    ) {
+        if let Some(enabled) = enabled {
+            self.led_runtime_overrides.enabled = Some(enabled);
+        }
+        if let Some(headlights_enabled) = headlights_enabled {
+            self.led_runtime_overrides.headlights_enabled = Some(headlights_enabled);
+        }
         config_runtime::refresh_led_effects(self);
     }
 
@@ -715,13 +714,13 @@ impl FloatOutBoyPackageState {
             && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_status(status.with_headlights_enabled(true));
+            self.set_led_runtime_overrides(None, Some(true));
         }
         if status.headlights_enabled()
             && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_status(status.with_headlights_enabled(false));
+            self.set_led_runtime_overrides(None, Some(false));
         }
     }
 
