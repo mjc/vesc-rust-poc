@@ -148,6 +148,52 @@ fn atr_step(
     step
 }
 
+fn nose_target(config: &FloatOutBoyConfigImage, erpm: Rpm) -> AngleDegrees {
+    let abs_erpm = erpm.abs().as_revolutions_per_minute();
+    let variable_rate =
+        config.tiltback_variable().value() / 1_000.0 * config.tiltback_variable_max().signum();
+    let variable_max_erpm = if variable_rate == 0.0 {
+        0.0
+    } else {
+        (config.tiltback_variable_max().as_degrees() / variable_rate).abs()
+    };
+    let variable_erpm = (abs_erpm
+        - config
+            .tiltback_variable_erpm()
+            .rpm()
+            .as_revolutions_per_minute())
+    .clamp(0.0, variable_max_erpm);
+    let mut target = variable_rate * variable_erpm * erpm.signum();
+    if abs_erpm
+        > config
+            .tiltback_constant_erpm()
+            .rpm()
+            .as_revolutions_per_minute()
+    {
+        target += config.tiltback_constant().as_degrees() * erpm.signum();
+    }
+    AngleDegrees::from_degrees(target)
+}
+
+fn torque_target(
+    config: crate::config::FloatOutBoyBalanceConfig<'_>,
+    current: Current,
+    braking: bool,
+) -> AngleDegrees {
+    let strength = if braking {
+        config.torque_tilt_regen_strength().value()
+    } else {
+        config.torque_tilt_strength().value()
+    };
+    AngleDegrees::from_degrees(
+        ((current.as_amps().abs() - config.torque_tilt_start_current().current().as_amps())
+            .max(0.0)
+            * strength)
+            .min(config.torque_tilt_angle_limit().as_degrees())
+            * current.signum(),
+    )
+}
+
 fn turn_target(
     state: &TurnTiltState,
     config: crate::config::FloatOutBoyBalanceConfig<'_>,
@@ -322,32 +368,9 @@ impl RideModifierState {
     fn update_nose(&mut self, config: &FloatOutBoyConfigImage, erpm: Rpm, sample_rate: SampleRate) {
         // C map: constant/variable nose target and rate limit mirror
         // `third_party/float-out-boy/src/main.c:746-758` and configuration at `:165-173`.
-        let abs_erpm = erpm.abs().as_revolutions_per_minute();
-        let variable_rate =
-            config.tiltback_variable().value() / 1_000.0 * config.tiltback_variable_max().signum();
-        let variable_max_erpm = if variable_rate == 0.0 {
-            0.0
-        } else {
-            (config.tiltback_variable_max().as_degrees() / variable_rate).abs()
-        };
-        let variable_erpm = (abs_erpm
-            - config
-                .tiltback_variable_erpm()
-                .rpm()
-                .as_revolutions_per_minute())
-        .clamp(0.0, variable_max_erpm);
-        let mut target = variable_rate * variable_erpm * erpm.signum();
-        if abs_erpm
-            > config
-                .tiltback_constant_erpm()
-                .rpm()
-                .as_revolutions_per_minute()
-        {
-            target += config.tiltback_constant().as_degrees() * erpm.signum();
-        }
         self.nose = rate_limit(
             self.nose,
-            AngleDegrees::from_degrees(target),
+            nose_target(config, erpm),
             loop_step(config.nose_angling_speed(), sample_rate),
         );
     }
@@ -362,18 +385,7 @@ impl RideModifierState {
     ) {
         // C map: torque target and on/off ramp selection mirror
         // `third_party/float-out-boy/src/torque_tilt.c:44-82`.
-        let strength = if braking {
-            config.torque_tilt_regen_strength().value()
-        } else {
-            config.torque_tilt_strength().value()
-        };
-        let target = ((current.as_amps().abs()
-            - config.torque_tilt_start_current().current().as_amps())
-        .max(0.0)
-            * strength)
-            .min(config.torque_tilt_angle_limit().as_degrees())
-            * current.signum();
-        let target = AngleDegrees::from_degrees(target);
+        let target = torque_target(config, current, braking);
         let on = loop_step(config.torque_tilt_on_speed(), sample_rate);
         let off = loop_step(config.torque_tilt_off_speed(), sample_rate);
         let mut step = if self.torque.setpoint.as_degrees() * target.as_degrees() < 0.0 {
