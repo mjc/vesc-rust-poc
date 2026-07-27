@@ -57,22 +57,11 @@ unsafe fn destroy_owned_package_state<T>(state: core::ptr::NonNull<T>) {
 }
 
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
-    arg: *mut core::ffi::c_void,
+unsafe fn quiesce_package_callbacks_and_threads<T: crate::PackageRuntimeState>(
+    state: core::ptr::NonNull<T>,
 ) {
-    let Some(mut state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
-        return;
-    };
     #[cfg(not(target_arch = "arm"))]
-    let runtime = T::runtime_store();
-    #[cfg(not(target_arch = "arm"))]
-    if !runtime.begin_stop(state) {
-        return;
-    }
-    #[cfg(target_arch = "arm")]
-    if !crate::PackageStateStore::<T>::begin_stop(state) {
-        return;
-    }
+    let _ = state;
     crate::runtime::release_callback_registrations();
     crate::gpio::reset_leases();
     #[cfg(target_arch = "arm")]
@@ -91,6 +80,27 @@ unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
             ));
         }
     }
+}
+
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
+unsafe extern "C" fn stop_owned_package_state<T: crate::PackageRuntimeState>(
+    arg: *mut core::ffi::c_void,
+) {
+    let Some(mut state) = core::ptr::NonNull::new(arg.cast::<T>()) else {
+        return;
+    };
+    #[cfg(not(target_arch = "arm"))]
+    let runtime = T::runtime_store();
+    #[cfg(not(target_arch = "arm"))]
+    if !runtime.begin_stop(state) {
+        return;
+    }
+    #[cfg(target_arch = "arm")]
+    if !crate::PackageStateStore::<T>::begin_stop(state) {
+        return;
+    }
+    // SAFETY: begin-stop admission exclusively owns this live state.
+    unsafe { quiesce_package_callbacks_and_threads(state) };
     #[cfg(not(target_arch = "arm"))]
     runtime.finish_stop(state);
     #[cfg(target_arch = "arm")]
