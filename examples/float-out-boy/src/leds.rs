@@ -1049,6 +1049,19 @@ pub struct FloatOutBoyLedRenderer {
     animation_start: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FloatOutBoyFrameTransition {
+    config: FloatOutBoyLedsConfig,
+    input: FloatOutBoyLedUpdate,
+    current_time: f32,
+    fade: Ratio,
+    seed: u32,
+    old_headlights: (f32, bool, bool),
+    old_direction: (f32, bool),
+    headlights: (f32, bool, bool),
+    direction: (f32, bool),
+}
+
 impl FloatOutBoyLedRenderer {
     /// Build cleared frames and source-default front/rear bar roles.
     #[must_use]
@@ -1069,10 +1082,6 @@ impl FloatOutBoyLedRenderer {
     }
 
     /// Advance and compose the front/rear frame in Refloat's transition order.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the initial source-ordered composition is split in the following refactor"
-    )]
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
@@ -1106,85 +1115,102 @@ impl FloatOutBoyLedRenderer {
         self.front.render_bar(self.front_bar, fade, animation_time);
         self.rear.render_bar(self.rear_bar, fade, animation_time);
 
-        let headlights = self.dynamics.headlights();
-        let direction = self.dynamics.direction();
-        let seed = crate::wire::saturating_trunc_f32_to_u32(self.animation_start);
-        if headlights.2 {
+        let transition = FloatOutBoyFrameTransition {
+            config,
+            input,
+            current_time,
+            fade,
+            seed: crate::wire::saturating_trunc_f32_to_u32(self.animation_start),
+            old_headlights,
+            old_direction,
+            headlights: self.dynamics.headlights(),
+            direction: self.dynamics.direction(),
+        };
+        self.compose_headlights(transition);
+        self.compose_direction(transition);
+    }
+
+    fn compose_headlights(&mut self, transition: FloatOutBoyFrameTransition) {
+        let FloatOutBoyFrameTransition {
+            config,
+            input,
+            current_time,
+            old_headlights,
+            old_direction,
+            headlights,
+            direction,
+            ..
+        } = transition;
+        let targets = if headlights.2 {
             let headlights_should = matches!(input.run_state, crate::FloatOutBoyRunState::Running)
                 && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
                 && config.are_headlights_on();
-            let (front_target, rear_target) =
-                select_front_rear_bars(config, headlights_should, old_direction.1);
-            self.front.render_transition(
-                config.headlights_transition(),
-                headlights.0,
-                seed,
-                self.front_bar,
-                front_target,
-                fade,
-            );
-            self.rear.render_transition(
-                config.headlights_transition(),
-                headlights.0,
-                seed,
-                self.rear_bar,
-                rear_target,
-                fade,
-            );
+            select_front_rear_bars(config, headlights_should, old_direction.1)
         } else if old_headlights.2 {
-            let (front_target, rear_target) =
-                select_front_rear_bars(config, headlights.1, direction.1);
-            self.front.render_transition(
-                config.headlights_transition(),
-                headlights.0,
-                seed,
-                self.front_bar,
-                front_target,
-                fade,
-            );
-            self.rear.render_transition(
-                config.headlights_transition(),
-                headlights.0,
-                seed,
-                self.rear_bar,
-                rear_target,
-                fade,
-            );
-            self.front_bar = front_target;
-            self.rear_bar = rear_target;
+            select_front_rear_bars(config, headlights.1, direction.1)
+        } else {
+            return;
+        };
+        self.render_pair_transition(
+            transition,
+            config.headlights_transition(),
+            headlights.0,
+            targets,
+        );
+        if !headlights.2 {
+            (self.front_bar, self.rear_bar) = targets;
             self.animation_start = current_time;
         }
+    }
 
-        if headlights.1 && !headlights.2 && direction.0.to_bits() != old_direction.0.to_bits() {
-            let (front_target, rear_target) =
-                select_front_rear_bars(config, true, !old_direction.1);
-            let progress = if old_direction.1 {
-                -direction.0
-            } else {
-                direction.0
-            };
-            self.front.render_transition(
-                config.direction_transition(),
-                progress,
-                seed,
-                self.front_bar,
-                front_target,
-                fade,
-            );
-            self.rear.render_transition(
-                config.direction_transition(),
-                progress,
-                seed,
-                self.rear_bar,
-                rear_target,
-                fade,
-            );
-            if direction.1 != old_direction.1 {
-                self.front_bar = front_target;
-                self.rear_bar = rear_target;
-                self.animation_start = current_time;
-            }
+    fn compose_direction(&mut self, transition: FloatOutBoyFrameTransition) {
+        let FloatOutBoyFrameTransition {
+            config,
+            current_time,
+            old_direction,
+            headlights,
+            direction,
+            ..
+        } = transition;
+        if !headlights.1 || headlights.2 || direction.0.to_bits() == old_direction.0.to_bits() {
+            return;
         }
+        let targets = select_front_rear_bars(config, true, !old_direction.1);
+        let progress = if old_direction.1 {
+            -direction.0
+        } else {
+            direction.0
+        };
+        self.render_pair_transition(transition, config.direction_transition(), progress, targets);
+        if direction.1 != old_direction.1 {
+            (self.front_bar, self.rear_bar) = targets;
+            self.animation_start = current_time;
+        }
+    }
+
+    fn render_pair_transition(
+        &mut self,
+        tick: FloatOutBoyFrameTransition,
+        mode: FloatOutBoyLedTransition,
+        progress: f32,
+        targets: (FloatOutBoyLedBarConfig, FloatOutBoyLedBarConfig),
+    ) {
+        self.front.render_transition(
+            mode,
+            progress,
+            tick.seed,
+            self.front_bar,
+            targets.0,
+            tick.fade,
+        );
+        self.rear.render_transition(
+            mode,
+            progress,
+            tick.seed,
+            self.rear_bar,
+            targets.1,
+            tick.fade,
+        );
     }
 
     /// Return the composed status strip frame.
