@@ -54,7 +54,7 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
         .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
     #[cfg(any(test, target_arch = "arm"))]
     let internal_stopped = state.destroy_internal_leds();
-    if let Some((hardware, config)) = state.serialized_config.led_configs() {
+    if let Some((hardware, config)) = state.effective_led_config() {
         #[cfg(not(any(test, target_arch = "arm")))]
         let _ = hardware;
         state.lcm.configure(config);
@@ -66,7 +66,7 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
 }
 
 pub(super) fn refresh_led_effects(state: &mut FloatOutBoyPackageState) {
-    if let Some((_, config)) = state.serialized_config.led_configs() {
+    if let Some((_, config)) = state.effective_led_config() {
         state.lcm.configure(config);
         #[cfg(any(test, target_arch = "arm"))]
         state.update_internal_led_config(config);

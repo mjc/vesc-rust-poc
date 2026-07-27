@@ -302,14 +302,15 @@ impl FloatOutBoyPackageState {
                 let mask = payload[3];
                 if mask != 0 {
                     let value = payload[4];
+                    let (lights_enabled, headlights_enabled) = self.led_runtime_flags();
                     self.set_led_runtime_flags(
                         if mask & 1 == 0 {
-                            self.serialized_config.leds_enabled()
+                            lights_enabled
                         } else {
                             value & 1 != 0
                         },
                         if mask & 2 == 0 {
-                            self.serialized_config.headlights_enabled()
+                            headlights_enabled
                         } else {
                             value & 2 != 0
                         },
@@ -319,8 +320,10 @@ impl FloatOutBoyPackageState {
             return send(&[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::LightsControl.id(),
-                u8::from(self.serialized_config.leds_enabled())
-                    | (u8::from(self.serialized_config.headlights_enabled()) << 1),
+                {
+                    let (lights_enabled, headlights_enabled) = self.led_runtime_flags();
+                    u8::from(lights_enabled) | (u8::from(headlights_enabled) << 1)
+                },
             ]);
         }
         false
@@ -429,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn lights_control_mutates_active_config_and_reconfigures_lcm_like_refloat() {
+    fn lights_control_is_temporary_across_later_config_writes() {
         let firmware = FirmwareTest::new();
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut config = state.serialized_config.as_bytes().to_vec();
@@ -452,8 +455,19 @@ mod tests {
             ),
             [101, 20, 0]
         );
-        assert!(!state.serialized_config.leds_enabled());
-        assert!(!state.serialized_config.headlights_enabled());
+        assert!(state.serialized_config.leds_enabled());
+        assert!(state.serialized_config.headlights_enabled());
+
+        config[120] = 40;
+        assert!(state.store_serialized_config(&config));
+        assert_eq!(
+            dispatch(
+                &mut state,
+                &firmware,
+                &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
+            ),
+            [101, 20, 0]
+        );
         assert_eq!(
             dispatch(
                 &mut state,

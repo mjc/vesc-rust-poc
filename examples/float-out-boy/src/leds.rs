@@ -605,6 +605,17 @@ impl FloatOutBoyLedsConfig {
         self
     }
 
+    #[must_use]
+    pub(crate) const fn with_runtime_status(
+        mut self,
+        enabled: bool,
+        headlights_enabled: bool,
+    ) -> Self {
+        self.on = enabled;
+        self.headlights_on = headlights_enabled;
+        self
+    }
+
     /// Return this config with the headlights transition set.
     #[must_use]
     pub const fn with_headlights_transition(
