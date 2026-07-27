@@ -380,8 +380,29 @@ mod tests {
         sample_all_data_payloads_with_ride_state,
     };
     use vescpkg_rs::prelude::{
-        Current, MotorCurrent, Rpm, SignedRatio, TimestampTicks, VescSeconds,
+        AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, SignedRatio,
+        TimestampTicks, VescSeconds,
     };
+
+    #[test]
+    fn input_tilt_reversal_respects_float_out_boy_ramp_down() {
+        let mut remote_control = RemoteControlState::default();
+        remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
+            SignedRatio::from_ratio_const(1.0),
+        ));
+        let angle_limit = AngleDegrees::from_degrees(10.0);
+        let speed = AngularVelocity::from_degrees_per_second(25.0);
+        let sample_rate = SampleRate::from_hertz(500.0);
+
+        let rising = remote_control.update_input_tilt(angle_limit, speed, sample_rate, false);
+        remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
+            SignedRatio::from_ratio_const(-1.0),
+        ));
+        let falling = remote_control.update_input_tilt(angle_limit, speed, sample_rate, false);
+
+        assert!(falling < rising);
+        assert!((rising - falling) <= AngleDegrees::from_degrees(25.0 / 500.0));
+    }
 
     #[test]
     fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
