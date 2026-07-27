@@ -77,6 +77,17 @@ fn same_source_sign(lhs: AngleDegrees, rhs: AngleDegrees) -> bool {
     lhs.is_negative() == rhs.is_negative()
 }
 
+fn wrapped_yaw_delta(yaw: AngleDegrees, previous: AngleDegrees) -> AngleDegrees {
+    let change = yaw - previous;
+    if change < AngleDegrees::from_degrees(-180.0) {
+        change + AngleDegrees::from_degrees(360.0)
+    } else if change > AngleDegrees::from_degrees(180.0) {
+        change - AngleDegrees::from_degrees(360.0)
+    } else {
+        change
+    }
+}
+
 fn combine_torque_offsets(ab: AngleDegrees, torque: AngleDegrees) -> AngleDegrees {
     if same_source_sign(ab, torque) {
         AngleDegrees::from_degrees(
@@ -248,12 +259,7 @@ impl TurnTiltState {
         // C map: yaw filtering and aggregation run before the state switch at
         // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
         // `third_party/float-out-boy/src/main.c:800`.
-        let mut change = yaw - self.last_yaw;
-        if change < AngleDegrees::from_degrees(-180.0) {
-            change = change + AngleDegrees::from_degrees(360.0);
-        } else if change > AngleDegrees::from_degrees(180.0) {
-            change = change - AngleDegrees::from_degrees(360.0);
-        }
+        let change = wrapped_yaw_delta(yaw, self.last_yaw);
         self.last_yaw = yaw;
         let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
         self.yaw_change = self.yaw_change * 0.8 + limited * 0.2;
