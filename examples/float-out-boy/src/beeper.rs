@@ -134,6 +134,9 @@ impl FloatOutBoyBeeper {
     }
 
     pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled && !enabled {
+            self.pending_high = Some(false);
+        }
         self.enabled = enabled;
     }
 
@@ -327,6 +330,17 @@ mod tests {
         beeper.on(true);
         assert_eq!(beeper.take_level(), None);
         beeper.off(true);
+        assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
+    }
+
+    #[test]
+    fn disabling_an_active_beeper_drives_the_pin_low_like_refloat() {
+        let mut beeper = FloatOutBoyBeeper::new(true);
+        beeper.on(true);
+        assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
+
+        beeper.set_enabled(false);
+
         assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
     }
 }
