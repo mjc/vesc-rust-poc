@@ -112,6 +112,11 @@ impl FirmwareTest {
         self.firmware.gpio()
     }
 
+    /// Configure the raw firmware values returned for ADC1 and ADC2.
+    pub fn set_analog_voltages(&self, adc1: f32, adc2: f32) {
+        crate::test_ffi::set_analog_voltages(adc1, adc2);
+    }
+
     /// Borrow the typed controller input capability used by package code.
     #[must_use]
     pub fn inputs(&self) -> &crate::FirmwareInputs {

@@ -70,6 +70,19 @@ fn gpio_leases_reject_wrong_mode_and_cover_analog_ownership() {
 }
 
 #[test]
+fn analog_gpio_reports_the_firmware_absence_sentinel_as_none() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    firmware.set_analog_voltages(1.2, -1.0);
+    let adc2 = firmware
+        .gpio()
+        .acquire_analog(vescpkg_rs::AnalogPin::ADC2)
+        .expect("ADC2 lease");
+    adc2.set_mode(GpioMode::Analog).expect("analog mode");
+
+    assert_eq!(adc2.read(), Ok(None));
+}
+
+#[test]
 fn gpio_leases_cover_pull_and_open_drain_modes() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     let gpio = firmware.gpio();

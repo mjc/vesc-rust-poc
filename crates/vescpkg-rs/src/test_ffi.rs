@@ -32,6 +32,8 @@ const LBM_FLOAT_VALUE: u32 = 0x10;
 const LOG_CAPACITY: usize = 128;
 static LOG_BYTES: [AtomicU8; LOG_CAPACITY] = [const { AtomicU8::new(0) }; LOG_CAPACITY];
 static LOG_LEN: AtomicUsize = AtomicUsize::new(0);
+static ADC1_VOLTAGE: AtomicU32 = AtomicU32::new(1.2_f32.to_bits());
+static ADC2_VOLTAGE: AtomicU32 = AtomicU32::new(3.4_f32.to_bits());
 
 const fn decode_lbm_integer(value: LbmValue) -> i32 {
     value.0.cast_signed() >> LBM_VALUE_SHIFT
@@ -83,8 +85,8 @@ pub unsafe fn io_read(_pin: VescPin) -> bool {
 
 pub unsafe fn io_read_analog(pin: VescPin) -> f32 {
     match pin.0 {
-        7 => 1.2,
-        8 => 3.4,
+        7 => f32::from_bits(ADC1_VOLTAGE.load(Ordering::Relaxed)),
+        8 => f32::from_bits(ADC2_VOLTAGE.load(Ordering::Relaxed)),
         _ => 0.0,
     }
 }
@@ -518,6 +520,8 @@ fn reset_imu_and_threads() {
 }
 
 fn reset_storage_and_sync() {
+    ADC1_VOLTAGE.store(1.2_f32.to_bits(), Ordering::Relaxed);
+    ADC2_VOLTAGE.store(3.4_f32.to_bits(), Ordering::Relaxed);
     LOG_LEN.store(0, Ordering::Relaxed);
     for slot in &EEPROM_PRESENT {
         slot.store(false, Ordering::Relaxed);
@@ -976,6 +980,11 @@ pub(crate) fn set_clock_ticks(ticks: u32) {
 
 pub(crate) fn set_timer_ticks(ticks: u32) {
     TIMER_TICKS.store(ticks, Ordering::Relaxed);
+}
+
+pub(crate) fn set_analog_voltages(adc1: f32, adc2: f32) {
+    ADC1_VOLTAGE.store(adc1.to_bits(), Ordering::Relaxed);
+    ADC2_VOLTAGE.store(adc2.to_bits(), Ordering::Relaxed);
 }
 
 pub unsafe fn vesc_mutex_create() -> *mut c_void {
