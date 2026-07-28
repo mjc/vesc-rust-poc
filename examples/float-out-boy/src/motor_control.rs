@@ -38,7 +38,7 @@ pub(crate) struct FloatOutBoyMotorControl {
     tone_counter: u8,
     tone_high: bool,
     tone_intensity: MotorCurrent,
-    click_counter: u8,
+    click_transitions_remaining: u8,
 }
 
 impl FloatOutBoyMotorControl {
@@ -53,7 +53,7 @@ impl FloatOutBoyMotorControl {
             tone_counter: 0,
             tone_high: false,
             tone_intensity: MotorCurrent::new(Current::ZERO),
-            click_counter: 0,
+            click_transitions_remaining: 0,
         }
     }
 
@@ -94,7 +94,7 @@ impl FloatOutBoyMotorControl {
                 MotorCurrent::new(Current::from_amps(f32::from(current.as_u8()))),
                 sample_rate,
             );
-            self.click_counter = 4;
+            self.click_transitions_remaining = 4;
         }
     }
 
@@ -162,8 +162,9 @@ impl FloatOutBoyMotorControl {
             if self.tone_counter == 0 {
                 self.tone_counter = self.tone_ticks;
                 self.tone_high = !self.tone_high;
-                self.click_counter = self.click_counter.saturating_sub(1);
-                if self.click_counter == 1 {
+                self.click_transitions_remaining =
+                    self.click_transitions_remaining.saturating_sub(1);
+                if self.click_transitions_remaining == 1 {
                     self.stop_tone();
                 }
             }
