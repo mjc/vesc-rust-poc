@@ -563,14 +563,14 @@ fn prepare_ready_engagement(state: &mut FloatOutBoyPackageState, pitch: AngleRad
     state.set_balance_filter_for_test(balance_filter_with_pitch(pitch));
 }
 
-#[test]
-fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
-    let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(true);
-    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
-
+fn tick_ready_engagement(
+    state: &mut FloatOutBoyPackageState,
+    telemetry: &FirmwareTest,
+    ticks: TimestampTicks,
+) -> FloatOutBoyRunState {
     assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        state,
+        ticks,
         telemetry.telemetry(),
         telemetry.imu(),
         &[
@@ -578,15 +578,79 @@ fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
+    state
+        .all_data_payloads()
+        .base()
+        .status()
+        .ride_state()
+        .run_state()
+}
+
+#[test]
+fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
+    let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(true);
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
 
     assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state(),
+        tick_ready_engagement(
+            &mut state,
+            &telemetry,
+            TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        ),
         FloatOutBoyRunState::Running
+    );
+}
+
+#[test]
+fn dirty_landing_margin_requires_the_config_flag() {
+    let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(false);
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
+
+    assert_eq!(
+        tick_ready_engagement(
+            &mut state,
+            &telemetry,
+            TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        ),
+        FloatOutBoyRunState::Ready
+    );
+}
+
+#[test]
+fn dirty_landing_margin_expires_strictly_after_one_second_like_refloat() {
+    for (elapsed_ticks, expected) in [
+        (10_000, FloatOutBoyRunState::Running),
+        (10_001, FloatOutBoyRunState::Ready),
+    ] {
+        let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(true);
+        prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
+
+        assert_eq!(
+            tick_ready_engagement(
+                &mut state,
+                &telemetry,
+                TimestampTicks::from_ticks(stop_ticks.as_ticks() + elapsed_ticks),
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
+fn dirty_landing_window_uses_current_config_instead_of_refloat_stale_cache() {
+    let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(true);
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
+    edit_config(&mut state, |config| {
+        assert!(config.set_dirty_landings_enabled(false));
+    });
+
+    assert_eq!(
+        tick_ready_engagement(
+            &mut state,
+            &telemetry,
+            TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        ),
+        FloatOutBoyRunState::Ready
     );
 }
 
@@ -646,6 +710,10 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
     configure_startup_click(&mut state, WireByte::new(6));
+    edit_config(&mut state, |config| {
+        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(4.0)));
+        assert!(config.set_dirty_landings_enabled(true));
+    });
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -663,6 +731,21 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Pitch);
     assert!(state.apply_motor_control(telemetry.motor(), ride_state.run_state(), lifecycle));
     assert_f32_eq!(telemetry.commanded_current().current().as_amps(), 6.0);
+
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::ZERO),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
+    assert_eq!(
+        tick_ready_engagement(
+            &mut state,
+            &telemetry,
+            TimestampTicks::from_ticks(lifecycle.as_ticks() + 1),
+        ),
+        FloatOutBoyRunState::Ready
+    );
 }
 
 #[test]
