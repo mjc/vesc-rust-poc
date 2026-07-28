@@ -1490,7 +1490,8 @@ impl FloatOutBoyStartupConfig<'_> {
     const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
     const SIMPLESTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 98);
     const PUSHSTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 99);
-    const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 100);
+    const DIRTY_LANDINGS_OFFSET: usize = 100;
+    const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
     const PITCH_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 91, scale: 100.0);
     const ROLL_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 93, scale: 100.0);
     const SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 95, scale: 100.0);
@@ -1530,7 +1531,7 @@ impl FloatOutBoyStartupConfig<'_> {
     }
 
     pub(crate) const fn dirty_landings_enabled(self) -> bool {
-        self.0.as_bytes()[100] != 0
+        self.0.as_bytes()[Self::DIRTY_LANDINGS_OFFSET] != 0
     }
 
     pub(crate) fn startup_speed(self) -> AngularVelocity {
