@@ -99,6 +99,13 @@ fn set_footpad(state: &mut FloatOutBoyPackageState, footpad: FloatOutBoyFootpadS
     );
 }
 
+fn refresh_konami_at(state: &mut FloatOutBoyPackageState, pitch: AngleDegrees, ticks: u32) {
+    state.refresh_konami_runtime_state(
+        ImuPitch::new(AngleRadians::from(pitch)),
+        TimestampTicks::from_ticks(ticks),
+    );
+}
+
 fn set_duty_cycle(state: &mut FloatOutBoyPackageState, duty_cycle: DutyCycle) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
@@ -726,15 +733,9 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
         AngleDegrees::ZERO,
     ));
     set_footpad(&mut konami, FloatOutBoyFootpadState::Left);
-    konami.refresh_konami_runtime_state(
-        ImuPitch::new(AngleRadians::from_degrees(80.0)),
-        TimestampTicks::from_ticks(1_501),
-    );
+    refresh_konami_at(&mut konami, AngleDegrees::from_degrees(80.0), 1_501);
     set_footpad(&mut konami, FloatOutBoyFootpadState::Right);
-    konami.refresh_konami_runtime_state(
-        ImuPitch::new(AngleRadians::from_degrees(80.0)),
-        TimestampTicks::from_ticks(3_002),
-    );
+    refresh_konami_at(&mut konami, AngleDegrees::from_degrees(80.0), 3_002);
     assert_eq!(
         konami
             .all_data_payloads()
@@ -759,9 +760,10 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
     .enumerate()
     {
         set_footpad(&mut konami, footpad);
-        konami.refresh_konami_runtime_state(
-            ImuPitch::new(AngleRadians::from_degrees(80.0)),
-            TimestampTicks::from_ticks(4_503 + u32::try_from(index).unwrap_or(u32::MAX) * 1_501),
+        refresh_konami_at(
+            &mut konami,
+            AngleDegrees::from_degrees(80.0),
+            4_503 + u32::try_from(index).unwrap_or(u32::MAX) * 1_501,
         );
     }
 
@@ -820,9 +822,10 @@ fn flywheel_konami_uses_the_current_imu_pitch_like_float_out_boy() {
     .enumerate()
     {
         set_footpad(&mut state, footpad);
-        state.refresh_konami_runtime_state(
-            ImuPitch::new(AngleRadians::ZERO),
-            TimestampTicks::from_ticks(u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501),
+        refresh_konami_at(
+            &mut state,
+            AngleDegrees::ZERO,
+            u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
         );
     }
 
@@ -860,9 +863,10 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     .enumerate()
     {
         set_footpad(&mut state, footpad);
-        state.refresh_konami_runtime_state(
-            ImuPitch::new(AngleRadians::ZERO),
-            TimestampTicks::from_ticks(u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501),
+        refresh_konami_at(
+            &mut state,
+            AngleDegrees::ZERO,
+            u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
         );
     }
 
@@ -884,11 +888,10 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     .enumerate()
     {
         set_footpad(&mut state, footpad);
-        state.refresh_konami_runtime_state(
-            ImuPitch::new(AngleRadians::ZERO),
-            TimestampTicks::from_ticks(
-                10_000 + u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
-            ),
+        refresh_konami_at(
+            &mut state,
+            AngleDegrees::ZERO,
+            10_000 + u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
         );
     }
 
