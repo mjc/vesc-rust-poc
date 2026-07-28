@@ -81,10 +81,7 @@ impl FloatOutBoyMotorControl {
         self.tone_high = false;
     }
 
-    #[expect(
-        clippy::inline_always,
-        reason = "keeps the firmware within its 96 KiB package limit"
-    )]
+    #[expect(clippy::inline_always, reason = "keeps the linked ARM image compact")]
     #[inline(always)]
     pub(crate) fn play_click(&mut self, current: WireByte, sample_rate: SampleRate) {
         if current.as_u8() != 0 {

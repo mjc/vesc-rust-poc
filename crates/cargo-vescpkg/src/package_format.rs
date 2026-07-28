@@ -6,6 +6,12 @@ use flate2::{Compression, write::ZlibEncoder};
 use pulldown_cmark::{Event, Options, Parser, html};
 
 const PACKAGE_MAGIC: &str = "VESC Packet";
+const VESC_STM32_LISP_FLASH_BYTES: usize = 128 * 1024;
+const VESC_TOOL_LISP_UPLOAD_PREFIX_BYTES: usize = 6;
+const VESC_TOOL_LISP_UPLOAD_HEADROOM_BYTES: usize = 6;
+const VESC_LISP_DATA_LIMIT: usize = VESC_STM32_LISP_FLASH_BYTES
+    - VESC_TOOL_LISP_UPLOAD_PREFIX_BYTES
+    - VESC_TOOL_LISP_UPLOAD_HEADROOM_BYTES;
 
 /// Source inputs used to build a VESC package archive.
 #[derive(Debug, Clone)]
@@ -39,6 +45,7 @@ enum PackageField<'a> {
 /// `description_md`; the original markdown is also emitted as `description_md`.
 pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
     let lisp_data = pack_lisp_imports(input.lisp_source, input.lisp_editor_path)?;
+    validate_vesc_lisp_data_len(lisp_data.len())?;
 
     let description_html = markdown_description_html(input.description_md);
     encode_package_fields([
@@ -71,6 +78,17 @@ pub fn build_vesc_package(input: &VescPackageInput<'_>) -> io::Result<Vec<u8>> {
             value: input.qml_is_fullscreen,
         },
     ])
+}
+
+fn validate_vesc_lisp_data_len(len: usize) -> io::Result<()> {
+    (len <= VESC_LISP_DATA_LIMIT).then_some(()).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "packed Lisp data is {len} bytes; VESC Tool permits at most {VESC_LISP_DATA_LIMIT} bytes inside its {VESC_STM32_LISP_FLASH_BYTES}-byte STM32 upload envelope"
+            ),
+        )
+    })
 }
 
 fn encode_package_fields<'a>(
@@ -303,13 +321,31 @@ fn parse_import_line(line: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_import_line;
+    use super::{
+        VESC_LISP_DATA_LIMIT, VESC_STM32_LISP_FLASH_BYTES, VESC_TOOL_LISP_UPLOAD_HEADROOM_BYTES,
+        VESC_TOOL_LISP_UPLOAD_PREFIX_BYTES, parse_import_line, validate_vesc_lisp_data_len,
+    };
 
     #[test]
     fn parses_import_lines_with_whitespace_after_parenthesis() {
         assert_eq!(
             parse_import_line("( import \"src/package_lib.bin\" 'package-lib)"),
             Some(("src/package_lib.bin".to_owned(), "package-lib".to_owned()))
+        );
+    }
+
+    #[test]
+    fn accepts_only_lisp_data_that_fits_the_real_vesc_tool_stm32_upload_limit() {
+        let error =
+            validate_vesc_lisp_data_len(VESC_LISP_DATA_LIMIT + 1).expect_err("oversized Lisp");
+
+        assert!(error.to_string().contains("VESC Tool permits"));
+        assert!(validate_vesc_lisp_data_len(VESC_LISP_DATA_LIMIT).is_ok());
+        assert_eq!(
+            VESC_LISP_DATA_LIMIT
+                + VESC_TOOL_LISP_UPLOAD_PREFIX_BYTES
+                + VESC_TOOL_LISP_UPLOAD_HEADROOM_BYTES,
+            VESC_STM32_LISP_FLASH_BYTES
         );
     }
 }
