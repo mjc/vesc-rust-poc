@@ -1201,7 +1201,7 @@ fn set_protective_ride_state(
 
 fn settle_motor_acceleration(state: &mut FloatOutBoyPackageState, motor_erpm: Rpm) {
     for _ in 0..40 {
-        state.motor_acceleration.record(motor_erpm);
+        state.motor_kinematics.record(motor_erpm);
     }
 }
 

@@ -52,7 +52,7 @@ mod internal_leds;
 mod konami;
 mod lcm;
 mod limits;
-mod motor_acceleration;
+mod motor_kinematics;
 mod motor_runtime;
 #[cfg(test)]
 mod motor_telemetry_tests;
@@ -79,7 +79,7 @@ use internal_leds::FloatOutBoyInternalLedRuntime;
 #[cfg(any(test, target_arch = "arm"))]
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
-use motor_acceleration::MotorAccelerationTracker;
+use motor_kinematics::MotorKinematicsTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
@@ -174,8 +174,7 @@ pub struct FloatOutBoyPackageState {
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
     reverse_total_erpm: Rpm,
-    motor_abs_erpm_smooth: Rpm,
-    motor_acceleration: MotorAccelerationTracker,
+    motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
@@ -258,8 +257,7 @@ impl FloatOutBoyPackageState {
             balance_filter: BalanceFilter::source_startup(),
             balance_loop: LoopState::source_startup(),
             reverse_total_erpm: Rpm::ZERO,
-            motor_abs_erpm_smooth: Rpm::ZERO,
-            motor_acceleration: MotorAccelerationTracker::default(),
+            motor_kinematics: MotorKinematicsTracker::default(),
             motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter::source_startup(),
             remote_control: RemoteControlState::default(),
             runtime_board_setpoint: all_data_payloads.base().setpoints().board().angle(),
@@ -515,7 +513,7 @@ impl FloatOutBoyPackageState {
         self.motor_control.apply(
             motor,
             run_state,
-            self.motor_abs_erpm_smooth,
+            self.motor_kinematics.smoothed_abs_erpm(),
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
             self.serialized_config.motor_control().brake_current(),

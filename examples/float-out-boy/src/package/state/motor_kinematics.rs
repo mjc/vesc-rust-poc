@@ -2,6 +2,7 @@
 // `third_party/float-out-boy/src/motor_data.h:26`.
 const WINDOW: usize = 40;
 const WINDOW_U8: u8 = 40;
+const ABS_ERPM_SMOOTHING_FACTOR: f32 = 0.1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AccelerationHistoryIndex(u8);
@@ -36,18 +37,20 @@ impl AccelerationHistoryIndex {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct MotorAccelerationTracker {
+pub(super) struct MotorKinematicsTracker {
     last_erpm: vescpkg_rs::prelude::Rpm,
+    smoothed_abs_erpm: vescpkg_rs::prelude::Rpm,
     average: vescpkg_rs::prelude::Rpm,
     history: [vescpkg_rs::prelude::Rpm; WINDOW],
     next: AccelerationHistoryIndex,
 }
 
-impl Default for MotorAccelerationTracker {
+impl Default for MotorKinematicsTracker {
     fn default() -> Self {
         // C map: `motor_data_init` starts the rolling ERPM average at zero.
         Self {
             last_erpm: vescpkg_rs::prelude::Rpm::ZERO,
+            smoothed_abs_erpm: vescpkg_rs::prelude::Rpm::ZERO,
             average: vescpkg_rs::prelude::Rpm::ZERO,
             history: [vescpkg_rs::prelude::Rpm::ZERO; WINDOW],
             next: AccelerationHistoryIndex::START,
@@ -55,8 +58,15 @@ impl Default for MotorAccelerationTracker {
     }
 }
 
-impl MotorAccelerationTracker {
+impl MotorKinematicsTracker {
     pub(super) fn record(&mut self, motor_erpm: vescpkg_rs::prelude::Rpm) {
+        let previous_abs_erpm = self.smoothed_abs_erpm.as_revolutions_per_minute();
+        let current_abs_erpm = motor_erpm.abs().as_revolutions_per_minute();
+        self.smoothed_abs_erpm = vescpkg_rs::prelude::Rpm::from_revolutions_per_minute(
+            previous_abs_erpm
+                + ABS_ERPM_SMOOTHING_FACTOR * (current_abs_erpm - previous_abs_erpm),
+        );
+
         // C map: `third_party/float-out-boy/src/motor_data.c:128-133` subtracts the previous ERPM,
         // replaces one rolling history slot, and adjusts the stored average by the delta.
         let current = motor_erpm - self.last_erpm;
@@ -72,11 +82,15 @@ impl MotorAccelerationTracker {
         // filtered acceleration output.
         self.average
     }
+
+    pub(super) const fn smoothed_abs_erpm(self) -> vescpkg_rs::prelude::Rpm {
+        self.smoothed_abs_erpm
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AccelerationHistoryIndex, MotorAccelerationTracker, WINDOW, WINDOW_U8};
+    use super::{AccelerationHistoryIndex, MotorKinematicsTracker, WINDOW, WINDOW_U8};
     use vescpkg_rs::prelude::Rpm;
 
     #[test]
@@ -100,7 +114,7 @@ mod tests {
 
     #[test]
     fn record_matches_float_out_boy_rolling_erpm_delta_average() {
-        let mut tracker = MotorAccelerationTracker::default();
+        let mut tracker = MotorKinematicsTracker::default();
 
         for step in 1..=WINDOW_U8 {
             tracker.record(Rpm::from_revolutions_per_minute(f32::from(step) * 10.0));
@@ -117,5 +131,17 @@ mod tests {
         // Float Out Boy replaces the oldest 10 ERPM sample with the current 40 ERPM sample:
         // `10 + (40 - 10) / ACCEL_ARRAY_SIZE`.
         assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.75);
+    }
+
+    #[test]
+    fn record_matches_float_out_boy_absolute_erpm_smoothing() {
+        let mut tracker = MotorKinematicsTracker::default();
+
+        tracker.record(Rpm::from_revolutions_per_minute(-1_000.0));
+
+        assert_eq!(
+            tracker.smoothed_abs_erpm(),
+            Rpm::from_revolutions_per_minute(100.0)
+        );
     }
 }

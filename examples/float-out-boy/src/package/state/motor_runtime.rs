@@ -8,20 +8,11 @@ use crate::domain::{
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
-    MotorCurrent, Rpm, SampleRate, SignedRatio,
+    MotorCurrent, SampleRate, SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
-const ABS_ERPM_SMOOTHING_FACTOR: f32 = 0.1;
-
-fn smooth_abs_erpm(previous: Rpm, current: Rpm) -> Rpm {
-    let previous = previous.as_revolutions_per_minute();
-    let current = current.abs().as_revolutions_per_minute();
-    Rpm::from_revolutions_per_minute(
-        previous + ABS_ERPM_SMOOTHING_FACTOR * (current - previous),
-    )
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyMotorCurrentFilter {
@@ -121,10 +112,9 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let filtered_current = state.motor_current_filter.process(directional_current);
     let electrical_speed = telemetry.electrical_speed();
     let motor_erpm = electrical_speed.rpm();
-    state.motor_abs_erpm_smooth = smooth_abs_erpm(state.motor_abs_erpm_smooth, motor_erpm);
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
-    state.motor_acceleration.record(motor_erpm);
+    state.motor_kinematics.record(motor_erpm);
     let motor = FloatOutBoyAllDataMotorPayload::new(
         BatteryVoltage::new(telemetry.input_voltage().voltage()),
         electrical_speed,
@@ -166,17 +156,6 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn smoothed_absolute_erpm_matches_refloat_first_order_filter() {
-        assert_eq!(
-            smooth_abs_erpm(
-                Rpm::from_revolutions_per_minute(100.0),
-                Rpm::from_revolutions_per_minute(-1_100.0),
-            ),
-            Rpm::from_revolutions_per_minute(200.0)
-        );
-    }
 
     #[test]
     fn disabled_current_filter_returns_directional_current_like_float_out_boy() {

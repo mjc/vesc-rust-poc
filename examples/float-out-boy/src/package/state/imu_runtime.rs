@@ -806,7 +806,7 @@ fn transition_control_conditions(
     ) && state.serialized_config.faults().reversestop_enabled()
         && input.motor_erpm < -reverse_stop.entry_erpm
         && !input.darkride_active;
-    let motor_acceleration = state.motor_acceleration.average();
+    let motor_acceleration = state.motor_kinematics.average();
     let traction_loss_detected = stop_event.is_none()
         && !state_engage
         && !matches!(
