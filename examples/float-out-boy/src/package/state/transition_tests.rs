@@ -278,10 +278,9 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
 }
 
 #[test]
-fn app_data_running_flywheel_both_footpads_stops_like_float_out_boy_fault_check() {
-    // C map: RUNNING FLYWHEEL with both footpads stops at
-    // `third_party/float-out-boy/src/main.c:492-495` and then writes READY through
-    // `state_stop` at `third_party/float-out-boy/src/state.c:29-33`.
+fn app_data_running_flywheel_pressed_footpad_stops_like_upstream_fix() {
+    // Refloat commit 9dbd1b0 broadens RUNNING FLYWHEEL shutdown from both
+    // footpads to any pressed sensor before writing READY through `state_stop`.
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);

@@ -471,7 +471,7 @@ struct NormalFaultEvaluation {
     switches: SwitchFaultActivity,
     angles: AngleFaultActivity,
     can_engage: bool,
-    flywheel_both_footpads: bool,
+    flywheel_footpad_pressed: bool,
 }
 
 struct SwitchAngleFaultEvaluation {
@@ -583,7 +583,7 @@ fn evaluate_normal_faults(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::ReverseStop
         );
-    let flywheel_both = running && flywheel && !matches!(footpad, FloatOutBoyFootpadState::None);
+    let flywheel_footpad = running && flywheel && !matches!(footpad, FloatOutBoyFootpadState::None);
     let reverse_no_footpads = reverse_active && matches!(footpad, FloatOutBoyFootpadState::None);
     let reverse_pitch =
         !input.darkride_active && reverse_active && input.pitch_abs > reverse_stop.pitch;
@@ -633,7 +633,7 @@ fn evaluate_normal_faults(
 
     NormalFaultEvaluation {
         conditions: [
-            flywheel_both,
+            flywheel_footpad,
             reverse_no_footpads,
             reverse_pitch,
             reverse_timer,
@@ -648,7 +648,7 @@ fn evaluate_normal_faults(
         switches: switch_angle.switches,
         angles: switch_angle.angles,
         can_engage,
-        flywheel_both_footpads: flywheel_both,
+        flywheel_footpad_pressed: flywheel_footpad,
     }
 }
 
@@ -776,7 +776,7 @@ fn first_transition_stop(
     darkride: &DarkrideFaultEvaluation,
 ) -> Option<FloatOutBoyStopEvent> {
     let [
-        flywheel_both,
+        flywheel_footpad,
         reverse_no_footpads,
         reverse_pitch,
         reverse_timer,
@@ -790,7 +790,7 @@ fn first_transition_stop(
     ] = normal.conditions;
     let [darkride_high, darkride_low, darkride_can_engage] = darkride.conditions;
     float_out_boy_first_stop_event(&[
-        (FloatOutBoyStopEvent::FlywheelBothFootpads, flywheel_both),
+        (FloatOutBoyStopEvent::FlywheelFootpad, flywheel_footpad),
         (
             FloatOutBoyStopEvent::ReverseStopNoFootpads,
             reverse_no_footpads,
@@ -885,7 +885,7 @@ fn apply_transition_activity(
         }
         state
             .flywheel
-            .latch_abort(activity.normal.flywheel_both_footpads);
+            .latch_abort(activity.normal.flywheel_footpad_pressed);
     } else if transition.state_engaged {
         state.play_motor_click();
         state.engage_ticks = system_time_ticks;

@@ -307,7 +307,7 @@ fn app_data_ready_flywheel_without_footpads_engages_like_float_out_boy_can_engag
 }
 
 #[test]
-fn app_data_ready_flywheel_both_footpads_stops_flywheel_like_float_out_boy_ready_loop() {
+fn app_data_ready_flywheel_pressed_footpad_stops_flywheel_like_upstream_fix() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
     configure_ready_imu(&telemetry, AngleRadians::ZERO);
@@ -317,10 +317,10 @@ fn app_data_ready_flywheel_both_footpads_stops_flywheel_like_float_out_boy_ready
         FloatOutBoyMode::Flywheel,
     );
     let base = payloads.base();
-    let both_footpads = FloatOutBoyFootpadSample::new(
+    let pressed_footpad = FloatOutBoyFootpadSample::new(
         Voltage::from_volts(0.0),
         Voltage::from_volts(1.0),
-        FloatOutBoyFootpadState::Both,
+        FloatOutBoyFootpadState::Left,
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
         FloatOutBoyAllDataBasePayload::new(
@@ -331,7 +331,7 @@ fn app_data_ready_flywheel_both_footpads_stops_flywheel_like_float_out_boy_ready
                 base.attitude().pitch(),
             ),
             base.status(),
-            both_footpads,
+            pressed_footpad,
             base.setpoints(),
             base.booster_current(),
             base.motor(),

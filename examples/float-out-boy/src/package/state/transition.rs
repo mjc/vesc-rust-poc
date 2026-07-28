@@ -17,7 +17,7 @@ use crate::domain::{
 /// in `third_party/float-out-boy/src/state.c:29-33`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FloatOutBoyStopEvent {
-    FlywheelBothFootpads,
+    FlywheelFootpad,
     ReverseStopNoFootpads,
     ReverseStopPitch,
     ReverseStopTimer,
@@ -40,7 +40,7 @@ impl FloatOutBoyStopEvent {
         // C map: `state_stop` chooses the stored stop condition from the
         // active fault branch at `third_party/float-out-boy/src/state.c:29-33`.
         match self {
-            Self::FlywheelBothFootpads | Self::HalfSwitch | Self::DarkrideCanEngage => {
+            Self::FlywheelFootpad | Self::HalfSwitch | Self::DarkrideCanEngage => {
                 FloatOutBoyStopCondition::SwitchHalf
             }
             Self::ReverseStopNoFootpads | Self::FullSwitch => FloatOutBoyStopCondition::SwitchFull,

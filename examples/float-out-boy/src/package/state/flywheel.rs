@@ -100,8 +100,8 @@ impl FloatOutBoyFlywheelRuntime {
         self.abort |= abort;
     }
 
-    pub(super) const fn should_stop(self, both_footpads: bool) -> bool {
-        self.abort || both_footpads
+    pub(super) const fn should_stop(self, footpad_pressed: bool) -> bool {
+        self.abort || footpad_pressed
     }
 
     const fn config(self) -> Option<FloatOutBoyFlywheelConfig> {
