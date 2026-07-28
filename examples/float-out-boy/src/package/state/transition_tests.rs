@@ -84,6 +84,77 @@ fn upright_no_footpads_payloads() -> FloatOutBoyAllDataPayloads {
 }
 
 #[test]
+fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_update() {
+    for (adc1, adc2, expected_footpad) in [
+        (2.5, 0.0, FloatOutBoyFootpadState::Left),
+        (0.0, 2.5, FloatOutBoyFootpadState::Right),
+    ] {
+        let telemetry = FirmwareTest::new();
+        telemetry.set_imu_ready(true);
+        let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
+        state.initialize_time_epochs(TimestampTicks::from_ticks(0));
+        edit_config(&mut state, |config| {
+            assert!(config.set_simplestart_enabled(true));
+            assert!(config.set_dual_switch(false));
+        });
+
+        assert!(tick_float_out_boy_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(30_000),
+            telemetry.telemetry(),
+            telemetry.imu(),
+            &[
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        state.refresh_footpad_runtime_state(
+            AdcVoltage::new(Voltage::from_volts(adc1)),
+            AdcVoltage::new(Voltage::from_volts(adc2)),
+        );
+        assert_eq!(
+            state.all_data_payloads().base().footpad().state(),
+            expected_footpad
+        );
+
+        for (ticks, expected_run_state) in [
+            (32_500, FloatOutBoyRunState::Running),
+            (32_501, FloatOutBoyRunState::Ready),
+        ] {
+            assert!(tick_float_out_boy_state_and_handle_packet(
+                &mut state,
+                TimestampTicks::from_ticks(ticks),
+                telemetry.telemetry(),
+                telemetry.imu(),
+                &[
+                    crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+                ],
+            ));
+            assert_eq!(
+                state
+                    .all_data_payloads()
+                    .base()
+                    .status()
+                    .ride_state()
+                    .run_state(),
+                expected_run_state,
+                "footpad={expected_footpad:?} ticks={ticks}",
+            );
+        }
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .stop_condition(),
+            FloatOutBoyStopCondition::SwitchHalf,
+        );
+    }
+}
+
+#[test]
 fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);

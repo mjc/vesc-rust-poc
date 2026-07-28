@@ -96,8 +96,9 @@ fn begin_refresh(
         ride_state.run_state()
     };
     if matches!(run_state, FloatOutBoyRunState::Running) {
-        // `time_update` refreshes Float Out Boy's idle timer on every RUNNING loop
+        // `time_update` refreshes Float Out Boy's disengage and idle timers on every RUNNING loop
         // at `third_party/float-out-boy/src/time.c:38-43`.
+        state.disengage_ticks = system_time_ticks;
         state.refresh_idle_epoch(system_time_ticks);
     }
 
