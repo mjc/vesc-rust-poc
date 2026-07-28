@@ -880,6 +880,9 @@ fn apply_transition_activity(
         state.play_motor_click();
         state.disengage_ticks = system_time_ticks;
         state.trigger_data_recorder(false);
+        if matches!(activity.stop_event, Some(FloatOutBoyStopEvent::FullSwitch)) {
+            state.fault_angle_pitch_ticks = system_time_ticks;
+        }
         state
             .flywheel
             .latch_abort(activity.normal.flywheel_both_footpads);

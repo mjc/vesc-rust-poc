@@ -508,9 +508,21 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
 fn full_switch_stopped_state(
     dirty_landings_enabled: bool,
 ) -> (FloatOutBoyPackageState, FirmwareTest, TimestampTicks) {
+    full_switch_stopped_state_with_pitch(dirty_landings_enabled, AngleRadians::ZERO)
+}
+
+fn full_switch_stopped_state_with_pitch(
+    dirty_landings_enabled: bool,
+    pitch: AngleRadians,
+) -> (FloatOutBoyPackageState, FirmwareTest, TimestampTicks) {
     let stop_ticks = TimestampTicks::from_ticks(100_000);
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(pitch),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
     let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
     edit_config(&mut state, |config| {
         assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(4.0)));
@@ -634,6 +646,27 @@ fn dirty_landing_margin_expires_strictly_after_one_second_like_refloat() {
             expected
         );
     }
+}
+
+#[test]
+fn full_switch_stop_refreshes_dirty_landing_window_while_pitch_fault_is_pending() {
+    let (mut state, telemetry, stop_ticks) =
+        full_switch_stopped_state_with_pitch(true, AngleRadians::from_degrees(70.0));
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::ZERO),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
+
+    assert_eq!(
+        tick_ready_engagement(
+            &mut state,
+            &telemetry,
+            TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        ),
+        FloatOutBoyRunState::Running
+    );
 }
 
 #[test]
