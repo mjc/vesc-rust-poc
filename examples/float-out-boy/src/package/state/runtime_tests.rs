@@ -21,7 +21,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 use std::vec::Vec;
 
 #[test]
-fn startup_initializes_time_epochs_from_live_clock_like_refloat() {
+fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
     let now = TimestampTicks::from_ticks(1_000_000);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
@@ -30,7 +30,7 @@ fn startup_initializes_time_epochs_from_live_clock_like_refloat() {
     assert_eq!(state.engage_ticks, now);
     assert_eq!(
         state.disengage_ticks,
-        TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60))
+        TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(600_000))
     );
     assert_eq!(state.idle_ticks, now);
 }

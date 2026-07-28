@@ -558,10 +558,10 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn initialize_time_epochs(&mut self, now: TimestampTicks) {
-        // C map: `time_init` initializes engage and idle from the live clock and
-        // stores `now - 60` for disengage at `third_party/float-out-boy/src/time.c:29-37`.
+        // Refloat fixed its 1.2.1 tick/second mismatch in `f727e1d` so the
+        // startup disengage epoch is actually one minute old.
         self.engage_ticks = now;
-        self.disengage_ticks = TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60));
+        self.disengage_ticks = TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60 * 10_000));
         self.idle_ticks = now;
         self.bms.initialize_start_epoch(now);
     }

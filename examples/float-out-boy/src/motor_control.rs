@@ -15,7 +15,7 @@ const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::fro
 
 fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) -> u8 {
     let half_period_ticks = sample_rate.as_hertz() / (2.0 * frequency.frequency().as_hertz());
-    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0))
+    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks)
 }
 
 /// Float Out Boy motor-control request state.
