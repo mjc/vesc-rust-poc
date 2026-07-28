@@ -1,6 +1,6 @@
-use super::time::{
-    float_out_boy_expire_timer, float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds,
-};
+#[cfg(any(test, target_arch = "arm"))]
+use super::time::float_out_boy_expire_timer;
+use super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::FloatOutBoyBeeperLevel;

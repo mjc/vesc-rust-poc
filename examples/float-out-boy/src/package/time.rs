@@ -4,6 +4,7 @@
 
 use vescpkg_rs::prelude::{SYSTEM_TICK_RATE_HZ, TimestampTicks, VescSeconds};
 
+#[cfg(any(test, target_arch = "arm"))]
 #[inline]
 pub(super) fn float_out_boy_expire_timer(now: TimestampTicks, seconds: u32) -> TimestampTicks {
     TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(
