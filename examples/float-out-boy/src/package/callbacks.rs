@@ -27,13 +27,17 @@ pub(crate) struct FloatOutBoyAppData;
 impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
     type State = FloatOutBoyPackageState;
 
-    fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'_>) {
+    fn handle(
+        state: &mut Self::State,
+        packet: vescpkg_rs::AppDataPacket<'_>,
+        response: &mut vescpkg_rs::AppDataResponse,
+    ) {
         // C map: upstream `on_command_received` recovers `Data *` through
         // `ARG(PROG_ADDR)` before app-data dispatch at
         // `third_party/float-out-boy/src/main.c:2143-2225`.
         let firmware = vescpkg_rs::Firmware::new();
         let mut now = || firmware.clock().now();
-        let mut send = |bytes: &[u8]| firmware.app_data().send(bytes).is_ok();
+        let mut send = |bytes: &[u8]| response.write(bytes).is_ok();
         let _ = handle_float_out_boy_app_data_packet(
             state,
             firmware.telemetry(),

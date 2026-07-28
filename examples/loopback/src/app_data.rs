@@ -1,21 +1,20 @@
 #![cfg(all(not(test), target_arch = "arm"))]
 
 use vesc_protocol::ble_loopback::handle_loopback_frame;
-use vescpkg_rs::{AppDataHandler, AppDataPacket, Firmware, PackageStart};
+use vescpkg_rs::{AppDataHandler, AppDataPacket, AppDataResponse, Firmware, PackageStart};
 
 struct LoopbackAppData;
 
 impl AppDataHandler for LoopbackAppData {
     type State = crate::LoopbackState;
 
-    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
+    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>, response: &mut AppDataResponse) {
         let firmware = Firmware::new();
-        let app_data = firmware.app_data();
         let now_ms = u64::from(firmware.clock().now().as_ticks()) / 10;
-        if let Ok((response, response_len)) = handle_loopback_frame(packet.as_bytes(), now_ms) {
-            let _ = response
+        if let Ok((bytes, response_len)) = handle_loopback_frame(packet.as_bytes(), now_ms) {
+            let _ = bytes
                 .get(..response_len)
-                .is_some_and(|response| app_data.send(response).is_ok());
+                .is_some_and(|bytes| response.write(bytes).is_ok());
         }
     }
 }

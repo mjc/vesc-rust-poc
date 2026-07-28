@@ -144,14 +144,16 @@ struct ControlLoopAppData;
 impl vescpkg_rs::AppDataHandler for ControlLoopAppData {
     type State = ControlLoopState;
 
-    fn handle(state: &mut Self::State, packet: vescpkg_rs::AppDataPacket<'_>) {
-        let mut response = [0_u8; STATUS_BYTES];
-        let Ok(response_len) = handle_command(state, packet.as_bytes(), &mut response) else {
+    fn handle(
+        state: &mut Self::State,
+        packet: vescpkg_rs::AppDataPacket<'_>,
+        response: &mut vescpkg_rs::AppDataResponse,
+    ) {
+        let mut bytes = [0_u8; STATUS_BYTES];
+        let Ok(response_len) = handle_command(state, packet.as_bytes(), &mut bytes) else {
             return;
         };
-        let _ = vescpkg_rs::Firmware::new()
-            .app_data()
-            .send(&response[..response_len]);
+        let _ = response.write(&bytes[..response_len]);
     }
 }
 

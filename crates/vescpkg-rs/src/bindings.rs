@@ -4,14 +4,13 @@
 use core::ffi::c_char;
 
 use crate::ffi::{CustomConfigGet, CustomConfigSet, CustomConfigXml, ImuReadCallback};
+use crate::firmware::MAX_APP_DATA_PAYLOAD_LEN;
 use crate::{PackageArgument, PackageProgramAddress};
 use core::ptr::NonNull;
 use vescpkg_rs_sys::AppDataHandler;
 #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use vescpkg_rs_sys::ExtensionHandler;
 use vescpkg_rs_sys::LbmValue;
-
-const MAX_APP_DATA_PAYLOAD_LEN: usize = 511;
 
 /// LispBM-related firmware calls required by the SDK lifecycle layer.
 pub(crate) trait LbmBindings {

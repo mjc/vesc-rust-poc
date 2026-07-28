@@ -45,7 +45,7 @@ use vesc_protocol::ble_loopback::{LoopbackError, MAX_LOOPBACK_FRAME_BYTES, handl
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::PackageStart;
 #[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{AppDataHandler, AppDataPacket, Firmware};
+use vescpkg_rs::{AppDataHandler, AppDataPacket, AppDataResponse, Firmware};
 
 #[cfg(all(not(test), target_arch = "arm"))]
 #[global_allocator]
@@ -70,16 +70,15 @@ vescpkg_rs::package_start!(crate::start, AllocSmokeState);
 impl AppDataHandler for AllocSmokeAppData {
     type State = AllocSmokeState;
 
-    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>) {
+    fn handle(_state: &mut Self::State, packet: AppDataPacket<'_>, response: &mut AppDataResponse) {
         let firmware = Firmware::new();
-        let app_data = firmware.app_data();
         let now_ms = u64::from(firmware.clock().now().as_ticks()) / 10;
-        let Ok((response, response_len)) = alloc_smoke_loopback(packet.as_bytes(), now_ms) else {
+        let Ok((bytes, response_len)) = alloc_smoke_loopback(packet.as_bytes(), now_ms) else {
             return;
         };
-        let _ = response
+        let _ = bytes
             .get(..response_len)
-            .is_some_and(|response| app_data.send(response).is_ok());
+            .is_some_and(|bytes| response.write(bytes).is_ok());
     }
 }
 

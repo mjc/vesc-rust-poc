@@ -259,7 +259,8 @@ pub mod __macro_support;
 pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
-    AppDataHandler, AppDataPacket, ConfigBytes, ConfigXml, StatefulCustomConfigCallback,
+    AppDataHandler, AppDataPacket, AppDataResponse, ConfigBytes, ConfigXml,
+    MAX_APP_DATA_PAYLOAD_LEN, StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};

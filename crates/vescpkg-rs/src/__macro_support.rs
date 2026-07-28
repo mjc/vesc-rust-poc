@@ -35,7 +35,7 @@ pub const unsafe fn __package_state_access<T: Send + 'static>(
 
 #[cfg(not(test))]
 pub use crate::firmware::__firmware_package_state_ptr;
-#[cfg(not(any(test, feature = "test-support")))]
+#[cfg(all(not(any(test, feature = "test-support")), target_arch = "arm"))]
 pub use crate::firmware::app_data_handler;
 pub use crate::firmware::{PackageAppDataCallback, PackageCustomConfigCallback};
 pub use crate::imu::{PackageImuReadCallback, imu_read_callback};

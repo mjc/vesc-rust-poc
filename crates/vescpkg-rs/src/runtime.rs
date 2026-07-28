@@ -286,6 +286,8 @@ struct FirmwareRuntime {
     state_type: TypeId,
     state: *mut core::ffi::c_void,
     state_lock: AtomicBool,
+    app_data_response_lock: AtomicBool,
+    app_data_response: UnsafeCell<crate::AppDataResponse>,
     phase: AtomicU8,
     active: AtomicUsize,
     gpio_leases: AtomicU32,
@@ -417,6 +419,38 @@ fn borrow_firmware_runtime(runtime: &FirmwareRuntime) -> FirmwareRuntimeBorrow<'
         spin_loop();
     }
     FirmwareRuntimeBorrow(runtime)
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+struct FirmwareAppDataResponseBorrow<'a>(&'a FirmwareRuntime);
+
+#[cfg(any(test, target_arch = "arm"))]
+impl Drop for FirmwareAppDataResponseBorrow<'_> {
+    fn drop(&mut self) {
+        self.0
+            .app_data_response_lock
+            .store(false, Ordering::Release);
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn borrow_firmware_app_data_response(
+    runtime: &FirmwareRuntime,
+) -> FirmwareAppDataResponseBorrow<'_> {
+    while runtime
+        .app_data_response_lock
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        #[cfg(target_arch = "arm")]
+        unsafe {
+            // SAFETY: firmware callbacks run in ChibiOS thread context.
+            crate::ffi::vesc_sleep_us(1);
+        }
+        #[cfg(not(target_arch = "arm"))]
+        spin_loop();
+    }
+    FirmwareAppDataResponseBorrow(runtime)
 }
 
 #[cfg(target_arch = "arm")]
@@ -649,6 +683,15 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
         }
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn with_app_data_response<R>(
+        self,
+        f: impl FnOnce(&mut crate::AppDataResponse) -> R,
+    ) -> Option<R> {
+        let expected = self.expected_state()?;
+        PackageStateStore::<T>::with_app_data_response(expected, f)
+    }
+
     fn expected_state(self) -> Option<ExpectedState<T>> {
         match self.identity {
             #[cfg(not(target_arch = "arm"))]
@@ -763,6 +806,8 @@ impl<T: Send + 'static> PackageStateStore<T> {
                 state_type: TypeId::of::<T>(),
                 state: core::ptr::from_mut(state).cast(),
                 state_lock: AtomicBool::new(false),
+                app_data_response_lock: AtomicBool::new(false),
+                app_data_response: UnsafeCell::new(crate::AppDataResponse::new()),
                 phase: AtomicU8::new(INSTALLING),
                 active: AtomicUsize::new(1),
                 gpio_leases: AtomicU32::new(0),
@@ -1087,6 +1132,21 @@ impl<T: Send + 'static> PackageStateStore<T> {
         })
     }
 
+    #[cfg(target_arch = "arm")]
+    fn with_app_data_response<R>(
+        expected: ExpectedState<T>,
+        f: impl FnOnce(&mut crate::AppDataResponse) -> R,
+    ) -> Option<R> {
+        let (_, runtime) = Self::running_firmware(expected)?;
+        let _entry = Self::enter(runtime)?;
+        let _borrow = borrow_firmware_app_data_response(runtime);
+        matches!(runtime.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then(|| {
+            // SAFETY: the response borrow serializes mutable access while the
+            // active entry keeps the runtime allocation live.
+            f(unsafe { &mut *runtime.app_data_response.get() })
+        })
+    }
+
     #[cfg(not(target_arch = "arm"))]
     fn enter(&self) -> Option<PackageStateEntry<'_, T>> {
         matches!(self.phase.load(Ordering::Acquire), INSTALLING | RUNNING).then_some(())?;
@@ -1185,12 +1245,14 @@ mod tests {
     }
 
     #[test]
-    fn firmware_runtime_owns_its_state_lock() {
+    fn firmware_runtime_owns_independent_state_and_app_data_response_locks() {
         let runtime = FirmwareRuntime {
             magic: RUNTIME_MAGIC,
             state_type: TypeId::of::<State>(),
             state: core::ptr::null_mut(),
             state_lock: AtomicBool::new(false),
+            app_data_response_lock: AtomicBool::new(false),
+            app_data_response: UnsafeCell::new(crate::AppDataResponse::new()),
             phase: AtomicU8::new(RUNNING),
             active: AtomicUsize::new(0),
             gpio_leases: AtomicU32::new(0),
@@ -1200,8 +1262,18 @@ mod tests {
 
         let borrow = super::borrow_firmware_runtime(&runtime);
         assert!(runtime.state_lock.load(Ordering::Acquire));
+        assert!(!runtime.app_data_response_lock.load(Ordering::Acquire));
+
+        let response_borrow = super::borrow_firmware_app_data_response(&runtime);
+        assert!(runtime.state_lock.load(Ordering::Acquire));
+        assert!(runtime.app_data_response_lock.load(Ordering::Acquire));
+
         drop(borrow);
         assert!(!runtime.state_lock.load(Ordering::Acquire));
+        assert!(runtime.app_data_response_lock.load(Ordering::Acquire));
+
+        drop(response_borrow);
+        assert!(!runtime.app_data_response_lock.load(Ordering::Acquire));
     }
 
     #[test]
@@ -1218,6 +1290,8 @@ mod tests {
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
                 state_lock: AtomicBool::new(false),
+                app_data_response_lock: AtomicBool::new(false),
+                app_data_response: UnsafeCell::new(crate::AppDataResponse::new()),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 gpio_leases: AtomicU32::new(0),
@@ -1243,6 +1317,8 @@ mod tests {
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
                 state_lock: AtomicBool::new(false),
+                app_data_response_lock: AtomicBool::new(false),
+                app_data_response: UnsafeCell::new(crate::AppDataResponse::new()),
                 phase: AtomicU8::new(STOPPING),
                 active: AtomicUsize::new(0),
                 gpio_leases: AtomicU32::new(0),
@@ -1275,6 +1351,8 @@ mod tests {
                 state_type: TypeId::of::<State>(),
                 state: state.as_ptr().cast(),
                 state_lock: AtomicBool::new(false),
+                app_data_response_lock: AtomicBool::new(false),
+                app_data_response: UnsafeCell::new(crate::AppDataResponse::new()),
                 phase: AtomicU8::new(RUNNING),
                 active: AtomicUsize::new(0),
                 gpio_leases: AtomicU32::new(0),

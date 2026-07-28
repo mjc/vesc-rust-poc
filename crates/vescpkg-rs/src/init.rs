@@ -1441,7 +1441,12 @@ mod tests {
         impl crate::AppDataHandler for Callback {
             type State = ConfigState;
 
-            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+            fn handle(
+                _: &mut Self::State,
+                _: crate::AppDataPacket<'_>,
+                _: &mut crate::AppDataResponse,
+            ) {
+            }
         }
 
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
@@ -1525,7 +1530,12 @@ mod tests {
         impl crate::AppDataHandler for Callback {
             type State = State;
 
-            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+            fn handle(
+                _: &mut Self::State,
+                _: crate::AppDataPacket<'_>,
+                _: &mut crate::AppDataResponse,
+            ) {
+            }
         }
 
         unsafe impl crate::__macro_support::PackageAppDataCallback for Callback {
@@ -1767,7 +1777,12 @@ mod tests {
         impl crate::AppDataHandler for WrongAppDataCallback {
             type State = WrongImuState;
 
-            fn handle(_: &mut Self::State, _: crate::AppDataPacket<'_>) {}
+            fn handle(
+                _: &mut Self::State,
+                _: crate::AppDataPacket<'_>,
+                _: &mut crate::AppDataResponse,
+            ) {
+            }
         }
 
         unsafe impl crate::__macro_support::PackageAppDataCallback for WrongAppDataCallback {
