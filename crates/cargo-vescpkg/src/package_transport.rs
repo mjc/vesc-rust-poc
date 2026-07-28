@@ -82,7 +82,29 @@ impl HwType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Firmware semantic version returned by VESC preflight.
+pub struct FirmwareVersion {
+    major: i8,
+    minor: i8,
+}
+
+impl FirmwareVersion {
+    /// Return the firmware major version.
+    #[must_use]
+    pub const fn major(self) -> i8 {
+        self.major
+    }
+
+    /// Return the firmware minor version.
+    #[must_use]
+    pub const fn minor(self) -> i8 {
+        self.minor
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FwVersionInfo {
+    version: FirmwareVersion,
     hw_type: HwType,
     has_qml_app: bool,
 }
@@ -376,6 +398,15 @@ impl BtlePackageInstallTransport {
     ) -> Result<Vec<u8>, PackageInstallError> {
         self.write_packet(COMM_CUSTOM_APP_DATA, payload)?;
         self.with_session(|session| session.receive_custom_app_data(timeout))
+    }
+
+    /// Return the firmware version captured during preflight.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no BLE session is open.
+    pub fn firmware_version(&self) -> Result<FirmwareVersion, PackageInstallError> {
+        self.with_session(|session| Ok(session.fw_info.version))
     }
 
     pub(crate) fn with_loopback_session<R>(
@@ -710,6 +741,7 @@ async fn open_session(target: LoopbackTarget) -> Result<VescSession, PackageInst
         responses: responses_rx,
         decoder: PacketDecoder::default(),
         fw_info: FwVersionInfo {
+            version: FirmwareVersion { major: 0, minor: 0 },
             hw_type: HwType::Vesc,
             has_qml_app: false,
         },
@@ -780,8 +812,10 @@ fn parse_fw_version_info(response: &[u8]) -> Result<FwVersionInfo, PackageInstal
         ));
     }
 
-    let _major = read_i8(&mut cursor)?;
-    let _minor = read_i8(&mut cursor)?;
+    let version = FirmwareVersion {
+        major: read_i8(&mut cursor)?,
+        minor: read_i8(&mut cursor)?,
+    };
     let _hw = read_string(&mut cursor)?;
     let _uuid = take_bytes(&mut cursor, 12)?;
     let _is_paired = read_i8(&mut cursor)?;
@@ -793,6 +827,7 @@ fn parse_fw_version_info(response: &[u8]) -> Result<FwVersionInfo, PackageInstal
     let qml_app = read_i8(&mut cursor)?;
 
     Ok(FwVersionInfo {
+        version,
         hw_type,
         has_qml_app: qml_app > 0,
     })
@@ -885,9 +920,9 @@ fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, Pac
 mod tests {
     use super::{
         COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
-        FwVersionInfo, HwType, ble_write_chunks, build_command_packet, build_lisp_upload_payload,
-        clear_response_state, drain_response_channel, parse_fw_version_info, parse_simple_ack,
-        parse_write_ack, recv_packet_until, retry,
+        FirmwareVersion, FwVersionInfo, HwType, ble_write_chunks, build_command_packet,
+        build_lisp_upload_payload, clear_response_state, drain_response_channel,
+        parse_fw_version_info, parse_simple_ack, parse_write_ack, recv_packet_until, retry,
     };
     use crate::vesc_uart::{PacketDecoder, encode_packet};
     use std::sync::mpsc;
@@ -906,6 +941,10 @@ mod tests {
         assert_eq!(
             parse_fw_version_info(&response).expect("firmware info"),
             FwVersionInfo {
+                version: FirmwareVersion {
+                    major: 75,
+                    minor: 15,
+                },
                 hw_type: HwType::VescBms,
                 has_qml_app: true,
             }

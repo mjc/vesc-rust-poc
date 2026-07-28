@@ -13,7 +13,7 @@ use vesc_protocol::control_loop::{
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
 use crate::package_install::PackageInstallError;
-use crate::package_transport::{BtlePackageInstallTransport, VescSession};
+use crate::package_transport::{BtlePackageInstallTransport, FirmwareVersion, VescSession};
 use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
@@ -54,14 +54,44 @@ pub fn run_loopback_probe(
 pub fn run_custom_app_data_probe(
     target: LoopbackTarget,
     payload: &[u8],
-) -> Result<Vec<u8>, DeployError> {
+) -> Result<CustomAppDataProbeReport, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport.open(target).map_err(DeployError::Transport)?;
-    let result = transport
-        .custom_app_data(payload, CUSTOM_APP_DATA_RESPONSE_TIMEOUT)
-        .map_err(DeployError::Transport);
+    let result = (|| {
+        let firmware_version = transport
+            .firmware_version()
+            .map_err(DeployError::Transport)?;
+        let response = transport
+            .custom_app_data(payload, CUSTOM_APP_DATA_RESPONSE_TIMEOUT)
+            .map_err(DeployError::Transport)?;
+        Ok(CustomAppDataProbeReport {
+            firmware_version,
+            response,
+        })
+    })();
     transport.close();
     result
+}
+
+/// One custom app-data response and its preflight firmware identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomAppDataProbeReport {
+    firmware_version: FirmwareVersion,
+    response: Vec<u8>,
+}
+
+impl CustomAppDataProbeReport {
+    /// Return the firmware version captured before the request.
+    #[must_use]
+    pub const fn firmware_version(&self) -> FirmwareVersion {
+        self.firmware_version
+    }
+
+    /// Return the package response payload.
+    #[must_use]
+    pub fn response(&self) -> &[u8] {
+        &self.response
+    }
 }
 
 /// Report produced by the no-actuation control-loop probe.

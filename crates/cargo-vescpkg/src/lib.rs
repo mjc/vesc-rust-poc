@@ -123,8 +123,14 @@ where
 fn run_custom_app_data(command: CustomAppDataArgs) -> ExitCode {
     let target = command.device.into_target();
     match deploy::run_custom_app_data_probe(target, &command.payload) {
-        Ok(response) => {
-            println!("custom app-data response: {response:02x?}");
+        Ok(report) => {
+            let version = report.firmware_version();
+            let response = report.response();
+            println!(
+                "custom app-data firmware={}.{} response: {response:02x?}",
+                version.major(),
+                version.minor()
+            );
             ExitCode::SUCCESS
         }
         Err(error) => {
