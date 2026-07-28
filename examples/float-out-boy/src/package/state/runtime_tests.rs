@@ -21,6 +21,21 @@ use vescpkg_rs::test_support::FirmwareTest;
 use std::vec::Vec;
 
 #[test]
+fn startup_initializes_time_epochs_from_live_clock_like_refloat() {
+    let now = TimestampTicks::from_ticks(1_000_000);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    state.initialize_time_epochs(now);
+
+    assert_eq!(state.engage_ticks, now);
+    assert_eq!(
+        state.disengage_ticks,
+        TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60))
+    );
+    assert_eq!(state.idle_ticks, now);
+}
+
+#[test]
 fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();

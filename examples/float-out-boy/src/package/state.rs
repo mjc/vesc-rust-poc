@@ -546,6 +546,15 @@ impl FloatOutBoyPackageState {
         self.idle_ticks = now;
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) fn initialize_time_epochs(&mut self, now: TimestampTicks) {
+        // C map: `time_init` initializes engage and idle from the live clock and
+        // stores `now - 60` for disengage at `third_party/float-out-boy/src/time.c:29-37`.
+        self.engage_ticks = now;
+        self.disengage_ticks = TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60));
+        self.idle_ticks = now;
+    }
+
     #[cfg(test)]
     pub(super) fn replace_idle_epoch_for_test(&mut self, now: TimestampTicks) {
         self.idle_ticks = now;
