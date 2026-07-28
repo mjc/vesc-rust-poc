@@ -505,23 +505,23 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::None);
 }
 
-#[test]
-fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
+fn full_switch_stopped_state(
+    dirty_landings_enabled: bool,
+) -> (FloatOutBoyPackageState, FirmwareTest, TimestampTicks) {
     let stop_ticks = TimestampTicks::from_ticks(100_000);
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
-    let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
     edit_config(&mut state, |config| {
         assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(4.0)));
-        assert!(config.set_dirty_landings_enabled(true));
+        assert!(config.set_dirty_landings_enabled(dirty_landings_enabled));
     });
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
         stop_ticks,
         telemetry.telemetry(),
-        imu,
+        telemetry.imu(),
         &[
             crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
@@ -536,7 +536,10 @@ fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
             .stop_condition(),
         FloatOutBoyStopCondition::SwitchFull
     );
+    (state, telemetry, stop_ticks)
+}
 
+fn prepare_ready_engagement(state: &mut FloatOutBoyPackageState, pitch: AngleRadians) {
     let payloads = state.all_data_payloads();
     let base = payloads.base();
     state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
@@ -557,13 +560,19 @@ fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
         payloads.mode3(),
         payloads.mode4(),
     );
-    state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(8.0)));
+    state.set_balance_filter_for_test(balance_filter_with_pitch(pitch));
+}
+
+#[test]
+fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
+    let (mut state, telemetry, stop_ticks) = full_switch_stopped_state(true);
+    prepare_ready_engagement(&mut state, AngleRadians::from_degrees(8.0));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
         TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
         telemetry.telemetry(),
-        imu,
+        telemetry.imu(),
         &[
             crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
