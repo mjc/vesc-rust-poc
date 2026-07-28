@@ -85,11 +85,24 @@ fn upright_no_footpads_payloads() -> FloatOutBoyAllDataPayloads {
 
 #[test]
 fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_update() {
-    for (adc1, adc2, expected_footpad) in [
-        (2.5, 0.0, FloatOutBoyFootpadState::Left),
-        (0.0, 2.5, FloatOutBoyFootpadState::Right),
+    for (adc1, adc2, erpm, expected_footpad, should_dismount) in [
+        (2.5, 0.0, 0.0, FloatOutBoyFootpadState::Left, true),
+        (0.0, 2.5, 0.0, FloatOutBoyFootpadState::Right, true),
+        (2.5, 0.0, 199.0, FloatOutBoyFootpadState::Left, true),
+        (0.0, 2.5, 200.0, FloatOutBoyFootpadState::Right, false),
     ] {
-        let telemetry = FirmwareTest::new();
+        let expected_final_state = if should_dismount {
+            FloatOutBoyRunState::Ready
+        } else {
+            FloatOutBoyRunState::Running
+        };
+        let telemetry = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(erpm)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
         telemetry.set_imu_ready(true);
         let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
         state.initialize_time_epochs(TimestampTicks::from_ticks(0));
@@ -119,7 +132,7 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
 
         for (ticks, expected_run_state) in [
             (32_500, FloatOutBoyRunState::Running),
-            (32_501, FloatOutBoyRunState::Ready),
+            (32_501, expected_final_state),
         ] {
             assert!(tick_float_out_boy_state_and_handle_packet(
                 &mut state,
@@ -149,7 +162,11 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
                 .status()
                 .ride_state()
                 .stop_condition(),
-            FloatOutBoyStopCondition::SwitchHalf,
+            if should_dismount {
+                FloatOutBoyStopCondition::SwitchHalf
+            } else {
+                FloatOutBoyStopCondition::None
+            },
         );
     }
 }
