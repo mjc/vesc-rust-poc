@@ -21,6 +21,14 @@ const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
 // stack size, so package call frames have the full 2048 bytes available.
 const LOADER_INIT_STACK_BUDGET: usize = 1024;
 const VESC_EVALUATOR_USABLE_STACK_BYTES: usize = 2048;
+// VESC bldc 9ff7e2ef runs UART and USB packet processing on 2048-byte threads
+// and invokes native app-data callbacks synchronously from that stack.
+const VESC_PACKET_THREAD_STACK_BYTES: usize = 2048;
+// This is cargo-vescpkg's safety reserve for the firmware packet parser,
+// command dispatcher, and callback caller frames, not a VESC-defined limit.
+const VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES: usize = 512;
+const APP_DATA_CALLBACK_STACK_BUDGET: usize =
+    VESC_PACKET_THREAD_STACK_BYTES - VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -86,7 +94,7 @@ pub(crate) fn build_package(root: &Path, options: &BuildOptions) -> Result<PathB
     let package = select_package(&metadata, &options.package)?;
     let artifacts = cargo_build(root, options, &package)?;
     validate_flat_image_relocations(&artifacts.elf)?;
-    validate_loader_init_stack(&artifacts.elf)?;
+    validate_native_stack(&artifacts.elf)?;
     let package_slug = package_slug(&package.display_name);
     let artifact_name = format!("{package_slug}-{}", package.version);
     let artifact_root = metadata_target_dir(&metadata)?.join("vescpkg");
@@ -525,13 +533,56 @@ fn validate_flat_image_relocations(elf: &Path) -> Result<(), BuildError> {
     validate_relocation_report(&report)
 }
 
-fn validate_loader_init_stack(elf: &Path) -> Result<(), BuildError> {
+fn validate_native_stack(elf: &Path) -> Result<(), BuildError> {
     let output = command_output(
         Command::new("arm-none-eabi-objdump")
             .args(["--disassemble", "--demangle=rust"])
             .arg(elf),
     )?;
-    validate_loader_init_stack_report(&String::from_utf8_lossy(&output.stdout))
+    let report = String::from_utf8_lossy(&output.stdout);
+    validate_loader_init_stack_report(&report)?;
+    validate_app_data_callback_stack_report(&report)
+}
+
+fn numbered_register(register: &str) -> Option<(char, usize)> {
+    let mut characters = register.chars();
+    let class = characters.next()?;
+    matches!(class, 'r' | 's' | 'd' | 'q')
+        .then(|| {
+            characters
+                .as_str()
+                .parse()
+                .ok()
+                .map(|number| (class, number))
+        })
+        .flatten()
+}
+
+fn register_width(class: char) -> usize {
+    match class {
+        'd' => 8,
+        'q' => 16,
+        _ => std::mem::size_of::<u32>(),
+    }
+}
+
+fn saved_register_bytes(registers: &str) -> usize {
+    registers
+        .split(',')
+        .map(str::trim)
+        .map(|register| {
+            register
+                .split_once('-')
+                .and_then(|(first, last)| {
+                    let (first_class, first) = numbered_register(first)?;
+                    let (last_class, last) = numbered_register(last)?;
+                    (first_class == last_class && first <= last)
+                        .then(|| (last - first + 1) * register_width(first_class))
+                })
+                .or_else(|| numbered_register(register).map(|(class, _)| register_width(class)))
+                .unwrap_or(std::mem::size_of::<u32>())
+        })
+        .sum()
 }
 
 #[allow(clippy::manual_let_else)]
@@ -557,7 +608,9 @@ fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, Bui
         };
 
         let fields = line.split_whitespace().collect::<Vec<_>>();
-        let saves_registers = fields.iter().any(|field| field.starts_with("push"))
+        let saves_registers = fields
+            .iter()
+            .any(|field| matches!(*field, "push" | "push.w" | "vpush"))
             || fields
                 .windows(2)
                 .any(|fields| fields[0].starts_with("stmdb") && fields[1] == "sp!,");
@@ -567,7 +620,7 @@ fn disassembled_functions(report: &str) -> Result<Vec<DisassembledFunction>, Bui
                 .and_then(|(_, registers)| registers.split_once('}'))
                 .map(|(registers, _)| registers)
         {
-            function.stack_bytes += registers.split(',').count() * std::mem::size_of::<u32>();
+            function.stack_bytes += saved_register_bytes(registers);
         }
 
         if let Some(subtract) = fields.iter().position(|field| field.starts_with("sub")) {
@@ -651,6 +704,23 @@ fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
             "{} call chain uses {call_chain_bytes} bytes of stack, exceeding the VESC Lisp evaluator's {VESC_EVALUATOR_USABLE_STACK_BYTES} bytes of usable stack; its direct frame must also stay within the {LOADER_INIT_STACK_BUDGET}-byte package budget",
             initializer.name,
         )));
+    }
+    Ok(())
+}
+
+fn validate_app_data_callback_stack_report(report: &str) -> Result<(), BuildError> {
+    let functions = disassembled_functions(report)?;
+    for callback in functions
+        .iter()
+        .filter(|function| function.name.ends_with("app_data_callback"))
+    {
+        let call_chain_bytes = stack_through(&callback.name, &functions, &mut Vec::new());
+        if call_chain_bytes > APP_DATA_CALLBACK_STACK_BUDGET {
+            return Err(BuildError(format!(
+                "{} call chain uses {call_chain_bytes} bytes of stack; cargo-vescpkg permits at most {APP_DATA_CALLBACK_STACK_BUDGET} package bytes so {VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES} bytes remain within VESC's {VESC_PACKET_THREAD_STACK_BYTES}-byte UART/USB packet thread",
+                callback.name,
+            )));
+        }
     }
     Ok(())
 }
@@ -823,9 +893,11 @@ fn package_slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildOptions, PackageMetadata, PayloadKind, VESC_TARGET, build_package_bytes,
-        cargo_build_command, cargo_message_artifacts, command_failure_message, package_slug,
-        select_package, stage_generated_assets, validate_descriptor_fullscreen,
+        APP_DATA_CALLBACK_STACK_BUDGET, BuildOptions, PackageMetadata, PayloadKind,
+        VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES, VESC_PACKET_THREAD_STACK_BYTES, VESC_TARGET,
+        build_package_bytes, cargo_build_command, cargo_message_artifacts, command_failure_message,
+        package_slug, select_package, stage_generated_assets,
+        validate_app_data_callback_stack_report, validate_descriptor_fullscreen,
         validate_image_offset_relocations, validate_loader_entrypoint_layout,
         validate_loader_init_stack_report, validate_relocation_report, validate_target,
         validate_writable_section_report,
@@ -1135,6 +1207,59 @@ Symbol table '.symtab' contains 2 entries:\n\
 
         assert!(error.to_string().contains("2056 bytes"));
         assert!(error.to_string().contains("2048 bytes of usable stack"));
+    }
+
+    #[test]
+    fn rejects_an_app_data_callback_that_exceeds_the_real_vesc_packet_thread_after_reserve() {
+        let report = "\
+0000b1f0 <__vescpkg_image_offset_float_out_boy_app_data_callback>:\n\
+    b1f0:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    b1f4:\te92d 0f80 \tstmdb\tsp!, {r7, r8, r9, sl, fp}\n\
+    b1f8:\ted2d 8b10 \tvpush\t{d8-d15}\n\
+    b1fc:\tf5ad 6db5 \tsub.w\tsp, sp, #1448\t@ 0x5a8\n";
+
+        let error =
+            validate_app_data_callback_stack_report(report).expect_err("oversized callback");
+
+        assert!(error.to_string().contains("1552 bytes"));
+        assert!(error.to_string().contains("at most 1536 package bytes"));
+        assert!(error.to_string().contains("512 bytes remain"));
+        assert!(error.to_string().contains("VESC's 2048-byte"));
+    }
+
+    #[test]
+    fn rejects_an_app_data_callback_call_chain_larger_than_its_budget() {
+        let report = "\
+00001000 <example_app_data_callback>:\n\
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    1002:\tb09b      \tsub\tsp, #108\n\
+    1004:\tf000 f801 \tbl\t2000 <helper>\n\
+00002000 <helper>:\n\
+    2000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    2002:\tf5ad 7daf \tsub.w\tsp, sp, #1400\n";
+
+        let error =
+            validate_app_data_callback_stack_report(report).expect_err("oversized call chain");
+
+        assert!(error.to_string().contains("1548 bytes"));
+    }
+
+    #[test]
+    fn accepts_an_app_data_callback_when_package_and_firmware_fill_the_real_vesc_stack() {
+        let report = "\
+00001000 <example_app_data_callback>:\n\
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    1002:\tb09b      \tsub\tsp, #108\n\
+    1004:\tf000 f801 \tbl\t2000 <helper>\n\
+00002000 <helper>:\n\
+    2000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    2002:\tf5ad 7dac \tsub.w\tsp, sp, #1388\n";
+
+        assert!(validate_app_data_callback_stack_report(report).is_ok());
+        assert_eq!(
+            APP_DATA_CALLBACK_STACK_BUDGET + VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES,
+            VESC_PACKET_THREAD_STACK_BYTES
+        );
     }
 
     #[test]

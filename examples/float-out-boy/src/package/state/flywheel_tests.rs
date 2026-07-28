@@ -877,6 +877,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
         state.internal_led_confirmation_start_for_test(),
         Some(0.7505)
     );
+    state.apply_pending_internal_led_refresh();
 
     for (index, footpad) in [
         FloatOutBoyFootpadState::Left,

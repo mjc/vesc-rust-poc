@@ -36,8 +36,7 @@ enum FloatOutBoyRuntimeThread {
 impl FloatOutBoyRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
-            Self::Main => 3072,
-            Self::Aux => 2048,
+            Self::Main | Self::Aux => 3072,
         }
     }
 
@@ -63,10 +62,13 @@ impl FloatOutBoyRuntimeThread {
 /// with working areas of 1536 and 1024 bytes at
 /// third_party/float-out-boy/src/main.c:2438-2445. The Rust main loop reserves
 /// 3072 bytes because its entry also performs the persisted-config read moved off
-/// VESC's undersized evaluator stack. The auxiliary thread reserves 2048 bytes
+/// VESC's undersized evaluator stack. The auxiliary thread reserves 3072 bytes
 /// because it performs Refloat's post-spawn LED hardware setup without
-/// consuming the loader's fixed 2048-byte evaluator stack. VESC forwards these byte counts directly
-/// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
+/// consuming the loader's fixed 2048-byte evaluator stack. Its linked LED
+/// reconfiguration chain measures 1948 bytes, so it also requests 3072 bytes
+/// and retains 2656 usable bytes after VESC/ChibiOS working-area overhead. VESC
+/// forwards these byte counts directly to chThdCreateStatic at
+/// third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
 fn float_out_boy_runtime_threads() -> Result<
     [vescpkg_rs::ThreadSpec<FloatOutBoyPackageState>; 2],
@@ -207,6 +209,7 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
     store_backup: impl FnOnce() -> bool,
 ) -> Option<bool> {
+    state.apply_pending_internal_led_refresh();
     state.render_internal_leds(telemetry, current_time, paint_leds);
     let stored = state.aux_backup_due(odometer).then(|| {
         let stored = store_backup();
@@ -416,9 +419,10 @@ mod tests {
     use vescpkg_rs::test_support::FirmwareTest;
 
     #[test]
-    fn float_out_boy_main_thread_reserves_the_generated_rust_working_area() {
+    fn float_out_boy_runtime_threads_reserve_their_measured_rust_working_areas() {
         // The persisted-config call chain measured 1976 bytes before ChibiOS's
-        // thread metadata, saved contexts, and interrupt reserve.
+        // thread metadata, saved contexts, and interrupt reserve. The aux LED
+        // reconfiguration chain measures 1948 bytes.
         assert_eq!(
             super::FloatOutBoyRuntimeThread::Main
                 .working_area_size()
@@ -431,7 +435,7 @@ mod tests {
                 .working_area_size()
                 .expect("valid aux working area")
                 .usable_stack_bytes(),
-            1_632,
+            2_656,
         );
     }
 

@@ -1229,7 +1229,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 }
 
 #[test]
-fn storing_led_config_replaces_internal_renderer_immediately() {
+fn storing_led_config_defers_internal_renderer_replacement_to_the_aux_thread() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
@@ -1237,10 +1237,14 @@ fn storing_led_config_replaces_internal_renderer_immediately() {
     assert!(state.internal_leds.is_none());
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
+    assert!(state.internal_leds.is_none());
+    state.apply_pending_internal_led_refresh();
     assert!(state.internal_leds.is_some());
 
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Off.id();
     assert!(state.store_serialized_config(&bytes));
+    assert!(state.internal_leds.is_some());
+    state.apply_pending_internal_led_refresh();
     assert!(state.internal_leds.is_none());
 }
 
@@ -1251,6 +1255,7 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
     let mut bytes = default_float_out_boy_config_bytes();
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
+    state.apply_pending_internal_led_refresh();
 
     assert!(!state.destroy_internal_leds_with(|_| false));
     assert!(state.internal_leds.is_some());

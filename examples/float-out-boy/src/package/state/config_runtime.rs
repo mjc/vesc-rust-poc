@@ -52,17 +52,11 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
     state
         .lcm
         .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
-    #[cfg(any(test, target_arch = "arm"))]
-    let internal_stopped = state.destroy_internal_leds();
-    if let Some((hardware, config)) = state.effective_led_config() {
-        #[cfg(not(any(test, target_arch = "arm")))]
-        let _ = hardware;
+    if let Some((_, config)) = state.effective_led_config() {
         state.lcm.configure(config);
-        #[cfg(any(test, target_arch = "arm"))]
-        if internal_stopped {
-            state.refresh_internal_leds_from_config(hardware, config);
-        }
     }
+    #[cfg(any(test, target_arch = "arm"))]
+    state.request_internal_led_refresh();
 }
 
 pub(super) fn refresh_led_effects(state: &mut FloatOutBoyPackageState) {

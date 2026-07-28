@@ -222,6 +222,10 @@ pub struct FloatOutBoyPackageState {
     #[cfg(target_arch = "arm")]
     internal_leds: Option<internal_leds::RuntimeAllocation>,
     #[cfg(any(test, target_arch = "arm"))]
+    internal_led_refresh_pending: bool,
+    #[cfg(any(test, target_arch = "arm"))]
+    internal_led_confirmation_pending: Option<TimestampTicks>,
+    #[cfg(any(test, target_arch = "arm"))]
     firmware_version: Option<FirmwareVersion>,
 }
 
@@ -304,6 +308,10 @@ impl FloatOutBoyPackageState {
             internal_leds: None,
             #[cfg(target_arch = "arm")]
             internal_leds: None,
+            #[cfg(any(test, target_arch = "arm"))]
+            internal_led_refresh_pending: false,
+            #[cfg(any(test, target_arch = "arm"))]
+            internal_led_confirmation_pending: None,
             #[cfg(any(test, target_arch = "arm"))]
             firmware_version: None,
         }
@@ -819,6 +827,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Handle one app-data packet after refreshing live telemetry fields.
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub fn handle_packet_with_telemetry(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -826,23 +835,61 @@ impl FloatOutBoyPackageState {
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
+        self.handle_control_packet(now, bytes)
+            || self.handle_handtest_packet(bytes)
+            || self.handle_config_packet(now, bytes)
+            || self.handle_flywheel_packet(bytes)
+            || self.handle_tuning_packet(now, bytes)
+            || self.handle_query_packet(telemetry, now, send, bytes)
+            || self.send_all_data_packet_response(telemetry, send, bytes)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_control_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
-            || self.handle_handtest_packet(bytes)
-            || self.handle_config_command(bytes, now)
-            || self.handle_flywheel_packet(bytes)
-            || tuning::handle_runtime_tune_packet(self, now, bytes)
+            || self.handle_rc_move_packet(bytes)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_config_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
+        self.handle_config_command(bytes, now)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_tuning_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
+        tuning::handle_runtime_tune_packet(self, now, bytes)
             || tuning::handle_tilt_tune_packet(self, bytes)
             || tuning::handle_other_tune_packet(self, now, bytes)
             || tuning::handle_booster_packet(self, bytes)
-            || self.handle_rc_move_packet(bytes)
-            || self.handle_alert_packet(telemetry, send, bytes)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_query_packet(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        now: &mut impl FnMut() -> TimestampTicks,
+        send: &mut impl FnMut(&[u8]) -> bool,
+        bytes: &[u8],
+    ) -> bool {
+        self.handle_alert_packet(telemetry, send, bytes)
             || self.handle_lcm_packet(telemetry, send, bytes)
             || self.handle_data_recorder_packet(send, bytes)
             || self.send_metadata_packet_response(send, bytes)
             || self.send_legacy_realtime_data_packet_response(send, bytes)
             || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
-            || self.send_all_data_packet_response(telemetry, send, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

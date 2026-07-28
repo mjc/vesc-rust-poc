@@ -33,7 +33,35 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
 }
 
 impl FloatOutBoyPackageState {
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) fn request_internal_led_refresh(&mut self) {
+        self.internal_led_refresh_pending = true;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn apply_pending_internal_led_refresh(&mut self) {
+        if !core::mem::take(&mut self.internal_led_refresh_pending) {
+            return;
+        }
+        if !self.destroy_internal_leds() {
+            self.internal_led_refresh_pending = true;
+            return;
+        }
+        if let Some((hardware, config)) = self.effective_led_config() {
+            self.refresh_internal_leds_from_config(hardware, config);
+        }
+        if let Some(timestamp) = self.internal_led_confirmation_pending.take() {
+            self.start_internal_led_confirmation(timestamp);
+        }
+    }
+
     pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
+        #[cfg(any(test, target_arch = "arm"))]
+        if self.internal_led_refresh_pending {
+            self.internal_led_confirmation_pending
+                .get_or_insert(system_time_ticks);
+            return;
+        }
         let current_time = system_time_ticks.as_vesc_seconds().as_seconds();
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
@@ -162,6 +190,10 @@ impl FloatOutBoyPackageState {
         self.internal_leds
             .as_ref()
             .map(|runtime| runtime.renderer.confirmation_start_for_test())
+            .or_else(|| {
+                self.internal_led_confirmation_pending
+                    .map(|timestamp| timestamp.as_vesc_seconds().as_seconds())
+            })
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.

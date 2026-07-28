@@ -122,6 +122,7 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub(super) fn send_all_data_packet_response(
         &self,
         telemetry: &impl MotorTelemetry,

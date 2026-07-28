@@ -165,6 +165,7 @@ mod tests {
         let mut config = default_float_out_boy_config_bytes();
         config[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
         assert!(state.store_serialized_config(&config));
+        state.apply_pending_internal_led_refresh();
         assert!(state.internal_leds_operational());
 
         assert_eq!(stop(&mut state), vescpkg_rs::PackageStopDisposition::Drop,);
@@ -179,6 +180,7 @@ mod tests {
         let mut config = default_float_out_boy_config_bytes();
         config[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
         assert!(state.store_serialized_config(&config));
+        state.apply_pending_internal_led_refresh();
 
         let disposition = stop_with(&mut state, |state| {
             state.destroy_internal_leds_with(|_| false)

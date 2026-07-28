@@ -265,6 +265,7 @@ impl FloatOutBoyPackageState {
     ) {
         self.refresh_footpad_runtime_state(adc1, adc2);
         self.refresh_led_config_runtime_state();
+        self.apply_pending_internal_led_refresh();
     }
 
     pub(super) fn alert_after_configure(&mut self) {
