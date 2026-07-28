@@ -136,10 +136,10 @@ impl FloatOutBoyMotorControl {
             self.parking_brake_active = false;
         }
         if self.parking_brake_active && !parking_brake_was_active {
-            // C map: upstream initializes `brake_timer` against package-local
-            // time at `third_party/float-out-boy/src/motor_control.c:29`, so the
-            // first idle apply does not immediately trip `timer_older` at
-            // `third_party/float-out-boy/src/motor_control.c:106`.
+            // Intentional Refloat bug fix: upstream initializes `brake_timer`
+            // to zero at `third_party/float-out-boy/src/motor_control.c:29`.
+            // Activating the parking brake after one second of controller uptime
+            // can therefore release it immediately at `motor_control.c:106`.
             self.brake_timer_ticks = system_time_ticks;
         }
 
@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn motor_control_seeds_idle_brake_timer_on_ready_entry_like_float_out_boy() {
+    fn motor_control_seeds_idle_brake_timer_instead_of_reproducing_refloat_uptime_bug() {
         let motor = FirmwareTest::new();
         let bindings = motor.motor();
         let mut control = FloatOutBoyMotorControl::new();
@@ -266,10 +266,10 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
 
-        // C map: Float Out Boy initializes `brake_timer` with package-local time at
-        // `third_party/float-out-boy/src/motor_control.c:29`, then lets stopped idle
-        // output hold the parking brake until `timer_older(..., 1)` at
-        // `third_party/float-out-boy/src/motor_control.c:101-114`.
+        // Refloat initializes `brake_timer` to zero at
+        // `third_party/float-out-boy/src/motor_control.c:29`, so first activation
+        // after one second of controller uptime can release immediately. Rust
+        // starts the same one-second hold when the parking brake becomes active.
         assert_eq!(motor.keep_alive_count(), 1);
         assert_eq!(motor.duty_command_count(), 1);
         assert_eq!(motor.current_command_count(), 0);
