@@ -729,7 +729,7 @@ fn evaluate_engagement(
         && !float_out_boy_ticks_elapsed(system_time_ticks, state.fault_angle_pitch_ticks, 1);
     let pitch_tolerance = startup.pitch_tolerance()
         + AngleDegrees::from_degrees(f32::from(
-            u8::from(dirty_landing_margin) * DIRTY_LANDING_PITCH_MARGIN_DEGREES,
+            u8::from(dirty_landing_margin).saturating_mul(DIRTY_LANDING_PITCH_MARGIN_DEGREES),
         ));
     let roll_tolerance = startup.roll_tolerance();
     let ready_engage = !input.startup_became_ready
