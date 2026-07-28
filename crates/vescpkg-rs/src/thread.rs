@@ -624,7 +624,8 @@ impl core::fmt::Display for ThreadWorkingAreaSizeError {
 impl core::error::Error for ThreadWorkingAreaSizeError {}
 
 impl ThreadWorkingAreaSize {
-    const MIN_BYTES: usize = 416;
+    const F407_OVERHEAD_BYTES: usize = 416;
+    const MIN_BYTES: usize = Self::F407_OVERHEAD_BYTES;
     const WORKING_AREA_ALIGNMENT_BYTES: usize = 8;
 
     /// Build a working-area size from its firmware byte count.
@@ -644,6 +645,16 @@ impl ThreadWorkingAreaSize {
 
     pub(crate) const fn bytes(self) -> usize {
         self.0
+    }
+
+    /// Return ordinary call-stack capacity on the pinned VESC F407 `ChibiOS` layout.
+    ///
+    /// VESC passes package thread sizes directly to `chThdCreateStatic`, so the
+    /// supplied working area also contains the thread metadata, saved ARM/FPU
+    /// contexts, and interrupt reserve.
+    #[must_use]
+    pub const fn usable_stack_bytes(self) -> usize {
+        self.0 - Self::F407_OVERHEAD_BYTES
     }
 }
 
@@ -1367,6 +1378,22 @@ mod tests {
                 .unwrap()
                 .bytes(),
             1_536
+        );
+    }
+
+    #[test]
+    fn thread_working_area_reports_f407_usable_stack_bytes() {
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(1_536)
+                .unwrap()
+                .usable_stack_bytes(),
+            1_120,
+        );
+        assert_eq!(
+            ThreadWorkingAreaSize::try_from_bytes(3_072)
+                .unwrap()
+                .usable_stack_bytes(),
+            2_656,
         );
     }
 

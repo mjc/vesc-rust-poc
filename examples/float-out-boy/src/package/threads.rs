@@ -7,7 +7,7 @@
 use super::state::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use core::time::Duration;
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::ThreadWorkingAreaSize;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
@@ -41,7 +41,7 @@ impl FloatOutBoyRuntimeThread {
         }
     }
 
-    #[cfg(target_arch = "arm")]
+    #[cfg(any(test, target_arch = "arm"))]
     const fn working_area_size(
         self,
     ) -> Result<ThreadWorkingAreaSize, vescpkg_rs::ThreadWorkingAreaSizeError> {
@@ -437,8 +437,20 @@ mod tests {
     fn float_out_boy_main_thread_reserves_the_generated_rust_working_area() {
         // The persisted-config call chain measured 1976 bytes before ChibiOS's
         // thread metadata, saved contexts, and interrupt reserve.
-        assert_eq!(super::FloatOutBoyRuntimeThread::Main.stack_bytes(), 3072);
-        assert_eq!(super::FloatOutBoyRuntimeThread::Aux.stack_bytes(), 2048);
+        assert_eq!(
+            super::FloatOutBoyRuntimeThread::Main
+                .working_area_size()
+                .expect("valid main working area")
+                .usable_stack_bytes(),
+            2_656,
+        );
+        assert_eq!(
+            super::FloatOutBoyRuntimeThread::Aux
+                .working_area_size()
+                .expect("valid aux working area")
+                .usable_stack_bytes(),
+            1_632,
+        );
     }
 
     #[test]
