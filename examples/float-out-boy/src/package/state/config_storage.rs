@@ -232,7 +232,7 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn restore_and_configure_from_eeprom(&mut self) {
         self.read_config_from_eeprom();
-        self.alert_configured_state();
+        self.alert_after_configure();
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -250,7 +250,7 @@ impl FloatOutBoyPackageState {
         super::config_runtime::refresh_led_effects(self);
         self.refresh_config_runtime_state();
         self.firmware_imu_migration = migrate_legacy_firmware_imu_settings();
-        self.alert_configured_state();
+        self.alert_after_configure();
         self.startup_configured = true;
     }
 
@@ -269,7 +269,7 @@ impl FloatOutBoyPackageState {
         self.refresh_led_config_runtime_state();
     }
 
-    pub(super) fn alert_configured_state(&mut self) {
+    pub(super) fn alert_after_configure(&mut self) {
         let run_state = self
             .all_data_payloads
             .base()
@@ -406,7 +406,7 @@ impl FloatOutBoyPackageState {
         // `configure(d)` applies the new beeper setting, then acknowledges
         // disabled state with three short beeps and every other state with one
         // at `third_party/float-out-boy/src/main.c:219-227`.
-        self.alert_configured_state();
+        self.alert_after_configure();
         true
     }
 
