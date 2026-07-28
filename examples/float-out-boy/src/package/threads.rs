@@ -107,21 +107,15 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyMainThreadTick {
     sleep_us: u32,
-    beeper_configuration_level: Option<vescpkg_rs::DigitalOutputLevel>,
-    beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
+    beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
 
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyMainThreadTick {
-    const fn new(
-        sleep_us: u32,
-        beeper_configuration_level: Option<vescpkg_rs::DigitalOutputLevel>,
-        beeper_level: Option<vescpkg_rs::DigitalOutputLevel>,
-    ) -> Self {
+    const fn new(sleep_us: u32, beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>) -> Self {
         Self {
             sleep_us,
-            beeper_configuration_level,
-            beeper_level,
+            beeper_pin_level,
         }
     }
 
@@ -131,19 +125,7 @@ impl FloatOutBoyMainThreadTick {
 
     #[cfg(test)]
     const fn beeper_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
-        self.beeper_level
-    }
-
-    #[cfg(test)]
-    const fn beeper_configuration_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
-        self.beeper_configuration_level
-    }
-
-    const fn beeper_pin_level(self) -> Option<vescpkg_rs::DigitalOutputLevel> {
-        match self.beeper_level {
-            Some(level) => Some(level),
-            None => self.beeper_configuration_level,
-        }
+        self.beeper_pin_level
     }
 }
 
@@ -163,9 +145,7 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
     // `third_party/float-out-boy/src/main.c:772-1080`.
     // C calls `beeper_update` before its state switch at
     // `third_party/float-out-boy/src/main.c:776-824`.
-    let alert_level = state
-        .tick_beeper()
-        .map(crate::beeper::FloatOutBoyBeeperLevel::digital_output);
+    let alert_level = state.tick_beeper();
     state.refresh_main_loop_runtime_state(
         telemetry,
         imu,
@@ -182,18 +162,15 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
         .run_state();
     state.apply_motor_control(motor, run_state, system_time_ticks);
     state.sample_data_recorder(system_time_ticks);
-    let beeper_level = state
-        .take_beeper_level()
-        .map(crate::beeper::FloatOutBoyBeeperLevel::digital_output)
-        .or(alert_level);
+    let beeper_level = state.take_beeper_level().or(alert_level);
 
-    FloatOutBoyMainThreadTick::new(
-        state.configured_loop_time_us(),
-        state
-            .take_beeper_configuration_request()
-            .then_some(vescpkg_rs::DigitalOutputLevel::Low),
-        beeper_level,
-    )
+    let configure_beeper = state.take_beeper_configuration_request();
+    let beeper_pin_level = match beeper_level {
+        None if configure_beeper => Some(crate::beeper::FloatOutBoyBeeperLevel::Low),
+        level => level,
+    };
+
+    FloatOutBoyMainThreadTick::new(state.configured_loop_time_us(), beeper_pin_level)
 }
 
 /// Run Float Out Boy's source-backed auxiliary thread scheduler shell.
@@ -342,7 +319,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     )
                 });
                 tick.map_or(1, |tick| {
-                    if let Some(level) = tick.beeper_pin_level() {
+                    if let Some(level) = tick.beeper_pin_level {
                         if let Ok(pin) = firmware.gpio().acquire_digital(DigitalPin::PPM) {
                             let _ = pin.set_mode(GpioMode::Output);
                             let _ = pin.write(level);
@@ -614,7 +591,6 @@ mod tests {
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
         state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
         let mut changes = std::vec::Vec::new();
-        let mut configure_ticks = std::vec::Vec::new();
 
         for tick in 1..=160 {
             let result = super::tick_float_out_boy_main_thread_with(
@@ -629,16 +605,8 @@ mod tests {
             if let Some(level) = result.beeper_level() {
                 changes.push((tick, level));
             }
-            if result.beeper_configuration_level().is_some() {
-                configure_ticks.push(tick);
-                assert_eq!(
-                    result.beeper_configuration_level(),
-                    Some(DigitalOutputLevel::Low)
-                );
-            }
         }
 
-        assert_eq!(configure_ticks, [1]);
         assert_eq!(
             changes,
             [
@@ -647,6 +615,30 @@ mod tests {
                 (160, DigitalOutputLevel::High),
             ]
         );
+    }
+
+    #[test]
+    fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
+        let telemetry = FirmwareTest::new();
+        let imu = telemetry.imu();
+        let motor = telemetry.motor();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut config = default_float_out_boy_config_bytes();
+        config[242] = 1;
+        assert!(state.store_serialized_config(&config));
+        state.force_beeper_on();
+
+        super::tick_float_out_boy_main_thread_with(
+            &mut state,
+            telemetry.telemetry(),
+            imu,
+            motor,
+            AdcVoltage::new(Voltage::ZERO),
+            AdcVoltage::new(Voltage::ZERO),
+            TimestampTicks::from_ticks(0),
+        );
+
+        assert!(!state.take_beeper_configuration_request());
     }
 
     #[test]
@@ -682,17 +674,6 @@ mod tests {
 
         assert!(state.take_beeper_configuration_request());
         assert!(!state.take_beeper_configuration_request());
-    }
-
-    #[test]
-    fn beeper_transition_wins_when_pin_setup_occurs_on_the_same_tick() {
-        let tick = super::FloatOutBoyMainThreadTick::new(
-            1,
-            Some(DigitalOutputLevel::Low),
-            Some(DigitalOutputLevel::High),
-        );
-
-        assert_eq!(tick.beeper_pin_level(), Some(DigitalOutputLevel::High));
     }
 
     #[test]

@@ -1,21 +1,6 @@
 //! Float Out Boy external-beeper sequencing.
 
-/// External-beeper output level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FloatOutBoyBeeperLevel {
-    Low,
-    High,
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl FloatOutBoyBeeperLevel {
-    pub(crate) const fn digital_output(self) -> vescpkg_rs::DigitalOutputLevel {
-        match self {
-            Self::Low => vescpkg_rs::DigitalOutputLevel::Low,
-            Self::High => vescpkg_rs::DigitalOutputLevel::High,
-        }
-    }
-}
+pub(crate) use vescpkg_rs::DigitalOutputLevel as FloatOutBoyBeeperLevel;
 
 /// Source-defined alert sequences used by Float Out Boy's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -451,10 +451,13 @@ impl FloatOutBoyPackageState {
         // Refloat checks this only during startup, so enabling the beeper later
         // can write through a PPM pin that is still configured as an input.
         // Acquire it on the first configuration that actually needs the output.
-        let configure = (self.serialized_config.beeper_enabled() || !uses_ppm_input)
-            && !self.beeper_flags.pin_configured;
-        self.beeper_flags.pin_configured |= configure;
-        configure
+        if self.beeper_flags.pin_configured
+            || (!self.serialized_config.beeper_enabled() && uses_ppm_input)
+        {
+            return false;
+        }
+        self.beeper_flags.pin_configured = true;
+        true
     }
 
     #[cfg(any(test, target_arch = "arm"))]
