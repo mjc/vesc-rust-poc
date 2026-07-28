@@ -172,6 +172,47 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
 }
 
 #[test]
+fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays() {
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    telemetry.set_imu_ready(true);
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::ZERO),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
+
+    for ticks in [0, 2_501, 10_001] {
+        assert!(tick_float_out_boy_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(ticks),
+            telemetry.telemetry(),
+            telemetry.imu(),
+            &[
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
+        assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::None);
+    }
+
+    assert!(state.apply_motor_control(
+        telemetry.motor(),
+        FloatOutBoyRunState::Running,
+        TimestampTicks::from_ticks(10_001),
+    ));
+    assert_eq!(telemetry.current_command_count(), 1);
+}
+
+#[test]
 fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
