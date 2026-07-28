@@ -344,7 +344,13 @@ fn disabled_config_applies_before_startup_ready_like_float_out_boy() {
 #[test]
 fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new();
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
     telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
         ImuRoll::new(AngleRadians::from_radians(0.0)),
@@ -426,6 +432,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.motor_kinematics.average(), Rpm::ZERO);
     assert!(!state.apply_requested_motor_current(bindings));
 }
 

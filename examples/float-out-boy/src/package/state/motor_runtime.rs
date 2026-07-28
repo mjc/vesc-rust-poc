@@ -72,6 +72,11 @@ impl FloatOutBoyMotorCurrentFilter {
             Current::from_amps(output),
         ))
     }
+
+    pub(super) fn reset_runtime(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -164,5 +169,21 @@ mod tests {
         let directional = DirectionalMotorCurrent::new(Current::from_amps(-6.75));
 
         assert_eq!(filter.process(directional).current(), directional);
+    }
+
+    #[test]
+    fn current_filter_runtime_reset_clears_biquad_history_like_refloat_engage() {
+        let mut filter = FloatOutBoyMotorCurrentFilter::source_startup();
+        filter.configure(Frequency::from_hertz(10.0), SampleRate::from_hertz(500.0));
+        let _ = filter.process(DirectionalMotorCurrent::new(Current::from_amps(20.0)));
+
+        filter.reset_runtime();
+
+        assert_eq!(
+            filter
+                .process(DirectionalMotorCurrent::new(Current::ZERO))
+                .current(),
+            DirectionalMotorCurrent::new(Current::ZERO)
+        );
     }
 }

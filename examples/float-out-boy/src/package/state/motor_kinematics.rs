@@ -63,8 +63,7 @@ impl MotorKinematicsTracker {
         let previous_abs_erpm = self.smoothed_abs_erpm.as_revolutions_per_minute();
         let current_abs_erpm = motor_erpm.abs().as_revolutions_per_minute();
         self.smoothed_abs_erpm = vescpkg_rs::prelude::Rpm::from_revolutions_per_minute(
-            previous_abs_erpm
-                + ABS_ERPM_SMOOTHING_FACTOR * (current_abs_erpm - previous_abs_erpm),
+            previous_abs_erpm + ABS_ERPM_SMOOTHING_FACTOR * (current_abs_erpm - previous_abs_erpm),
         );
 
         // C map: `third_party/float-out-boy/src/motor_data.c:128-133` subtracts the previous ERPM,
@@ -75,6 +74,12 @@ impl MotorKinematicsTracker {
 
         self.last_erpm = motor_erpm;
         self.next = self.next.next();
+    }
+
+    pub(super) fn reset_acceleration(&mut self) {
+        self.average = vescpkg_rs::prelude::Rpm::ZERO;
+        self.history = [vescpkg_rs::prelude::Rpm::ZERO; WINDOW];
+        self.next = AccelerationHistoryIndex::START;
     }
 
     pub(super) const fn average(self) -> vescpkg_rs::prelude::Rpm {

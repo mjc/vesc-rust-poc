@@ -194,6 +194,8 @@ fn runtime_values(
     state.balance_loop.reset_pid();
     state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
     state.reverse_total_erpm = Rpm::ZERO;
+    state.motor_kinematics.reset_acceleration();
+    state.motor_current_filter.reset_runtime();
     state.ride_flags.traction_control = false;
     state.remote_control.reset_runtime_vars();
     state.ride_modifiers.reset();
