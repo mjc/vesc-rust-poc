@@ -204,6 +204,73 @@ fn accepted_config_replacement_keeps_current_firmware_imu_settings() {
 }
 
 #[test]
+fn repeated_configure_is_idempotent_after_legacy_firmware_imu_migration() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    firmware.clear_settings_write_observations();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+    assert_eq!(firmware.float_setting_write_count(), 3);
+    assert_eq!(firmware.settings_store_count(), 0);
+
+    firmware.clear_settings_write_observations();
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_eq!(firmware.float_setting_write_count(), 0);
+    assert_eq!(firmware.settings_store_count(), 0);
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::NotRequired
+    );
+}
+
+#[test]
+fn package_reload_keeps_migrated_firmware_imu_settings_live_only() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    {
+        let mut first = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        assert!(first.store_serialized_config(&default_float_out_boy_config_bytes()));
+    }
+
+    firmware.clear_settings_write_observations();
+    let mut reloaded = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+    reloaded.configure_loaded_config_on_main_thread();
+
+    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_eq!(firmware.float_setting_write_count(), 0);
+    assert_eq!(firmware.settings_store_count(), 0);
+    assert_eq!(
+        reloaded.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::NotRequired
+    );
+}
+
+#[test]
+fn firmware_imu_migration_does_not_change_package_mahony_gains() {
+    let firmware = FirmwareTest::new();
+    set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
+
+    assert_eq!(
+        state.serialized_config.filter().mahony_kp(),
+        MahonyPitchGain::new(2.0)
+    );
+    assert_eq!(
+        state.serialized_config.filter().mahony_kp_roll(),
+        MahonyRollGain::new(1.4)
+    );
+    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_eq!(firmware.settings_store_count(), 0);
+}
+
+#[test]
 fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);

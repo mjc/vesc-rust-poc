@@ -180,7 +180,9 @@ static CONFIG_FLOAT_WRITE_RESULTS: [AtomicBool; CONFIG_FLOAT_WRITE_RESULT_CAPACI
     [const { AtomicBool::new(true) }; CONFIG_FLOAT_WRITE_RESULT_CAPACITY];
 static CONFIG_FLOAT_WRITE_RESULT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CONFIG_FLOAT_WRITE_RESULT_INDEX: AtomicUsize = AtomicUsize::new(0);
+static CONFIG_FLOAT_WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static CONFIG_STORE_OK: AtomicBool = AtomicBool::new(true);
+static CONFIG_STORE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static INPUT_CURRENT: AtomicU32 = AtomicU32::new(0);
 static DUTY_CYCLE: AtomicU32 = AtomicU32::new(0);
 static FOC_ID_CURRENT: AtomicU32 = AtomicU32::new(0);
@@ -432,7 +434,9 @@ fn reset_motor_state() {
     CONFIG_WRITE_OK.store(true, Ordering::Relaxed);
     CONFIG_FLOAT_WRITE_RESULT_COUNT.store(0, Ordering::Relaxed);
     CONFIG_FLOAT_WRITE_RESULT_INDEX.store(0, Ordering::Relaxed);
+    CONFIG_FLOAT_WRITE_COUNT.store(0, Ordering::Relaxed);
     CONFIG_STORE_OK.store(true, Ordering::Relaxed);
+    CONFIG_STORE_COUNT.store(0, Ordering::Relaxed);
     INPUT_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
     DUTY_CYCLE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     FOC_ID_CURRENT.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1544,6 +1548,19 @@ pub(crate) fn set_float_setting_write_results(results: &[bool]) {
     CONFIG_FLOAT_WRITE_RESULT_COUNT.store(results.len(), Ordering::Relaxed);
 }
 
+pub(crate) fn clear_settings_write_observations() {
+    CONFIG_FLOAT_WRITE_COUNT.store(0, Ordering::Relaxed);
+    CONFIG_STORE_COUNT.store(0, Ordering::Relaxed);
+}
+
+pub(crate) fn float_setting_write_count() -> usize {
+    CONFIG_FLOAT_WRITE_COUNT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn settings_store_count() -> usize {
+    CONFIG_STORE_COUNT.load(Ordering::Relaxed)
+}
+
 pub(crate) fn set_settings_store_ok(ok: bool) {
     CONFIG_STORE_OK.store(ok, Ordering::Relaxed);
 }
@@ -1752,6 +1769,7 @@ pub unsafe fn get_cfg_int(param: i32) -> i32 {
 }
 
 pub unsafe fn set_cfg_float(param: i32, value: f32) -> bool {
+    CONFIG_FLOAT_WRITE_COUNT.fetch_add(1, Ordering::Relaxed);
     let result_index = CONFIG_FLOAT_WRITE_RESULT_INDEX.fetch_add(1, Ordering::Relaxed);
     let scripted_result_count = CONFIG_FLOAT_WRITE_RESULT_COUNT.load(Ordering::Relaxed);
     let write_ok = if result_index < scripted_result_count {
@@ -1828,6 +1846,7 @@ pub unsafe fn set_cfg_int(param: i32, value: i32) -> bool {
 }
 
 pub unsafe fn store_cfg() -> bool {
+    CONFIG_STORE_COUNT.fetch_add(1, Ordering::Relaxed);
     CONFIG_STORE_OK.load(Ordering::Relaxed)
 }
 

@@ -251,6 +251,23 @@ impl FirmwareTest {
         crate::test_ffi::set_float_setting_write_results(results);
     }
 
+    /// Clear fake firmware setting-write and setting-store observations.
+    pub fn clear_settings_write_observations(&self) {
+        crate::test_ffi::clear_settings_write_observations();
+    }
+
+    /// Return the number of attempted fake firmware floating-point setting writes.
+    #[must_use]
+    pub fn float_setting_write_count(&self) -> usize {
+        crate::test_ffi::float_setting_write_count()
+    }
+
+    /// Return the number of attempted fake firmware configuration stores.
+    #[must_use]
+    pub fn settings_store_count(&self) -> usize {
+        crate::test_ffi::settings_store_count()
+    }
+
     /// Seed an unvalidated fake firmware floating-point setting read.
     ///
     /// This bypasses the public typed write boundary so dependent packages can
