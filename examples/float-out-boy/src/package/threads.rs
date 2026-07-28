@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn float_out_boy_main_thread_reserves_the_generated_rust_working_area() {
-        // The current ARM call chain reaches 1480 bytes before ChibiOS's
+        // The persisted-config call chain measured 1976 bytes before ChibiOS's
         // thread metadata, saved contexts, and interrupt reserve.
         assert_eq!(super::FloatOutBoyRuntimeThread::Main.stack_bytes(), 3072);
         assert_eq!(super::FloatOutBoyRuntimeThread::Aux.stack_bytes(), 2048);

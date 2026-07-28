@@ -10,8 +10,8 @@ use vescpkg_rs::PackageStart;
 /// Upstream uses firmware `malloc(sizeof(Data))` at `third_party/float-out-boy/src/main.c:2419`,
 /// reads config in `data_init` at `third_party/float-out-boy/src/main.c:2424`, and stores the same
 /// pointer in `info->arg` at `third_party/float-out-boy/src/main.c:2432`. Rust defers the EEPROM read
-/// to the main-thread entry because VESC's 2048-byte evaluator working area leaves only 1632 bytes
-/// of usable stack; the compiled loader call chain would otherwise require 1976 bytes. This path
+/// to the main-thread entry because its compiled 1976-byte loader call chain leaves almost no margin
+/// in VESC's 2048-byte evaluator stack. This path
 /// still installs the narrow `FloatOutBoyPackageState` before the registration tail at
 /// `third_party/float-out-boy/src/main.c:2455-2459`.
 ///
