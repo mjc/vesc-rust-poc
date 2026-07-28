@@ -770,23 +770,6 @@ impl FloatOutBoyAllDataPayloads {
         )
     }
 
-    /// Return a payload snapshot with the one-shot beep reason consumed.
-    #[must_use]
-    pub const fn without_beep_reason(self) -> Self {
-        Self::new(
-            FloatOutBoyAllDataBasePayload {
-                status: FloatOutBoyAllDataStatus::new(
-                    self.base.status.ride_state(),
-                    FloatOutBoyBeepReason::None,
-                ),
-                ..self.base
-            },
-            self.mode2,
-            self.mode3,
-            self.mode4,
-        )
-    }
-
     /// Return a payload snapshot with refreshed absolute-distance mode 2 data.
     #[must_use]
     pub const fn with_mode2_distance_abs(self, distance_abs: TripDistance) -> Self {
