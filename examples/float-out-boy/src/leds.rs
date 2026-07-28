@@ -1209,7 +1209,7 @@ impl FloatOutBoyStatusDynamics {
         current_time: f32,
     ) -> FloatOutBoyStatusRenderState {
         let status_config = config.status();
-        if reset_idle || !matches!(input.footpad, crate::FloatOutBoyFootpadState::None) {
+        if reset_idle || input.footpad.is_pressed() {
             self.idle_time = current_time;
         }
 
@@ -1345,9 +1345,7 @@ impl FloatOutBoyLedRenderer {
                 self.status_on_front_blend = 1.0;
             }
         }
-        if !matches!(input.footpad, crate::FloatOutBoyFootpadState::None)
-            || (!was_upright && upright)
-        {
+        if input.footpad.is_pressed() || (!was_upright && upright) {
             self.status_on_front_idle_time = current_time;
         }
         let status_on_front = config.shows_status_on_front_when_lifted()

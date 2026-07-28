@@ -25,6 +25,12 @@ pub enum FloatOutBoyFootpadState {
 }
 
 impl FloatOutBoyFootpadState {
+    /// Return whether either footpad sensor is active.
+    #[must_use]
+    pub const fn is_pressed(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
     /// Return the Float Out Boy `v1.2.1` footpad state ID.
     ///
     /// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.

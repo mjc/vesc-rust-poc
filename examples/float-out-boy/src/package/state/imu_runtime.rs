@@ -385,7 +385,7 @@ fn refresh_footpad_warning(
     };
     let warning = matches!(run_state, FloatOutBoyRunState::Running)
         && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-        && matches!(base.footpad().state(), FloatOutBoyFootpadState::None)
+        && !base.footpad().state().is_pressed()
         && motor_erpm.abs() > switch_warning_erpm;
     if warning {
         state.force_beeper_on();
@@ -419,10 +419,9 @@ fn refresh_flywheel_readiness(
     };
     let ready_stop = matches!(run_state, FloatOutBoyRunState::Ready)
         && matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-        && state.flywheel.should_stop(!matches!(
-            base.footpad().state(),
-            FloatOutBoyFootpadState::None
-        ));
+        && state
+            .flywheel
+            .should_stop(base.footpad().state().is_pressed());
     let run_state = if ready_stop {
         state.restore_flywheel_config();
         state
@@ -492,10 +491,7 @@ fn evaluate_switch_angle_faults(
     let running = matches!(input.run_state, FloatOutBoyRunState::Running);
     let flywheel = matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel);
     let half_erpm = faults.adc_half_erpm().rpm();
-    let full_pending = !input.darkride_active
-        && running
-        && matches!(footpad, FloatOutBoyFootpadState::None)
-        && !flywheel;
+    let full_pending = !input.darkride_active && running && !footpad.is_pressed() && !flywheel;
     let switch_faults_disabled = faults.moving_faults_disabled()
         && input.motor_erpm > half_erpm * 2.0
         && input.roll_abs < MovingFaultLimits::FLOAT_OUT_BOY.roll;
@@ -540,7 +536,7 @@ fn evaluate_switch_angle_faults(
         );
     let quickstop = QuickStopLimits::FLOAT_OUT_BOY;
     let quickstop_fault = running
-        && matches!(footpad, FloatOutBoyFootpadState::None)
+        && !footpad.is_pressed()
         && !flywheel
         && faults.quickstop_enabled()
         && input.motor_erpm.abs() < quickstop.stopped_erpm
@@ -583,8 +579,8 @@ fn evaluate_normal_faults(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::ReverseStop
         );
-    let flywheel_footpad = running && flywheel && !matches!(footpad, FloatOutBoyFootpadState::None);
-    let reverse_no_footpads = reverse_active && matches!(footpad, FloatOutBoyFootpadState::None);
+    let flywheel_footpad = running && flywheel && footpad.is_pressed();
+    let reverse_no_footpads = reverse_active && !footpad.is_pressed();
     let reverse_pitch =
         !input.darkride_active && reverse_active && input.pitch_abs > reverse_stop.pitch;
     let reverse_timer = !input.darkride_active
