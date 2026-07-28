@@ -57,6 +57,7 @@ const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_FW_VERSION: u8 = 0;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
+const COMM_GET_CUSTOM_CONFIG: u8 = 93;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
@@ -398,6 +399,25 @@ impl BtlePackageInstallTransport {
     ) -> Result<Vec<u8>, PackageInstallError> {
         self.write_packet(COMM_CUSTOM_APP_DATA, payload)?;
         self.with_session(|session| session.receive_custom_app_data(timeout))
+    }
+
+    /// Reads one active package custom configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE write or firmware response fails.
+    pub fn custom_config(
+        &self,
+        index: u8,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PackageInstallError> {
+        let response = self.write_command(COMM_GET_CUSTOM_CONFIG, &[index], timeout)?;
+        match response.as_slice() {
+            [COMM_GET_CUSTOM_CONFIG, response_index, config @ ..] if *response_index == index => {
+                Ok(config.to_vec())
+            }
+            _ => Err(malformed_reply("unexpected custom-config reply")),
+        }
     }
 
     /// Return the firmware version captured during preflight.

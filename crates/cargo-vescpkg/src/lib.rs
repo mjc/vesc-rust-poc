@@ -28,6 +28,7 @@ enum Command {
     #[command(name = "loopback")]
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
+    CustomConfig(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
     #[command(name = "control-loop-deploy")]
@@ -107,6 +108,7 @@ where
         Ok(Command::Build(args)) => run_build(args),
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
+        Ok(Command::CustomConfig(command)) => run_custom_config(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
         Ok(Command::Deploy(command)) => run_deploy(command),
@@ -116,6 +118,19 @@ where
             let exit_code = u8::try_from(error.exit_code()).unwrap_or(2);
             let _ = error.print();
             ExitCode::from(exit_code)
+        }
+    }
+}
+
+fn run_custom_config(command: DeviceArgs) -> ExitCode {
+    match deploy::run_custom_config_probe(command.into_target()) {
+        Ok(config) => {
+            println!("custom config: {config:02x?}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("custom config failed: {error}");
+            ExitCode::from(1)
         }
     }
 }
@@ -388,6 +403,22 @@ mod tests {
         };
         assert_eq!(args.payload, [101, 0, 2]);
         assert_eq!(args.device.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_read_only_custom_config_probe() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "custom-config",
+            "--device",
+            "VESC BLE UART",
+        ])
+        .expect("parse custom-config probe");
+
+        let Command::CustomConfig(args) = command else {
+            panic!("expected custom-config command");
+        };
+        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
     }
 
     #[test]
