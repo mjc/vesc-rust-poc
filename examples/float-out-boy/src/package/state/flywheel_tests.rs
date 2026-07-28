@@ -972,7 +972,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
 }
 
 #[test]
-fn either_single_footpad_stops_flywheel_without_commanding_motor_current() {
+fn either_single_footpad_aborts_flywheel_and_restores_config_without_current() {
     for footpad in [
         FloatOutBoyFootpadState::Left,
         FloatOutBoyFootpadState::Right,
@@ -988,10 +988,19 @@ fn either_single_footpad_stops_flywheel_without_commanding_motor_current() {
             AngleDegrees::from_degrees(80.0),
             AngleDegrees::ZERO,
         ));
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
+        );
+        let requested = state.serialized_config;
+        assert!(state.store_serialized_config(requested.as_bytes()));
+        let persisted = state.serialized_config;
         assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1,])));
+
         set_ride_state(&mut state, FloatOutBoyRunState::Running);
         set_footpad(&mut state, footpad);
-
         state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
@@ -1000,90 +1009,38 @@ fn either_single_footpad_stops_flywheel_without_commanding_motor_current() {
             FloatOutBoyRunState::Ready,
             "footpad={footpad:?}",
         );
+        assert_eq!(ride_state.mode(), FloatOutBoyMode::Flywheel);
+        assert_f32_eq!(
+            state.serialized_config.balance().kp().as_amps_per_degree(),
+            9.0
+        );
+
+        set_footpad(&mut state, FloatOutBoyFootpadState::None);
+        state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(2));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);
+        assert_eq!(state.serialized_config, persisted);
         assert!(state.apply_motor_control(
             firmware.motor(),
             ride_state.run_state(),
-            TimestampTicks::from_ticks(2),
+            TimestampTicks::from_ticks(3),
         ));
         assert!(
             firmware.commanded_current().current().is_zero(),
             "footpad={footpad:?}",
         );
+
+        state.all_data_payloads = ready_at(AngleDegrees::from_degrees(80.0), AngleDegrees::ZERO);
+        assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1,])));
+        assert_eq!(
+            state
+                .all_data_payloads()
+                .base()
+                .status()
+                .ride_state()
+                .mode(),
+            FloatOutBoyMode::Flywheel,
+        );
     }
-}
-
-#[test]
-fn flywheel_footpad_abort_restores_config_after_the_footpads_release() {
-    let firmware = FirmwareTest::new();
-    firmware.set_imu_ready(true);
-    firmware.set_imu_attitude(
-        ImuRoll::new(AngleRadians::ZERO),
-        ImuPitch::new(AngleRadians::from_degrees(80.0)),
-        ImuYaw::new(AngleRadians::ZERO),
-    );
-    let mut state = FloatOutBoyPackageState::new(ready_at(
-        AngleDegrees::from_degrees(80.0),
-        AngleDegrees::ZERO,
-    ));
-    assert!(
-        state
-            .serialized_config
-            .editor()
-            .set_kp(vescpkg_rs::AngleCurrentGain::new(12.0))
-    );
-    let requested = state.serialized_config;
-    assert!(state.store_serialized_config(requested.as_bytes()));
-    let persisted = state.serialized_config;
-    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1])));
-
-    set_ride_state(&mut state, FloatOutBoyRunState::Running);
-    set_footpad(&mut state, FloatOutBoyFootpadState::Both);
-    state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state(),
-        FloatOutBoyRunState::Ready,
-    );
-    assert_f32_eq!(
-        state.serialized_config.balance().kp().as_amps_per_degree(),
-        9.0
-    );
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .mode(),
-        FloatOutBoyMode::Flywheel,
-    );
-
-    set_footpad(&mut state, FloatOutBoyFootpadState::Left);
-    state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(2));
-
-    let ride_state = state.all_data_payloads().base().status().ride_state();
-    assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);
-    assert_eq!(state.serialized_config, persisted);
-    assert!(state.apply_motor_control(
-        firmware.motor(),
-        ride_state.run_state(),
-        TimestampTicks::from_ticks(3),
-    ));
-    assert!(firmware.commanded_current().current().is_zero());
-
-    state.all_data_payloads = ready_at(AngleDegrees::from_degrees(80.0), AngleDegrees::ZERO);
-    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1])));
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .mode(),
-        FloatOutBoyMode::Flywheel,
-    );
 }
