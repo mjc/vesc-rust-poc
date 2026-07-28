@@ -339,6 +339,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         }
         assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
         set_ride_state(&mut state, run_state);
+        set_footpad(&mut state, FloatOutBoyFootpadState::None);
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(99),
@@ -968,6 +969,47 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
         (actual - expected).abs() < 0.000_1,
         "actual={actual}, expected={expected}, base={base:?}",
     );
+}
+
+#[test]
+fn either_single_footpad_stops_flywheel_without_commanding_motor_current() {
+    for footpad in [
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::Right,
+    ] {
+        let firmware = FirmwareTest::new();
+        firmware.set_imu_ready(true);
+        firmware.set_imu_attitude(
+            ImuRoll::new(AngleRadians::ZERO),
+            ImuPitch::new(AngleRadians::from_degrees(80.0)),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        let mut state = FloatOutBoyPackageState::new(ready_at(
+            AngleDegrees::from_degrees(80.0),
+            AngleDegrees::ZERO,
+        ));
+        assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 90, 0, 0, 0, 1,])));
+        set_ride_state(&mut state, FloatOutBoyRunState::Running);
+        set_footpad(&mut state, footpad);
+
+        state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(
+            ride_state.run_state(),
+            FloatOutBoyRunState::Ready,
+            "footpad={footpad:?}",
+        );
+        assert!(state.apply_motor_control(
+            firmware.motor(),
+            ride_state.run_state(),
+            TimestampTicks::from_ticks(2),
+        ));
+        assert!(
+            firmware.commanded_current().current().is_zero(),
+            "footpad={footpad:?}",
+        );
+    }
 }
 
 #[test]

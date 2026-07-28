@@ -419,9 +419,9 @@ fn refresh_flywheel_readiness(
     };
     let ready_stop = matches!(run_state, FloatOutBoyRunState::Ready)
         && matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-        && state.flywheel.should_stop(matches!(
+        && state.flywheel.should_stop(!matches!(
             base.footpad().state(),
-            FloatOutBoyFootpadState::Both
+            FloatOutBoyFootpadState::None
         ));
     let run_state = if ready_stop {
         state.restore_flywheel_config();
@@ -583,7 +583,7 @@ fn evaluate_normal_faults(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::ReverseStop
         );
-    let flywheel_both = running && flywheel && matches!(footpad, FloatOutBoyFootpadState::Both);
+    let flywheel_both = running && flywheel && !matches!(footpad, FloatOutBoyFootpadState::None);
     let reverse_no_footpads = reverse_active && matches!(footpad, FloatOutBoyFootpadState::None);
     let reverse_pitch =
         !input.darkride_active && reverse_active && input.pitch_abs > reverse_stop.pitch;
