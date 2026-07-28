@@ -351,6 +351,8 @@ impl AnalogGpioLease<'_> {
     }
 
     /// Read the typed analog voltage after selecting analog mode.
+    ///
+    /// Returns `Ok(None)` when firmware reports that the selected input is unavailable.
     pub fn read(&self) -> Result<Option<AdcVoltage>, GpioError> {
         if self.mode.get() != Some(GpioMode::Analog) {
             return Err(GpioError::WrongMode);
