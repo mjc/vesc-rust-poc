@@ -715,13 +715,13 @@ impl FloatOutBoyPackageState {
         let ride_state = base.status().ride_state();
         // C refreshes `d->imu.pitch` before entering the READY Konami branch at
         // `third_party/float-out-boy/src/main.c:775,947-953`.
-        let pitch = crate::wire::degrees(current_pitch.angle());
         let footpad = base.footpad().state();
 
         if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
             && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-            && (75.0..105.0).contains(&pitch)
-            && self.flywheel_konami.check(footpad, system_time_ticks)
+            && self
+                .flywheel_konami
+                .check_flywheel(current_pitch, footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
             // C map: `main.c:85-89` and `main.c:945-949`; this is the same

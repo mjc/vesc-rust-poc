@@ -6,6 +6,7 @@
 
 use crate::domain::FloatOutBoyFootpadState;
 use crate::package::time::float_out_boy_ticks_elapsed_seconds;
+use vescpkg_rs::ImuPitch;
 use vescpkg_rs::prelude::{TimestampTicks, VescSeconds};
 
 const STEP_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.15);
@@ -89,6 +90,18 @@ impl FloatOutBoyKonami {
             self.reset();
         }
         false
+    }
+
+    #[inline]
+    pub(super) fn check_flywheel(
+        &mut self,
+        pitch: ImuPitch,
+        footpad: FloatOutBoyFootpadState,
+        now: TimestampTicks,
+    ) -> bool {
+        // C gates the Flywheel sequence to 75 <= current IMU pitch < 105 at
+        // `third_party/float-out-boy/src/main.c:947-953`.
+        (75.0..105.0).contains(&crate::wire::degrees(pitch.angle())) && self.check(footpad, now)
     }
 
     fn reset(&mut self) {
