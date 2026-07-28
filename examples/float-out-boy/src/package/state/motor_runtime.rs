@@ -8,7 +8,7 @@ use crate::domain::{
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
-    MotorCurrent, SampleRate, SignedRatio,
+    MotorCurrent, Rpm, SampleRate, SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
@@ -112,6 +112,13 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let filtered_current = state.motor_current_filter.process(directional_current);
     let electrical_speed = telemetry.electrical_speed();
     let motor_erpm = electrical_speed.rpm();
+    state.motor_abs_erpm_smooth = Rpm::from_revolutions_per_minute(
+        state
+            .motor_abs_erpm_smooth
+            .as_revolutions_per_minute()
+            * 0.9
+            + motor_erpm.abs().as_revolutions_per_minute() * 0.1,
+    );
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
     state.motor_acceleration.record(motor_erpm);

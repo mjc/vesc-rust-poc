@@ -174,6 +174,7 @@ pub struct FloatOutBoyPackageState {
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
     reverse_total_erpm: Rpm,
+    motor_abs_erpm_smooth: Rpm,
     motor_acceleration: MotorAccelerationTracker,
     motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
     remote_control: RemoteControlState,
@@ -257,6 +258,7 @@ impl FloatOutBoyPackageState {
             balance_filter: BalanceFilter::source_startup(),
             balance_loop: LoopState::source_startup(),
             reverse_total_erpm: Rpm::ZERO,
+            motor_abs_erpm_smooth: Rpm::ZERO,
             motor_acceleration: MotorAccelerationTracker::default(),
             motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter::source_startup(),
             remote_control: RemoteControlState::default(),
@@ -507,14 +509,13 @@ impl FloatOutBoyPackageState {
         run_state: FloatOutBoyRunState,
         system_time_ticks: TimestampTicks,
     ) -> bool {
-        let base = self.all_data_payloads.base();
         // Upstream `motor_control_configure` copies brake and parking config at
         // `third_party/float-out-boy/src/motor_control.c:36-40`; this Rust state keeps
         // the serialized config as source of truth until full `Data` parity.
         self.motor_control.apply(
             motor,
             run_state,
-            base.motor().electrical_speed().rpm().abs(),
+            self.motor_abs_erpm_smooth,
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
             self.serialized_config.motor_control().brake_current(),

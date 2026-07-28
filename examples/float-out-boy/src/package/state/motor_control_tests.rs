@@ -40,6 +40,49 @@ fn requested_current_applies_like_float_out_boy_motor_control() {
 }
 
 #[test]
+fn idle_motor_control_uses_smoothed_erpm_for_one_sample_spike_like_refloat() {
+    let firmware = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    ));
+
+    state.refresh_motor_runtime_state(firmware.telemetry());
+    assert!(state.apply_motor_control(
+        firmware.motor(),
+        FloatOutBoyRunState::Ready,
+        TimestampTicks::from_ticks(0),
+    ));
+
+    let firmware = firmware.with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    state.refresh_motor_runtime_state(firmware.telemetry());
+    assert!(state.apply_motor_control(
+        firmware.motor(),
+        FloatOutBoyRunState::Ready,
+        TimestampTicks::from_ticks(10_001),
+    ));
+
+    // Refloat smooths 0 -> 1,000 ERPM to 100 ERPM before motor control. That
+    // stays below the 200 ERPM moving threshold, so the expired idle timer
+    // releases with 0 A instead of refreshing and applying parking duty again.
+    assert_eq!(firmware.current_command_count(), 1);
+    assert_eq!(firmware.duty_command_count(), 1);
+    assert_f32_eq!(firmware.commanded_current().current().as_amps(), 0.0);
+}
+
+#[test]
 fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
     for (motor_current, expected_current) in [(1.0_f32, 0.6_f32), (-1.0_f32, -0.4_f32)] {
