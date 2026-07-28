@@ -726,9 +726,15 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
         AngleDegrees::ZERO,
     ));
     set_footpad(&mut konami, FloatOutBoyFootpadState::Left);
-    konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(1_501));
+    konami.refresh_konami_runtime_state(
+        ImuPitch::new(AngleRadians::from_degrees(80.0)),
+        TimestampTicks::from_ticks(1_501),
+    );
     set_footpad(&mut konami, FloatOutBoyFootpadState::Right);
-    konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(3_002));
+    konami.refresh_konami_runtime_state(
+        ImuPitch::new(AngleRadians::from_degrees(80.0)),
+        TimestampTicks::from_ticks(3_002),
+    );
     assert_eq!(
         konami
             .all_data_payloads()
@@ -753,9 +759,10 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
     .enumerate()
     {
         set_footpad(&mut konami, footpad);
-        konami.refresh_konami_runtime_state(TimestampTicks::from_ticks(
-            4_503 + u32::try_from(index).unwrap_or(u32::MAX) * 1_501,
-        ));
+        konami.refresh_konami_runtime_state(
+            ImuPitch::new(AngleRadians::from_degrees(80.0)),
+            TimestampTicks::from_ticks(4_503 + u32::try_from(index).unwrap_or(u32::MAX) * 1_501),
+        );
     }
 
     let mut direct = FloatOutBoyPackageState::new(ready_at(
@@ -793,6 +800,47 @@ fn flywheel_konami_uses_the_typed_start_path_after_invalid_sequence_reset() {
 }
 
 #[test]
+fn flywheel_konami_uses_the_current_imu_pitch_like_float_out_boy() {
+    let mut state = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+
+    for (index, footpad) in [
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Left,
+        FloatOutBoyFootpadState::None,
+        FloatOutBoyFootpadState::Right,
+        FloatOutBoyFootpadState::None,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        set_footpad(&mut state, footpad);
+        state.refresh_konami_runtime_state(
+            ImuPitch::new(AngleRadians::ZERO),
+            TimestampTicks::from_ticks(u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501),
+        );
+    }
+
+    // Refloat refreshes `d->imu.pitch` before the READY Konami gate at
+    // `main.c:775,947-953`; the previous tick's 80-degree payload must not
+    // arm Flywheel after the current sample has returned to zero.
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .mode(),
+        FloatOutBoyMode::Normal,
+    );
+}
+
+#[test]
 fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
@@ -812,9 +860,10 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     .enumerate()
     {
         set_footpad(&mut state, footpad);
-        state.refresh_konami_runtime_state(TimestampTicks::from_ticks(
-            u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
-        ));
+        state.refresh_konami_runtime_state(
+            ImuPitch::new(AngleRadians::ZERO),
+            TimestampTicks::from_ticks(u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501),
+        );
     }
 
     assert!(state.serialized_config.headlights_enabled());
@@ -835,9 +884,12 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     .enumerate()
     {
         set_footpad(&mut state, footpad);
-        state.refresh_konami_runtime_state(TimestampTicks::from_ticks(
-            10_000 + u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
-        ));
+        state.refresh_konami_runtime_state(
+            ImuPitch::new(AngleRadians::ZERO),
+            TimestampTicks::from_ticks(
+                10_000 + u32::try_from(index + 1).unwrap_or(u32::MAX) * 1_501,
+            ),
+        );
     }
 
     assert!(state.serialized_config.headlights_enabled());

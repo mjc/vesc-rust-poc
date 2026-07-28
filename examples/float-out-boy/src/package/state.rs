@@ -19,6 +19,8 @@ use crate::domain::{
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::ImuPitch;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::OdometerMeters;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
@@ -697,17 +699,23 @@ impl FloatOutBoyPackageState {
             self.serialized_config.persistent_fatal_error(),
         );
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
-        self.refresh_konami_runtime_state(system_time_ticks);
+        self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
         self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn refresh_konami_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
+    fn refresh_konami_runtime_state(
+        &mut self,
+        current_pitch: ImuPitch,
+        system_time_ticks: TimestampTicks,
+    ) {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
-        let pitch = crate::wire::degrees(base.attitude().pitch().angle());
+        // C refreshes `d->imu.pitch` before entering the READY Konami branch at
+        // `third_party/float-out-boy/src/main.c:775,947-953`.
+        let pitch = crate::wire::degrees(current_pitch.angle());
         let footpad = base.footpad().state();
 
         if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
