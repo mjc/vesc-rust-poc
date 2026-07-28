@@ -10,8 +10,8 @@ use vescpkg_rs_sys::VescPinMode;
 use crate::types::AdcVoltage;
 use crate::units::Voltage;
 
-fn adc_voltage_from_firmware(raw: f32) -> AdcVoltage {
-    AdcVoltage::new(Voltage::from_volts(raw))
+fn adc_voltage_from_firmware(raw: f32) -> Option<AdcVoltage> {
+    (raw >= 0.0).then(|| AdcVoltage::new(Voltage::from_volts(raw)))
 }
 
 #[cfg(not(target_arch = "arm"))]
@@ -257,7 +257,7 @@ impl Gpio {
     // to the capability object while allowing the target-only receiver to be
     // unused.
     #[allow(clippy::unused_self)]
-    fn read_analog(&self, pin: AnalogPin) -> AdcVoltage {
+    fn read_analog(&self, pin: AnalogPin) -> Option<AdcVoltage> {
         let pin = pin.firmware_pin();
         #[cfg(test)]
         {
@@ -351,7 +351,7 @@ impl AnalogGpioLease<'_> {
     }
 
     /// Read the typed analog voltage after selecting analog mode.
-    pub fn read(&self) -> Result<AdcVoltage, GpioError> {
+    pub fn read(&self) -> Result<Option<AdcVoltage>, GpioError> {
         if self.mode.get() != Some(GpioMode::Analog) {
             return Err(GpioError::WrongMode);
         }
@@ -473,10 +473,29 @@ mod tests {
     #[test]
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
-        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC1).voltage().as_volts(), 1.2);
-        assert_f32_eq!(gpio.read_analog(AnalogPin::ADC2).voltage().as_volts(), 3.4);
+        assert_f32_eq!(
+            gpio.read_analog(AnalogPin::ADC1)
+                .expect("ADC1 present")
+                .voltage()
+                .as_volts(),
+            1.2
+        );
+        assert_f32_eq!(
+            gpio.read_analog(AnalogPin::ADC2)
+                .expect("ADC2 present")
+                .voltage()
+                .as_volts(),
+            3.4
+        );
         assert_eq!(gpio.test.analog_pair_calls.get(), 2);
         assert_eq!(gpio.test.last_pin.get(), 8);
+    }
+
+    #[test]
+    fn negative_firmware_voltage_means_adc_is_unavailable() {
+        let gpio = Gpio::test((1.2, -1.0));
+
+        assert_eq!(gpio.read_analog(AnalogPin::ADC2), None);
     }
 
     #[test]

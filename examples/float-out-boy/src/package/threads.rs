@@ -269,7 +269,7 @@ fn read_float_out_boy_footpads(gpio: &vescpkg_rs::Gpio) -> (AdcVoltage, AdcVolta
             .and_then(|pin| {
                 pin.set_mode(GpioMode::Analog)
                     .ok()
-                    .and_then(|()| pin.read().ok())
+                    .and_then(|()| pin.read().ok().flatten())
             })
             .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
     };

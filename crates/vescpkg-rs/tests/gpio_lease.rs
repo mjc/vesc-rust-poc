@@ -59,7 +59,14 @@ fn gpio_leases_reject_wrong_mode_and_cover_analog_ownership() {
     assert_eq!(adc.read(), Err(GpioError::WrongMode));
     assert_eq!(adc.set_mode(GpioMode::Output), Err(GpioError::WrongMode));
     adc.set_mode(GpioMode::Analog).expect("analog mode");
-    assert_eq!(adc.read().expect("analog read").voltage().as_volts(), 1.2);
+    assert_eq!(
+        adc.read()
+            .expect("analog read")
+            .expect("ADC present")
+            .voltage()
+            .as_volts(),
+        1.2
+    );
 }
 
 #[test]
