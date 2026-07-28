@@ -113,7 +113,7 @@ fn main_thread_config_load_defers_configure_side_effects_like_refloat() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     assert!(!state.startup_configured());
-    state.load_persisted_config_on_main_thread();
+    state.load_persisted_config_on_main_thread(TimestampTicks::from_ticks(0));
 
     assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     assert!(!state.startup_configured());

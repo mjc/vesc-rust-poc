@@ -236,9 +236,12 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    pub(in crate::package) fn load_persisted_config_on_main_thread(&mut self) {
+    pub(in crate::package) fn load_persisted_config_on_main_thread(
+        &mut self,
+        now: vescpkg_rs::TimestampTicks,
+    ) {
         self.read_serialized_config_from_eeprom();
-        self.initialize_time_epochs(vescpkg_rs::FirmwareClock::current_timestamp());
+        self.initialize_time_epochs(now);
     }
 
     #[cfg(any(test, target_arch = "arm"))]

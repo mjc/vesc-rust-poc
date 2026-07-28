@@ -319,7 +319,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
         {
             let firmware = ctx.firmware();
             let _ = ctx.with_state_mut(|state| {
-                state.load_persisted_config_on_main_thread();
+                state.load_persisted_config_on_main_thread(firmware.clock().now());
                 state.configure_loaded_config_on_main_thread();
             });
             run_float_out_boy_main_thread_with(firmware.threads(), || {

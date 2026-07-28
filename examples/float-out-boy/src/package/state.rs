@@ -352,7 +352,7 @@ impl FloatOutBoyPackageState {
     #[cfg(test)]
     pub(super) fn from_persisted_config(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::new(all_data_payloads);
-        state.load_persisted_config_on_main_thread();
+        state.load_persisted_config_on_main_thread(vescpkg_rs::FirmwareClock::current_timestamp());
         state.configure_loaded_config_on_main_thread();
         state
     }
