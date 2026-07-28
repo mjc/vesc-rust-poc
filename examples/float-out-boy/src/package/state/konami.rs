@@ -7,7 +7,7 @@
 use crate::domain::FloatOutBoyFootpadState;
 use crate::package::time::float_out_boy_ticks_elapsed_seconds;
 use vescpkg_rs::ImuPitch;
-use vescpkg_rs::prelude::{TimestampTicks, VescSeconds};
+use vescpkg_rs::prelude::{AngleRadians, TimestampTicks, VescSeconds};
 
 const STEP_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.15);
 const SEQUENCE_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.5);
@@ -99,9 +99,12 @@ impl FloatOutBoyKonami {
         footpad: FloatOutBoyFootpadState,
         now: TimestampTicks,
     ) -> bool {
-        // C gates the Flywheel sequence to 75 <= current IMU pitch < 105 at
+        // C gates the Flywheel sequence to 75 < current IMU pitch < 105 at
         // `third_party/float-out-boy/src/main.c:947-953`.
-        (75.0..105.0).contains(&crate::wire::degrees(pitch.angle())) && self.check(footpad, now)
+        let pitch = pitch.angle();
+        pitch > AngleRadians::from_degrees(75.0)
+            && pitch < AngleRadians::from_degrees(105.0)
+            && self.check(footpad, now)
     }
 
     fn reset(&mut self) {
@@ -180,6 +183,27 @@ mod tests {
         assert!(!konami.check(
             FloatOutBoyFootpadState::Right,
             TimestampTicks::from_ticks(9_003)
+        ));
+    }
+
+    #[test]
+    fn flywheel_pitch_gate_is_strict_at_both_float_out_boy_boundaries() {
+        let mut konami = FloatOutBoyKonami::new(&[FloatOutBoyFootpadState::Left]);
+
+        assert!(!konami.check_flywheel(
+            ImuPitch::new(AngleRadians::from_degrees(75.0)),
+            FloatOutBoyFootpadState::Left,
+            TimestampTicks::from_ticks(1_501),
+        ));
+        assert!(konami.check_flywheel(
+            ImuPitch::new(AngleRadians::from_degrees(75.1)),
+            FloatOutBoyFootpadState::Left,
+            TimestampTicks::from_ticks(3_002),
+        ));
+        assert!(!konami.check_flywheel(
+            ImuPitch::new(AngleRadians::from_degrees(105.0)),
+            FloatOutBoyFootpadState::Left,
+            TimestampTicks::from_ticks(4_503),
         ));
     }
 }
