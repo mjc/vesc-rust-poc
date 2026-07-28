@@ -123,7 +123,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn send_all_data_packet_response(
-        &mut self,
+        &self,
         telemetry: &impl MotorTelemetry,
         send: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn all_data_response_retains_last_beep_reason_like_upstream_fix() {
         let firmware = FirmwareTest::new();
-        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let request = [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id(),
@@ -263,7 +263,7 @@ mod tests {
     fn all_data_fault_response_preserves_pending_beep_reason_like_refloat() {
         let faulted = FirmwareTest::new()
             .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
-        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let request = [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id(),
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn rejected_all_data_send_retains_last_beep_reason_like_upstream_fix() {
         let firmware = FirmwareTest::new();
-        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let request = [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id(),
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn malformed_all_data_request_preserves_pending_beep_reason_like_refloat() {
         let firmware = FirmwareTest::new();
-        let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+        let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
         assert!(!state.send_all_data_packet_response(
             firmware.telemetry(),
