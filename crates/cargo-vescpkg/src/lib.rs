@@ -29,6 +29,7 @@ enum Command {
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
     CustomConfig(DeviceArgs),
+    LispStats(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
     #[command(name = "control-loop-deploy")]
@@ -109,6 +110,7 @@ where
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
         Ok(Command::CustomConfig(command)) => run_custom_config(command),
+        Ok(Command::LispStats(command)) => run_lisp_stats(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
         Ok(Command::Deploy(command)) => run_deploy(command),
@@ -130,6 +132,26 @@ fn run_custom_config(command: DeviceArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("custom config failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_lisp_stats(command: DeviceArgs) -> ExitCode {
+    match deploy::run_lisp_stats_probe(command.into_target()) {
+        Ok(stats) => {
+            println!(
+                "lisp stats: cpu={:.2}% heap={:.2}% memory={:.2}% stack={:.2}% result={}",
+                stats.cpu_usage(),
+                stats.heap_usage(),
+                stats.memory_usage(),
+                stats.stack_usage(),
+                stats.result(),
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("lisp stats failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -417,6 +439,17 @@ mod tests {
 
         let Command::CustomConfig(args) = command else {
             panic!("expected custom-config command");
+        };
+        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_read_only_lisp_stats_probe() {
+        let command = parse_args(["cargo-vescpkg", "lisp-stats", "--device", "VESC BLE UART"])
+            .expect("parse Lisp stats probe");
+
+        let Command::LispStats(args) = command else {
+            panic!("expected Lisp stats command");
         };
         assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
     }

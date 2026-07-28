@@ -55,6 +55,7 @@ const COMM_QMLUI_WRITE: u8 = 121;
 const COMM_LISP_WRITE_CODE: u8 = 131;
 const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
+const COMM_LISP_GET_STATS: u8 = 134;
 const COMM_FW_VERSION: u8 = 0;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const COMM_GET_CUSTOM_CONFIG: u8 = 93;
@@ -100,6 +101,48 @@ impl FirmwareVersion {
     #[must_use]
     pub const fn minor(self) -> i8 {
         self.minor
+    }
+}
+
+/// Runtime statistics returned by VESC's Lisp evaluator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LispStats {
+    cpu_usage: f32,
+    heap_usage: f32,
+    memory_usage: f32,
+    stack_usage: f32,
+    result: u8,
+}
+
+impl LispStats {
+    /// Return evaluator CPU usage as a percentage.
+    #[must_use]
+    pub const fn cpu_usage(self) -> f32 {
+        self.cpu_usage
+    }
+
+    /// Return evaluator heap usage as a percentage.
+    #[must_use]
+    pub const fn heap_usage(self) -> f32 {
+        self.heap_usage
+    }
+
+    /// Return evaluator memory usage as a percentage.
+    #[must_use]
+    pub const fn memory_usage(self) -> f32 {
+        self.memory_usage
+    }
+
+    /// Return evaluator stack usage as a percentage.
+    #[must_use]
+    pub const fn stack_usage(self) -> f32 {
+        self.stack_usage
+    }
+
+    /// Return VESC's evaluator result byte.
+    #[must_use]
+    pub const fn result(self) -> u8 {
+        self.result
     }
 }
 
@@ -418,6 +461,16 @@ impl BtlePackageInstallTransport {
             }
             _ => Err(malformed_reply("unexpected custom-config reply")),
         }
+    }
+
+    /// Reads Lisp evaluator runtime statistics without restarting it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE write, firmware response, or stats payload fails.
+    pub fn lisp_stats(&self, timeout: Duration) -> Result<LispStats, PackageInstallError> {
+        let response = self.write_command(COMM_LISP_GET_STATS, &[0], timeout)?;
+        parse_lisp_stats(&response)
     }
 
     /// Return the firmware version captured during preflight.
@@ -853,6 +906,21 @@ fn parse_fw_version_info(response: &[u8]) -> Result<FwVersionInfo, PackageInstal
     })
 }
 
+fn parse_lisp_stats(response: &[u8]) -> Result<LispStats, PackageInstallError> {
+    let mut cursor = response;
+    if read_u8(&mut cursor)? != COMM_LISP_GET_STATS {
+        return Err(malformed_reply("unexpected Lisp stats reply"));
+    }
+
+    Ok(LispStats {
+        cpu_usage: f32::from(read_i16_be(&mut cursor)?) / 100.0,
+        heap_usage: f32::from(read_i16_be(&mut cursor)?) / 100.0,
+        memory_usage: f32::from(read_i16_be(&mut cursor)?) / 100.0,
+        stack_usage: f32::from(read_i16_be(&mut cursor)?) / 100.0,
+        result: read_u8(&mut cursor)?,
+    })
+}
+
 fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
     let mut cursor = response;
     if read_u8(&mut cursor)? != expected_command {
@@ -893,6 +961,12 @@ fn read_u8(cursor: &mut &[u8]) -> Result<u8, PackageInstallError> {
 
 fn read_i8(cursor: &mut &[u8]) -> Result<i8, PackageInstallError> {
     Ok(i8::from_be_bytes([read_u8(cursor)?]))
+}
+
+fn read_i16_be(cursor: &mut &[u8]) -> Result<i16, PackageInstallError> {
+    Ok(i16::from_be_bytes(
+        take_bytes(cursor, 2)?.try_into().expect("slice length"),
+    ))
 }
 
 fn read_u32_be(cursor: &mut &[u8]) -> Result<u32, PackageInstallError> {
@@ -939,10 +1013,11 @@ fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, Pac
 #[cfg(test)]
 mod tests {
     use super::{
-        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_SET_RUNNING, COMM_LISP_WRITE_CODE,
-        FirmwareVersion, FwVersionInfo, HwType, ble_write_chunks, build_command_packet,
-        build_lisp_upload_payload, clear_response_state, drain_response_channel,
-        parse_fw_version_info, parse_simple_ack, parse_write_ack, recv_packet_until, retry,
+        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_GET_STATS, COMM_LISP_SET_RUNNING,
+        COMM_LISP_WRITE_CODE, FirmwareVersion, FwVersionInfo, HwType, ble_write_chunks,
+        build_command_packet, build_lisp_upload_payload, clear_response_state,
+        drain_response_channel, parse_fw_version_info, parse_lisp_stats, parse_simple_ack,
+        parse_write_ack, recv_packet_until, retry,
     };
     use crate::vesc_uart::{PacketDecoder, encode_packet};
     use std::sync::mpsc;
@@ -969,6 +1044,29 @@ mod tests {
                 has_qml_app: true,
             }
         );
+    }
+
+    #[test]
+    fn parses_lisp_stats_reply_from_vesc_layout() {
+        let stats = parse_lisp_stats(&[
+            COMM_LISP_GET_STATS,
+            0x03,
+            0xe8,
+            0x07,
+            0xd0,
+            0x0b,
+            0xb8,
+            0x0f,
+            0xa0,
+            0,
+        ])
+        .expect("Lisp stats");
+
+        assert!((stats.cpu_usage() - 10.0).abs() < f32::EPSILON);
+        assert!((stats.heap_usage() - 20.0).abs() < f32::EPSILON);
+        assert!((stats.memory_usage() - 30.0).abs() < f32::EPSILON);
+        assert!((stats.stack_usage() - 40.0).abs() < f32::EPSILON);
+        assert_eq!(stats.result(), 0);
     }
 
     #[test]

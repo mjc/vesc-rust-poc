@@ -13,13 +13,16 @@ use vesc_protocol::control_loop::{
 
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
 use crate::package_install::PackageInstallError;
-use crate::package_transport::{BtlePackageInstallTransport, FirmwareVersion, VescSession};
+use crate::package_transport::{
+    BtlePackageInstallTransport, FirmwareVersion, LispStats, VescSession,
+};
 use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const CUSTOM_CONFIG_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 const CUSTOM_APP_DATA_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const LISP_STATS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_SETPOINT: i16 = 100;
 const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
@@ -84,6 +87,21 @@ pub fn run_custom_config_probe(target: LoopbackTarget) -> Result<Vec<u8>, Deploy
     transport.open(target).map_err(DeployError::Transport)?;
     let result = transport
         .custom_config(0, CUSTOM_CONFIG_RESPONSE_TIMEOUT)
+        .map_err(DeployError::Transport);
+    transport.close();
+    result
+}
+
+/// Opens BLE and reads the Lisp evaluator's current runtime statistics.
+///
+/// # Errors
+///
+/// Returns an error when BLE, firmware preflight, transport, or the Lisp response fails.
+pub fn run_lisp_stats_probe(target: LoopbackTarget) -> Result<LispStats, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport.open(target).map_err(DeployError::Transport)?;
+    let result = transport
+        .lisp_stats(LISP_STATS_RESPONSE_TIMEOUT)
         .map_err(DeployError::Transport);
     transport.close();
     result
