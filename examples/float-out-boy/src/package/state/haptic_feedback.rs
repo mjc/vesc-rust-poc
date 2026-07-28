@@ -189,10 +189,12 @@ fn feedback_type(
 }
 
 fn strength_scale(config: FloatOutBoyHapticConfig<'_>, speed: Speed) -> f32 {
-    let maximum_speed = config
-        .max_strength_speed()
-        .as_kilometers_per_hour()
-        .max(1.0);
+    let configured_maximum_speed = config.max_strength_speed().as_kilometers_per_hour();
+    let maximum_speed = if configured_maximum_speed > 0.0 {
+        configured_maximum_speed
+    } else {
+        1.0
+    };
     let speed = speed.as_kilometers_per_hour().abs();
     let minimum = config.min_strength().as_ratio();
     let linear = (1.0 - config.strength_curvature().as_ratio()) * (1.0 - minimum) / maximum_speed;

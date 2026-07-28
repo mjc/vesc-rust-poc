@@ -1510,9 +1510,7 @@ impl FloatOutBoyStartupConfig<'_> {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn loop_time_us(self) -> u32 {
-        crate::wire::saturating_trunc_f32_to_u32(
-            1_000_000.0 / self.sample_rate().as_hertz().max(1.0),
-        )
+        crate::wire::saturating_trunc_f32_to_u32(1_000_000.0 / self.sample_rate().as_hertz())
     }
 
     pub(crate) fn simplestart_enabled(self) -> bool {
@@ -1529,6 +1527,10 @@ impl FloatOutBoyStartupConfig<'_> {
 
     pub(crate) fn pushstart_enabled(self) -> bool {
         self.0.flag(Self::PUSHSTART_FIELD)
+    }
+
+    pub(crate) const fn dirty_landings_enabled(self) -> bool {
+        self.0.as_bytes()[100] != 0
     }
 
     pub(crate) fn startup_speed(self) -> AngularVelocity {

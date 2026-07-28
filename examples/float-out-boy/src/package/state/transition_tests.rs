@@ -1,6 +1,6 @@
 use super::super::test_support::{
-    configure_startup_click, edit_config, sample_all_data_payloads_with_ride_state,
-    tick_float_out_boy_state_and_handle_packet,
+    balance_filter_with_pitch, configure_startup_click, edit_config,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
 use crate::domain::{
@@ -503,6 +503,82 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::None);
+}
+
+#[test]
+fn full_switch_stop_temporarily_adds_dirty_landing_pitch_margin_like_refloat() {
+    let stop_ticks = TimestampTicks::from_ticks(100_000);
+    let telemetry = FirmwareTest::new();
+    telemetry.set_imu_ready(true);
+    let imu = telemetry.imu();
+    let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
+    edit_config(&mut state, |config| {
+        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(4.0)));
+        assert!(config.set_dirty_landings_enabled(true));
+    });
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        stop_ticks,
+        telemetry.telemetry(),
+        imu,
+        &[
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .stop_condition(),
+        FloatOutBoyStopCondition::SwitchFull
+    );
+
+    let payloads = state.all_data_payloads();
+    let base = payloads.base();
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+        FloatOutBoyAllDataBasePayload::new(
+            base.balance_current(),
+            base.attitude(),
+            base.status(),
+            FloatOutBoyFootpadSample::new(
+                Voltage::from_volts(0.8),
+                Voltage::from_volts(0.8),
+                FloatOutBoyFootpadState::Both,
+            ),
+            base.setpoints(),
+            base.booster_current(),
+            base.motor(),
+        ),
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    );
+    state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(8.0)));
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(stop_ticks.as_ticks() + 1),
+        telemetry.telemetry(),
+        imu,
+        &[
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running
+    );
 }
 
 #[test]

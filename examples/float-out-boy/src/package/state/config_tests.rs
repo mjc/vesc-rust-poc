@@ -469,7 +469,7 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     let len = firmware.copy_last_log(&mut log);
     assert_eq!(
         &log[..len],
-        b"Failed to deserialize config, using defaults.",
+        b"Invalid config, using defaults.",
     );
 }
 

@@ -35,7 +35,7 @@ fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
             b"Failed to read config, using defaults.".as_slice()
         }
         FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage => {
-            b"Failed to deserialize config, using defaults.".as_slice()
+            b"Invalid config, using defaults.".as_slice()
         }
         FloatOutBoyConfigLoadOutcome::NotAttempted | FloatOutBoyConfigLoadOutcome::Persisted => {
             return;

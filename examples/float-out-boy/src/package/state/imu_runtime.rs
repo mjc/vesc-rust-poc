@@ -720,7 +720,13 @@ fn evaluate_engagement(
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
     let push_start = PushStartLimits::FLOAT_OUT_BOY;
-    let pitch_tolerance = startup.pitch_tolerance();
+    let dirty_landing_margin = matches!(
+        input.ride_state.stop_condition(),
+        FloatOutBoyStopCondition::SwitchFull
+    ) && startup.dirty_landings_enabled()
+        && !float_out_boy_ticks_elapsed(system_time_ticks, state.fault_angle_pitch_ticks, 1);
+    let pitch_tolerance = startup.pitch_tolerance()
+        + AngleDegrees::from_degrees(f32::from(u8::from(dirty_landing_margin) * 10));
     let roll_tolerance = startup.roll_tolerance();
     let ready_engage = !input.startup_became_ready
         && matches!(input.run_state, FloatOutBoyRunState::Ready)
