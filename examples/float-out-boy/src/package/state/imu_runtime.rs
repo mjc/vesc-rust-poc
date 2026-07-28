@@ -98,8 +98,7 @@ fn begin_refresh(
     if matches!(run_state, FloatOutBoyRunState::Running) {
         // `time_update` refreshes Float Out Boy's disengage and idle timers on every RUNNING loop
         // at `third_party/float-out-boy/src/time.c:38-43`.
-        state.disengage_ticks = system_time_ticks;
-        state.refresh_idle_epoch(system_time_ticks);
+        state.refresh_running_epochs(system_time_ticks);
     }
 
     let mut beep_reason = status.beep_reason();

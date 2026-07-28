@@ -560,6 +560,11 @@ impl FloatOutBoyPackageState {
         self.idle_ticks = now;
     }
 
+    pub(super) fn refresh_running_epochs(&mut self, now: TimestampTicks) {
+        self.disengage_ticks = now;
+        self.refresh_idle_epoch(now);
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn initialize_time_epochs(&mut self, now: TimestampTicks) {
         // Refloat fixed its 1.2.1 tick/second mismatch in `f727e1d` so the
