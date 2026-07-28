@@ -454,7 +454,7 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn handle_data_recorder_packet(
         &mut self,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         let Some(payload) =
@@ -486,7 +486,7 @@ impl FloatOutBoyPackageState {
                 let sample_count =
                     u32::try_from(self.data_recorder.sample_count()).unwrap_or(u32::MAX);
                 response[2..6].copy_from_slice(&sample_count.to_be_bytes());
-                let _ = send(&response);
+                let _ = reply(&response);
             }
             DataRecorderRequest::SendData { offset } => {
                 let mut response = [0; DATA_RESPONSE_CAPACITY];
@@ -516,7 +516,7 @@ impl FloatOutBoyPackageState {
                 }
                 if self.data_recorder.sample_count() > 0 {
                     if let Some(packet) = response.get(..index) {
-                        let _ = send(packet);
+                        let _ = reply(packet);
                     }
                 }
             }

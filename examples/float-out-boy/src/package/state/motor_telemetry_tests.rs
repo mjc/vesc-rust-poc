@@ -23,7 +23,7 @@ fn handle_all_data_mode(
 ) -> Option<Vec<u8>> {
     let mut packet = None;
     let mut now = || now;
-    let mut send = |bytes: &[u8]| {
+    let mut reply = |bytes: &[u8]| {
         packet = Some(Vec::from(bytes));
         true
     };
@@ -32,7 +32,7 @@ fn handle_all_data_mode(
         .handle_packet_with_telemetry(
             telemetry,
             &mut now,
-            &mut send,
+            &mut reply,
             &[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::GetAllData.id(),
@@ -299,7 +299,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut packet = Vec::new();
     let mut now = || now;
-    let mut send = |bytes: &[u8]| {
+    let mut reply = |bytes: &[u8]| {
         packet.extend_from_slice(bytes);
         true
     };
@@ -307,7 +307,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     assert!(state.handle_packet_with_telemetry(
         telemetry,
         &mut now,
-        &mut send,
+        &mut reply,
         &[
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::RealtimeData.id(),

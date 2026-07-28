@@ -147,13 +147,13 @@ impl vescpkg_rs::AppDataHandler for ControlLoopAppData {
     fn handle(
         state: &mut Self::State,
         packet: vescpkg_rs::AppDataPacket<'_>,
-        response: &mut vescpkg_rs::AppDataResponse,
+        reply: &mut vescpkg_rs::AppDataReply<'_>,
     ) {
         let mut bytes = [0_u8; STATUS_BYTES];
         let Ok(response_len) = handle_command(state, packet.as_bytes(), &mut bytes) else {
             return;
         };
-        let _ = response.write(&bytes[..response_len]);
+        let _ = reply.write(&bytes[..response_len]);
     }
 }
 

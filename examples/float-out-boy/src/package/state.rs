@@ -653,7 +653,7 @@ impl FloatOutBoyPackageState {
         telemetry: &impl MotorTelemetry,
         imu: &impl Imu,
         now: &mut impl FnMut() -> TimestampTicks,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         // Device callbacks keep the IMU parameter for one stable packet API;
@@ -662,7 +662,7 @@ impl FloatOutBoyPackageState {
         #[cfg(all(not(test), not(target_arch = "arm")))]
         self.refresh_runtime_state(telemetry, imu, now());
 
-        self.handle_packet_with_telemetry(telemetry, now, send, bytes)
+        self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
     }
 
     /// Refresh the source-backed runtime slices that Float Out Boy updates near the
@@ -832,7 +832,7 @@ impl FloatOutBoyPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         now: &mut impl FnMut() -> TimestampTicks,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         self.handle_control_packet(now, bytes)
@@ -840,8 +840,8 @@ impl FloatOutBoyPackageState {
             || self.handle_config_packet(now, bytes)
             || self.handle_flywheel_packet(bytes)
             || self.handle_tuning_packet(now, bytes)
-            || self.handle_query_packet(telemetry, now, send, bytes)
-            || self.send_all_data_packet_response(telemetry, send, bytes)
+            || self.handle_query_packet(telemetry, now, reply, bytes)
+            || self.reply_to_all_data_packet(telemetry, reply, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -881,15 +881,15 @@ impl FloatOutBoyPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         now: &mut impl FnMut() -> TimestampTicks,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        self.handle_alert_packet(telemetry, send, bytes)
-            || self.handle_lcm_packet(telemetry, send, bytes)
-            || self.handle_data_recorder_packet(send, bytes)
-            || self.send_metadata_packet_response(send, bytes)
-            || self.send_legacy_realtime_data_packet_response(send, bytes)
-            || self.send_realtime_data_packet_response(telemetry, now, send, bytes)
+        self.handle_alert_packet(telemetry, reply, bytes)
+            || self.handle_lcm_packet(telemetry, reply, bytes)
+            || self.handle_data_recorder_packet(reply, bytes)
+            || self.reply_to_metadata_packet(reply, bytes)
+            || self.reply_to_legacy_realtime_data_packet(reply, bytes)
+            || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

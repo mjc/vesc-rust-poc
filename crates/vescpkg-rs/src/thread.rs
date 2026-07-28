@@ -13,7 +13,6 @@ use core::time::Duration;
 
 use crate::PackageRuntimeState;
 use crate::bindings::AppDataBindings;
-use crate::lifecycle_core::AppDataSendError;
 use crate::types::ThreadPriority;
 use crate::units::TimestampTicks;
 #[cfg(not(test))]
@@ -25,12 +24,6 @@ mod private {
 
 /// Native package thread entrypoint shape.
 pub(crate) type ThreadEntry = unsafe extern "C" fn(*mut c_void);
-
-/// Typed firmware app-data capability available to package code.
-pub struct FirmwareAppData {
-    #[cfg(not(test))]
-    api: AppDataApi<crate::bindings::RealBindings>,
-}
 
 /// Opaque high-resolution firmware timer instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -50,29 +43,10 @@ impl TimerInstant {
     }
 }
 
-impl FirmwareAppData {
-    #[cfg(not(test))]
-    pub(crate) fn new() -> Self {
-        Self {
-            api: AppDataApi::new(crate::bindings::RealBindings),
-        }
-    }
-
-    /// Send one app-data response.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`AppDataSendError`] when the payload is too large or firmware rejects it.
-    #[cfg(not(test))]
-    pub fn send(&self, bytes: &[u8]) -> Result<(), AppDataSendError> {
-        self.api.send(bytes)
-    }
-}
-
 /// Firmware monotonic clock capability available to package code.
 pub struct FirmwareClock {
     #[cfg(not(test))]
-    api: AppDataApi<crate::bindings::RealBindings>,
+    api: ClockApi<crate::bindings::RealBindings>,
 }
 
 impl FirmwareClock {
@@ -80,13 +54,13 @@ impl FirmwareClock {
     #[cfg(not(test))]
     #[must_use]
     pub fn current_timestamp() -> TimestampTicks {
-        AppDataApi::new(crate::bindings::RealBindings).system_timestamp()
+        ClockApi::new(crate::bindings::RealBindings).system_timestamp()
     }
 
     #[cfg(not(test))]
     pub(crate) fn new() -> Self {
         Self {
-            api: AppDataApi::new(crate::bindings::RealBindings),
+            api: ClockApi::new(crate::bindings::RealBindings),
         }
     }
 
@@ -126,14 +100,14 @@ impl FirmwareClock {
     }
 }
 
-/// Internal firmware app-data API built on a binding implementation.
-pub(crate) struct AppDataApi<B> {
+/// Internal firmware clock API built on a binding implementation.
+pub(crate) struct ClockApi<B> {
     bindings: B,
 }
 
 #[cfg_attr(test, allow(dead_code))]
-impl<B: AppDataBindings> AppDataApi<B> {
-    /// Construct a new firmware app-data API wrapper.
+impl<B: AppDataBindings> ClockApi<B> {
+    /// Construct a new firmware clock API wrapper.
     pub(crate) fn new(bindings: B) -> Self {
         Self { bindings }
     }
@@ -166,14 +140,6 @@ impl<B: AppDataBindings> AppDataApi<B> {
     fn timer_elapsed_since(&self, earlier: TimerInstant) -> VescSeconds {
         VescSeconds::from_seconds(self.bindings.timer_seconds_elapsed_since(earlier.raw()))
     }
-
-    /// Send one app-data response.
-    pub(crate) fn send(&self, bytes: &[u8]) -> Result<(), AppDataSendError> {
-        self.bindings
-            .send_app_data_bytes(bytes)
-            .then_some(())
-            .ok_or(AppDataSendError::PayloadTooLarge)
-    }
 }
 
 /// Typed access to the firmware capabilities available to package threads.
@@ -182,8 +148,6 @@ pub struct Firmware {
     can: crate::CanBus,
     #[cfg(not(test))]
     threads: ThreadApi<RealThreadBindings>,
-    #[cfg(not(test))]
-    app_data: FirmwareAppData,
     #[cfg(not(test))]
     clock: FirmwareClock,
     #[cfg(not(test))]
@@ -218,13 +182,6 @@ impl Firmware {
     #[must_use]
     pub fn threads(&self) -> &impl FirmwareThreads {
         &self.threads
-    }
-
-    /// Borrow firmware app-data capabilities without exposing the binding type.
-    #[cfg(not(test))]
-    #[must_use]
-    pub fn app_data(&self) -> &FirmwareAppData {
-        &self.app_data
     }
 
     /// Borrow the firmware monotonic clock.
@@ -312,7 +269,6 @@ impl Firmware {
         Self {
             can: crate::CanBus::new(),
             threads: ThreadApi::new(RealThreadBindings),
-            app_data: FirmwareAppData::new(),
             clock: FirmwareClock::new(),
             nvm: crate::Nvm::new(),
             eeprom: crate::CustomEeprom::new(),
@@ -1179,7 +1135,7 @@ fn duration_micros(duration: Duration) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppDataApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
+        ClockApi, FirmwareThread, StatelessFirmwareThread, StatelessThreadContext, ThreadApi,
         ThreadContext, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError,
         VESC_MAX_SAFE_SLEEP_MICROS, firmware_thread_entry, stateless_firmware_thread_entry,
     };
@@ -1195,28 +1151,11 @@ mod tests {
     use crate::units::TimestampTicks;
 
     #[test]
-    fn semantic_app_data_capability_hides_binding_shape() {
+    fn semantic_clock_capability_hides_binding_shape() {
         let bindings = crate::test_support::FakeAppDataBindings::new();
-        let app_data = AppDataApi::new(&bindings);
+        let clock = ClockApi::new(&bindings);
 
-        assert_eq!(app_data.system_timestamp(), TimestampTicks::from_ticks(0));
-        assert_eq!(app_data.send(&[1, 2, 3]), Ok(()));
-        assert_eq!(bindings.send_calls.get(), 1);
-        assert_eq!(bindings.last_len.get(), 3);
-    }
-
-    #[test]
-    fn app_data_payload_stops_at_the_firmware_packet_limit() {
-        let bindings = crate::test_support::FakeAppDataBindings::new();
-        let app_data = AppDataApi::new(&bindings);
-
-        assert_eq!(app_data.send(&[0; 511]), Ok(()));
-        assert_eq!(
-            app_data.send(&[0; 512]),
-            Err(crate::AppDataSendError::PayloadTooLarge)
-        );
-        assert_eq!(bindings.send_calls.get(), 1);
-        assert_eq!(bindings.last_len.get(), 511);
+        assert_eq!(clock.system_timestamp(), TimestampTicks::from_ticks(0));
     }
 
     #[test]

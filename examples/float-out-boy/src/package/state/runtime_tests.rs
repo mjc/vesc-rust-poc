@@ -553,7 +553,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
 
     let mut packet = Vec::new();
     let mut now = || now;
-    let mut send = |bytes: &[u8]| {
+    let mut reply = |bytes: &[u8]| {
         packet.extend_from_slice(bytes);
         true
     };
@@ -561,7 +561,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
         telemetry.telemetry(),
         imu,
         &mut now,
-        &mut send,
+        &mut reply,
         &[
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id(),

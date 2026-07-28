@@ -17,7 +17,7 @@ impl vescpkg_rs::AppDataHandler for Callback {
     fn handle(
         _state: &mut Self::State,
         _packet: vescpkg_rs::AppDataPacket<'_>,
-        _response: &mut vescpkg_rs::AppDataResponse,
+        _reply: &mut vescpkg_rs::AppDataReply<'_>,
     ) {
     }
 }
@@ -27,6 +27,34 @@ Macro implementation traits are not available at the package-author root:
 
 ```compile_fail
 use vescpkg_rs::PackageAppDataCallback;
+```
+
+Direct app-data transport is not available to package code:
+
+```compile_fail
+use vescpkg_rs::FirmwareAppData;
+```
+
+```compile_fail
+use vescpkg_rs::AppDataSendError;
+```
+
+```compile_fail
+let _ = vescpkg_rs::Firmware::new().app_data();
+```
+
+App-data reply storage is runtime-owned:
+
+```compile_fail
+let _ = vescpkg_rs::AppDataResponse::new();
+```
+
+```compile_fail
+use vescpkg_rs::AppDataReplyBuffer;
+```
+
+```compile_fail
+let _ = vescpkg_rs::AppDataReply::new();
 ```
 
 ```compile_fail

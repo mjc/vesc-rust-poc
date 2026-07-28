@@ -265,7 +265,7 @@ impl FloatOutBoyPackageState {
     pub(super) fn handle_lcm_packet(
         &mut self,
         telemetry: &impl MotorTelemetry,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         if let Some(payload) =
@@ -273,11 +273,11 @@ impl FloatOutBoyPackageState {
         {
             self.lcm.poll_request(payload);
             let packet = self.lcm.poll_response(self.all_data_payloads, telemetry);
-            return send(packet.bytes());
+            return reply(packet.bytes());
         }
         if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmLightInfo).is_some() {
             let packet = self.lcm.light_info_response();
-            return send(packet.bytes());
+            return reply(packet.bytes());
         }
         if let Some(payload) =
             float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmLightControl)
@@ -288,12 +288,12 @@ impl FloatOutBoyPackageState {
         if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmDeviceInfo).is_some()
         {
             let packet = self.lcm.device_info_response();
-            return send(packet.bytes());
+            return reply(packet.bytes());
         }
         if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmGetBattery).is_some()
         {
             let packet = self.lcm.battery_response(telemetry);
-            return send(packet.bytes());
+            return reply(packet.bytes());
         }
         if let Some(payload) =
             float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LightsControl)
@@ -309,7 +309,7 @@ impl FloatOutBoyPackageState {
                 }
             }
             let status = self.led_runtime_status();
-            return send(&[
+            return reply(&[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::LightsControl.id(),
                 u8::from(status.enabled()) | (u8::from(status.headlights_enabled()) << 1),

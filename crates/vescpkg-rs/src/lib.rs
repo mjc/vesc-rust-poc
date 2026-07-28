@@ -259,7 +259,7 @@ pub mod __macro_support;
 pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
-    AppDataHandler, AppDataPacket, AppDataResponse, ConfigBytes, ConfigXml,
+    AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
     MAX_APP_DATA_PAYLOAD_LEN, StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
@@ -270,7 +270,6 @@ pub use imu::{
     ImuReadCallbackLease, ImuReadHandler, register_imu_read_callback,
 };
 pub use init::{PackageStart, PackageStartError};
-pub use lifecycle_core::AppDataSendError;
 pub use motor::{MotorOutput, MotorReleaseOutcome, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
@@ -283,9 +282,9 @@ pub use runtime::{
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, SemaphoreWaitOutcome};
 pub use terminal::{Terminal, TerminalArgs, TerminalError, TerminalHandler, TerminalRegistration};
 pub use thread::{
-    Firmware, FirmwareAppData, FirmwareClock, FirmwareThread, FirmwareThreads,
-    StatelessFirmwareThread, StatelessThreadContext, ThreadContext, ThreadError, ThreadName,
-    ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+    Firmware, FirmwareClock, FirmwareThread, FirmwareThreads, StatelessFirmwareThread,
+    StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
+    ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
 pub use uart::{Uart, UartError, UartLease};
 
@@ -336,21 +335,21 @@ pub mod prelude {
     #[cfg(feature = "math")]
     pub use crate::{Ahrs, Madgwick};
     pub use crate::{
-        AnalogPin, AppDataHandler, AppDataSendError, CanBus, CanError, CanReceiverHandler,
+        AnalogPin, AppDataHandler, AppDataReplyError, CanBus, CanError, CanReceiverHandler,
         CanReceiverId, CanRemoteMotor, CanStatus, CanStatusStore, CommandError,
         CommandReplyHandler, Commands, ConfigBytes, ConfigXml, ControllerInput, CustomEeprom,
         CustomEepromAddress, DigitalOutputLevel, DigitalPin, EepromError, EepromWord,
         EepromWordOffset, Encoder, EncoderError, EncoderHandler, EncoderRegistration,
         ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs,
-        FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareAppData,
-        FirmwareCapabilities, FirmwareClock, FirmwareFloatSetting, FirmwareInputs,
-        FirmwareIntSetting, FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore,
-        FirmwareSettings, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError,
-        FocAudioSampleTable, FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu,
-        ImuReadCallback, ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError,
-        LbmExtension, LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError,
-        LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError,
-        MotorOutput, MotorReleaseOutcome, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
+        FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareCapabilities,
+        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog,
+        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread,
+        FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode, Gnss,
+        GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError,
+        ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId,
+        LispFlatValue, LispFlatValueError, LispIntegerError, LispList, LispListError,
+        LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
+        MotorReleaseOutcome, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
         PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
         PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,
         SemaphoreWaitOutcome, SettingsError, ShutdownInhibit, StatefulCustomConfigCallback,

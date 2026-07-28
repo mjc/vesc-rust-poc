@@ -14,7 +14,7 @@ impl FloatOutBoyPackageState {
     pub(super) fn handle_alert_packet(
         &mut self,
         telemetry: &impl MotorTelemetry,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         if let Some(payload) =
@@ -71,7 +71,7 @@ impl FloatOutBoyPackageState {
             if let Some(count_slot) = response.get_mut(count_index) {
                 *count_slot = count;
             }
-            return response.get(..index).is_some_and(send);
+            return response.get(..index).is_some_and(reply);
         }
 
         if let Some(payload) =

@@ -1444,7 +1444,7 @@ mod tests {
             fn handle(
                 _: &mut Self::State,
                 _: crate::AppDataPacket<'_>,
-                _: &mut crate::AppDataResponse,
+                _: &mut crate::AppDataReply<'_>,
             ) {
             }
         }
@@ -1533,7 +1533,7 @@ mod tests {
             fn handle(
                 _: &mut Self::State,
                 _: crate::AppDataPacket<'_>,
-                _: &mut crate::AppDataResponse,
+                _: &mut crate::AppDataReply<'_>,
             ) {
             }
         }
@@ -1780,7 +1780,7 @@ mod tests {
             fn handle(
                 _: &mut Self::State,
                 _: crate::AppDataPacket<'_>,
-                _: &mut crate::AppDataResponse,
+                _: &mut crate::AppDataReply<'_>,
             ) {
             }
         }

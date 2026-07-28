@@ -8,18 +8,14 @@ use vescpkg_rs::test_support::FirmwareTest;
 fn handle(state: &mut FloatOutBoyPackageState, request: &[u8]) -> (bool, Vec<Vec<u8>>) {
     let firmware = FirmwareTest::new();
     let mut now = || TimestampTicks::from_ticks(123);
-    let mut sent = Vec::new();
-    let mut send_packet = |bytes: &[u8]| {
-        sent.push(bytes.to_vec());
+    let mut replies = Vec::new();
+    let mut reply = |bytes: &[u8]| {
+        replies.push(bytes.to_vec());
         true
     };
-    let handled = state.handle_packet_with_telemetry(
-        firmware.telemetry(),
-        &mut now,
-        &mut send_packet,
-        request,
-    );
-    (handled, sent)
+    let handled =
+        state.handle_packet_with_telemetry(firmware.telemetry(), &mut now, &mut reply, request);
+    (handled, replies)
 }
 
 fn request(command: FloatOutBoyAppDataCommand, payload: &[u8]) -> Vec<u8> {

@@ -160,21 +160,3 @@ impl<B: LbmBindings> PackageLifecycle<B> {
         ExtensionRegistration::new(requested, registered)
     }
 }
-
-/// Failure returned when an app-data payload cannot cross the firmware ABI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum AppDataSendError {
-    /// The payload exceeds the firmware's 511-byte app-data limit.
-    PayloadTooLarge,
-}
-
-impl core::fmt::Display for AppDataSendError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::PayloadTooLarge => f.write_str("app-data payload exceeds 511 bytes"),
-        }
-    }
-}
-
-impl core::error::Error for AppDataSendError {}

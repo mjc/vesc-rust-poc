@@ -15,9 +15,9 @@ use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
 
 impl FloatOutBoyPackageState {
-    pub(super) fn send_metadata_packet_response(
+    pub(super) fn reply_to_metadata_packet(
         &self,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         if let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Info)
@@ -36,7 +36,7 @@ impl FloatOutBoyPackageState {
                 internal_leds_operational,
                 self.data_recorder.has_capability(),
             );
-            return send(response.as_bytes());
+            return reply(response.as_bytes());
         }
 
         if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RealtimeDataIds)
@@ -47,15 +47,15 @@ impl FloatOutBoyPackageState {
             // sends the counted ID table at `third_party/float-out-boy/src/main.c:1876-1901`.
             // Keep the response as callback-local bytes like upstream's stack buffer.
             let response = encode_float_out_boy_realtime_data_ids_response();
-            return send(&response);
+            return reply(&response);
         }
 
         false
     }
 
-    pub(super) fn send_legacy_realtime_data_packet_response(
+    pub(super) fn reply_to_legacy_realtime_data_packet(
         &self,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::GetRealtimeData) {
@@ -67,17 +67,17 @@ impl FloatOutBoyPackageState {
                     self.remote_control.input(),
                     self.ride_modifiers.atr_accel_diff(),
                 );
-                send(&response)
+                reply(&response)
             }
             None => false,
         }
     }
 
-    pub(super) fn send_realtime_data_packet_response(
+    pub(super) fn reply_to_realtime_data_packet(
         &self,
         telemetry: &impl MotorTelemetry,
         now: &mut impl FnMut() -> TimestampTicks,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RealtimeData) {
@@ -116,17 +116,17 @@ impl FloatOutBoyPackageState {
                     self.ride_modifiers.atr_accel_diff(),
                     self.ride_modifiers.atr_speed_boost(),
                 );
-                send(response.as_bytes())
+                reply(response.as_bytes())
             }
             None => false,
         }
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    pub(super) fn send_all_data_packet_response(
+    pub(super) fn reply_to_all_data_packet(
         &self,
         telemetry: &impl MotorTelemetry,
-        send: &mut impl FnMut(&[u8]) -> bool,
+        reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
         // C map: `on_command_received` only calls `cmd_send_all_data` for
@@ -138,7 +138,7 @@ impl FloatOutBoyPackageState {
             (Err(_), _) | (Ok(_), FirmwareFault::Unknown) => false,
             (Ok(_), FirmwareFault::Active(fault)) => {
                 let response = FloatOutBoyAllDataResponse::fault(fault.wire_code());
-                send(response.as_bytes())
+                reply(response.as_bytes())
             }
             // Preserve the fail-closed behavior for an ABI value this SDK
             // cannot safely represent in Float Out Boy's wire format.
@@ -157,7 +157,7 @@ impl FloatOutBoyPackageState {
                 let response = payloads.encode_response(request);
                 // Refloat commit 98bfe765 keeps the last reason available to
                 // later command-7 readers after its active condition ends.
-                send(response.as_bytes())
+                reply(response.as_bytes())
             }
         }
     }
@@ -208,15 +208,15 @@ mod tests {
         let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = Vec::new();
         let mut now = || app_data;
-        let mut send = |bytes: &[u8]| {
+        let mut reply = |bytes: &[u8]| {
             packet.extend_from_slice(bytes);
             true
         };
 
-        assert!(state.send_realtime_data_packet_response(
+        assert!(state.reply_to_realtime_data_packet(
             telemetry.telemetry(),
             &mut now,
-            &mut send,
+            &mut reply,
             &[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::RealtimeData.id(),
@@ -238,7 +238,7 @@ mod tests {
             0,
         ];
         let mut first = Vec::new();
-        assert!(state.send_all_data_packet_response(
+        assert!(state.reply_to_all_data_packet(
             firmware.telemetry(),
             &mut |bytes| {
                 first.extend_from_slice(bytes);
@@ -247,7 +247,7 @@ mod tests {
             &request,
         ));
         let mut second = Vec::new();
-        assert!(state.send_all_data_packet_response(
+        assert!(state.reply_to_all_data_packet(
             firmware.telemetry(),
             &mut |bytes| {
                 second.extend_from_slice(bytes);
@@ -271,12 +271,12 @@ mod tests {
             0,
         ];
 
-        assert!(state.send_all_data_packet_response(faulted.telemetry(), &mut |_| true, &request,));
+        assert!(state.reply_to_all_data_packet(faulted.telemetry(), &mut |_| true, &request,));
         drop(faulted);
 
         let healthy = FirmwareTest::new();
         let mut response = Vec::new();
-        assert!(state.send_all_data_packet_response(
+        assert!(state.reply_to_all_data_packet(
             healthy.telemetry(),
             &mut |bytes| {
                 response.extend_from_slice(bytes);
@@ -297,14 +297,10 @@ mod tests {
             0,
         ];
 
-        assert!(!state.send_all_data_packet_response(
-            firmware.telemetry(),
-            &mut |_| false,
-            &request,
-        ));
+        assert!(!state.reply_to_all_data_packet(firmware.telemetry(), &mut |_| false, &request,));
 
         let mut response = Vec::new();
-        assert!(state.send_all_data_packet_response(
+        assert!(state.reply_to_all_data_packet(
             firmware.telemetry(),
             &mut |bytes| {
                 response.extend_from_slice(bytes);
@@ -320,7 +316,7 @@ mod tests {
         let firmware = FirmwareTest::new();
         let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-        assert!(!state.send_all_data_packet_response(
+        assert!(!state.reply_to_all_data_packet(
             firmware.telemetry(),
             &mut |_| true,
             &[
@@ -330,7 +326,7 @@ mod tests {
         ));
 
         let mut response = Vec::new();
-        assert!(state.send_all_data_packet_response(
+        assert!(state.reply_to_all_data_packet(
             firmware.telemetry(),
             &mut |bytes| {
                 response.extend_from_slice(bytes);
@@ -354,7 +350,7 @@ mod tests {
         state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
         let mut packet = Vec::new();
 
-        assert!(state.send_realtime_data_packet_response(
+        assert!(state.reply_to_realtime_data_packet(
             firmware.telemetry(),
             &mut || now,
             &mut |bytes| {
@@ -488,7 +484,7 @@ mod tests {
         ));
 
         let mut packet = Vec::new();
-        assert!(state.send_realtime_data_packet_response(
+        assert!(state.reply_to_realtime_data_packet(
             firmware.telemetry(),
             &mut || now,
             &mut |bytes| {
@@ -511,7 +507,7 @@ mod tests {
         let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = Vec::new();
 
-        assert!(state.send_metadata_packet_response(
+        assert!(state.reply_to_metadata_packet(
             &mut |bytes| {
                 packet.extend_from_slice(bytes);
                 true
@@ -529,13 +525,13 @@ mod tests {
     fn metadata_packet_response_sends_realtime_ids_directly() {
         let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = Vec::new();
-        let mut send = |bytes: &[u8]| {
+        let mut reply = |bytes: &[u8]| {
             packet.extend_from_slice(bytes);
             true
         };
 
-        assert!(state.send_metadata_packet_response(
-            &mut send,
+        assert!(state.reply_to_metadata_packet(
+            &mut reply,
             &[
                 FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                 FloatOutBoyAppDataCommand::RealtimeDataIds.id(),
