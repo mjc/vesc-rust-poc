@@ -36,7 +36,8 @@ enum FloatOutBoyRuntimeThread {
 impl FloatOutBoyRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
-            Self::Main | Self::Aux => 2048,
+            Self::Main => 3072,
+            Self::Aux => 2048,
         }
     }
 
@@ -61,8 +62,9 @@ impl FloatOutBoyRuntimeThread {
 /// Upstream passes its position-independent `float_out_boy_thd` and `aux_thd` to spawn
 /// with working areas of 1536 and 1024 bytes at
 /// third_party/float-out-boy/src/main.c:2438-2445. The Rust main loop reserves
-/// 2048 bytes for its larger call chain. The auxiliary thread also reserves 2048
-/// bytes because it performs Refloat's post-spawn LED hardware setup without
+/// 3072 bytes because its entry also performs the persisted-config read moved off
+/// VESC's undersized evaluator stack. The auxiliary thread reserves 2048 bytes
+/// because it performs Refloat's post-spawn LED hardware setup without
 /// consuming the loader's fixed 2048-byte evaluator stack. VESC forwards these byte counts directly
 /// to chThdCreateStatic at third_party/vesc/lispBM/lispif_c_lib.c:98-125.
 #[cfg(target_arch = "arm")]
@@ -435,7 +437,7 @@ mod tests {
     fn float_out_boy_main_thread_reserves_the_generated_rust_working_area() {
         // The current ARM call chain reaches 1480 bytes before ChibiOS's
         // thread metadata, saved contexts, and interrupt reserve.
-        assert_eq!(super::FloatOutBoyRuntimeThread::Main.stack_bytes(), 2048);
+        assert_eq!(super::FloatOutBoyRuntimeThread::Main.stack_bytes(), 3072);
         assert_eq!(super::FloatOutBoyRuntimeThread::Aux.stack_bytes(), 2048);
     }
 
