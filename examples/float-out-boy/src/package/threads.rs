@@ -262,18 +262,23 @@ fn initialize_float_out_boy_runtime_state(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
+fn read_float_out_boy_footpad(gpio: &vescpkg_rs::Gpio, pin: AnalogPin) -> AdcVoltage {
+    gpio.acquire_analog(pin)
+        .ok()
+        .and_then(|pin| {
+            pin.set_mode(GpioMode::Analog)
+                .ok()
+                .and_then(|()| pin.read().ok().flatten())
+        })
+        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
+}
+
+#[cfg(all(not(test), target_arch = "arm"))]
 fn read_float_out_boy_footpads(gpio: &vescpkg_rs::Gpio) -> (AdcVoltage, AdcVoltage) {
-    let read = |pin| {
-        gpio.acquire_analog(pin)
-            .ok()
-            .and_then(|pin| {
-                pin.set_mode(GpioMode::Analog)
-                    .ok()
-                    .and_then(|()| pin.read().ok().flatten())
-            })
-            .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
-    };
-    (read(AnalogPin::ADC1), read(AnalogPin::ADC2))
+    (
+        read_float_out_boy_footpad(gpio, AnalogPin::ADC1),
+        read_float_out_boy_footpad(gpio, AnalogPin::ADC2),
+    )
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
