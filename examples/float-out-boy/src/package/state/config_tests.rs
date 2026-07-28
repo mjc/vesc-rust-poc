@@ -285,7 +285,7 @@ fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
     assert_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     assert_eq!(
         state.firmware_imu_migration_for_test(),
-        FirmwareImuMigration::Rejected {
+        FirmwareImuMigration::UnexpectedRejection {
             proportional_gain: true,
             integral_gain: true,
             acceleration_confidence_decay: true,
@@ -302,7 +302,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         (
             [false, true, true],
             [2.0, 0.0, 0.1],
-            FirmwareImuMigration::Rejected {
+            FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: true,
                 integral_gain: false,
                 acceleration_confidence_decay: false,
@@ -311,7 +311,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         (
             [true, false, true],
             [0.4, 0.25, 0.1],
-            FirmwareImuMigration::Rejected {
+            FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: true,
                 acceleration_confidence_decay: false,
@@ -320,7 +320,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         (
             [true, true, false],
             [0.4, 0.0, 0.8],
-            FirmwareImuMigration::Rejected {
+            FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: false,
                 acceleration_confidence_decay: true,

@@ -56,7 +56,9 @@ pub(super) enum FirmwareImuMigration {
     Applied,
     InvalidRead,
     InvalidTarget,
-    Rejected {
+    // Pinned VESC accepts all three supported parameter IDs unconditionally.
+    // Retain the outcome for defensive ABI diagnostics and test fakes.
+    UnexpectedRejection {
         proportional_gain: bool,
         integral_gain: bool,
         acceleration_confidence_decay: bool,
@@ -88,7 +90,7 @@ fn migrate_legacy_firmware_imu_settings() -> FirmwareImuMigration {
         .is_err();
 
     if proportional_gain || integral_gain || acceleration_confidence_decay {
-        FirmwareImuMigration::Rejected {
+        FirmwareImuMigration::UnexpectedRejection {
             proportional_gain,
             integral_gain,
             acceleration_confidence_decay,
