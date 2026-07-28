@@ -19,8 +19,10 @@ use super::{
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
-use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
-use vescpkg_rs::prelude::{AngleDegrees, Temperature, VescSeconds, Voltage};
+use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
+use vescpkg_rs::prelude::{
+    AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
+};
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
 fn rate_limit_angle(
@@ -173,6 +175,7 @@ struct RuntimeValues {
     balance_current: FloatOutBoyRealtimeBalanceCurrent,
     setpoints: FloatOutBoyRealtimeRuntimeSetpoints,
     booster_current: FloatOutBoyRealtimeBoosterCurrent,
+    motor: FloatOutBoyAllDataMotorPayload,
 }
 
 fn runtime_values(
@@ -186,6 +189,7 @@ fn runtime_values(
             balance_current: base.balance_current(),
             setpoints: base.setpoints(),
             booster_current: base.booster_current(),
+            motor: base.motor(),
         };
     }
 
@@ -214,6 +218,9 @@ fn runtime_values(
             zero_setpoint,
         ),
         booster_current: FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::ZERO)),
+        motor: base
+            .motor()
+            .with_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
     }
 }
 
@@ -1706,7 +1713,7 @@ pub(super) fn refresh(
         base.footpad(),
         runtime.setpoints,
         runtime.booster_current,
-        base.motor(),
+        runtime.motor,
     );
     state.all_data_payloads = payloads.with_base(base);
 }

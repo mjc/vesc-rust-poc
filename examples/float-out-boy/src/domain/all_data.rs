@@ -228,6 +228,19 @@ impl FloatOutBoyAllDataMotorPayload {
         }
     }
 
+    /// Return motor fields with a refreshed smoothed duty cycle.
+    #[must_use]
+    pub const fn with_duty_cycle(self, duty_cycle: DutyCycle) -> Self {
+        Self {
+            battery_voltage: self.battery_voltage,
+            electrical_speed: self.electrical_speed,
+            vehicle_speed: self.vehicle_speed,
+            currents: self.currents,
+            duty_cycle,
+            foc_id_current: self.foc_id_current,
+        }
+    }
+
     /// Return electrical speed.
     #[must_use]
     pub const fn electrical_speed(self) -> ElectricalSpeed {

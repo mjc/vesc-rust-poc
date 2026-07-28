@@ -349,7 +349,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         VehicleSpeed::new(Speed::ZERO),
         TotalMotorCurrent::new(Current::ZERO),
         InputCurrent::new(Current::ZERO),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.5)),
     );
     telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
@@ -433,6 +433,10 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
     assert_eq!(state.motor_kinematics.average(), Rpm::ZERO);
+    assert_eq!(
+        base.motor().duty_cycle(),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0))
+    );
     assert!(!state.apply_requested_motor_current(bindings));
 }
 
