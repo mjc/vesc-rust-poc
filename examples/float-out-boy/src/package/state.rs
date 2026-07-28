@@ -22,10 +22,13 @@ use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
-    TemperatureLimitStart, TimestampTicks, Voltage,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
+    SYSTEM_TICK_RATE_HZ, Temperature, TemperatureLimitStart, TimestampTicks, Voltage,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
+
+const STARTUP_DISENGAGE_AGE_TICKS: u32 =
+    60 * crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
 
 mod alert_tracker;
 mod alerts;
@@ -561,7 +564,8 @@ impl FloatOutBoyPackageState {
         // Refloat fixed its 1.2.1 tick/second mismatch in `f727e1d` so the
         // startup disengage epoch is actually one minute old.
         self.engage_ticks = now;
-        self.disengage_ticks = TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60 * 10_000));
+        self.disengage_ticks =
+            TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(STARTUP_DISENGAGE_AGE_TICKS));
         self.idle_ticks = now;
         self.bms.initialize_start_epoch(now);
     }
