@@ -1,5 +1,5 @@
 use super::super::test_support::{
-    edit_config, sample_all_data_payloads_with_ride_state,
+    configure_startup_click, edit_config, sample_all_data_payloads_with_ride_state,
     tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
@@ -560,9 +560,7 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     );
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
-    edit_config(&mut state, |config| {
-        assert!(config.set_startup_click_current(WireByte::new(6)));
-    });
+    configure_startup_click(&mut state, WireByte::new(6));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,

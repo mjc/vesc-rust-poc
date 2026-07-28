@@ -1,6 +1,6 @@
 use super::super::test_support::{
-    balance_filter_with_pitch, edit_config, sample_all_data_payloads_with_ride_state,
-    tick_float_out_boy_state_and_handle_packet,
+    balance_filter_with_pitch, configure_startup_click, edit_config,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
 use crate::domain::{
@@ -241,9 +241,7 @@ fn ready_engage_plays_the_configured_three_transition_motor_click_like_refloat()
         AngleDegrees::from_degrees(0.05),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
-    edit_config(&mut state, |config| {
-        assert!(config.set_startup_click_current(WireByte::new(6)));
-    });
+    configure_startup_click(&mut state, WireByte::new(6));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,

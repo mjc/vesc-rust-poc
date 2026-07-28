@@ -170,6 +170,12 @@ pub(super) fn edit_config(
     store_config(state, &config);
 }
 
+pub(super) fn configure_startup_click(state: &mut FloatOutBoyPackageState, current: WireByte) {
+    edit_config(state, |config| {
+        assert!(config.set_startup_click_current(current));
+    });
+}
+
 pub(super) fn imu_accel_x(acceleration: AccelerationG) -> ImuAccelerationX {
     ImuAccelerationX::new(acceleration)
 }
