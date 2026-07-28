@@ -642,6 +642,7 @@ mod tests {
         assert_eq!(
             changes,
             [
+                (1, DigitalOutputLevel::Low),
                 (80, DigitalOutputLevel::Low),
                 (160, DigitalOutputLevel::High),
             ]

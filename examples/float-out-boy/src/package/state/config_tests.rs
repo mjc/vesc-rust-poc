@@ -147,6 +147,30 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
 }
 
 #[test]
+fn main_thread_configure_leaves_normal_startup_beeper_free_for_ready_alert() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut persisted = state.serialized_config;
+    assert!(persisted.editor().set_beeper_enabled(true));
+    assert!(persisted.editor().set_disabled(false));
+    assert!(state.store_serialized_config(persisted.as_bytes()));
+    for _ in 0..240 {
+        let _ = state.tick_beeper();
+    }
+
+    let mut restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
+
+    // Refloat 1.2.1 queues a configure beep in STARTUP, preventing the later
+    // READY battery-status alert. Upstream fixed this in 37cf343.
+    let changes: Vec<_> = (1..=240)
+        .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
+        .collect();
+    assert!(changes.is_empty());
+}
+
+#[test]
 fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloat() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);

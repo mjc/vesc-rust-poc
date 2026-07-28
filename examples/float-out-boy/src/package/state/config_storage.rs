@@ -276,11 +276,18 @@ impl FloatOutBoyPackageState {
             .status()
             .ride_state()
             .run_state();
-        self.alert_beeper(if matches!(run_state, FloatOutBoyRunState::Disabled) {
-            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
-        } else {
-            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
-        });
+        let alert = match run_state {
+            FloatOutBoyRunState::Disabled => {
+                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
+            }
+            // Intentional Refloat 1.2.1 bug fix from upstream 37cf343:
+            // leave the beeper free for the READY battery-status alert.
+            FloatOutBoyRunState::Startup => return,
+            FloatOutBoyRunState::Ready | FloatOutBoyRunState::Running => {
+                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
+            }
+        };
+        self.alert_beeper(alert);
     }
 
     pub(super) fn handle_config_command(
