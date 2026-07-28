@@ -867,12 +867,14 @@ fn apply_transition_activity(
         stop_event: activity.stop_event,
     });
     if transition.state_stopped {
+        state.play_motor_click();
         state.disengage_ticks = system_time_ticks;
         state.trigger_data_recorder(false);
         state
             .flywheel
             .latch_abort(activity.normal.flywheel_both_footpads);
     } else if transition.state_engaged {
+        state.play_motor_click();
         state.engage_ticks = system_time_ticks;
         state.trigger_data_recorder(true);
     }

@@ -31,7 +31,7 @@ use vescpkg_rs::{
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
     CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
     CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
-    CustomConfigWireByteField,
+    CustomConfigWireByteField, WireByte,
 };
 
 mod flywheel;
@@ -1497,6 +1497,11 @@ impl FloatOutBoyStartupConfig<'_> {
 
     pub(crate) fn sample_rate(self) -> SampleRate {
         generated_field(Self::HERTZ_FIELD.read(self.0))
+    }
+
+    #[inline(always)]
+    pub(crate) fn click_current(self) -> WireByte {
+        WireByte::new(self.0.as_bytes()[97])
     }
 
     #[cfg(any(test, target_arch = "arm"))]

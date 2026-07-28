@@ -560,6 +560,9 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     );
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
+    edit_config(&mut state, |config| {
+        assert!(config.set_startup_click_current(WireByte::new(6)));
+    });
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -575,6 +578,8 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     let ride_state = state.all_data_payloads().base().status().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Pitch);
+    assert!(state.apply_motor_control(telemetry.motor(), ride_state.run_state(), lifecycle));
+    assert_f32_eq!(telemetry.commanded_current().current().as_amps(), 6.0);
 }
 
 #[test]

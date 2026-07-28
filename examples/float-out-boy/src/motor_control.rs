@@ -5,19 +5,19 @@
 
 use crate::config::FloatOutBoyParkingBrakeMode;
 use crate::domain::{FloatOutBoyMotorCommand, FloatOutBoyRunState};
-use vescpkg_rs::MotorOutput;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AudioFrequency, SampleRate};
 use vescpkg_rs::prelude::{
     BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ,
     SignedRatio, TimestampTicks, VescSeconds,
 };
+use vescpkg_rs::{MotorOutput, WireByte};
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
 #[cfg(any(test, target_arch = "arm"))]
 fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) -> u8 {
     let half_period_ticks = sample_rate.as_hertz() / (2.0 * frequency.frequency().as_hertz());
-    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0).min(f32::from(u8::MAX)))
+    crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0))
 }
 
 /// Float Out Boy motor-control request state.
@@ -38,6 +38,7 @@ pub(crate) struct FloatOutBoyMotorControl {
     tone_counter: u8,
     tone_high: bool,
     tone_intensity: MotorCurrent,
+    click_counter: u8,
 }
 
 impl FloatOutBoyMotorControl {
@@ -52,6 +53,7 @@ impl FloatOutBoyMotorControl {
             tone_counter: 0,
             tone_high: false,
             tone_intensity: MotorCurrent::new(Current::ZERO),
+            click_counter: 0,
         }
     }
 
@@ -80,8 +82,20 @@ impl FloatOutBoyMotorControl {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn stop_tone(&mut self) {
         self.tone_ticks = 0;
-        self.tone_counter = 0;
         self.tone_high = false;
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    #[inline(always)]
+    pub(crate) fn play_click(&mut self, current: WireByte, sample_rate: SampleRate) {
+        if current.as_u8() != 0 {
+            self.play_tone(
+                AudioFrequency::new(vescpkg_rs::Frequency::from_hertz(350.0)),
+                MotorCurrent::new(Current::from_amps(f32::from(current.as_u8()))),
+                sample_rate,
+            );
+            self.click_counter = 4;
+        }
     }
 
     #[inline]
@@ -148,6 +162,10 @@ impl FloatOutBoyMotorControl {
             if self.tone_counter == 0 {
                 self.tone_counter = self.tone_ticks;
                 self.tone_high = !self.tone_high;
+                self.click_counter = self.click_counter.saturating_sub(1);
+                if self.click_counter == 1 {
+                    self.stop_tone();
+                }
             }
             let requested = self.requested_current.map_or(Current::ZERO, |command| {
                 command.requested_current().current()

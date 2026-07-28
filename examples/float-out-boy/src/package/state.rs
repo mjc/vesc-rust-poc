@@ -498,6 +498,14 @@ impl FloatOutBoyPackageState {
         self.motor_control.request_current(current);
     }
 
+    #[cold]
+    #[inline(never)]
+    fn play_motor_click(&mut self) {
+        let startup = self.serialized_config.startup();
+        self.motor_control
+            .play_click(startup.click_current(), startup.sample_rate());
+    }
+
     /// Apply and clear a pending motor-current request.
     pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.motor_control.apply_requested_current(motor)
