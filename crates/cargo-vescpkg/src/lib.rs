@@ -27,6 +27,7 @@ enum Command {
     Build(BuildArgs),
     #[command(name = "loopback")]
     Probe(DeviceArgs),
+    CustomAppData(CustomAppDataArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
     #[command(name = "control-loop-deploy")]
@@ -57,6 +58,14 @@ struct DeviceArgs {
     device_name: Option<String>,
     #[arg(long)]
     address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+struct CustomAppDataArgs {
+    #[arg(value_delimiter = ',', num_args = 1..)]
+    payload: Vec<u8>,
+    #[command(flatten)]
+    device: DeviceArgs,
 }
 
 impl DeviceArgs {
@@ -97,6 +106,7 @@ where
     match parse_args(args) {
         Ok(Command::Build(args)) => run_build(args),
         Ok(Command::Probe(command)) => run_probe(command),
+        Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
         Ok(Command::Deploy(command)) => run_deploy(command),
@@ -106,6 +116,20 @@ where
             let exit_code = u8::try_from(error.exit_code()).unwrap_or(2);
             let _ = error.print();
             ExitCode::from(exit_code)
+        }
+    }
+}
+
+fn run_custom_app_data(command: CustomAppDataArgs) -> ExitCode {
+    let target = command.device.into_target();
+    match deploy::run_custom_app_data_probe(target, &command.payload) {
+        Ok(response) => {
+            println!("custom app-data response: {response:02x?}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("custom app-data failed: {error}");
+            ExitCode::from(1)
         }
     }
 }
@@ -340,6 +364,24 @@ mod tests {
         .expect("parse Cargo subcommand invocation");
 
         assert!(matches!(command, Command::Build(_)));
+    }
+
+    #[test]
+    fn parse_args_builds_a_typed_custom_app_data_probe() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "custom-app-data",
+            "101,0,2",
+            "--device",
+            "VESC BLE UART",
+        ])
+        .expect("parse custom app-data probe");
+
+        let Command::CustomAppData(args) = command else {
+            panic!("expected custom app-data command");
+        };
+        assert_eq!(args.payload, [101, 0, 2]);
+        assert_eq!(args.device.device_name.as_deref(), Some("VESC BLE UART"));
     }
 
     #[test]

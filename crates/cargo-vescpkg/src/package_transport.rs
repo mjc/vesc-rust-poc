@@ -364,6 +364,20 @@ impl BtlePackageInstallTransport {
         }
     }
 
+    /// Exchanges one custom app-data payload with the installed package.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE write or package response fails.
+    pub fn custom_app_data(
+        &self,
+        payload: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, PackageInstallError> {
+        self.write_packet(COMM_CUSTOM_APP_DATA, payload)?;
+        self.with_session(|session| session.receive_custom_app_data(timeout))
+    }
+
     pub(crate) fn with_loopback_session<R>(
         &self,
         f: impl FnOnce(&Runtime, &mut VescSession) -> Result<R, LoopbackTransportError>,

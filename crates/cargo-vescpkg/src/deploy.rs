@@ -18,6 +18,7 @@ use crate::vesc_uart::encode_packet;
 
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const CUSTOM_APP_DATA_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_SETPOINT: i16 = 100;
 const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
@@ -41,6 +42,24 @@ pub fn run_loopback_probe(
             run_loopback_on_session(runtime, session, target, &mut progress)
         })
         .map_err(DeployError::Loopback);
+    transport.close();
+    result
+}
+
+/// Opens BLE and exchanges one custom app-data payload with the installed package.
+///
+/// # Errors
+///
+/// Returns an error when BLE, firmware preflight, transport, or the package response fails.
+pub fn run_custom_app_data_probe(
+    target: LoopbackTarget,
+    payload: &[u8],
+) -> Result<Vec<u8>, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport.open(target).map_err(DeployError::Transport)?;
+    let result = transport
+        .custom_app_data(payload, CUSTOM_APP_DATA_RESPONSE_TIMEOUT)
+        .map_err(DeployError::Transport);
     transport.close();
     result
 }
