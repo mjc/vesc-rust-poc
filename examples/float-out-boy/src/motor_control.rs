@@ -5,7 +5,6 @@
 
 use crate::config::FloatOutBoyParkingBrakeMode;
 use crate::domain::{FloatOutBoyMotorCommand, FloatOutBoyRunState};
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AudioFrequency, SampleRate};
 use vescpkg_rs::prelude::{
     BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ,
@@ -14,7 +13,6 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::{MotorOutput, WireByte};
 const CURRENT_OFF_DELAY: CurrentOffDelay = CurrentOffDelay::new(VescSeconds::from_seconds(0.05));
 
-#[cfg(any(test, target_arch = "arm"))]
 fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) -> u8 {
     let half_period_ticks = sample_rate.as_hertz() / (2.0 * frequency.frequency().as_hertz());
     crate::wire::saturating_trunc_f32_to_u8(half_period_ticks.max(1.0))
@@ -64,7 +62,6 @@ impl FloatOutBoyMotorControl {
         self.requested_current = Some(FloatOutBoyMotorCommand::new(current));
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn play_tone(
         &mut self,
         frequency: AudioFrequency,
@@ -79,13 +76,15 @@ impl FloatOutBoyMotorControl {
         self.tone_intensity = intensity;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn stop_tone(&mut self) {
         self.tone_ticks = 0;
         self.tone_high = false;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
+    #[expect(
+        clippy::inline_always,
+        reason = "keeps the firmware within its 96 KiB package limit"
+    )]
     #[inline(always)]
     pub(crate) fn play_click(&mut self, current: WireByte, sample_rate: SampleRate) {
         if current.as_u8() != 0 {

@@ -1499,6 +1499,10 @@ impl FloatOutBoyStartupConfig<'_> {
         generated_field(Self::HERTZ_FIELD.read(self.0))
     }
 
+    #[expect(
+        clippy::inline_always,
+        reason = "keeps the firmware within its 96 KiB package limit"
+    )]
     #[inline(always)]
     pub(crate) fn click_current(self) -> WireByte {
         WireByte::new(self.0.as_bytes()[97])
