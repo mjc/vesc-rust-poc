@@ -36,6 +36,20 @@ fn startup_initializes_time_epochs_from_live_clock_like_refloat() {
 }
 
 #[test]
+fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    enable_bms(&mut state);
+    state.initialize_time_epochs(TimestampTicks::from_ticks(10_000));
+
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_001));
+
+    assert_eq!(
+        state.bms_faults_for_test(),
+        crate::bms::FloatOutBoyBmsFaults::from_fault(crate::bms::FloatOutBoyBmsFault::Connection)
+    );
+}
+
+#[test]
 fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();

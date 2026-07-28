@@ -32,6 +32,10 @@ impl BmsRuntimeState {
         self.sample = sample;
     }
 
+    pub(super) fn initialize_start_epoch(&mut self, now: TimestampTicks) {
+        self.start_ticks = Some(now);
+    }
+
     pub(super) fn refresh(
         &mut self,
         enabled: bool,

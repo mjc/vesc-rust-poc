@@ -553,6 +553,7 @@ impl FloatOutBoyPackageState {
         self.engage_ticks = now;
         self.disengage_ticks = TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(60));
         self.idle_ticks = now;
+        self.bms.initialize_start_epoch(now);
     }
 
     #[cfg(test)]
