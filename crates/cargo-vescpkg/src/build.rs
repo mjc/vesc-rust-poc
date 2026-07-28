@@ -15,15 +15,12 @@ const DEFAULT_LOADER: &str = concat!(
 // PIC may store function offsets in `.got`. SDK callback macros emit symbol-table-only aliases
 // for package-local addresses they normalize against the loaded image before use.
 const IMAGE_OFFSET_MARKER_PREFIX: &str = "__vescpkg_image_offset_";
-// VESC release_6_06 commit 94b305ec gives the Lisp evaluator a 2048-byte
-// ChibiOS working area in lispBM/lispif.c. chThdCreateStatic stores ChibiOS
-// thread metadata, port contexts, and interrupt reserve in that same area;
-// the pinned F407 layout consumes 416 bytes before package call frames.
+// VESC release_6_06 commit 94b305ec declares the Lisp evaluator with
+// THD_WORKING_AREA(eval_thread_wa, 2048) in lispBM/lispif.c. ChibiOS adds
+// its thread metadata, port contexts, and interrupt reserve to that requested
+// stack size, so package call frames have the full 2048 bytes available.
 const LOADER_INIT_STACK_BUDGET: usize = 1024;
-const VESC_EVALUATOR_WORKING_AREA_BYTES: usize = 2048;
-const CHIBIOS_THREAD_WORKING_AREA_OVERHEAD_BYTES: usize = 416;
-const VESC_EVALUATOR_USABLE_STACK_BYTES: usize =
-    VESC_EVALUATOR_WORKING_AREA_BYTES - CHIBIOS_THREAD_WORKING_AREA_OVERHEAD_BYTES;
+const VESC_EVALUATOR_USABLE_STACK_BYTES: usize = 2048;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -651,7 +648,7 @@ fn validate_loader_init_stack_report(report: &str) -> Result<(), BuildError> {
     let call_chain_bytes = stack_through(&initializer.name, &functions, &mut Vec::new());
     if call_chain_bytes > VESC_EVALUATOR_USABLE_STACK_BYTES {
         return Err(BuildError(format!(
-            "{} call chain uses {call_chain_bytes} bytes of stack, exceeding the {VESC_EVALUATOR_USABLE_STACK_BYTES} bytes of usable stack in VESC's {VESC_EVALUATOR_WORKING_AREA_BYTES}-byte Lisp evaluator working area; its direct frame must also stay within the {LOADER_INIT_STACK_BUDGET}-byte package budget",
+            "{} call chain uses {call_chain_bytes} bytes of stack, exceeding the VESC Lisp evaluator's {VESC_EVALUATOR_USABLE_STACK_BYTES} bytes of usable stack; its direct frame must also stay within the {LOADER_INIT_STACK_BUDGET}-byte package budget",
             initializer.name,
         )));
     }
@@ -1108,7 +1105,7 @@ Symbol table '.symtab' contains 2 entries:\n\
     }
 
     #[test]
-    fn rejects_an_oversized_loader_initializer_call_chain() {
+    fn accepts_a_loader_call_chain_within_the_evaluator_stack() {
         let report = "\
 000066b0 <package_lib_init>:\n\
     66b0:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
@@ -1119,10 +1116,25 @@ Symbol table '.symtab' contains 2 entries:\n\
     4d90:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
     4d92:\tf5ad 7d13 \tsub.w\tsp, sp, #592\t@ 0x250\n";
 
+        assert!(validate_loader_init_stack_report(report).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_loader_call_chain_larger_than_the_evaluator_stack() {
+        let report = "\
+000066b0 <package_lib_init>:\n\
+    66b0:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    66b2:\te92d 0f00 \tstmdb\tsp!, {r8, r9, sl, fp}\n\
+    66b6:\tf5ad 7d77 \tsub.w\tsp, sp, #988\t@ 0x3dc\n\
+    67c0:\tf7fe fae6 \tbl\t4d90 <helper>\n\
+00004d90 <helper>:\n\
+    4d90:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    4d92:\tf5ad 7d7d \tsub.w\tsp, sp, #1012\t@ 0x3f4\n";
+
         let error = validate_loader_init_stack_report(report).expect_err("oversized call chain");
 
-        assert!(error.to_string().contains("1636 bytes"));
-        assert!(error.to_string().contains("1632 bytes of usable stack"));
+        assert!(error.to_string().contains("2056 bytes"));
+        assert!(error.to_string().contains("2048 bytes of usable stack"));
     }
 
     #[test]
