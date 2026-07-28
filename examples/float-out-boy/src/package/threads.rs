@@ -51,8 +51,8 @@ impl FloatOutBoyRuntimeThread {
     #[cfg(target_arch = "arm")]
     fn name(self) -> vescpkg_rs::ThreadName {
         match self {
-            Self::Main => vescpkg_rs::thread_name!("Float Out Boy Main"),
-            Self::Aux => vescpkg_rs::thread_name!("Float Out Boy Aux"),
+            Self::Main => vescpkg_rs::thread_name!("FOB main"),
+            Self::Aux => vescpkg_rs::thread_name!("FOB aux"),
         }
     }
 }

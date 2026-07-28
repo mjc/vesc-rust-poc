@@ -4,13 +4,8 @@
 //! The sequence itself is borrowed from a promoted static array, so this remains
 //! allocation-free in the package image.
 
-use super::FloatOutBoyPackageState;
-use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyFootpadState,
-    FloatOutBoyMode, FloatOutBoyRunState,
-};
+use crate::domain::FloatOutBoyFootpadState;
 use crate::package::time::float_out_boy_ticks_elapsed_seconds;
-use vescpkg_rs::ImuPitch;
 use vescpkg_rs::prelude::{TimestampTicks, VescSeconds};
 
 const STEP_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.15);
@@ -98,59 +93,6 @@ impl FloatOutBoyKonami {
 
     fn reset(&mut self) {
         self.state = 0;
-    }
-}
-
-impl FloatOutBoyPackageState {
-    pub(super) fn refresh_konami_runtime_state(
-        &mut self,
-        current_pitch: ImuPitch,
-        system_time_ticks: TimestampTicks,
-    ) {
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
-        // C refreshes `d->imu.pitch` before entering the READY Konami branch at
-        // `third_party/float-out-boy/src/main.c:775,947-953`.
-        let pitch = crate::wire::degrees(current_pitch.angle());
-        let footpad = base.footpad().state();
-
-        if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
-            && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-            && (75.0..105.0).contains(&pitch)
-            && self.flywheel_konami.check(footpad, system_time_ticks)
-        {
-            self.start_internal_led_confirmation(system_time_ticks);
-            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
-            // armed default flywheel command used by the native handler.
-            let command = [
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                FloatOutBoyAppDataCommand::Flywheel.id(),
-                0x82,
-                0,
-                0,
-                0,
-                0,
-                1,
-            ];
-            self.handle_flywheel_packet(&command);
-        }
-
-        if self.serialized_config.hardware_led_mode_id() == 0 {
-            return;
-        }
-        let status = self.led_runtime_status();
-        if !status.headlights_enabled()
-            && self.headlights_on_konami.check(footpad, system_time_ticks)
-        {
-            self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_overrides(None, Some(true));
-        }
-        if status.headlights_enabled()
-            && self.headlights_off_konami.check(footpad, system_time_ticks)
-        {
-            self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_overrides(None, Some(false));
-        }
     }
 }
 

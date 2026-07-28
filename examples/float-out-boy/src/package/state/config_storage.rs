@@ -31,8 +31,8 @@ fn log_config_message(message: &[u8]) {
 
 fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
     let message = match outcome {
-        FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure => b"Config read failed.".as_slice(),
-        FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage => b"Config invalid.".as_slice(),
+        FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure => b"read fail".as_slice(),
+        FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage => b"invalid".as_slice(),
         FloatOutBoyConfigLoadOutcome::NotAttempted | FloatOutBoyConfigLoadOutcome::Persisted => {
             return;
         }
@@ -42,9 +42,9 @@ fn log_config_load_fallback(outcome: FloatOutBoyConfigLoadOutcome) {
 
 fn log_config_store_result(stored: bool) {
     let message = if stored {
-        b"Config saved.".as_slice()
+        b"saved".as_slice()
     } else {
-        b"Config save failed.".as_slice()
+        b"save fail".as_slice()
     };
     log_config_message(message);
 }

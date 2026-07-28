@@ -363,7 +363,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     ));
     let mut log = [0; 32];
     let len = firmware.copy_last_log(&mut log);
-    assert_eq!(&log[..len], b"Config saved.");
+    assert_eq!(&log[..len], b"saved");
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
@@ -444,7 +444,7 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     );
     let mut log = [0; 64];
     let len = firmware.copy_last_log(&mut log);
-    assert_eq!(&log[..len], b"Config read failed.");
+    assert_eq!(&log[..len], b"read fail");
     drop(firmware);
 
     let firmware = FirmwareTest::new();
@@ -467,7 +467,7 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     );
     let mut log = [0; 64];
     let len = firmware.copy_last_log(&mut log);
-    assert_eq!(&log[..len], b"Config invalid.");
+    assert_eq!(&log[..len], b"invalid");
 }
 
 #[test]
@@ -487,7 +487,7 @@ fn config_save_failure_has_no_write_acknowledgement() {
     assert_eq!(firmware.eeprom().read(address), None);
     let mut log = [0; 32];
     let len = firmware.copy_last_log(&mut log);
-    assert_eq!(&log[..len], b"Config save failed.");
+    assert_eq!(&log[..len], b"save fail");
 }
 
 #[test]
