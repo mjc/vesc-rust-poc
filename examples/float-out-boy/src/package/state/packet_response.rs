@@ -154,7 +154,8 @@ impl FloatOutBoyPackageState {
                     payloads
                 };
                 let response = payloads.encode_response(request);
-                self.all_data_payloads = self.all_data_payloads.without_beep_reason();
+                // Refloat commit 98bfe765 keeps the last reason available to
+                // later command-7 readers after its active condition ends.
                 send(response.as_bytes())
             }
         }
@@ -227,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn all_data_response_consumes_beep_reason_once_like_refloat() {
+    fn all_data_response_retains_last_beep_reason_like_upstream_fix() {
         let firmware = FirmwareTest::new();
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let request = [
@@ -255,7 +256,7 @@ mod tests {
         ));
 
         assert_ne!(first[10] >> 4, 0);
-        assert_eq!(second[10] >> 4, 0);
+        assert_eq!(second[10] >> 4, first[10] >> 4);
     }
 
     #[test]
@@ -286,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn rejected_all_data_send_still_consumes_beep_reason_like_refloat() {
+    fn rejected_all_data_send_retains_last_beep_reason_like_upstream_fix() {
         let firmware = FirmwareTest::new();
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let request = [
@@ -310,7 +311,7 @@ mod tests {
             },
             &request,
         ));
-        assert_eq!(response[10] >> 4, 0);
+        assert_ne!(response[10] >> 4, 0);
     }
 
     #[test]
