@@ -260,7 +260,7 @@ pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
-    MAX_APP_DATA_PAYLOAD_LEN, StatefulCustomConfigCallback,
+    MAX_APP_DATA_PAYLOAD_LEN, StatefulCallbackContext, StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};

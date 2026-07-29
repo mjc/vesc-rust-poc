@@ -1,6 +1,6 @@
 use super::{
     FloatOutBoyCustomConfig, install_test_float_out_boy_runtime_state,
-    lock_test_float_out_boy_config_state,
+    lock_test_float_out_boy_config_state, set_float_out_boy_custom_config_for_test,
 };
 use crate::config::FLOAT_OUT_BOY_CONFIG_LEN;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyMode, FloatOutBoyRunState};
@@ -10,7 +10,7 @@ use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{ConfigBytes, StatefulCustomConfigCallback, TimestampTicks};
+use vescpkg_rs::{StatefulCustomConfigCallback, TimestampTicks};
 
 fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     let mut config = default_float_out_boy_config_bytes();
@@ -28,8 +28,8 @@ fn runtime_current_config() -> Option<[u8; FLOAT_OUT_BOY_CONFIG_LEN]> {
 
 fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
     crate::__VESCPKG_PACKAGE_STATE
-        .with_mut(|state| FloatOutBoyCustomConfig::set_config(state, ConfigBytes::new(config)))
-        .is_some_and(|result| result.is_ok())
+        .with_mut(|state| set_float_out_boy_custom_config_for_test(state, config))
+        .unwrap_or(false)
 }
 
 #[test]
@@ -64,7 +64,9 @@ fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_meta_is_default(false));
     });
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_ok());
+    assert!(set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
     let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
     assert!(runtime_state.is_some());
 
@@ -134,7 +136,9 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
         assert!(config.set_meta_is_default(false));
     });
 
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_ok());
+    assert!(set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
     let current = FloatOutBoyCustomConfig::current_config(&state);
 
     // Upstream `set_cfg` deserializes into `d->float_conf` at
@@ -154,7 +158,9 @@ fn custom_config_set_callback_rejects_bad_signature_like_float_out_boy() {
     let mut incoming = default_float_out_boy_config_bytes();
     incoming[0] ^= 0xff;
 
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_err());
+    assert!(!set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
     let current = FloatOutBoyCustomConfig::current_config(&state);
 
     // C map: `third_party/float-out-boy/src/conf/confparser.c:187-190` rejects bad signatures before
@@ -170,7 +176,9 @@ fn custom_config_set_callback_resets_is_default_flag_like_float_out_boy() {
         assert!(config.set_meta_is_default(true));
     });
 
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_ok());
+    assert!(set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
 
     // Upstream clears `d->float_conf.meta.is_default` for every config
     // write at `third_party/float-out-boy/src/main.c:2375-2377`; C map:
@@ -187,7 +195,9 @@ fn custom_config_set_callback_keeps_package_enabled_while_running_like_float_out
         assert!(config.set_disabled(true));
     });
 
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_ok());
+    assert!(set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
 
     // Upstream refuses to persist `disabled = true` while running at
     // `third_party/float-out-boy/src/main.c:2369-2372`; `disabled` is serialized at
@@ -205,7 +215,9 @@ fn custom_config_set_callback_rejects_special_modes_like_float_out_boy() {
     let mut incoming = default_float_out_boy_config_bytes();
     incoming[4] = 0x12;
 
-    assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&incoming),).is_err());
+    assert!(!set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
     let current = FloatOutBoyCustomConfig::current_config(&state);
 
     // Upstream rejects VESC Tool config writes outside `MODE_NORMAL` at

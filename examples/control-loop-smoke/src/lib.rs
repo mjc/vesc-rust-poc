@@ -145,12 +145,14 @@ impl vescpkg_rs::AppDataHandler for ControlLoopAppData {
     type State = ControlLoopState;
 
     fn handle(
-        state: &mut Self::State,
+        context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         packet: vescpkg_rs::AppDataPacket<'_>,
         reply: &mut vescpkg_rs::AppDataReply<'_>,
     ) {
         let mut bytes = [0_u8; STATUS_BYTES];
-        let Ok(response_len) = handle_command(state, packet.as_bytes(), &mut bytes) else {
+        let Ok(response_len) =
+            context.with_state(|state| handle_command(state, packet.as_bytes(), &mut bytes))
+        else {
             return;
         };
         let _ = reply.write(&bytes[..response_len]);

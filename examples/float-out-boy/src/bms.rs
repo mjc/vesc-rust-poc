@@ -260,10 +260,9 @@ mod tests {
     };
     use crate::config::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
     use crate::package::test_support::sample_all_data_payloads;
-    use crate::package::{FloatOutBoyCustomConfig, FloatOutBoyPackageState};
+    use crate::package::{FloatOutBoyPackageState, set_float_out_boy_custom_config_for_test};
     use vescpkg_rs::{
-        ConfigBytes, LispArgs, LispValue, StatefulCustomConfigCallback, StatefulLbmExtension,
-        TimestampTicks, VescSeconds, Voltage,
+        LispArgs, LispValue, StatefulLbmExtension, TimestampTicks, VescSeconds, Voltage,
     };
 
     fn sample() -> FloatOutBoyBmsSample {
@@ -294,7 +293,9 @@ mod tests {
         // Generated Float Out Boy v1.2.1 order places `bms.enabled` after the final
         // haptic field and before the BMS thresholds at settings.xml:4076-4082.
         config[265] = 1;
-        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert!(set_float_out_boy_custom_config_for_test(
+            &mut state, &config
+        ));
         state
     }
 
@@ -615,7 +616,9 @@ mod tests {
         let recorded = state.bms_sample_for_test();
 
         let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert!(set_float_out_boy_custom_config_for_test(
+            &mut state, &config
+        ));
         assert_eq!(
             ExtBms::call(&mut state, LispArgs::empty()),
             LispValue::nil()
@@ -623,7 +626,9 @@ mod tests {
         assert_eq!(state.bms_sample_for_test(), recorded);
 
         config[265] = 1;
-        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert!(set_float_out_boy_custom_config_for_test(
+            &mut state, &config
+        ));
         assert_eq!(
             ExtBms::call(&mut state, LispArgs::empty()),
             LispValue::true_value()
@@ -636,7 +641,9 @@ mod tests {
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
         let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
         config[265] = 1;
-        assert!(FloatOutBoyCustomConfig::set_config(&mut state, ConfigBytes::new(&config)).is_ok());
+        assert!(set_float_out_boy_custom_config_for_test(
+            &mut state, &config
+        ));
 
         state.refresh_bms_runtime_state(TimestampTicks::from_ticks(10_000));
         assert!(

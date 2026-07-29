@@ -28,7 +28,7 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
     type State = FloatOutBoyPackageState;
 
     fn handle(
-        state: &mut Self::State,
+        context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         packet: vescpkg_rs::AppDataPacket<'_>,
         reply: &mut vescpkg_rs::AppDataReply<'_>,
     ) {
@@ -38,14 +38,16 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         let firmware = vescpkg_rs::Firmware::new();
         let mut now = || firmware.clock().now();
         let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
-        let _ = handle_float_out_boy_app_data_packet(
-            state,
-            firmware.telemetry(),
-            firmware.imu(),
-            &mut now,
-            &mut write_reply,
-            packet,
-        );
+        let _ = context.with_state(|state| {
+            handle_float_out_boy_app_data_packet(
+                state,
+                firmware.telemetry(),
+                firmware.imu(),
+                &mut now,
+                &mut write_reply,
+                packet,
+            )
+        });
     }
 }
 

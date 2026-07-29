@@ -1442,7 +1442,7 @@ mod tests {
             type State = ConfigState;
 
             fn handle(
-                _: &mut Self::State,
+                _: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _: crate::AppDataPacket<'_>,
                 _: &mut crate::AppDataReply<'_>,
             ) {
@@ -1468,7 +1468,7 @@ mod tests {
             }
 
             fn set_config(
-                _state: &mut Self::State,
+                _context: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _config: crate::ConfigBytes<'_, 1>,
             ) -> Result<(), Self::Error> {
                 Ok(())
@@ -1531,7 +1531,7 @@ mod tests {
             type State = State;
 
             fn handle(
-                _: &mut Self::State,
+                _: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _: crate::AppDataPacket<'_>,
                 _: &mut crate::AppDataReply<'_>,
             ) {
@@ -1623,7 +1623,7 @@ mod tests {
             }
 
             fn set_config(
-                _: &mut Self::State,
+                _: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _: crate::ConfigBytes<'_, 1>,
             ) -> Result<(), Self::Error> {
                 Ok(())
@@ -1698,7 +1698,7 @@ mod tests {
             }
 
             fn set_config(
-                _state: &mut Self::State,
+                _context: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _config: crate::ConfigBytes<'_, 511>,
             ) -> Result<(), Self::Error> {
                 Ok(())
@@ -1778,7 +1778,7 @@ mod tests {
             type State = WrongImuState;
 
             fn handle(
-                _: &mut Self::State,
+                _: &mut crate::StatefulCallbackContext<'_, Self::State>,
                 _: crate::AppDataPacket<'_>,
                 _: &mut crate::AppDataReply<'_>,
             ) {

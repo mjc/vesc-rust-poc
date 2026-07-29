@@ -15,12 +15,57 @@ impl vescpkg_rs::AppDataHandler for Callback {
     type State = State;
 
     fn handle(
-        _state: &mut Self::State,
+        _context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         _packet: vescpkg_rs::AppDataPacket<'_>,
         _reply: &mut vescpkg_rs::AppDataReply<'_>,
     ) {
     }
 }
+```
+
+Package-state references cannot escape a callback state phase:
+
+```compile_fail
+use vescpkg_rs::{
+    PackageRuntimeState, PackageStateStore, StatefulCallbackContext,
+};
+
+struct State;
+
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+fn escape_state<'a>(
+    context: &'a mut StatefulCallbackContext<'_, State>,
+) -> &'a mut State {
+    context.with_state(|state| state)
+}
+```
+
+Only SDK callback trampolines can begin a callback context:
+
+```compile_fail
+use vescpkg_rs::{
+    PackageRuntimeState, PackageStateAccess, PackageStateStore, StatefulCallbackContext,
+};
+
+struct State;
+
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+let access = PackageStateAccess::runtime(&STATE);
+let _ = StatefulCallbackContext::begin(access);
 ```
 
 Macro implementation traits are not available at the package-author root:

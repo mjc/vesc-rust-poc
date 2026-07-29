@@ -33,10 +33,11 @@ impl vescpkg_rs::StatefulCustomConfigCallback<FLOAT_OUT_BOY_CONFIG_LEN>
     // C map: `set_cfg` in upstream validates/sanitizes, stores into `d->float_conf`,
     // and (in C) persists/reconfigures via EEPROM + `configure(d)`.
     fn set_config(
-        state: &mut Self::State,
+        context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         config: ConfigBytes<'_, FLOAT_OUT_BOY_CONFIG_LEN>,
     ) -> Result<(), Self::Error> {
-        float_out_boy_set_cfg_payload_with_state(config, state)
+        context
+            .with_state(|state| float_out_boy_set_cfg_payload_with_state(config, state))
             .then_some(())
             .ok_or(())
     }
@@ -103,6 +104,14 @@ fn float_out_boy_set_cfg_payload_with_state(
         state.start_internal_led_confirmation(now);
     }
     stored
+}
+
+#[cfg(test)]
+pub(crate) fn set_float_out_boy_custom_config_for_test(
+    state: &mut FloatOutBoyPackageState,
+    config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN],
+) -> bool {
+    float_out_boy_set_cfg_payload_with_state(ConfigBytes::new(config), state)
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]

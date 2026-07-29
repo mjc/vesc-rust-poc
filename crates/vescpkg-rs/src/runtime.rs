@@ -615,6 +615,32 @@ pub struct PackageStateAccess<'a, T: Send + 'static> {
     identity: StateIdentity<T>,
 }
 
+/// One admitted callback session with scoped package-state phases.
+///
+/// The lifecycle entry keeps package state alive for the whole callback while
+/// each [`Self::with_state`] call independently acquires and releases the state
+/// lock.
+pub(crate) struct PackageStateSession<'a, T: Send + 'static> {
+    state: NonNull<T>,
+    entry: PackageStateEntry<'a, T>,
+}
+
+impl<T: Send + 'static> PackageStateSession<'_, T> {
+    pub(crate) fn with_state<R>(
+        &mut self,
+        operation: impl for<'state> FnOnce(&'state mut T) -> R,
+    ) -> R {
+        #[cfg(not(target_arch = "arm"))]
+        let _borrow = self.entry.store.borrow_exclusive();
+        #[cfg(target_arch = "arm")]
+        let _borrow = borrow_firmware_runtime(self.entry.runtime);
+        let mut state = self.state;
+        // SAFETY: the callback session's lifecycle entry keeps `state` live,
+        // and the scoped runtime borrow provides exclusive mutable access.
+        operation(unsafe { state.as_mut() })
+    }
+}
+
 impl<T: Send + 'static> Clone for PackageStateAccess<'_, T> {
     fn clone(&self) -> Self {
         *self
@@ -680,6 +706,22 @@ impl<'a, T: Send + 'static> PackageStateAccess<'a, T> {
         #[cfg(target_arch = "arm")]
         {
             PackageStateStore::<T>::with_expected_mut(expected, f)
+        }
+    }
+
+    pub(crate) fn begin_callback(self) -> Option<PackageStateSession<'a, T>> {
+        let expected = self.expected_state()?;
+        #[cfg(not(target_arch = "arm"))]
+        {
+            let entry = self.runtime.enter()?;
+            let state = self.runtime.running_state(expected)?;
+            Some(PackageStateSession { state, entry })
+        }
+        #[cfg(target_arch = "arm")]
+        {
+            let (state, runtime) = PackageStateStore::<T>::running_firmware(expected)?;
+            let entry = PackageStateStore::<T>::enter(runtime)?;
+            Some(PackageStateSession { state, entry })
         }
     }
 
@@ -1466,6 +1508,40 @@ mod tests {
         drop(admitted);
         assert_eq!(clear_done_rx.recv().unwrap(), ());
         clear.join().unwrap();
+        assert_eq!(slot.with(|state| state.value), None);
+    }
+
+    #[test]
+    fn callback_session_releases_state_between_phases_but_holds_lifecycle_admission() {
+        let slot: &'static PackageStateStore<State> = Box::leak(Box::new(PackageStateStore::new()));
+        let state = Box::leak(Box::new(State { value: 0 }));
+        let state_ptr = NonNull::from(&mut *state);
+        assert!(unsafe { slot.install(state) });
+        let mut callback = PackageStateAccess::runtime(slot).begin_callback().unwrap();
+
+        callback.with_state(|state| state.value += 1);
+        assert_eq!(slot.with(|state| state.value), Some(1));
+
+        assert!(slot.begin_stop(state_ptr));
+        let (stop_done_tx, stop_done_rx) = std::sync::mpsc::channel();
+        let state_address = state_ptr.as_ptr() as usize;
+        let stop = std::thread::spawn(move || {
+            let state_ptr = NonNull::new(state_address as *mut State).unwrap();
+            slot.finish_stop(state_ptr);
+            stop_done_tx.send(()).unwrap();
+        });
+        assert!(
+            stop_done_rx
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err()
+        );
+
+        callback.with_state(|state| state.value += 1);
+        drop(callback);
+
+        assert_eq!(stop_done_rx.recv().unwrap(), ());
+        stop.join().unwrap();
+        assert_eq!(state.value, 2);
         assert_eq!(slot.with(|state| state.value), None);
     }
 

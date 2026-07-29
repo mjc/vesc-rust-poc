@@ -19,6 +19,8 @@ mod threads;
 mod time;
 
 pub use self::custom_config::FloatOutBoyCustomConfig;
+#[cfg(test)]
+pub(crate) use self::custom_config::set_float_out_boy_custom_config_for_test;
 pub use self::state::FloatOutBoyPackageState;
 
 /// Finish Float Out Boy startup after the required state and thread setup succeeds.
