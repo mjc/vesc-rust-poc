@@ -1,7 +1,9 @@
 //! Command-line tool for building, installing, and debugging Rust VESC packages.
 
+use std::num::NonZeroU16;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -31,6 +33,7 @@ enum Command {
     CustomConfig(DeviceArgs),
     FirmwareValues(DeviceArgs),
     FirmwareImu(FirmwareImuArgs),
+    FobLog(FobLogArgs),
     LispStats(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
@@ -82,6 +85,17 @@ struct FirmwareImuArgs {
     device: DeviceArgs,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+struct FobLogArgs {
+    output: PathBuf,
+    #[arg(long, default_value = "100")]
+    samples: NonZeroU16,
+    #[arg(long, default_value = "100")]
+    interval_ms: NonZeroU16,
+    #[command(flatten)]
+    device: DeviceArgs,
+}
+
 impl DeviceArgs {
     fn into_target(self) -> loopback::LoopbackTarget {
         loopback_target(self.address, self.device_name)
@@ -124,6 +138,7 @@ where
         Ok(Command::CustomConfig(command)) => run_custom_config(command),
         Ok(Command::FirmwareValues(command)) => run_firmware_values(command),
         Ok(Command::FirmwareImu(command)) => run_firmware_imu(command),
+        Ok(Command::FobLog(command)) => run_fob_log(command),
         Ok(Command::LispStats(command)) => run_lisp_stats(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
@@ -186,6 +201,72 @@ fn run_firmware_values(command: DeviceArgs) -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+fn run_fob_log(command: FobLogArgs) -> ExitCode {
+    let report = match deploy::run_fob_log_probe(
+        command.device.into_target(),
+        usize::from(command.samples.get()),
+        Duration::from_millis(u64::from(command.interval_ms.get())),
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("FOB log failed: {error}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let file = match std::fs::File::create(&command.output) {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!(
+                "FOB log failed to create {}: {error}",
+                command.output.display()
+            );
+            return ExitCode::from(1);
+        }
+    };
+    let mut output = std::io::BufWriter::new(file);
+    if let Err(error) = write_fob_log_csv(&mut output, &report) {
+        eprintln!(
+            "FOB log failed to write {}: {error}",
+            command.output.display()
+        );
+        return ExitCode::from(1);
+    }
+
+    let version = report.firmware_version();
+    println!(
+        "FOB log: firmware={}.{} samples={} output={}",
+        version.major(),
+        version.minor(),
+        report.samples().len(),
+        command.output.display(),
+    );
+    ExitCode::SUCCESS
+}
+
+fn write_fob_log_csv(
+    output: &mut impl std::io::Write,
+    report: &deploy::FobLogReport,
+) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+
+    writeln!(output, "host_elapsed_ms,response_len,response_hex")?;
+    for sample in report.samples() {
+        let mut hex = String::with_capacity(sample.response().len() * 2);
+        for byte in sample.response() {
+            write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        writeln!(
+            output,
+            "{},{},{}",
+            sample.elapsed().as_millis(),
+            sample.response().len(),
+            hex,
+        )?;
+    }
+    Ok(())
 }
 
 fn run_firmware_imu(command: FirmwareImuArgs) -> ExitCode {
@@ -426,6 +507,7 @@ mod tests {
         BuildArgs, Command, DeployArgs, DeviceArgs, PackageEraseArgs, PackageInstallArgs,
         parse_args,
     };
+    use std::path::PathBuf;
 
     #[test]
     fn parse_args_builds_typed_package_options() {
@@ -520,6 +602,27 @@ mod tests {
             panic!("expected firmware values command");
         };
         assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_bounded_fob_log() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "fob-log",
+            "ride.csv",
+            "--samples",
+            "12",
+            "--interval-ms",
+            "50",
+        ])
+        .expect("parse FOB log");
+
+        let Command::FobLog(args) = command else {
+            panic!("expected FOB log command");
+        };
+        assert_eq!(args.output, PathBuf::from("ride.csv"));
+        assert_eq!(args.samples.get(), 12);
+        assert_eq!(args.interval_ms.get(), 50);
     }
 
     #[test]

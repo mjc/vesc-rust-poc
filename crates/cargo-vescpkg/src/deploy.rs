@@ -23,6 +23,7 @@ const COMM_CUSTOM_APP_DATA: u8 = 36;
 const CUSTOM_CONFIG_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 const CUSTOM_APP_DATA_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const FLOAT_OUT_BOY_REALTIME_REQUEST: [u8; 2] = [101, 31];
 const LISP_STATS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const FIRMWARE_IMU_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const FIRMWARE_VALUES_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -78,6 +79,60 @@ pub fn run_custom_app_data_probe(
     })();
     transport.close();
     result
+}
+
+/// Opens one BLE session and captures bounded Float Out Boy realtime responses.
+///
+/// # Errors
+///
+/// Returns an error when BLE, firmware preflight, transport, or a response fails.
+pub fn run_fob_log_probe(
+    target: LoopbackTarget,
+    sample_count: usize,
+    interval: Duration,
+) -> Result<FobLogReport, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport.open(target).map_err(DeployError::Transport)?;
+    let result = (|| {
+        let firmware_version = transport
+            .firmware_version()
+            .map_err(DeployError::Transport)?;
+        let started = Instant::now();
+        let mut samples = Vec::with_capacity(sample_count);
+        for index in 0..sample_count {
+            let response = transport
+                .custom_app_data(
+                    &FLOAT_OUT_BOY_REALTIME_REQUEST,
+                    CUSTOM_APP_DATA_RESPONSE_TIMEOUT,
+                )
+                .map_err(DeployError::Transport)?;
+            validate_fob_realtime_response(&response)?;
+            samples.push(FobLogSample {
+                elapsed: started.elapsed(),
+                response,
+            });
+            if index + 1 != sample_count {
+                std::thread::sleep(interval);
+            }
+        }
+        Ok(FobLogReport {
+            firmware_version,
+            samples,
+        })
+    })();
+    transport.close();
+    result
+}
+
+fn validate_fob_realtime_response(response: &[u8]) -> Result<(), DeployError> {
+    response
+        .starts_with(&FLOAT_OUT_BOY_REALTIME_REQUEST)
+        .then_some(())
+        .ok_or_else(|| {
+            DeployError::Transport(PackageInstallError::Device(
+                "unexpected Float Out Boy realtime response".to_owned(),
+            ))
+        })
 }
 
 /// Opens BLE and reads the active package custom configuration.
@@ -177,6 +232,48 @@ impl CustomAppDataProbeReport {
     #[must_use]
     pub fn response(&self) -> &[u8] {
         &self.response
+    }
+}
+
+/// One host-timestamped Float Out Boy realtime response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FobLogSample {
+    elapsed: Duration,
+    response: Vec<u8>,
+}
+
+impl FobLogSample {
+    /// Return host elapsed time since the log session opened.
+    #[must_use]
+    pub const fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+
+    /// Return the complete package response without discarding unknown fields.
+    #[must_use]
+    pub fn response(&self) -> &[u8] {
+        &self.response
+    }
+}
+
+/// Bounded host-side Float Out Boy realtime capture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FobLogReport {
+    firmware_version: FirmwareVersion,
+    samples: Vec<FobLogSample>,
+}
+
+impl FobLogReport {
+    /// Return the firmware identity captured before logging.
+    #[must_use]
+    pub const fn firmware_version(&self) -> FirmwareVersion {
+        self.firmware_version
+    }
+
+    /// Return every captured response in acquisition order.
+    #[must_use]
+    pub fn samples(&self) -> &[FobLogSample] {
+        &self.samples
     }
 }
 
@@ -593,7 +690,7 @@ impl std::error::Error for DeployError {}
 mod tests {
     use super::{
         ControlLoopProbeError, ControlLoopTimingStats, derive_control_loop_timing,
-        validate_control_loop_statuses,
+        validate_control_loop_statuses, validate_fob_realtime_response,
     };
     use std::time::{Duration, Instant};
     use vesc_protocol::control_loop::{ControlLoopStatus, STATUS_BYTES, STATUS_COMMAND};
@@ -645,5 +742,12 @@ mod tests {
                 max_tick_period: Duration::from_millis(66),
             })
         );
+    }
+
+    #[test]
+    fn fob_log_rejects_non_realtime_package_responses() {
+        assert!(validate_fob_realtime_response(&[101, 31, 4, 0]).is_ok());
+        assert!(validate_fob_realtime_response(&[101]).is_err());
+        assert!(validate_fob_realtime_response(&[101, 0, 2]).is_err());
     }
 }
