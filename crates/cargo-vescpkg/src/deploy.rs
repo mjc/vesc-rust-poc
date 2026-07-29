@@ -113,12 +113,22 @@ pub fn run_lisp_stats_probe(target: LoopbackTarget) -> Result<LispStats, DeployE
 /// # Errors
 ///
 /// Returns an error when BLE, firmware preflight, transport, or app-config decoding fails.
-pub fn run_firmware_imu_probe(target: LoopbackTarget) -> Result<FirmwareImuSettings, DeployError> {
+pub fn run_firmware_imu_probe(
+    target: LoopbackTarget,
+    set_live: Option<FirmwareImuSettings>,
+) -> Result<FirmwareImuSettings, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport.open(target).map_err(DeployError::Transport)?;
-    let result = transport
-        .firmware_imu_settings(FIRMWARE_IMU_RESPONSE_TIMEOUT)
-        .map_err(DeployError::Transport);
+    let result = (|| {
+        if let Some(settings) = set_live {
+            transport
+                .set_firmware_imu_settings_live(settings, FIRMWARE_IMU_RESPONSE_TIMEOUT)
+                .map_err(DeployError::Transport)?;
+        }
+        transport
+            .firmware_imu_settings(FIRMWARE_IMU_RESPONSE_TIMEOUT)
+            .map_err(DeployError::Transport)
+    })();
     transport.close();
     result
 }

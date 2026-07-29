@@ -22,14 +22,14 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
+#[derive(Debug, Clone, PartialEq, Subcommand)]
 enum Command {
     Build(BuildArgs),
     #[command(name = "loopback")]
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
     CustomConfig(DeviceArgs),
-    FirmwareImu(DeviceArgs),
+    FirmwareImu(FirmwareImuArgs),
     LispStats(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
@@ -67,6 +67,14 @@ struct DeviceArgs {
 struct CustomAppDataArgs {
     #[arg(value_delimiter = ',', num_args = 1..)]
     payload: Vec<u8>,
+    #[command(flatten)]
+    device: DeviceArgs,
+}
+
+#[derive(Debug, Clone, PartialEq, Args)]
+struct FirmwareImuArgs {
+    #[arg(long, num_args = 3, value_names = ["KP", "KI", "DECAY"])]
+    set_live: Option<Vec<f32>>,
     #[command(flatten)]
     device: DeviceArgs,
 }
@@ -159,8 +167,11 @@ fn run_lisp_stats(command: DeviceArgs) -> ExitCode {
     }
 }
 
-fn run_firmware_imu(command: DeviceArgs) -> ExitCode {
-    match deploy::run_firmware_imu_probe(command.into_target()) {
+fn run_firmware_imu(command: FirmwareImuArgs) -> ExitCode {
+    let settings = command
+        .set_live
+        .map(|values| package_transport::FirmwareImuSettings::new(values[0], values[1], values[2]));
+    match deploy::run_firmware_imu_probe(command.device.into_target(), settings) {
         Ok(settings) => {
             println!(
                 "firmware IMU: mahony-kp={} mahony-ki={} acceleration-confidence-decay={}",
@@ -482,7 +493,26 @@ mod tests {
         let Command::FirmwareImu(args) = command else {
             panic!("expected firmware IMU command");
         };
-        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+        assert_eq!(args.set_live, None);
+        assert_eq!(args.device.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_live_only_firmware_imu_update() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "firmware-imu",
+            "--set-live",
+            "0.4",
+            "0.0",
+            "0.1",
+        ])
+        .expect("parse live firmware IMU update");
+
+        let Command::FirmwareImu(args) = command else {
+            panic!("expected firmware IMU command");
+        };
+        assert_eq!(args.set_live, Some(vec![0.4, 0.0, 0.1]));
     }
 
     #[test]
