@@ -58,6 +58,7 @@ const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_LISP_GET_STATS: u8 = 134;
 const COMM_FW_VERSION: u8 = 0;
+const COMM_SET_APPCONF: u8 = 16;
 const COMM_GET_APPCONF: u8 = 17;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const COMM_GET_CUSTOM_CONFIG: u8 = 93;
@@ -531,6 +532,28 @@ impl BtlePackageInstallTransport {
         settings: FirmwareImuSettings,
         timeout: Duration,
     ) -> Result<(), PackageInstallError> {
+        self.set_firmware_imu_settings(settings, false, timeout)
+    }
+
+    /// Updates and stores the firmware IMU AHRS settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a value is non-finite or the read-modify-write exchange fails.
+    pub fn store_firmware_imu_settings(
+        &self,
+        settings: FirmwareImuSettings,
+        timeout: Duration,
+    ) -> Result<(), PackageInstallError> {
+        self.set_firmware_imu_settings(settings, true, timeout)
+    }
+
+    fn set_firmware_imu_settings(
+        &self,
+        settings: FirmwareImuSettings,
+        store: bool,
+        timeout: Duration,
+    ) -> Result<(), PackageInstallError> {
         if !settings.mahony_kp().is_finite()
             || !settings.mahony_ki().is_finite()
             || !settings.acceleration_confidence_decay().is_finite()
@@ -546,8 +569,13 @@ impl BtlePackageInstallTransport {
         let mut app_config = response[1..].to_vec();
         patch_firmware_imu_settings(&mut app_config, offset, settings)?;
 
-        let response = self.write_command(COMM_SET_APPCONF_NO_STORE, &app_config, timeout)?;
-        if response.as_slice() == [COMM_SET_APPCONF_NO_STORE] {
+        let command = if store {
+            COMM_SET_APPCONF
+        } else {
+            COMM_SET_APPCONF_NO_STORE
+        };
+        let response = self.write_command(command, &app_config, timeout)?;
+        if response.as_slice() == [command] {
             Ok(())
         } else {
             Err(malformed_reply("unexpected app-config set reply"))

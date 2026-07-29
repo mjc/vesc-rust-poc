@@ -75,6 +75,8 @@ struct CustomAppDataArgs {
 struct FirmwareImuArgs {
     #[arg(long, num_args = 3, value_names = ["KP", "KI", "DECAY"])]
     set_live: Option<Vec<f32>>,
+    #[arg(long, requires = "set_live")]
+    store: bool,
     #[command(flatten)]
     device: DeviceArgs,
 }
@@ -171,7 +173,7 @@ fn run_firmware_imu(command: FirmwareImuArgs) -> ExitCode {
     let settings = command
         .set_live
         .map(|values| package_transport::FirmwareImuSettings::new(values[0], values[1], values[2]));
-    match deploy::run_firmware_imu_probe(command.device.into_target(), settings) {
+    match deploy::run_firmware_imu_probe(command.device.into_target(), settings, command.store) {
         Ok(settings) => {
             println!(
                 "firmware IMU: mahony-kp={} mahony-ki={} acceleration-confidence-decay={}",
@@ -494,6 +496,7 @@ mod tests {
             panic!("expected firmware IMU command");
         };
         assert_eq!(args.set_live, None);
+        assert!(!args.store);
         assert_eq!(args.device.device_name.as_deref(), Some("VESC BLE UART"));
     }
 
@@ -513,6 +516,26 @@ mod tests {
             panic!("expected firmware IMU command");
         };
         assert_eq!(args.set_live, Some(vec![0.4, 0.0, 0.1]));
+        assert!(!args.store);
+    }
+
+    #[test]
+    fn parse_args_requires_values_for_a_stored_firmware_imu_update() {
+        assert!(parse_args(["cargo-vescpkg", "firmware-imu", "--store"]).is_err());
+        let command = parse_args([
+            "cargo-vescpkg",
+            "firmware-imu",
+            "--set-live",
+            "2.0",
+            "0.2",
+            "0.3",
+            "--store",
+        ])
+        .expect("parse stored firmware IMU update");
+        let Command::FirmwareImu(args) = command else {
+            panic!("expected firmware IMU command");
+        };
+        assert!(args.store);
     }
 
     #[test]

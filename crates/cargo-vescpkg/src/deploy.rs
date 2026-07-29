@@ -116,14 +116,21 @@ pub fn run_lisp_stats_probe(target: LoopbackTarget) -> Result<LispStats, DeployE
 pub fn run_firmware_imu_probe(
     target: LoopbackTarget,
     set_live: Option<FirmwareImuSettings>,
+    store: bool,
 ) -> Result<FirmwareImuSettings, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport.open(target).map_err(DeployError::Transport)?;
     let result = (|| {
         if let Some(settings) = set_live {
-            transport
-                .set_firmware_imu_settings_live(settings, FIRMWARE_IMU_RESPONSE_TIMEOUT)
-                .map_err(DeployError::Transport)?;
+            if store {
+                transport
+                    .store_firmware_imu_settings(settings, FIRMWARE_IMU_RESPONSE_TIMEOUT)
+                    .map_err(DeployError::Transport)?;
+            } else {
+                transport
+                    .set_firmware_imu_settings_live(settings, FIRMWARE_IMU_RESPONSE_TIMEOUT)
+                    .map_err(DeployError::Transport)?;
+            }
         }
         transport
             .firmware_imu_settings(FIRMWARE_IMU_RESPONSE_TIMEOUT)
