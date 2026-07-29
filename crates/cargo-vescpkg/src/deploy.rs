@@ -14,7 +14,7 @@ use vesc_protocol::control_loop::{
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
 use crate::package_install::PackageInstallError;
 use crate::package_transport::{
-    BtlePackageInstallTransport, FirmwareVersion, LispStats, VescSession,
+    BtlePackageInstallTransport, FirmwareImuSettings, FirmwareVersion, LispStats, VescSession,
 };
 use crate::vesc_uart::encode_packet;
 
@@ -23,6 +23,7 @@ const CUSTOM_CONFIG_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 const CUSTOM_APP_DATA_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const LISP_STATS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const FIRMWARE_IMU_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_SETPOINT: i16 = 100;
 const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
@@ -102,6 +103,21 @@ pub fn run_lisp_stats_probe(target: LoopbackTarget) -> Result<LispStats, DeployE
     transport.open(target).map_err(DeployError::Transport)?;
     let result = transport
         .lisp_stats(LISP_STATS_RESPONSE_TIMEOUT)
+        .map_err(DeployError::Transport);
+    transport.close();
+    result
+}
+
+/// Opens BLE and reads the live firmware IMU AHRS settings.
+///
+/// # Errors
+///
+/// Returns an error when BLE, firmware preflight, transport, or app-config decoding fails.
+pub fn run_firmware_imu_probe(target: LoopbackTarget) -> Result<FirmwareImuSettings, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport.open(target).map_err(DeployError::Transport)?;
+    let result = transport
+        .firmware_imu_settings(FIRMWARE_IMU_RESPONSE_TIMEOUT)
         .map_err(DeployError::Transport);
     transport.close();
     result

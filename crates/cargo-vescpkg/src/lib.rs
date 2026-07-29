@@ -29,6 +29,7 @@ enum Command {
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
     CustomConfig(DeviceArgs),
+    FirmwareImu(DeviceArgs),
     LispStats(DeviceArgs),
     #[command(name = "control-loop")]
     ControlLoopProbe(DeviceArgs),
@@ -110,6 +111,7 @@ where
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
         Ok(Command::CustomConfig(command)) => run_custom_config(command),
+        Ok(Command::FirmwareImu(command)) => run_firmware_imu(command),
         Ok(Command::LispStats(command)) => run_lisp_stats(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
         Ok(Command::ControlLoopDeploy(command)) => run_control_loop_deploy(command),
@@ -152,6 +154,24 @@ fn run_lisp_stats(command: DeviceArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("lisp stats failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_firmware_imu(command: DeviceArgs) -> ExitCode {
+    match deploy::run_firmware_imu_probe(command.into_target()) {
+        Ok(settings) => {
+            println!(
+                "firmware IMU: mahony-kp={} mahony-ki={} acceleration-confidence-decay={}",
+                settings.mahony_kp(),
+                settings.mahony_ki(),
+                settings.acceleration_confidence_decay(),
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("firmware IMU read failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -450,6 +470,17 @@ mod tests {
 
         let Command::LispStats(args) = command else {
             panic!("expected Lisp stats command");
+        };
+        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_read_only_firmware_imu_probe() {
+        let command = parse_args(["cargo-vescpkg", "firmware-imu", "--device", "VESC BLE UART"])
+            .expect("parse firmware IMU probe");
+
+        let Command::FirmwareImu(args) = command else {
+            panic!("expected firmware IMU command");
         };
         assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
     }

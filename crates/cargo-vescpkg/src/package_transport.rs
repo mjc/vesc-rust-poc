@@ -10,6 +10,7 @@ use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::runtime::{Builder, Runtime};
 use tokio::time;
+use vesc_protocol::buffer::read_float32_auto;
 
 use crate::ble_discovery::{DiscoveryError, find_matching_peripheral, vesc_tool_scan_filter};
 use crate::loopback::LoopbackTarget;
@@ -57,8 +58,12 @@ const COMM_LISP_ERASE_CODE: u8 = 132;
 const COMM_LISP_SET_RUNNING: u8 = 133;
 const COMM_LISP_GET_STATS: u8 = 134;
 const COMM_FW_VERSION: u8 = 0;
+const COMM_GET_APPCONF: u8 = 17;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
 const COMM_GET_CUSTOM_CONFIG: u8 = 93;
+// Source: bldc/confgenerator.c at release_6_06@94b305ec and firmware 7.0.
+const APP_CONFIG_IMU_AHRS_OFFSET_6_06: usize = 226;
+const APP_CONFIG_IMU_AHRS_OFFSET_7_0: usize = 232;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HwType {
@@ -112,6 +117,34 @@ pub struct LispStats {
     memory_usage: f32,
     stack_usage: f32,
     result: u8,
+}
+
+/// Live firmware IMU AHRS settings returned by the app configuration.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FirmwareImuSettings {
+    acceleration_confidence_decay: f32,
+    mahony_kp: f32,
+    mahony_ki: f32,
+}
+
+impl FirmwareImuSettings {
+    /// Return the accelerometer-confidence decay.
+    #[must_use]
+    pub const fn acceleration_confidence_decay(self) -> f32 {
+        self.acceleration_confidence_decay
+    }
+
+    /// Return the Mahony proportional gain.
+    #[must_use]
+    pub const fn mahony_kp(self) -> f32 {
+        self.mahony_kp
+    }
+
+    /// Return the Mahony integral gain.
+    #[must_use]
+    pub const fn mahony_ki(self) -> f32 {
+        self.mahony_ki
+    }
 }
 
 impl LispStats {
@@ -461,6 +494,20 @@ impl BtlePackageInstallTransport {
             }
             _ => Err(malformed_reply("unexpected custom-config reply")),
         }
+    }
+
+    /// Reads the live firmware IMU AHRS settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE write, firmware response, or app configuration fails.
+    pub fn firmware_imu_settings(
+        &self,
+        timeout: Duration,
+    ) -> Result<FirmwareImuSettings, PackageInstallError> {
+        let version = self.firmware_version()?;
+        let response = self.write_command(COMM_GET_APPCONF, &[], timeout)?;
+        parse_firmware_imu_settings(&response, app_config_imu_ahrs_offset(version)?)
     }
 
     /// Reads Lisp evaluator runtime statistics without restarting it.
@@ -988,6 +1035,37 @@ fn malformed_reply(reason: &str) -> PackageInstallError {
     PackageInstallError::Device(reason.to_owned())
 }
 
+fn parse_firmware_imu_settings(
+    response: &[u8],
+    offset: usize,
+) -> Result<FirmwareImuSettings, PackageInstallError> {
+    if response.first() != Some(&COMM_GET_APPCONF) {
+        return Err(malformed_reply("unexpected app-config reply"));
+    }
+
+    let mut index = 1 + offset;
+    let acceleration_confidence_decay = read_float32_auto(response, &mut index)
+        .ok_or_else(|| malformed_reply("truncated app-config IMU settings"))?;
+    let mahony_kp = read_float32_auto(response, &mut index)
+        .ok_or_else(|| malformed_reply("truncated app-config IMU settings"))?;
+    let mahony_ki = read_float32_auto(response, &mut index)
+        .ok_or_else(|| malformed_reply("truncated app-config IMU settings"))?;
+
+    Ok(FirmwareImuSettings {
+        acceleration_confidence_decay,
+        mahony_kp,
+        mahony_ki,
+    })
+}
+
+fn app_config_imu_ahrs_offset(version: FirmwareVersion) -> Result<usize, PackageInstallError> {
+    match (version.major(), version.minor()) {
+        (6, 6) => Ok(APP_CONFIG_IMU_AHRS_OFFSET_6_06),
+        (7, 0) => Ok(APP_CONFIG_IMU_AHRS_OFFSET_7_0),
+        _ => Err(malformed_reply("unsupported app-config layout")),
+    }
+}
+
 fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, PackageInstallError> {
     let fullscreen_flag = if fullscreen { 2_u16 } else { 1_u16 };
     let mut crc_input = Vec::with_capacity(2 + qml.len());
@@ -1013,10 +1091,12 @@ fn build_qml_upload_payload(qml: &[u8], fullscreen: bool) -> Result<Vec<u8>, Pac
 #[cfg(test)]
 mod tests {
     use super::{
-        COMM_FW_VERSION, COMM_LISP_ERASE_CODE, COMM_LISP_GET_STATS, COMM_LISP_SET_RUNNING,
-        COMM_LISP_WRITE_CODE, FirmwareVersion, FwVersionInfo, HwType, ble_write_chunks,
-        build_command_packet, build_lisp_upload_payload, clear_response_state,
-        drain_response_channel, parse_fw_version_info, parse_lisp_stats, parse_simple_ack,
+        APP_CONFIG_IMU_AHRS_OFFSET_6_06, APP_CONFIG_IMU_AHRS_OFFSET_7_0, COMM_FW_VERSION,
+        COMM_GET_APPCONF, COMM_LISP_ERASE_CODE, COMM_LISP_GET_STATS, COMM_LISP_SET_RUNNING,
+        COMM_LISP_WRITE_CODE, FirmwareImuSettings, FirmwareVersion, FwVersionInfo, HwType,
+        app_config_imu_ahrs_offset, ble_write_chunks, build_command_packet,
+        build_lisp_upload_payload, clear_response_state, drain_response_channel,
+        parse_firmware_imu_settings, parse_fw_version_info, parse_lisp_stats, parse_simple_ack,
         parse_write_ack, recv_packet_until, retry,
     };
     use crate::vesc_uart::{PacketDecoder, encode_packet};
@@ -1067,6 +1147,50 @@ mod tests {
         assert!((stats.memory_usage() - 30.0).abs() < f32::EPSILON);
         assert!((stats.stack_usage() - 40.0).abs() < f32::EPSILON);
         assert_eq!(stats.result(), 0);
+    }
+
+    #[test]
+    fn parses_firmware_imu_settings_from_app_config() {
+        let mut response = vec![0; 1 + APP_CONFIG_IMU_AHRS_OFFSET_7_0 + 12];
+        response[0] = COMM_GET_APPCONF;
+        let mut index = 1 + APP_CONFIG_IMU_AHRS_OFFSET_7_0;
+        vesc_protocol::buffer::append_float32_auto(&mut response, &mut index, 0.1)
+            .expect("decay field");
+        vesc_protocol::buffer::append_float32_auto(&mut response, &mut index, 0.4)
+            .expect("Kp field");
+        vesc_protocol::buffer::append_float32_auto(&mut response, &mut index, 0.0)
+            .expect("Ki field");
+
+        assert_eq!(
+            parse_firmware_imu_settings(&response, APP_CONFIG_IMU_AHRS_OFFSET_7_0)
+                .expect("IMU settings"),
+            FirmwareImuSettings {
+                acceleration_confidence_decay: 0.1,
+                mahony_kp: 0.4,
+                mahony_ki: 0.0,
+            }
+        );
+        assert!(
+            parse_firmware_imu_settings(
+                &response[..response.len() - 1],
+                APP_CONFIG_IMU_AHRS_OFFSET_7_0
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn selects_only_source_verified_app_config_layouts() {
+        assert_eq!(
+            app_config_imu_ahrs_offset(FirmwareVersion { major: 6, minor: 6 })
+                .expect("6.06 layout"),
+            APP_CONFIG_IMU_AHRS_OFFSET_6_06
+        );
+        assert_eq!(
+            app_config_imu_ahrs_offset(FirmwareVersion { major: 7, minor: 0 }).expect("7.0 layout"),
+            APP_CONFIG_IMU_AHRS_OFFSET_7_0
+        );
+        assert!(app_config_imu_ahrs_offset(FirmwareVersion { major: 7, minor: 1 }).is_err());
     }
 
     #[test]
