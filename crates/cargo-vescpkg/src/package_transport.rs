@@ -61,8 +61,11 @@ const COMM_FW_VERSION: u8 = 0;
 const COMM_SET_APPCONF: u8 = 16;
 const COMM_GET_APPCONF: u8 = 17;
 const COMM_CUSTOM_APP_DATA: u8 = 36;
+// VESC Tool `commands.cpp` requests and decodes setup values 20/21 as odometer metres and uptime ms.
+const COMM_GET_VALUES_SETUP_SELECTIVE: u8 = 51;
 const COMM_GET_CUSTOM_CONFIG: u8 = 93;
 const COMM_SET_APPCONF_NO_STORE: u8 = 149;
+const FIRMWARE_SETUP_ODOMETER_UPTIME_MASK: u32 = (1 << 20) | (1 << 21);
 // Source: bldc/confgenerator.c at release_6_06@94b305ec and firmware 7.0.
 const APP_CONFIG_IMU_AHRS_OFFSET_6_06: usize = 226;
 const APP_CONFIG_IMU_AHRS_OFFSET_7_0: usize = 232;
@@ -127,6 +130,27 @@ pub struct FirmwareImuSettings {
     acceleration_confidence_decay: f32,
     mahony_kp: f32,
     mahony_ki: f32,
+}
+
+/// Read-only VESC setup values needed by device persistence checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareSetupValues {
+    odometer_meters: u32,
+    uptime_ms: u32,
+}
+
+impl FirmwareSetupValues {
+    /// Return the firmware odometer in metres.
+    #[must_use]
+    pub const fn odometer_meters(self) -> u32 {
+        self.odometer_meters
+    }
+
+    /// Return controller uptime in milliseconds.
+    #[must_use]
+    pub const fn uptime_ms(self) -> u32 {
+        self.uptime_ms
+    }
 }
 
 impl FirmwareImuSettings {
@@ -506,6 +530,23 @@ impl BtlePackageInstallTransport {
             }
             _ => Err(malformed_reply("unexpected custom-config reply")),
         }
+    }
+
+    /// Reads the firmware odometer and uptime without changing controller state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the BLE write or selective setup-values response fails.
+    pub fn firmware_setup_values(
+        &self,
+        timeout: Duration,
+    ) -> Result<FirmwareSetupValues, PackageInstallError> {
+        let response = self.write_command(
+            COMM_GET_VALUES_SETUP_SELECTIVE,
+            &FIRMWARE_SETUP_ODOMETER_UPTIME_MASK.to_be_bytes(),
+            timeout,
+        )?;
+        parse_firmware_setup_values(&response)
     }
 
     /// Reads the live firmware IMU AHRS settings.
@@ -1040,6 +1081,27 @@ fn parse_lisp_stats(response: &[u8]) -> Result<LispStats, PackageInstallError> {
     })
 }
 
+fn parse_firmware_setup_values(
+    response: &[u8],
+) -> Result<FirmwareSetupValues, PackageInstallError> {
+    let mut cursor = response;
+    if read_u8(&mut cursor)? != COMM_GET_VALUES_SETUP_SELECTIVE
+        || read_u32_be(&mut cursor)? != FIRMWARE_SETUP_ODOMETER_UPTIME_MASK
+    {
+        return Err(malformed_reply("unexpected setup-values reply"));
+    }
+
+    let values = FirmwareSetupValues {
+        odometer_meters: read_u32_be(&mut cursor)?,
+        uptime_ms: read_u32_be(&mut cursor)?,
+    };
+    if cursor.is_empty() {
+        Ok(values)
+    } else {
+        Err(malformed_reply("unexpected trailing setup values"))
+    }
+}
+
 fn parse_simple_ack(response: &[u8], expected_command: u8) -> Result<bool, PackageInstallError> {
     let mut cursor = response;
     if read_u8(&mut cursor)? != expected_command {
@@ -1181,11 +1243,12 @@ mod tests {
     use super::{
         APP_CONFIG_IMU_AHRS_OFFSET_6_06, APP_CONFIG_IMU_AHRS_OFFSET_7_0, COMM_FW_VERSION,
         COMM_GET_APPCONF, COMM_LISP_ERASE_CODE, COMM_LISP_GET_STATS, COMM_LISP_SET_RUNNING,
-        COMM_LISP_WRITE_CODE, FirmwareImuSettings, FirmwareVersion, FwVersionInfo, HwType,
-        app_config_imu_ahrs_offset, ble_write_chunks, build_command_packet,
+        COMM_LISP_WRITE_CODE, FirmwareImuSettings, FirmwareSetupValues, FirmwareVersion,
+        FwVersionInfo, HwType, app_config_imu_ahrs_offset, ble_write_chunks, build_command_packet,
         build_lisp_upload_payload, clear_response_state, drain_response_channel,
-        parse_firmware_imu_settings, parse_fw_version_info, parse_lisp_stats, parse_simple_ack,
-        parse_write_ack, patch_firmware_imu_settings, recv_packet_until, retry,
+        parse_firmware_imu_settings, parse_firmware_setup_values, parse_fw_version_info,
+        parse_lisp_stats, parse_simple_ack, parse_write_ack, patch_firmware_imu_settings,
+        recv_packet_until, retry,
     };
     use crate::vesc_uart::{PacketDecoder, encode_packet};
     use std::sync::mpsc;
@@ -1265,6 +1328,23 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn parses_selective_firmware_odometer_and_uptime() {
+        let values = parse_firmware_setup_values(&[
+            51, 0x00, 0x30, 0x00, 0x00, 0x00, 0x06, 0x9f, 0x6c, 0x00, 0x12, 0xd6, 0x87,
+        ])
+        .expect("firmware setup values");
+
+        assert_eq!(
+            values,
+            FirmwareSetupValues {
+                odometer_meters: 434_028,
+                uptime_ms: 1_234_567,
+            }
+        );
+        assert!(parse_firmware_setup_values(&[51, 0, 0, 0, 0]).is_err());
     }
 
     #[test]

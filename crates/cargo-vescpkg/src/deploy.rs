@@ -14,7 +14,8 @@ use vesc_protocol::control_loop::{
 use crate::loopback::{LoopbackReport, LoopbackTarget, LoopbackTransportError};
 use crate::package_install::PackageInstallError;
 use crate::package_transport::{
-    BtlePackageInstallTransport, FirmwareImuSettings, FirmwareVersion, LispStats, VescSession,
+    BtlePackageInstallTransport, FirmwareImuSettings, FirmwareSetupValues, FirmwareVersion,
+    LispStats, VescSession,
 };
 use crate::vesc_uart::encode_packet;
 
@@ -24,6 +25,7 @@ const LOOPBACK_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
 const CUSTOM_APP_DATA_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const LISP_STATS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const FIRMWARE_IMU_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
+const FIRMWARE_VALUES_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTROL_LOOP_SETPOINT: i16 = 100;
 const CONTROL_LOOP_STATUS_SAMPLES: usize = 4;
@@ -88,6 +90,23 @@ pub fn run_custom_config_probe(target: LoopbackTarget) -> Result<Vec<u8>, Deploy
     transport.open(target).map_err(DeployError::Transport)?;
     let result = transport
         .custom_config(0, CUSTOM_CONFIG_RESPONSE_TIMEOUT)
+        .map_err(DeployError::Transport);
+    transport.close();
+    result
+}
+
+/// Opens BLE and reads the controller odometer and uptime.
+///
+/// # Errors
+///
+/// Returns an error when BLE, firmware preflight, transport, or decoding fails.
+pub fn run_firmware_values_probe(
+    target: LoopbackTarget,
+) -> Result<FirmwareSetupValues, DeployError> {
+    let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
+    transport.open(target).map_err(DeployError::Transport)?;
+    let result = transport
+        .firmware_setup_values(FIRMWARE_VALUES_RESPONSE_TIMEOUT)
         .map_err(DeployError::Transport);
     transport.close();
     result

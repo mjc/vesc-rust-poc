@@ -29,6 +29,7 @@ enum Command {
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
     CustomConfig(DeviceArgs),
+    FirmwareValues(DeviceArgs),
     FirmwareImu(FirmwareImuArgs),
     LispStats(DeviceArgs),
     #[command(name = "control-loop")]
@@ -121,6 +122,7 @@ where
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
         Ok(Command::CustomConfig(command)) => run_custom_config(command),
+        Ok(Command::FirmwareValues(command)) => run_firmware_values(command),
         Ok(Command::FirmwareImu(command)) => run_firmware_imu(command),
         Ok(Command::LispStats(command)) => run_lisp_stats(command),
         Ok(Command::ControlLoopProbe(command)) => run_control_loop_probe(command),
@@ -164,6 +166,23 @@ fn run_lisp_stats(command: DeviceArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("lisp stats failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_firmware_values(command: DeviceArgs) -> ExitCode {
+    match deploy::run_firmware_values_probe(command.into_target()) {
+        Ok(values) => {
+            println!(
+                "firmware values: odometer={}m uptime={}ms",
+                values.odometer_meters(),
+                values.uptime_ms(),
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("firmware values failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -483,6 +502,22 @@ mod tests {
 
         let Command::LispStats(args) = command else {
             panic!("expected Lisp stats command");
+        };
+        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_read_only_firmware_values_probe() {
+        let command = parse_args([
+            "cargo-vescpkg",
+            "firmware-values",
+            "--device",
+            "VESC BLE UART",
+        ])
+        .expect("parse firmware values probe");
+
+        let Command::FirmwareValues(args) = command else {
+            panic!("expected firmware values command");
         };
         assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
     }
