@@ -15,6 +15,8 @@ use crate::{
     },
 };
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::CustomConfigResetField;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
@@ -29,12 +31,12 @@ use vescpkg_rs::{
     CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
-    CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
-    CustomConfigWireByteField, WireByte,
+    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigSampleRateField,
+    CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
 };
 
 mod flywheel;
+#[cfg(any(test, target_arch = "arm"))]
 mod handtest_safety;
 
 pub(crate) use flywheel::FloatOutBoyFlywheelConfig;
@@ -845,6 +847,7 @@ impl FloatOutBoyConfigEditor<'_> {
         self.set_flag(FloatOutBoyMetadataConfig::DISABLED_FIELD, false);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn set_disabled(&mut self, disabled: bool) -> bool {
         self.set_flag(FloatOutBoyMetadataConfig::DISABLED_FIELD, disabled)
     }
@@ -1780,10 +1783,17 @@ impl FloatOutBoyRemoteThrottleConfig<'_> {
 // Upstream HANDTEST temporarily disables tune modifiers at
 // `third_party/float-out-boy/src/main.c:1431-1444`; these offsets follow the
 // generated serialized field order in `third_party/float-out-boy/src/conf/settings.xml:3943-3961`.
+#[cfg(any(test, target_arch = "arm"))]
 const TILTBACK_CONSTANT_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 67);
+#[cfg(any(test, target_arch = "arm"))]
 const TILTBACK_VARIABLE_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 71);
+#[cfg(any(test, target_arch = "arm"))]
 const TORQUE_TILT_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 126);
+#[cfg(any(test, target_arch = "arm"))]
 const TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 128);
+#[cfg(any(test, target_arch = "arm"))]
 const TURN_TILT_STRENGTH_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 130);
+#[cfg(any(test, target_arch = "arm"))]
 const ATR_STRENGTH_UP_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 145);
+#[cfg(any(test, target_arch = "arm"))]
 const ATR_STRENGTH_DOWN_FIELD: CustomConfigResetField = vescpkg_rs::generated_custom_config_field!(CustomConfigResetField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 147);

@@ -423,7 +423,7 @@ fn refresh_flywheel_readiness(
             .flywheel
             .should_stop(base.footpad().state().is_pressed());
     let run_state = if ready_stop {
-        state.restore_flywheel_config();
+        state.prepare_flywheel_restore();
         state
             .all_data_payloads
             .base()
@@ -1690,7 +1690,7 @@ pub(super) fn refresh(
     state: &mut FloatOutBoyPackageState,
     imu: &impl Imu,
     system_time_ticks: TimestampTicks,
-) {
+) -> bool {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let start = begin_refresh(state, base, imu.is_ready(), system_time_ticks);
@@ -1727,4 +1727,12 @@ pub(super) fn refresh(
         runtime.motor,
     );
     state.all_data_payloads = payloads.with_base(base);
+    #[cfg(any(test, target_arch = "arm"))]
+    {
+        phase.ready_flywheel_stop
+    }
+    #[cfg(not(any(test, target_arch = "arm")))]
+    {
+        false
+    }
 }

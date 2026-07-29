@@ -243,7 +243,12 @@ impl FirmwareSettings {
     }
 
     /// Write a floating-point setting to live firmware state.
-    pub fn set_float(self, setting: FirmwareFloatSetting, value: f32) -> Result<(), SettingsError> {
+    pub fn set_float(
+        self,
+        _effects: &crate::FirmwareEffects,
+        setting: FirmwareFloatSetting,
+        value: f32,
+    ) -> Result<(), SettingsError> {
         if !value.is_finite() {
             return Err(SettingsError::InvalidValue);
         }
@@ -269,16 +274,26 @@ impl FirmwareSettings {
     }
 
     /// Update the live motor-current ceiling; persistence still requires [`Self::store`].
-    pub fn set_motor_current_max(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+    pub fn set_motor_current_max(
+        self,
+        effects: &crate::FirmwareEffects,
+        limit: MotorCurrentLimit,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MotorCurrentMax,
             limit.current().as_amps(),
         )
     }
 
     /// Update the live motor-current floor magnitude; persistence still requires [`Self::store`].
-    pub fn set_motor_current_min(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+    pub fn set_motor_current_min(
+        self,
+        effects: &crate::FirmwareEffects,
+        limit: MotorCurrentLimit,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MotorCurrentMin,
             -limit.current().as_amps(),
         )
@@ -480,40 +495,65 @@ impl FirmwareSettings {
     }
 
     /// Update the live battery/input current ceiling; persistence still requires [`Self::store`].
-    pub fn set_input_current_max(self, current: InputCurrent) -> Result<(), SettingsError> {
+    pub fn set_input_current_max(
+        self,
+        effects: &crate::FirmwareEffects,
+        current: InputCurrent,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::InputCurrentMax,
             current.current().as_amps(),
         )
     }
 
     /// Update the live minimum battery/input current; persistence still requires [`Self::store`].
-    pub fn set_input_current_min(self, current: InputCurrent) -> Result<(), SettingsError> {
+    pub fn set_input_current_min(
+        self,
+        effects: &crate::FirmwareEffects,
+        current: InputCurrent,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::InputCurrentMin,
             current.current().as_amps(),
         )
     }
 
     /// Update the live absolute motor-current ceiling; persistence still requires [`Self::store`].
-    pub fn set_absolute_current_max(self, limit: MotorCurrentLimit) -> Result<(), SettingsError> {
+    pub fn set_absolute_current_max(
+        self,
+        effects: &crate::FirmwareEffects,
+        limit: MotorCurrentLimit,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::AbsoluteCurrentMax,
             limit.current().as_amps(),
         )
     }
 
     /// Update the live minimum electrical speed; persistence still requires [`Self::store`].
-    pub fn set_minimum_electrical_speed(self, speed: ElectricalSpeed) -> Result<(), SettingsError> {
+    pub fn set_minimum_electrical_speed(
+        self,
+        effects: &crate::FirmwareEffects,
+        speed: ElectricalSpeed,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MinimumElectricalSpeed,
             speed.rpm().as_revolutions_per_minute(),
         )
     }
 
     /// Update the live maximum electrical speed; persistence still requires [`Self::store`].
-    pub fn set_maximum_electrical_speed(self, speed: ElectricalSpeed) -> Result<(), SettingsError> {
+    pub fn set_maximum_electrical_speed(
+        self,
+        effects: &crate::FirmwareEffects,
+        speed: ElectricalSpeed,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MaximumElectricalSpeed,
             speed.rpm().as_revolutions_per_minute(),
         )
@@ -522,9 +562,11 @@ impl FirmwareSettings {
     /// Update the live electrical-speed ramp-start threshold; persistence still requires [`Self::store`].
     pub fn set_electrical_speed_ramp_start(
         self,
+        effects: &crate::FirmwareEffects,
         speed: ElectricalSpeed,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ElectricalSpeedRampStart,
             speed.rpm().as_revolutions_per_minute(),
         )
@@ -533,9 +575,11 @@ impl FirmwareSettings {
     /// Update the live braking electrical-speed ceiling; persistence still requires [`Self::store`].
     pub fn set_maximum_electrical_speed_brake(
         self,
+        effects: &crate::FirmwareEffects,
         speed: ElectricalSpeed,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MaximumElectricalSpeedBrake,
             speed.rpm().as_revolutions_per_minute(),
         )
@@ -544,40 +588,76 @@ impl FirmwareSettings {
     /// Update the live brake-current electrical-speed ceiling; persistence still requires [`Self::store`].
     pub fn set_maximum_electrical_speed_brake_current(
         self,
+        effects: &crate::FirmwareEffects,
         speed: ElectricalSpeed,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent,
             speed.rpm().as_revolutions_per_minute(),
         )
     }
 
     /// Update the live firmware IMU sample rate; persistence still requires [`Self::store`].
-    pub fn set_imu_sample_rate(self, rate: ImuSampleRate) -> Result<(), SettingsError> {
+    pub fn set_imu_sample_rate(
+        self,
+        effects: &crate::FirmwareEffects,
+        rate: ImuSampleRate,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ImuSampleRate,
             rate.sample_rate().as_hertz(),
         )
     }
 
     /// Update the live IMU roll mounting rotation; persistence still requires [`Self::store`].
-    pub fn set_imu_rotation_roll(self, angle: AngleDegrees) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuRotationRoll, angle.as_degrees())
+    pub fn set_imu_rotation_roll(
+        self,
+        effects: &crate::FirmwareEffects,
+        angle: AngleDegrees,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuRotationRoll,
+            angle.as_degrees(),
+        )
     }
 
     /// Update the live IMU pitch mounting rotation; persistence still requires [`Self::store`].
-    pub fn set_imu_rotation_pitch(self, angle: AngleDegrees) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuRotationPitch, angle.as_degrees())
+    pub fn set_imu_rotation_pitch(
+        self,
+        effects: &crate::FirmwareEffects,
+        angle: AngleDegrees,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuRotationPitch,
+            angle.as_degrees(),
+        )
     }
 
     /// Update the live IMU yaw mounting rotation; persistence still requires [`Self::store`].
-    pub fn set_imu_rotation_yaw(self, angle: AngleDegrees) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuRotationYaw, angle.as_degrees())
+    pub fn set_imu_rotation_yaw(
+        self,
+        effects: &crate::FirmwareEffects,
+        angle: AngleDegrees,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuRotationYaw,
+            angle.as_degrees(),
+        )
     }
 
     /// Update the live IMU accelerometer-confidence decay ratio; persistence still requires [`Self::store`].
-    pub fn set_imu_acceleration_confidence_decay(self, decay: Ratio) -> Result<(), SettingsError> {
+    pub fn set_imu_acceleration_confidence_decay(
+        self,
+        effects: &crate::FirmwareEffects,
+        decay: Ratio,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ImuAccelerationConfidenceDecay,
             decay.as_ratio(),
         )
@@ -586,80 +666,125 @@ impl FirmwareSettings {
     /// Update the live firmware Mahony proportional gain; persistence still requires [`Self::store`].
     pub fn set_imu_mahony_proportional_gain(
         self,
+        effects: &crate::FirmwareEffects,
         gain: ImuMahonyProportionalGain,
     ) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuMahonyKp, gain.value())
+        self.set_float(effects, FirmwareFloatSetting::ImuMahonyKp, gain.value())
     }
 
     /// Update the live firmware Mahony integral gain; persistence still requires [`Self::store`].
     pub fn set_imu_mahony_integral_gain(
         self,
+        effects: &crate::FirmwareEffects,
         gain: ImuMahonyIntegralGain,
     ) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuMahonyKi, gain.value())
+        self.set_float(effects, FirmwareFloatSetting::ImuMahonyKi, gain.value())
     }
 
     /// Update the live firmware Madgwick beta gain; persistence still requires [`Self::store`].
-    pub fn set_imu_madgwick_beta(self, beta: ImuMadgwickBeta) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuMadgwickBeta, beta.value())
+    pub fn set_imu_madgwick_beta(
+        self,
+        effects: &crate::FirmwareEffects,
+        beta: ImuMadgwickBeta,
+    ) -> Result<(), SettingsError> {
+        self.set_float(effects, FirmwareFloatSetting::ImuMadgwickBeta, beta.value())
     }
 
     /// Update the live firmware IMU accelerometer X offset; persistence still requires [`Self::store`].
     pub fn set_imu_acceleration_offset_x(
         self,
+        effects: &crate::FirmwareEffects,
         offset: ImuAccelerationOffset,
     ) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetX, offset.as_g())
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuAccelerationOffsetX,
+            offset.as_g(),
+        )
     }
 
     /// Update the live firmware IMU accelerometer Y offset; persistence still requires [`Self::store`].
     pub fn set_imu_acceleration_offset_y(
         self,
+        effects: &crate::FirmwareEffects,
         offset: ImuAccelerationOffset,
     ) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetY, offset.as_g())
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuAccelerationOffsetY,
+            offset.as_g(),
+        )
     }
 
     /// Update the live firmware IMU accelerometer Z offset; persistence still requires [`Self::store`].
     pub fn set_imu_acceleration_offset_z(
         self,
+        effects: &crate::FirmwareEffects,
         offset: ImuAccelerationOffset,
     ) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::ImuAccelerationOffsetZ, offset.as_g())
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::ImuAccelerationOffsetZ,
+            offset.as_g(),
+        )
     }
 
     /// Update the live firmware IMU gyroscope X offset; persistence still requires [`Self::store`].
-    pub fn set_imu_gyro_offset_x(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+    pub fn set_imu_gyro_offset_x(
+        self,
+        effects: &crate::FirmwareEffects,
+        offset: ImuAngularRateOffset,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ImuGyroOffsetX,
             offset.as_degrees_per_second(),
         )
     }
 
     /// Update the live firmware IMU gyroscope Y offset; persistence still requires [`Self::store`].
-    pub fn set_imu_gyro_offset_y(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+    pub fn set_imu_gyro_offset_y(
+        self,
+        effects: &crate::FirmwareEffects,
+        offset: ImuAngularRateOffset,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ImuGyroOffsetY,
             offset.as_degrees_per_second(),
         )
     }
 
     /// Update the live firmware IMU gyroscope Z offset; persistence still requires [`Self::store`].
-    pub fn set_imu_gyro_offset_z(self, offset: ImuAngularRateOffset) -> Result<(), SettingsError> {
+    pub fn set_imu_gyro_offset_z(
+        self,
+        effects: &crate::FirmwareEffects,
+        offset: ImuAngularRateOffset,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::ImuGyroOffsetZ,
             offset.as_degrees_per_second(),
         )
     }
 
     /// Update the live gear ratio; persistence still requires [`Self::store`].
-    pub fn set_gear_ratio(self, ratio: GearRatio) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::GearRatio, ratio.as_f32())
+    pub fn set_gear_ratio(
+        self,
+        effects: &crate::FirmwareEffects,
+        ratio: GearRatio,
+    ) -> Result<(), SettingsError> {
+        self.set_float(effects, FirmwareFloatSetting::GearRatio, ratio.as_f32())
     }
 
     /// Update the live wheel diameter; persistence still requires [`Self::store`].
-    pub fn set_wheel_diameter(self, diameter: WheelDiameter) -> Result<(), SettingsError> {
+    pub fn set_wheel_diameter(
+        self,
+        effects: &crate::FirmwareEffects,
+        diameter: WheelDiameter,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::WheelDiameter,
             diameter.distance().as_meters(),
         )
@@ -668,9 +793,11 @@ impl FirmwareSettings {
     /// Update the live FOC motor resistance; persistence still requires [`Self::store`].
     pub fn set_foc_motor_resistance(
         self,
+        effects: &crate::FirmwareEffects,
         resistance: FocMotorResistance,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::FocMotorResistance,
             resistance.resistance().as_ohms(),
         )
@@ -679,9 +806,11 @@ impl FirmwareSettings {
     /// Update the live FOC motor inductance; persistence still requires [`Self::store`].
     pub fn set_foc_motor_inductance(
         self,
+        effects: &crate::FirmwareEffects,
         inductance: FocMotorInductance,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::FocMotorInductance,
             inductance.inductance().as_henries(),
         )
@@ -690,25 +819,37 @@ impl FirmwareSettings {
     /// Update the live FOC motor flux linkage; persistence still requires [`Self::store`].
     pub fn set_foc_motor_flux_linkage(
         self,
+        effects: &crate::FirmwareEffects,
         flux_linkage: FocMotorFluxLinkage,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::FocMotorFluxLinkage,
             flux_linkage.flux_linkage().as_webers(),
         )
     }
 
     /// Update the live battery capacity; persistence still requires [`Self::store`].
-    pub fn set_battery_capacity(self, capacity: Charge) -> Result<(), SettingsError> {
+    pub fn set_battery_capacity(
+        self,
+        effects: &crate::FirmwareEffects,
+        capacity: Charge,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::BatteryCapacity,
             capacity.as_amp_hours(),
         )
     }
 
     /// Update the live motor no-load current; persistence still requires [`Self::store`].
-    pub fn set_motor_no_load_current(self, current: InputCurrent) -> Result<(), SettingsError> {
+    pub fn set_motor_no_load_current(
+        self,
+        effects: &crate::FirmwareEffects,
+        current: InputCurrent,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MotorNoLoadCurrent,
             current.current().as_amps(),
         )
@@ -743,32 +884,52 @@ impl FirmwareSettings {
     }
 
     /// Update the live minimum input-voltage cut threshold; persistence still requires [`Self::store`].
-    pub fn set_input_voltage_min(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+    pub fn set_input_voltage_min(
+        self,
+        effects: &crate::FirmwareEffects,
+        voltage: InputVoltage,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MinimumInputVoltage,
             voltage.voltage().as_volts(),
         )
     }
 
     /// Update the live maximum input-voltage cut threshold; persistence still requires [`Self::store`].
-    pub fn set_input_voltage_max(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+    pub fn set_input_voltage_max(
+        self,
+        effects: &crate::FirmwareEffects,
+        voltage: InputVoltage,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MaximumInputVoltage,
             voltage.voltage().as_volts(),
         )
     }
 
     /// Update the live battery cut-start voltage; persistence still requires [`Self::store`].
-    pub fn set_battery_cut_start_voltage(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+    pub fn set_battery_cut_start_voltage(
+        self,
+        effects: &crate::FirmwareEffects,
+        voltage: InputVoltage,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::BatteryCutStartVoltage,
             voltage.voltage().as_volts(),
         )
     }
 
     /// Update the live battery cut-end voltage; persistence still requires [`Self::store`].
-    pub fn set_battery_cut_end_voltage(self, voltage: InputVoltage) -> Result<(), SettingsError> {
+    pub fn set_battery_cut_end_voltage(
+        self,
+        effects: &crate::FirmwareEffects,
+        voltage: InputVoltage,
+    ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::BatteryCutEndVoltage,
             voltage.voltage().as_volts(),
         )
@@ -805,9 +966,11 @@ impl FirmwareSettings {
     /// Update the live MOSFET temperature limit-start threshold; persistence still requires [`Self::store`].
     pub fn set_mosfet_temperature_start(
         self,
+        effects: &crate::FirmwareEffects,
         temperature: TemperatureLimitStart,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MosfetTemperatureStart,
             temperature.temperature().as_degrees_celsius(),
         )
@@ -816,9 +979,11 @@ impl FirmwareSettings {
     /// Update the live MOSFET temperature limit-end threshold; persistence still requires [`Self::store`].
     pub fn set_mosfet_temperature_end(
         self,
+        effects: &crate::FirmwareEffects,
         temperature: TemperatureLimitEnd,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MosfetTemperatureEnd,
             temperature.temperature().as_degrees_celsius(),
         )
@@ -827,9 +992,11 @@ impl FirmwareSettings {
     /// Update the live motor temperature limit-start threshold; persistence still requires [`Self::store`].
     pub fn set_motor_temperature_start(
         self,
+        effects: &crate::FirmwareEffects,
         temperature: TemperatureLimitStart,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MotorTemperatureStart,
             temperature.temperature().as_degrees_celsius(),
         )
@@ -838,9 +1005,11 @@ impl FirmwareSettings {
     /// Update the live motor temperature limit-end threshold; persistence still requires [`Self::store`].
     pub fn set_motor_temperature_end(
         self,
+        effects: &crate::FirmwareEffects,
         temperature: TemperatureLimitEnd,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::MotorTemperatureEnd,
             temperature.temperature().as_degrees_celsius(),
         )
@@ -854,9 +1023,11 @@ impl FirmwareSettings {
     /// Update the normalized acceleration/deceleration temperature adjustment; persistence still requires [`Self::store`].
     pub fn set_temperature_acceleration_decrease(
         self,
+        effects: &crate::FirmwareEffects,
         decrease: Ratio,
     ) -> Result<(), SettingsError> {
         self.set_float(
+            effects,
             FirmwareFloatSetting::TemperatureAccelerationDecrease,
             decrease.as_ratio(),
         )
@@ -877,13 +1048,29 @@ impl FirmwareSettings {
     }
 
     /// Update the live duty-cycle limit; persistence still requires [`Self::store`].
-    pub fn set_duty_cycle_limit(self, limit: DutyCycleLimit) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::MaxDuty, limit.ratio().as_ratio())
+    pub fn set_duty_cycle_limit(
+        self,
+        effects: &crate::FirmwareEffects,
+        limit: DutyCycleLimit,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::MaxDuty,
+            limit.ratio().as_ratio(),
+        )
     }
 
     /// Update the live minimum duty-cycle threshold; persistence still requires [`Self::store`].
-    pub fn set_duty_cycle_minimum(self, minimum: DutyCycleMinimum) -> Result<(), SettingsError> {
-        self.set_float(FirmwareFloatSetting::MinDuty, minimum.ratio().as_ratio())
+    pub fn set_duty_cycle_minimum(
+        self,
+        effects: &crate::FirmwareEffects,
+        minimum: DutyCycleMinimum,
+    ) -> Result<(), SettingsError> {
+        self.set_float(
+            effects,
+            FirmwareFloatSetting::MinDuty,
+            minimum.ratio().as_ratio(),
+        )
     }
 
     /// Read an integer setting from live firmware state.
@@ -940,7 +1127,12 @@ impl FirmwareSettings {
     }
 
     /// Write an integer setting to live firmware state.
-    pub fn set_int(self, setting: FirmwareIntSetting, value: i32) -> Result<(), SettingsError> {
+    pub fn set_int(
+        self,
+        _effects: &crate::FirmwareEffects,
+        setting: FirmwareIntSetting,
+        value: i32,
+    ) -> Result<(), SettingsError> {
         if !setting.accepts(value) {
             return Err(SettingsError::InvalidValue);
         }
@@ -952,54 +1144,98 @@ impl FirmwareSettings {
     }
 
     /// Write a checked battery-cell count to live firmware state.
-    pub fn set_battery_cell_count(self, count: BatteryCellCount) -> Result<(), SettingsError> {
+    pub fn set_battery_cell_count(
+        self,
+        effects: &crate::FirmwareEffects,
+        count: BatteryCellCount,
+    ) -> Result<(), SettingsError> {
         self.set_int(
+            effects,
             FirmwareIntSetting::BatteryCellCount,
             i32::from(count.as_u16()),
         )
     }
 
     /// Write a checked motor pole count; persistence still requires [`Self::store`].
-    pub fn set_motor_pole_count(self, count: MotorPoleCount) -> Result<(), SettingsError> {
+    pub fn set_motor_pole_count(
+        self,
+        effects: &crate::FirmwareEffects,
+        count: MotorPoleCount,
+    ) -> Result<(), SettingsError> {
         self.set_int(
+            effects,
             FirmwareIntSetting::MotorPoleCount,
             i32::from(count.as_u16()),
         )
     }
 
     /// Write a checked battery chemistry; persistence still requires [`Self::store`].
-    pub fn set_battery_chemistry(self, chemistry: BatteryChemistry) -> Result<(), SettingsError> {
+    pub fn set_battery_chemistry(
+        self,
+        effects: &crate::FirmwareEffects,
+        chemistry: BatteryChemistry,
+    ) -> Result<(), SettingsError> {
         self.set_int(
+            effects,
             FirmwareIntSetting::BatteryType,
             i32::from(chemistry.as_u8()),
         )
     }
 
     /// Write a checked CAN bus baud-rate selector; persistence still requires [`Self::store`].
-    pub fn set_can_baud_rate(self, baud_rate: CanBaudRate) -> Result<(), SettingsError> {
+    pub fn set_can_baud_rate(
+        self,
+        effects: &crate::FirmwareEffects,
+        baud_rate: CanBaudRate,
+    ) -> Result<(), SettingsError> {
         self.set_int(
+            effects,
             FirmwareIntSetting::AppCanBaudRate,
             i32::from(baud_rate.as_u8()),
         )
     }
 
     /// Write a checked CAN application mode; persistence still requires [`Self::store`].
-    pub fn set_can_application_mode(self, mode: CanApplicationMode) -> Result<(), SettingsError> {
-        self.set_int(FirmwareIntSetting::AppCanMode, i32::from(mode.as_u8()))
+    pub fn set_can_application_mode(
+        self,
+        effects: &crate::FirmwareEffects,
+        mode: CanApplicationMode,
+    ) -> Result<(), SettingsError> {
+        self.set_int(
+            effects,
+            FirmwareIntSetting::AppCanMode,
+            i32::from(mode.as_u8()),
+        )
     }
 
     /// Write a checked firmware AHRS algorithm; persistence still requires [`Self::store`].
-    pub fn set_imu_ahrs_mode(self, mode: ImuAhrsMode) -> Result<(), SettingsError> {
-        self.set_int(FirmwareIntSetting::ImuAhrsMode, i32::from(mode.as_u8()))
+    pub fn set_imu_ahrs_mode(
+        self,
+        effects: &crate::FirmwareEffects,
+        mode: ImuAhrsMode,
+    ) -> Result<(), SettingsError> {
+        self.set_int(
+            effects,
+            FirmwareIntSetting::ImuAhrsMode,
+            i32::from(mode.as_u8()),
+        )
     }
 
     /// Write a checked automatic shutdown policy; persistence still requires [`Self::store`].
-    pub fn set_shutdown_mode(self, mode: ShutdownMode) -> Result<(), SettingsError> {
-        self.set_int(FirmwareIntSetting::AppShutdownMode, i32::from(mode.as_u8()))
+    pub fn set_shutdown_mode(
+        self,
+        effects: &crate::FirmwareEffects,
+        mode: ShutdownMode,
+    ) -> Result<(), SettingsError> {
+        self.set_int(
+            effects,
+            FirmwareIntSetting::AppShutdownMode,
+            i32::from(mode.as_u8()),
+        )
     }
 
     /// Persist all accepted setting writes in firmware storage.
-    pub fn store(self) -> Result<(), SettingsError> {
+    pub fn store(self, _effects: &crate::FirmwareEffects) -> Result<(), SettingsError> {
         unsafe { ffi::store_cfg() }
             .then_some(())
             .ok_or(SettingsError::Rejected {

@@ -3,6 +3,7 @@
 
 use core::fmt::Write;
 
+use vescpkg_rs::test_support::with_firmware_effects;
 use vescpkg_rs::{FirmwareLog, LogError};
 
 #[test]
@@ -12,7 +13,10 @@ fn logging_formats_data_without_allocating_and_reports_truncation() {
 
     assert_eq!(log.as_bytes(), b"rpm=120");
     assert!(log.is_truncated());
-    assert_eq!(log.flush(), Err(LogError::Truncated));
+    assert_eq!(
+        with_firmware_effects(|effects| log.flush(effects)),
+        Err(LogError::Truncated)
+    );
 }
 
 #[test]
@@ -20,7 +24,7 @@ fn logging_flushes_a_complete_message_through_the_firmware_slot() {
     let mut log = FirmwareLog::<16>::new();
     log.write_bytes(b"duty=0.25");
 
-    assert_eq!(log.flush(), Ok(9));
+    assert_eq!(with_firmware_effects(|effects| log.flush(effects)), Ok(9));
 }
 
 #[test]
@@ -28,5 +32,8 @@ fn logging_rejects_c_strings_with_embedded_nuls() {
     let mut log = FirmwareLog::<16>::new();
     log.write_bytes(b"bad\0value");
 
-    assert_eq!(log.flush(), Err(LogError::InteriorNul));
+    assert_eq!(
+        with_firmware_effects(|effects| log.flush(effects)),
+        Err(LogError::InteriorNul)
+    );
 }

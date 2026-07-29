@@ -1,16 +1,23 @@
+#[cfg(any(test, target_arch = "arm"))]
 use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyMode,
-    FloatOutBoyPackageState, FloatOutBoyRunState, LoopConfig, float_out_boy_command_payload,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyRunState,
+    float_out_boy_command_payload,
 };
+use super::{FloatOutBoyMode, FloatOutBoyPackageState, LoopConfig};
 use crate::config::FloatOutBoyFlywheelConfig;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::WireByte;
-use vescpkg_rs::prelude::{
-    AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio,
-};
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::{AngleCurrentGain, RateCurrentGain};
+use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio};
 
+#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_COMMAND_ARMED: u8 = 0x80;
+#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_COMMAND_MASK: u8 = 0x7f;
+#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_RECALIBRATE: u8 = 2;
+#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_RELAX_ROLL: u8 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,10 +34,12 @@ impl FloatOutBoyFlywheelOffsets {
         }
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn calibrated(pitch: AngleDegrees, roll: AngleDegrees) -> Self {
         Self { pitch, roll }
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn needs_calibration(self) -> bool {
         self.pitch.is_zero()
     }
@@ -74,18 +83,22 @@ impl FloatOutBoyFlywheelRuntime {
         }
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn needs_calibration(self) -> bool {
         self.offsets.needs_calibration()
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     const fn is_active(self) -> bool {
         self.config.is_some()
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn calibrate(&mut self, pitch: AngleDegrees, roll: AngleDegrees) {
         self.offsets = FloatOutBoyFlywheelOffsets::calibrated(pitch, roll);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn activate(&mut self, config: FloatOutBoyFlywheelConfig) {
         self.config = Some(config);
         self.abort = false;
@@ -118,18 +131,21 @@ impl FloatOutBoyFlywheelRuntime {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyFlywheelStart {
     recalibrate: bool,
     config: FloatOutBoyFlywheelConfig,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FloatOutBoyFlywheelRequest {
     Stop,
     Start(FloatOutBoyFlywheelStart),
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyFlywheelRequest {
     fn from_packet(bytes: &[u8]) -> Option<Self> {
         let [
@@ -192,7 +208,7 @@ impl FloatOutBoyFlywheelRequest {
         }))
     }
 
-    fn apply_to(self, state: &mut FloatOutBoyPackageState) {
+    fn apply_to(self, state: &mut FloatOutBoyPackageState) -> bool {
         let ride_state = state.all_data_payloads.base().status().ride_state();
         if !matches!(
             ride_state.mode(),
@@ -200,35 +216,54 @@ impl FloatOutBoyFlywheelRequest {
         ) || !matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
             && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
         {
-            return;
+            return false;
         }
 
         match self {
-            Self::Stop => state.stop_flywheel(),
+            Self::Stop => {
+                state.prepare_flywheel_restore();
+                true
+            }
             Self::Start(start) => state.start_flywheel(start),
         }
     }
 }
 
 impl FloatOutBoyPackageState {
-    pub(super) fn handle_flywheel_packet(&mut self, bytes: &[u8]) -> bool {
-        FloatOutBoyFlywheelRequest::from_packet(bytes).is_some_and(|request| {
-            request.apply_to(self);
-            true
-        })
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn prepare_flywheel_packet(&mut self, bytes: &[u8]) -> Option<bool> {
+        FloatOutBoyFlywheelRequest::from_packet(bytes).map(|request| request.apply_to(self))
     }
 
-    fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> bool {
+    #[cfg(test)]
+    pub(super) fn handle_flywheel_packet(&mut self, bytes: &[u8]) -> bool {
+        let Some(restore) = self.prepare_flywheel_packet(bytes) else {
+            return false;
+        };
+        if restore {
+            let loaded =
+                vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
+            self.commit_flywheel_restore(&loaded, vescpkg_rs::FirmwareClock::current_timestamp());
+            let migration = vescpkg_rs::test_support::with_firmware_effects(
+                super::migrate_legacy_firmware_imu_settings,
+            );
+            self.finish_configure_active(migration);
+        }
+        true
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> Option<bool> {
         if self.flywheel.needs_calibration() || recalibrate {
             let attitude = self.all_data_payloads.base().attitude();
             let pitch = AngleDegrees::from(attitude.pitch().angle());
             if pitch.abs() < AngleDegrees::from_degrees(70.0) {
                 if self.flywheel.is_active() {
-                    self.restore_flywheel_config();
-                } else {
-                    self.set_ride_mode(FloatOutBoyMode::Normal);
+                    self.prepare_flywheel_restore();
+                    return Some(true);
                 }
-                return false;
+                self.set_ride_mode(FloatOutBoyMode::Normal);
+                return Some(false);
             }
             self.flywheel
                 .calibrate(pitch, AngleDegrees::from(attitude.roll().angle()));
@@ -236,13 +271,14 @@ impl FloatOutBoyPackageState {
         } else {
             self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
         }
-        true
+        None
     }
 
-    fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) {
+    #[cfg(any(test, target_arch = "arm"))]
+    fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) -> bool {
         self.set_ride_mode(FloatOutBoyMode::Flywheel);
-        if !self.accept_flywheel_calibration(start.recalibrate) {
-            return;
+        if let Some(restore) = self.accept_flywheel_calibration(start.recalibrate) {
+            return restore;
         }
         let mut config = self.serialized_config;
         let updated = config.editor().apply_flywheel_overrides(start.config);
@@ -250,23 +286,28 @@ impl FloatOutBoyPackageState {
             // A failed write means the in-memory configuration layout is not the
             // layout this package was built for. Reload the saved configuration
             // instead of running with a mixture of old and partially written values.
-            self.restore_flywheel_config();
-            return;
+            self.prepare_flywheel_restore();
+            return true;
         }
         self.replace_active_config(&config);
         self.flywheel.activate(start.config);
+        false
     }
 
-    pub(super) fn stop_flywheel(&mut self) {
-        self.restore_flywheel_config();
-    }
-
-    pub(super) fn restore_flywheel_config(&mut self) {
+    pub(super) fn prepare_flywheel_restore(&mut self) {
         self.force_beeper_on();
         self.set_ride_mode(FloatOutBoyMode::Normal);
         self.flywheel.deactivate();
-        self.restore_and_configure_from_eeprom();
-        self.refresh_idle_epoch(vescpkg_rs::FirmwareClock::current_timestamp());
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn commit_flywheel_restore(
+        &mut self,
+        loaded: &super::FloatOutBoyPersistedConfig,
+        now: vescpkg_rs::TimestampTicks,
+    ) {
+        self.apply_persisted_config(loaded);
+        self.begin_configure_active(now);
     }
 
     pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {

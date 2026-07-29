@@ -313,6 +313,14 @@ impl StatelessThreadContext {
         &self.threads
     }
 
+    /// Run one slow or potentially re-entrant firmware-effect phase.
+    pub fn with_effects<R>(
+        &mut self,
+        operation: impl for<'effects> FnOnce(&'effects crate::FirmwareEffects) -> R,
+    ) -> R {
+        crate::FirmwareEffects::with(operation)
+    }
+
     /// Build a stateless thread context backed by the live VESC package ABI.
     #[cfg(not(test))]
     #[must_use]
@@ -377,6 +385,17 @@ impl<S: PackageRuntimeState> ThreadContext<S> {
         {
             crate::PackageStateStore::<S>::with_expected_mut(expected, operation)
         }
+    }
+
+    /// Run one slow or potentially re-entrant firmware-effect phase.
+    ///
+    /// The exclusive context borrow prevents safe code from nesting this
+    /// permission inside [`Self::with_state_mut`] or vice versa.
+    pub fn with_effects<R>(
+        &mut self,
+        operation: impl for<'effects> FnOnce(&'effects crate::FirmwareEffects) -> R,
+    ) -> R {
+        crate::FirmwareEffects::with(operation)
     }
 
     /// Return firmware capabilities for this package thread.

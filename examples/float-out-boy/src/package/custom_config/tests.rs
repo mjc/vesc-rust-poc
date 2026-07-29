@@ -9,7 +9,7 @@ use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, default_float_out_boy_config_bytes, editable_config_from_state,
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
-use vescpkg_rs::test_support::FirmwareTest;
+use vescpkg_rs::test_support::{FirmwareTest, invoke_stateful_custom_config_handler};
 use vescpkg_rs::{StatefulCustomConfigCallback, TimestampTicks};
 
 fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
@@ -27,9 +27,9 @@ fn runtime_current_config() -> Option<[u8; FLOAT_OUT_BOY_CONFIG_LEN]> {
 }
 
 fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
-    crate::__VESCPKG_PACKAGE_STATE
-        .with_mut(|state| set_float_out_boy_custom_config_for_test(state, config))
-        .unwrap_or(false)
+    invoke_stateful_custom_config_handler::<FloatOutBoyCustomConfig, FLOAT_OUT_BOY_CONFIG_LEN>(
+        config,
+    )
 }
 
 #[test]
@@ -59,6 +59,7 @@ fn custom_config_default_callback_returns_upstream_serialized_defaults() {
 #[test]
 fn stateful_custom_config_current_callback_reads_runtime_slot_state() {
     let _state_lock = lock_test_float_out_boy_config_state();
+    let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let mut incoming = default_float_out_boy_config_bytes();
     incoming.edit_float_out_boy_config(|config| {
@@ -91,16 +92,21 @@ fn stateful_custom_config_current_callback_returns_none_without_runtime_state() 
 #[test]
 fn stateful_custom_config_set_callback_writes_runtime_state() {
     let _state_lock = lock_test_float_out_boy_config_state();
+    let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
     assert!(runtime_state.is_some());
     let incoming = float_out_boy_config_with_hertz(500);
 
     assert!(runtime_set_config(&incoming));
+    let persisted = firmware
+        .with_effects(|effects| firmware.eeprom().read_image::<320>(effects))
+        .expect("custom-config set must write the complete EEPROM image");
 
     // C map: upstream `set_cfg` mutates `d->float_conf` at
     // `third_party/float-out-boy/src/main.c:2360-2368`.
     assert_eq!(runtime_current_config(), Some(incoming));
+    assert_eq!(&persisted[..incoming.len()], &incoming);
 }
 
 #[test]
@@ -170,6 +176,7 @@ fn custom_config_set_callback_rejects_bad_signature_like_float_out_boy() {
 
 #[test]
 fn custom_config_set_callback_resets_is_default_flag_like_float_out_boy() {
+    let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let mut incoming = default_float_out_boy_config_bytes();
     incoming.edit_float_out_boy_config(|config| {
@@ -189,6 +196,7 @@ fn custom_config_set_callback_resets_is_default_flag_like_float_out_boy() {
 
 #[test]
 fn custom_config_set_callback_keeps_package_enabled_while_running_like_float_out_boy() {
+    let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let mut incoming = default_float_out_boy_config_bytes();
     incoming.edit_float_out_boy_config(|config| {

@@ -51,19 +51,26 @@ fn set_firmware_imu_settings(
     acceleration_confidence_decay: f32,
 ) {
     let settings = firmware.settings();
-    settings
-        .set_imu_mahony_proportional_gain(
-            ImuMahonyProportionalGain::try_new(proportional_gain).unwrap(),
-        )
-        .unwrap();
-    settings
-        .set_imu_mahony_integral_gain(ImuMahonyIntegralGain::try_new(integral_gain).unwrap())
-        .unwrap();
-    settings
-        .set_imu_acceleration_confidence_decay(
-            Ratio::from_ratio(acceleration_confidence_decay).unwrap(),
-        )
-        .unwrap();
+    firmware.with_effects(|effects| {
+        settings
+            .set_imu_mahony_proportional_gain(
+                effects,
+                ImuMahonyProportionalGain::try_new(proportional_gain).unwrap(),
+            )
+            .unwrap();
+        settings
+            .set_imu_mahony_integral_gain(
+                effects,
+                ImuMahonyIntegralGain::try_new(integral_gain).unwrap(),
+            )
+            .unwrap();
+        settings
+            .set_imu_acceleration_confidence_decay(
+                effects,
+                Ratio::from_ratio(acceleration_confidence_decay).unwrap(),
+            )
+            .unwrap();
+    });
 }
 
 fn assert_firmware_imu_settings(
@@ -475,7 +482,9 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
             .status()
             .ride_state()
             .run_state(),
-        FloatOutBoyRunState::Disabled,
+        // Refloat 1.2.1 `COMMAND_CFG_RESTORE` calls only
+        // `read_cfg_from_eeprom`; it does not run `configure`.
+        FloatOutBoyRunState::Startup,
     );
     assert_eq!(state.tick_beeper(), None);
 
@@ -520,8 +529,11 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     let firmware = FirmwareTest::new();
     assert!(
         firmware
-            .eeprom()
-            .write_bytes(&[0; FLOAT_OUT_BOY_EEPROM_LEN])
+            .with_effects(|effects| {
+                firmware
+                    .eeprom()
+                    .write_bytes(effects, &[0; FLOAT_OUT_BOY_EEPROM_LEN])
+            })
             .is_ok()
     );
     let invalid = FloatOutBoyPackageState::from_persisted_config(
@@ -554,7 +566,10 @@ fn config_save_failure_has_no_write_acknowledgement() {
         &[],
     ));
     assert_eq!(state.tick_beeper(), None);
-    assert_eq!(firmware.eeprom().read(address), None);
+    assert_eq!(
+        firmware.with_effects(|effects| firmware.eeprom().read(effects, address)),
+        None
+    );
     let mut log = [0; 32];
     let len = firmware.copy_last_log(&mut log);
     assert_eq!(&log[..len], b"save fail");
@@ -1098,7 +1113,7 @@ fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_ref
 }
 
 #[test]
-fn failed_config_write_does_not_reconfigure_or_acknowledge() {
+fn failed_config_write_still_applies_valid_custom_config_like_refloat() {
     let firmware = FirmwareTest::new();
     let address = vescpkg_rs::CustomEepromAddress::from_index(0).expect("zero fits");
     firmware.fail_eeprom_write(address);
@@ -1113,9 +1128,10 @@ fn failed_config_write_does_not_reconfigure_or_acknowledge() {
         assert!(config.set_disabled(true));
     });
 
-    assert!(!state.store_serialized_config(&bytes));
+    assert!(state.store_serialized_config(&bytes));
 
-    assert_eq!(state.serialized_config, original);
+    assert_ne!(state.serialized_config, original);
+    assert!(state.serialized_config.metadata().disabled());
     assert_eq!(
         state
             .all_data_payloads()
@@ -1123,9 +1139,13 @@ fn failed_config_write_does_not_reconfigure_or_acknowledge() {
             .status()
             .ride_state()
             .run_state(),
-        FloatOutBoyRunState::Ready,
+        FloatOutBoyRunState::Disabled,
     );
-    assert_eq!(state.tick_beeper(), None);
+    let changes: Vec<_> = (1..=560)
+        .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
+        .collect();
+    assert_eq!(changes.len(), 7);
+    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -1146,7 +1166,7 @@ fn interrupted_config_write_cannot_boot_a_mixed_image() {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(5.0)));
     });
 
-    assert!(!state.store_serialized_config(&new));
+    assert!(state.store_serialized_config(&new));
 
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
@@ -1172,7 +1192,7 @@ fn assert_interrupted_config_write_fails_safe(successful_writes: usize) {
     new.edit_float_out_boy_config(|config| {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(5.0)));
     });
-    assert!(!state.store_serialized_config(&new));
+    assert!(state.store_serialized_config(&new));
 
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
@@ -1183,7 +1203,10 @@ fn assert_interrupted_config_write_fails_safe(successful_writes: usize) {
         FloatOutBoyConfigImage::defaults()
     };
     assert_eq!(restarted.serialized_config, expected);
-    assert_eq!(state.serialized_config, old);
+    assert_f32_eq!(
+        state.serialized_config.balance().kp().as_amps_per_degree(),
+        5.0
+    );
 }
 
 #[test]
@@ -1204,7 +1227,11 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 
     assert!(state.store_serialized_config(&bytes));
     let mut persisted = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-    assert!(firmware.eeprom().read_bytes(&mut persisted).is_ok());
+    assert!(
+        firmware
+            .with_effects(|effects| firmware.eeprom().read_bytes(effects, &mut persisted))
+            .is_ok()
+    );
     assert_eq!(
         &persisted[..state.serialized_config.as_bytes().len()],
         state.serialized_config.as_bytes(),

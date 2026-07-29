@@ -82,7 +82,11 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     assert!(state.store_serialized_config(candidate.as_bytes()));
     let persisted_config = state.serialized_config;
     let mut persisted_image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-    assert!(firmware.eeprom().read_bytes(&mut persisted_image).is_ok());
+    assert!(
+        firmware
+            .with_effects(|effects| { firmware.eeprom().read_bytes(effects, &mut persisted_image) })
+            .is_ok()
+    );
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;
     let packets = [
@@ -101,7 +105,13 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
             packet,
         ));
         let mut current_image = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-        assert!(firmware.eeprom().read_bytes(&mut current_image).is_ok());
+        assert!(
+            firmware
+                .with_effects(|effects| {
+                    firmware.eeprom().read_bytes(effects, &mut current_image)
+                })
+                .is_ok()
+        );
         assert_eq!(current_image, persisted_image);
     }
 

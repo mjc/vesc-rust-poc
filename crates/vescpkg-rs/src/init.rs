@@ -278,6 +278,17 @@ impl<'info> PackageStart<'info> {
         }
     }
 
+    /// Run one startup firmware-effect phase.
+    ///
+    /// The effect permission cannot escape this closure or overlap a mutable
+    /// runtime-state phase through this startup context.
+    pub fn with_effects<R>(
+        &mut self,
+        operation: impl for<'effects> FnOnce(&'effects crate::FirmwareEffects) -> R,
+    ) -> R {
+        crate::FirmwareEffects::with(operation)
+    }
+
     #[cfg(test)]
     pub(crate) fn from_lib_info(info: &'info mut ffi::LibInfo) -> Self {
         Self {

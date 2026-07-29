@@ -260,7 +260,8 @@ pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
-    MAX_APP_DATA_PAYLOAD_LEN, StatefulCallbackContext, StatefulCustomConfigCallback,
+    FirmwareEffects, MAX_APP_DATA_PAYLOAD_LEN, StatefulCallbackContext,
+    StatefulCustomConfigCallback,
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};
@@ -342,13 +343,13 @@ pub mod prelude {
         EepromWordOffset, Encoder, EncoderError, EncoderHandler, EncoderRegistration,
         ExtensionDescriptor, ExtensionName, ExtensionRegistration, Firmware, FirmwareAhrs,
         FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareCapabilities,
-        FirmwareClock, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting, FirmwareLog,
-        FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings, FirmwareThread,
-        FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode, Gnss,
-        GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback, ImuReadCallbackError,
-        ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension, LispArgs, LispContextId,
-        LispFlatValue, LispFlatValueError, LispIntegerError, LispList, LispListError,
-        LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
+        FirmwareClock, FirmwareEffects, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting,
+        FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
+        FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
+        FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
+        ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
+        LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError, LispList,
+        LispListError, LispMessageError, LispProcess, LispSymbol, LispValue, LogError, MotorOutput,
         MotorReleaseOutcome, MotorTelemetry, Nvm, NvmCapacity, NvmError, NvmOffset,
         PackageStartError, PacketCodec, PacketError, PacketHandler, Plot, PlotError, PpmSnapshot,
         PwmCallbackError, PwmCallbackHandler, PwmCallbackLease, RemoteInput, RemoteInputSnapshot,

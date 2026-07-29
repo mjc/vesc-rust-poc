@@ -1,13 +1,21 @@
-use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
+use super::FloatOutBoyPackageState;
+#[cfg(any(test, target_arch = "arm"))]
+use super::float_out_boy_command_payload;
+#[cfg(any(test, target_arch = "arm"))]
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyMode, FloatOutBoyRideState, FloatOutBoyRunState,
+    FloatOutBoyMode, FloatOutBoyRideState,
 };
+#[cfg(any(test, target_arch = "arm"))]
+use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRunState};
+
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct FloatOutBoyHandtestSafetyConfig(FloatOutBoyConfigImage);
 
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestSafetyConfig {
     fn from_config(mut config: FloatOutBoyConfigImage) -> Option<Self> {
         // C map: `cmd_handtest` applies temporary safety overrides only in
@@ -24,12 +32,14 @@ impl FloatOutBoyHandtestSafetyConfig {
     }
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyHandtestRequest {
     Enable,
     Disable,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestRequest {
     fn from_packet(bytes: &[u8]) -> Option<Self> {
         // C map: `COMMAND_HANDTEST` uses the first payload byte as the on/off
@@ -50,7 +60,7 @@ impl FloatOutBoyHandtestRequest {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn apply_to(self, state: &mut FloatOutBoyPackageState) {
+    fn apply_to(self, state: &mut FloatOutBoyPackageState) -> bool {
         // C map: `cmd_handtest` only applies when the board is READY and mode
         // is NORMAL or HANDTEST at `third_party/float-out-boy/src/main.c:1426-1430`.
         let ride_state = state.all_data_payloads.base().status().ride_state();
@@ -66,9 +76,14 @@ impl FloatOutBoyHandtestRequest {
             };
             state.set_ride_mode(mode);
             match self {
-                Self::Enable => state.apply_handtest_safety_config(),
-                Self::Disable => state.disable_handtest(),
+                Self::Enable => {
+                    state.apply_handtest_safety_config();
+                    false
+                }
+                Self::Disable => true,
             }
+        } else {
+            false
         }
     }
 }
@@ -112,18 +127,32 @@ fn float_out_boy_payloads_with_ride_state(
 }
 
 impl FloatOutBoyPackageState {
+    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
-    pub(super) fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
+    pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Float Out Boy C dispatches it at `third_party/float-out-boy/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/float-out-boy/src/main.c:1421-1430`.
-        match FloatOutBoyHandtestRequest::from_packet(bytes) {
-            Some(request) => {
-                request.apply_to(self);
-                true
+        FloatOutBoyHandtestRequest::from_packet(bytes).map(|request| request.apply_to(self))
+    }
+
+    #[cfg(test)]
+    pub(super) fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
+        let Some(restore) = self.prepare_handtest_packet(bytes) else {
+            return false;
+        };
+        if restore {
+            let loaded =
+                vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
+            let now = vescpkg_rs::FirmwareClock::current_timestamp();
+            if self.commit_handtest_restore(&loaded, now) {
+                let migration = vescpkg_rs::test_support::with_firmware_effects(
+                    super::migrate_legacy_firmware_imu_settings,
+                );
+                self.finish_configure_active(migration);
             }
-            None => false,
         }
+        true
     }
 
     pub(super) fn set_ride_mode(&mut self, mode: FloatOutBoyMode) {
@@ -137,21 +166,34 @@ impl FloatOutBoyPackageState {
         );
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn apply_handtest_safety_config(&mut self) {
         // C map: enabling HANDTEST applies temporary safety overrides at
         // `third_party/float-out-boy/src/main.c:1431-1446`.
         if let Some(config) = Self::handtest_safety_config(&self.serialized_config) {
-            self.replace_active_config(&config);
+            self.serialized_config = config;
         }
     }
 
-    #[cfg_attr(target_arch = "arm", inline(never))]
-    fn disable_handtest(&mut self) {
-        self.restore_and_configure_from_eeprom();
-        self.idle_ticks = vescpkg_rs::FirmwareClock::current_timestamp();
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn commit_handtest_restore(
+        &mut self,
+        loaded: &super::FloatOutBoyPersistedConfig,
+        now: vescpkg_rs::TimestampTicks,
+    ) -> bool {
+        let ride_state = self.all_data_payloads.base().status().ride_state();
+        if ride_state.run_state() != FloatOutBoyRunState::Ready
+            || ride_state.mode() != FloatOutBoyMode::Normal
+        {
+            return false;
+        }
+        self.apply_persisted_config(loaded);
+        self.begin_configure_active(now);
+        true
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     fn handtest_safety_config(config: &FloatOutBoyConfigImage) -> Option<FloatOutBoyConfigImage> {
         // Float Out Boy C applies temporary HANDTEST safety config at
         // `third_party/float-out-boy/src/main.c:1431-1446` and restores from EEPROM on off at

@@ -68,6 +68,202 @@ let access = PackageStateAccess::runtime(&STATE);
 let _ = StatefulCallbackContext::begin(access);
 ```
 
+Custom EEPROM access requires an SDK-issued firmware-effect phase:
+
+```compile_fail
+use vescpkg_rs::{CustomEeprom, CustomEepromAddress};
+
+let address = CustomEepromAddress::from_index(0).unwrap();
+let _ = CustomEeprom::new().read(address);
+```
+
+Firmware-setting mutation requires an SDK-issued firmware-effect phase:
+
+```compile_fail
+use vescpkg_rs::{FirmwareFloatSetting, FirmwareSettings};
+
+let _ = FirmwareSettings.set_float(FirmwareFloatSetting::MotorCurrentMax, 1.0);
+```
+
+Firmware log transport requires an SDK-issued firmware-effect phase:
+
+```compile_fail
+let log = vescpkg_rs::FirmwareLog::<8>::new();
+let _ = log.flush();
+```
+
+Firmware-effect permission cannot be constructed by package code:
+
+```compile_fail
+let _ = vescpkg_rs::FirmwareEffects { _private: () };
+```
+
+An effect phase cannot be nested inside a callback state phase:
+
+```compile_fail
+use vescpkg_rs::{
+    AppDataHandler, AppDataPacket, AppDataReply, PackageRuntimeState,
+    PackageStateStore, StatefulCallbackContext,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+struct Callback;
+
+impl AppDataHandler for Callback {
+    type State = State;
+
+    fn handle(
+        context: &mut StatefulCallbackContext<'_, State>,
+        _packet: AppDataPacket<'_>,
+        _reply: &mut AppDataReply<'_>,
+    ) {
+        context.with_state(|_| context.with_effects(|_| ()));
+    }
+}
+```
+
+A callback state phase cannot be nested inside an effect phase:
+
+```compile_fail
+use vescpkg_rs::{
+    AppDataHandler, AppDataPacket, AppDataReply, PackageRuntimeState,
+    PackageStateStore, StatefulCallbackContext,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+struct Callback;
+
+impl AppDataHandler for Callback {
+    type State = State;
+
+    fn handle(
+        context: &mut StatefulCallbackContext<'_, State>,
+        _packet: AppDataPacket<'_>,
+        _reply: &mut AppDataReply<'_>,
+    ) {
+        context.with_effects(|_| context.with_state(|_| ()));
+    }
+}
+```
+
+A thread effect phase cannot be nested inside a mutable state phase:
+
+```compile_fail
+use vescpkg_rs::{
+    FirmwareThread, PackageRuntimeState, PackageStateStore, ThreadContext,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+struct Thread;
+
+impl FirmwareThread for Thread {
+    type State = State;
+
+    fn run(mut context: ThreadContext<State>) {
+        let _ = context.with_state_mut(|_| context.with_effects(|_| ()));
+    }
+}
+```
+
+A thread mutable state phase cannot be nested inside an effect phase:
+
+```compile_fail
+use vescpkg_rs::{
+    FirmwareThread, PackageRuntimeState, PackageStateStore, ThreadContext,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+struct Thread;
+
+impl FirmwareThread for Thread {
+    type State = State;
+
+    fn run(mut context: ThreadContext<State>) {
+        context.with_effects(|_| {
+            let _ = context.with_state_mut(|_| ());
+        });
+    }
+}
+```
+
+A startup effect phase cannot be nested inside a mutable state phase:
+
+```compile_fail
+use vescpkg_rs::{
+    PackageRuntimeState, PackageStart, PackageStateStore,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+fn nested(start: &mut PackageStart<'_>) {
+    let _ = start.with_runtime_state::<State, _>(|_| {
+        start.with_effects(|_| ());
+    });
+}
+```
+
+A startup mutable state phase cannot be nested inside an effect phase:
+
+```compile_fail
+use vescpkg_rs::{
+    PackageRuntimeState, PackageStart, PackageStateStore,
+};
+
+struct State;
+static STATE: PackageStateStore<State> = PackageStateStore::new();
+
+impl PackageRuntimeState for State {
+    fn runtime_store() -> &'static PackageStateStore<Self> {
+        &STATE
+    }
+}
+
+fn nested(start: &mut PackageStart<'_>) {
+    start.with_effects(|_| {
+        let _ = start.with_runtime_state::<State, _>(|_| ());
+    });
+}
+```
+
 Macro implementation traits are not available at the package-author root:
 
 ```compile_fail

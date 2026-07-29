@@ -145,7 +145,11 @@ impl CustomEeprom {
 
     /// Read one word, returning `None` when the address has no stored value.
     #[must_use]
-    pub fn read(self, address: CustomEepromAddress) -> Option<EepromWord> {
+    pub fn read(
+        self,
+        _effects: &crate::FirmwareEffects,
+        address: CustomEepromAddress,
+    ) -> Option<EepromWord> {
         let mut word = 0_u32;
         call_vesc_ffi!(read_eeprom_word(&raw mut word, address.get()))
             .then(|| EepromWord::from_u32(word))
@@ -153,15 +157,24 @@ impl CustomEeprom {
 
     /// Read one word at a typed word offset.
     #[must_use]
-    pub fn read_at(self, offset: EepromWordOffset) -> Option<EepromWord> {
+    pub fn read_at(
+        self,
+        effects: &crate::FirmwareEffects,
+        offset: EepromWordOffset,
+    ) -> Option<EepromWord> {
         offset
             .checked_address()
             .ok()
-            .and_then(|address| self.read(address))
+            .and_then(|address| self.read(effects, address))
     }
 
     /// Store one word, reporting a firmware rejection explicitly.
-    pub fn write(self, address: CustomEepromAddress, word: EepromWord) -> Result<(), EepromError> {
+    pub fn write(
+        self,
+        _effects: &crate::FirmwareEffects,
+        address: CustomEepromAddress,
+        word: EepromWord,
+    ) -> Result<(), EepromError> {
         let mut word = word.to_u32();
         call_vesc_ffi!(store_eeprom_word(&raw mut word, address.get()))
             .then_some(())
@@ -169,19 +182,28 @@ impl CustomEeprom {
     }
 
     /// Store one word at a typed word offset.
-    pub fn write_at(self, offset: EepromWordOffset, word: EepromWord) -> Result<(), EepromError> {
+    pub fn write_at(
+        self,
+        effects: &crate::FirmwareEffects,
+        offset: EepromWordOffset,
+        word: EepromWord,
+    ) -> Result<(), EepromError> {
         offset
             .checked_address()
-            .and_then(|address| self.write(address, word))
+            .and_then(|address| self.write(effects, address, word))
     }
 
     /// Read a serialized byte image from consecutive custom-EEPROM words.
     ///
     /// Returns a typed error when any required word is absent or its address
     /// cannot be represented. Bytes read before a failure remain in `bytes`.
-    pub fn read_bytes(self, bytes: &mut [u8]) -> Result<(), EepromError> {
+    pub fn read_bytes(
+        self,
+        effects: &crate::FirmwareEffects,
+        bytes: &mut [u8],
+    ) -> Result<(), EepromError> {
         let address = CustomEepromAddress::from_index(0).ok_or(EepromError::AddressOverflow)?;
-        self.read_bytes_at(address, bytes)
+        self.read_bytes_at(effects, address, bytes)
     }
 
     /// Read a serialized byte image from consecutive custom-EEPROM words at
@@ -190,16 +212,18 @@ impl CustomEeprom {
     /// Bytes read before a missing word or address failure remain in `bytes`.
     pub fn read_bytes_at(
         self,
+        effects: &crate::FirmwareEffects,
         start: CustomEepromAddress,
         bytes: &mut [u8],
     ) -> Result<(), EepromError> {
         let start = usize::try_from(start.get()).map_err(|_| EepromError::AddressOverflow)?;
-        self.read_bytes_at_offset(EepromWordOffset::from_index(start), bytes)
+        self.read_bytes_at_offset(effects, EepromWordOffset::from_index(start), bytes)
     }
 
     /// Read a serialized byte image at a typed word offset.
     pub fn read_bytes_at_offset(
         self,
+        effects: &crate::FirmwareEffects,
         start: EepromWordOffset,
         bytes: &mut [u8],
     ) -> Result<(), EepromError> {
@@ -210,24 +234,28 @@ impl CustomEeprom {
                 let offset = start.checked_add(index)?;
                 let word = offset
                     .checked_address()
-                    .and_then(|address| self.read(address).ok_or(EepromError::Missing))?;
+                    .and_then(|address| self.read(effects, address).ok_or(EepromError::Missing))?;
                 bytes.copy_from_slice(&word.to_ne_bytes()[..bytes.len()]);
                 Ok(())
             })
     }
 
     /// Read an owned fixed-size byte image from offset zero.
-    pub fn read_image<const N: usize>(self) -> Result<[u8; N], EepromError> {
-        self.read_image_at(EepromWordOffset::from_index(0))
+    pub fn read_image<const N: usize>(
+        self,
+        effects: &crate::FirmwareEffects,
+    ) -> Result<[u8; N], EepromError> {
+        self.read_image_at(effects, EepromWordOffset::from_index(0))
     }
 
     /// Read an owned fixed-size byte image at a typed word offset.
     pub fn read_image_at<const N: usize>(
         self,
+        effects: &crate::FirmwareEffects,
         start: EepromWordOffset,
     ) -> Result<[u8; N], EepromError> {
         let mut image = [0; N];
-        self.read_bytes_at_offset(start, &mut image)?;
+        self.read_bytes_at_offset(effects, start, &mut image)?;
         Ok(image)
     }
 
@@ -235,9 +263,13 @@ impl CustomEeprom {
     ///
     /// A final partial word is padded with zeroes. Returns a typed error after
     /// the first address or firmware write failure.
-    pub fn write_bytes(self, bytes: &[u8]) -> Result<(), EepromError> {
+    pub fn write_bytes(
+        self,
+        effects: &crate::FirmwareEffects,
+        bytes: &[u8],
+    ) -> Result<(), EepromError> {
         let address = CustomEepromAddress::from_index(0).ok_or(EepromError::AddressOverflow)?;
-        self.write_bytes_at(address, bytes)
+        self.write_bytes_at(effects, address, bytes)
     }
 
     /// Store a serialized byte image in consecutive words at an explicit
@@ -247,16 +279,18 @@ impl CustomEeprom {
     /// the first address or firmware write failure.
     pub fn write_bytes_at(
         self,
+        effects: &crate::FirmwareEffects,
         start: CustomEepromAddress,
         bytes: &[u8],
     ) -> Result<(), EepromError> {
         let start = usize::try_from(start.get()).map_err(|_| EepromError::AddressOverflow)?;
-        self.write_bytes_at_offset(EepromWordOffset::from_index(start), bytes)
+        self.write_bytes_at_offset(effects, EepromWordOffset::from_index(start), bytes)
     }
 
     /// Store a serialized byte image at a typed word offset.
     pub fn write_bytes_at_offset(
         self,
+        effects: &crate::FirmwareEffects,
         start: EepromWordOffset,
         bytes: &[u8],
     ) -> Result<(), EepromError> {
@@ -270,21 +304,26 @@ impl CustomEeprom {
                     .get_mut(..bytes.len())
                     .ok_or(EepromError::AddressOverflow)?;
                 word_bytes.copy_from_slice(bytes);
-                self.write_at(offset, EepromWord::from_ne_bytes(word))
+                self.write_at(effects, offset, EepromWord::from_ne_bytes(word))
             })
     }
 
     /// Store an owned fixed-size byte image at offset zero.
-    pub fn write_image<const N: usize>(self, image: &[u8; N]) -> Result<(), EepromError> {
-        self.write_image_at(EepromWordOffset::from_index(0), image)
+    pub fn write_image<const N: usize>(
+        self,
+        effects: &crate::FirmwareEffects,
+        image: &[u8; N],
+    ) -> Result<(), EepromError> {
+        self.write_image_at(effects, EepromWordOffset::from_index(0), image)
     }
 
     /// Store an owned fixed-size byte image at a typed word offset.
     pub fn write_image_at<const N: usize>(
         self,
+        effects: &crate::FirmwareEffects,
         start: EepromWordOffset,
         image: &[u8; N],
     ) -> Result<(), EepromError> {
-        self.write_bytes_at_offset(start, image)
+        self.write_bytes_at_offset(effects, start, image)
     }
 }

@@ -8,6 +8,10 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     state
         .beeper
         .set_enabled(state.serialized_config.beeper_enabled());
+    refresh_disabled_state(state);
+}
+
+pub(super) fn refresh_disabled_state(state: &mut FloatOutBoyPackageState) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let status = base.status();

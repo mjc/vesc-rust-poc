@@ -73,7 +73,12 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
-use config_storage::{FirmwareImuMigration, FloatOutBoyConfigLoadOutcome};
+pub(in crate::package) use config_storage::{
+    FirmwareImuMigration, FloatOutBoyConfigLoadOutcome, migrate_legacy_firmware_imu_settings,
+    store_persisted_config,
+};
+#[cfg(any(test, target_arch = "arm"))]
+pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
 use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
@@ -688,7 +693,7 @@ impl FloatOutBoyPackageState {
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
         );
-        self.refresh_imu_runtime_state(imu, system_time_ticks);
+        let _ = self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -700,7 +705,7 @@ impl FloatOutBoyPackageState {
         footpad_adc1: AdcVoltage,
         footpad_adc2: AdcVoltage,
         system_time_ticks: TimestampTicks,
-    ) {
+    ) -> bool {
         // Keep the ARM refresh phases in separate frames so LTO cannot merge
         // their independent stack use inside VESC's fixed thread working area.
         self.refresh_config_runtime_state();
@@ -712,10 +717,11 @@ impl FloatOutBoyPackageState {
             self.serialized_config.persistent_fatal_error(),
         );
         self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
-        self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
+        let restore_flywheel_config =
+            self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
-        self.refresh_imu_runtime_state(imu, system_time_ticks);
+        self.refresh_imu_runtime_state(imu, system_time_ticks) || restore_flywheel_config
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -723,37 +729,40 @@ impl FloatOutBoyPackageState {
         &mut self,
         current_pitch: ImuPitch,
         system_time_ticks: TimestampTicks,
-    ) {
+    ) -> bool {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
         // C refreshes `d->imu.pitch` before entering the READY Konami branch at
         // `third_party/float-out-boy/src/main.c:775,947-953`.
         let footpad = base.footpad().state();
 
-        if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
-            && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-            && self
-                .flywheel_konami
-                .check_flywheel(current_pitch, footpad, system_time_ticks)
-        {
-            self.start_internal_led_confirmation(system_time_ticks);
-            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
-            // armed default flywheel command used by the native handler.
-            let command = [
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                FloatOutBoyAppDataCommand::Flywheel.id(),
-                0x82,
-                0,
-                0,
-                0,
-                0,
-                1,
-            ];
-            self.handle_flywheel_packet(&command);
-        }
+        let restore_flywheel_config =
+            if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
+                && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+                && self
+                    .flywheel_konami
+                    .check_flywheel(current_pitch, footpad, system_time_ticks)
+            {
+                self.start_internal_led_confirmation(system_time_ticks);
+                // C map: `main.c:85-89` and `main.c:945-949`; this is the same
+                // armed default flywheel command used by the native handler.
+                let command = [
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FloatOutBoyAppDataCommand::Flywheel.id(),
+                    0x82,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                ];
+                self.prepare_flywheel_packet(&command).unwrap_or(false)
+            } else {
+                false
+            };
 
         if self.serialized_config.hardware_led_mode_id() == 0 {
-            return;
+            return restore_flywheel_config;
         }
         let status = self.led_runtime_status();
         if !status.headlights_enabled()
@@ -768,6 +777,7 @@ impl FloatOutBoyPackageState {
             self.start_internal_led_confirmation(system_time_ticks);
             self.set_led_runtime_overrides(None, Some(false));
         }
+        restore_flywheel_config
     }
 
     fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
@@ -835,13 +845,106 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
+        #[cfg(test)]
+        if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
+            return handled;
+        }
         self.handle_control_packet(now, bytes)
-            || self.handle_handtest_packet(bytes)
             || self.handle_config_packet(now, bytes)
-            || self.handle_flywheel_packet(bytes)
             || self.handle_tuning_packet(now, bytes)
             || self.handle_query_packet(telemetry, now, reply, bytes)
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
+    }
+
+    #[cfg(test)]
+    fn handle_effectful_packet_for_test(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> Option<bool> {
+        let [package_id, command, payload @ ..] = bytes else {
+            return None;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+            return None;
+        }
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {
+            return None;
+        };
+
+        match command {
+            FloatOutBoyAppDataCommand::ConfigSave => {
+                let config = self.active_config_image();
+                let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                    store_persisted_config(effects, &config)
+                });
+                if stored {
+                    self.acknowledge_command_config_write(now());
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::ConfigRestore => {
+                let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                self.apply_persisted_config(&loaded);
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::Lock => {
+                let Some(disabled) = payload.first() else {
+                    return Some(false);
+                };
+                if !self.is_running() {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    if let Some(config) = self.apply_lock_from_persisted(&loaded, *disabled != 0) {
+                        let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                            store_persisted_config(effects, &config)
+                        });
+                        if stored {
+                            self.acknowledge_command_config_write(now());
+                        }
+                    }
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::HandTest => {
+                let Some(restore) = self.prepare_handtest_packet(bytes) else {
+                    return Some(false);
+                };
+                if restore {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    if self.commit_handtest_restore(
+                        &loaded,
+                        vescpkg_rs::FirmwareClock::current_timestamp(),
+                    ) {
+                        let migration = vescpkg_rs::test_support::with_firmware_effects(
+                            migrate_legacy_firmware_imu_settings,
+                        );
+                        self.finish_configure_active(migration);
+                    }
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::Flywheel => {
+                let Some(restore) = self.prepare_flywheel_packet(bytes) else {
+                    return Some(false);
+                };
+                if restore {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    self.commit_flywheel_restore(
+                        &loaded,
+                        vescpkg_rs::FirmwareClock::current_timestamp(),
+                    );
+                    let migration = vescpkg_rs::test_support::with_firmware_effects(
+                        migrate_legacy_firmware_imu_settings,
+                    );
+                    self.finish_configure_active(migration);
+                }
+                Some(true)
+            }
+            _ => None,
+        }
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -919,8 +1022,12 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn refresh_imu_runtime_state(&mut self, imu: &impl Imu, system_time_ticks: TimestampTicks) {
-        imu_runtime::refresh(self, imu, system_time_ticks);
+    fn refresh_imu_runtime_state(
+        &mut self,
+        imu: &impl Imu,
+        system_time_ticks: TimestampTicks,
+    ) -> bool {
+        imu_runtime::refresh(self, imu, system_time_ticks)
     }
 
     #[cfg(any(test, target_arch = "arm"))]

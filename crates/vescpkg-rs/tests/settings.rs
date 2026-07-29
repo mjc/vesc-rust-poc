@@ -11,6 +11,7 @@ fn typed_settings_read_write_and_persist() {
     let firmware = FirmwareTest::new();
     let settings: &FirmwareSettings = firmware.settings();
 
+    let effects = firmware.effects();
     assert_eq!(
         settings.get_float(FirmwareFloatSetting::MotorCurrentMax),
         100.0
@@ -170,103 +171,124 @@ fn typed_settings_read_write_and_persist() {
     assert_eq!(settings.duty_cycle_minimum().ratio().as_ratio(), 0.05);
     assert_eq!(settings.temperature_acceleration_decrease().as_ratio(), 0.5);
     settings
-        .set_motor_current_max(vescpkg_rs::MotorCurrentLimit::new(
-            vescpkg_rs::Current::from_amps(80.0),
-        ))
+        .set_motor_current_max(
+            effects,
+            vescpkg_rs::MotorCurrentLimit::new(vescpkg_rs::Current::from_amps(80.0)),
+        )
         .unwrap();
     settings
-        .set_motor_current_min(vescpkg_rs::MotorCurrentLimit::new(
-            vescpkg_rs::Current::from_amps(40.0),
-        ))
+        .set_motor_current_min(
+            effects,
+            vescpkg_rs::MotorCurrentLimit::new(vescpkg_rs::Current::from_amps(40.0)),
+        )
         .unwrap();
     settings
-        .set_input_current_max(vescpkg_rs::InputCurrent::new(
-            vescpkg_rs::Current::from_amps(30.0),
-        ))
+        .set_input_current_max(
+            effects,
+            vescpkg_rs::InputCurrent::new(vescpkg_rs::Current::from_amps(30.0)),
+        )
         .unwrap();
     settings
-        .set_input_current_min(vescpkg_rs::InputCurrent::new(
-            vescpkg_rs::Current::from_amps(-20.0),
-        ))
+        .set_input_current_min(
+            effects,
+            vescpkg_rs::InputCurrent::new(vescpkg_rs::Current::from_amps(-20.0)),
+        )
         .unwrap();
     settings
-        .set_absolute_current_max(vescpkg_rs::MotorCurrentLimit::new(
-            vescpkg_rs::Current::from_amps(120.0),
-        ))
+        .set_absolute_current_max(
+            effects,
+            vescpkg_rs::MotorCurrentLimit::new(vescpkg_rs::Current::from_amps(120.0)),
+        )
         .unwrap();
     settings
-        .set_minimum_electrical_speed(vescpkg_rs::ElectricalSpeed::new(
-            vescpkg_rs::Rpm::from_revolutions_per_minute(100.0),
-        ))
+        .set_minimum_electrical_speed(
+            effects,
+            vescpkg_rs::ElectricalSpeed::new(vescpkg_rs::Rpm::from_revolutions_per_minute(100.0)),
+        )
         .unwrap();
     settings
-        .set_maximum_electrical_speed(vescpkg_rs::ElectricalSpeed::new(
-            vescpkg_rs::Rpm::from_revolutions_per_minute(10_000.0),
-        ))
+        .set_maximum_electrical_speed(
+            effects,
+            vescpkg_rs::ElectricalSpeed::new(vescpkg_rs::Rpm::from_revolutions_per_minute(
+                10_000.0,
+            )),
+        )
         .unwrap();
     settings
-        .set_electrical_speed_ramp_start(vescpkg_rs::ElectricalSpeed::new(
-            vescpkg_rs::Rpm::from_revolutions_per_minute(750.0),
-        ))
+        .set_electrical_speed_ramp_start(
+            effects,
+            vescpkg_rs::ElectricalSpeed::new(vescpkg_rs::Rpm::from_revolutions_per_minute(750.0)),
+        )
         .unwrap();
     settings
-        .set_maximum_electrical_speed_brake(vescpkg_rs::ElectricalSpeed::new(
-            vescpkg_rs::Rpm::from_revolutions_per_minute(9_000.0),
-        ))
+        .set_maximum_electrical_speed_brake(
+            effects,
+            vescpkg_rs::ElectricalSpeed::new(vescpkg_rs::Rpm::from_revolutions_per_minute(9_000.0)),
+        )
         .unwrap();
     settings
-        .set_maximum_electrical_speed_brake_current(vescpkg_rs::ElectricalSpeed::new(
-            vescpkg_rs::Rpm::from_revolutions_per_minute(7_000.0),
-        ))
+        .set_maximum_electrical_speed_brake_current(
+            effects,
+            vescpkg_rs::ElectricalSpeed::new(vescpkg_rs::Rpm::from_revolutions_per_minute(7_000.0)),
+        )
         .unwrap();
     settings
-        .set_imu_sample_rate(vescpkg_rs::ImuSampleRate::new(
-            vescpkg_rs::SampleRate::from_hertz(1_000.0),
-        ))
+        .set_imu_sample_rate(
+            effects,
+            vescpkg_rs::ImuSampleRate::new(vescpkg_rs::SampleRate::from_hertz(1_000.0)),
+        )
         .unwrap();
     settings
-        .set_imu_rotation_roll(vescpkg_rs::AngleDegrees::from_degrees(1.0))
+        .set_imu_rotation_roll(effects, vescpkg_rs::AngleDegrees::from_degrees(1.0))
         .unwrap();
     settings
-        .set_imu_rotation_pitch(vescpkg_rs::AngleDegrees::from_degrees(-2.0))
+        .set_imu_rotation_pitch(effects, vescpkg_rs::AngleDegrees::from_degrees(-2.0))
         .unwrap();
     settings
-        .set_imu_rotation_yaw(vescpkg_rs::AngleDegrees::from_degrees(3.0))
+        .set_imu_rotation_yaw(effects, vescpkg_rs::AngleDegrees::from_degrees(3.0))
         .unwrap();
     settings
-        .set_imu_acceleration_confidence_decay(vescpkg_rs::Ratio::from_ratio_const(0.8))
+        .set_imu_acceleration_confidence_decay(effects, vescpkg_rs::Ratio::from_ratio_const(0.8))
         .unwrap();
     settings
         .set_imu_mahony_proportional_gain(
+            effects,
             vescpkg_rs::ImuMahonyProportionalGain::try_new(12.0).unwrap(),
         )
         .unwrap();
     settings
-        .set_imu_mahony_integral_gain(vescpkg_rs::ImuMahonyIntegralGain::try_new(0.25).unwrap())
+        .set_imu_mahony_integral_gain(
+            effects,
+            vescpkg_rs::ImuMahonyIntegralGain::try_new(0.25).unwrap(),
+        )
         .unwrap();
     settings
-        .set_imu_madgwick_beta(vescpkg_rs::ImuMadgwickBeta::try_new(1.5).unwrap())
+        .set_imu_madgwick_beta(effects, vescpkg_rs::ImuMadgwickBeta::try_new(1.5).unwrap())
         .unwrap();
     settings
         .set_imu_acceleration_offset_x(
+            effects,
             vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(0.01))
                 .unwrap(),
         )
         .unwrap();
     settings
         .set_imu_acceleration_offset_y(
+            effects,
             vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(-0.02))
                 .unwrap(),
         )
         .unwrap();
     settings
         .set_imu_acceleration_offset_z(
+            effects,
             vescpkg_rs::ImuAccelerationOffset::try_new(vescpkg_rs::AccelerationG::from_g(0.03))
                 .unwrap(),
         )
         .unwrap();
     settings
         .set_imu_gyro_offset_x(
+            effects,
             vescpkg_rs::ImuAngularRateOffset::try_new(
                 vescpkg_rs::AngularVelocity::from_degrees_per_second(0.4),
             )
@@ -275,6 +297,7 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_imu_gyro_offset_y(
+            effects,
             vescpkg_rs::ImuAngularRateOffset::try_new(
                 vescpkg_rs::AngularVelocity::from_degrees_per_second(-0.5),
             )
@@ -283,6 +306,7 @@ fn typed_settings_read_write_and_persist() {
         .unwrap();
     settings
         .set_imu_gyro_offset_z(
+            effects,
             vescpkg_rs::ImuAngularRateOffset::try_new(
                 vescpkg_rs::AngularVelocity::from_degrees_per_second(0.6),
             )
@@ -290,106 +314,129 @@ fn typed_settings_read_write_and_persist() {
         )
         .unwrap();
     settings
-        .set_motor_pole_count(vescpkg_rs::MotorPoleCount::try_new(16).unwrap())
+        .set_motor_pole_count(effects, vescpkg_rs::MotorPoleCount::try_new(16).unwrap())
         .unwrap();
     settings
-        .set_battery_chemistry(vescpkg_rs::BatteryChemistry::LeadAcid)
+        .set_battery_chemistry(effects, vescpkg_rs::BatteryChemistry::LeadAcid)
         .unwrap();
     settings
-        .set_can_baud_rate(vescpkg_rs::CanBaudRate::Mbps1)
+        .set_can_baud_rate(effects, vescpkg_rs::CanBaudRate::Mbps1)
         .unwrap();
     settings
-        .set_can_application_mode(vescpkg_rs::CanApplicationMode::VescUavcan)
+        .set_can_application_mode(effects, vescpkg_rs::CanApplicationMode::VescUavcan)
         .unwrap();
     settings
-        .set_imu_ahrs_mode(vescpkg_rs::ImuAhrsMode::Mahony)
+        .set_imu_ahrs_mode(effects, vescpkg_rs::ImuAhrsMode::Mahony)
         .unwrap();
     settings
-        .set_shutdown_mode(vescpkg_rs::ShutdownMode::OffAfter5Minutes)
+        .set_shutdown_mode(effects, vescpkg_rs::ShutdownMode::OffAfter5Minutes)
         .unwrap();
     settings
-        .set_gear_ratio(vescpkg_rs::GearRatio::try_new(3.0).unwrap())
+        .set_gear_ratio(effects, vescpkg_rs::GearRatio::try_new(3.0).unwrap())
         .unwrap();
     settings
-        .set_wheel_diameter(vescpkg_rs::WheelDiameter::new(
-            vescpkg_rs::Distance::from_meters(0.2),
-        ))
+        .set_wheel_diameter(
+            effects,
+            vescpkg_rs::WheelDiameter::new(vescpkg_rs::Distance::from_meters(0.2)),
+        )
         .unwrap();
     settings
-        .set_foc_motor_resistance(vescpkg_rs::FocMotorResistance::new(
-            vescpkg_rs::Resistance::from_ohms(0.04),
-        ))
+        .set_foc_motor_resistance(
+            effects,
+            vescpkg_rs::FocMotorResistance::new(vescpkg_rs::Resistance::from_ohms(0.04)),
+        )
         .unwrap();
     settings
-        .set_foc_motor_inductance(vescpkg_rs::FocMotorInductance::new(
-            vescpkg_rs::Inductance::from_henries(0.000_02),
-        ))
+        .set_foc_motor_inductance(
+            effects,
+            vescpkg_rs::FocMotorInductance::new(vescpkg_rs::Inductance::from_henries(0.000_02)),
+        )
         .unwrap();
     settings
-        .set_foc_motor_flux_linkage(vescpkg_rs::FocMotorFluxLinkage::new(
-            vescpkg_rs::FluxLinkage::from_webers(0.005),
-        ))
+        .set_foc_motor_flux_linkage(
+            effects,
+            vescpkg_rs::FocMotorFluxLinkage::new(vescpkg_rs::FluxLinkage::from_webers(0.005)),
+        )
         .unwrap();
     settings
-        .set_battery_capacity(vescpkg_rs::Charge::from_amp_hours(24.0))
+        .set_battery_capacity(effects, vescpkg_rs::Charge::from_amp_hours(24.0))
         .unwrap();
     settings
-        .set_motor_no_load_current(vescpkg_rs::InputCurrent::new(
-            vescpkg_rs::Current::from_amps(2.0),
-        ))
+        .set_motor_no_load_current(
+            effects,
+            vescpkg_rs::InputCurrent::new(vescpkg_rs::Current::from_amps(2.0)),
+        )
         .unwrap();
     settings
-        .set_input_voltage_min(vescpkg_rs::InputVoltage::new(
-            vescpkg_rs::Voltage::from_volts(24.0),
-        ))
+        .set_input_voltage_min(
+            effects,
+            vescpkg_rs::InputVoltage::new(vescpkg_rs::Voltage::from_volts(24.0)),
+        )
         .unwrap();
     settings
-        .set_input_voltage_max(vescpkg_rs::InputVoltage::new(
-            vescpkg_rs::Voltage::from_volts(54.0),
-        ))
+        .set_input_voltage_max(
+            effects,
+            vescpkg_rs::InputVoltage::new(vescpkg_rs::Voltage::from_volts(54.0)),
+        )
         .unwrap();
     settings
-        .set_battery_cut_start_voltage(vescpkg_rs::InputVoltage::new(
-            vescpkg_rs::Voltage::from_volts(31.0),
-        ))
+        .set_battery_cut_start_voltage(
+            effects,
+            vescpkg_rs::InputVoltage::new(vescpkg_rs::Voltage::from_volts(31.0)),
+        )
         .unwrap();
     settings
-        .set_battery_cut_end_voltage(vescpkg_rs::InputVoltage::new(
-            vescpkg_rs::Voltage::from_volts(29.0),
-        ))
+        .set_battery_cut_end_voltage(
+            effects,
+            vescpkg_rs::InputVoltage::new(vescpkg_rs::Voltage::from_volts(29.0)),
+        )
         .unwrap();
     settings
-        .set_mosfet_temperature_start(vescpkg_rs::TemperatureLimitStart::new(
-            vescpkg_rs::Temperature::from_degrees_celsius(75.0),
-        ))
+        .set_mosfet_temperature_start(
+            effects,
+            vescpkg_rs::TemperatureLimitStart::new(vescpkg_rs::Temperature::from_degrees_celsius(
+                75.0,
+            )),
+        )
         .unwrap();
     settings
-        .set_mosfet_temperature_end(vescpkg_rs::TemperatureLimitEnd::new(
-            vescpkg_rs::Temperature::from_degrees_celsius(85.0),
-        ))
+        .set_mosfet_temperature_end(
+            effects,
+            vescpkg_rs::TemperatureLimitEnd::new(vescpkg_rs::Temperature::from_degrees_celsius(
+                85.0,
+            )),
+        )
         .unwrap();
     settings
-        .set_motor_temperature_start(vescpkg_rs::TemperatureLimitStart::new(
-            vescpkg_rs::Temperature::from_degrees_celsius(80.0),
-        ))
+        .set_motor_temperature_start(
+            effects,
+            vescpkg_rs::TemperatureLimitStart::new(vescpkg_rs::Temperature::from_degrees_celsius(
+                80.0,
+            )),
+        )
         .unwrap();
     settings
-        .set_motor_temperature_end(vescpkg_rs::TemperatureLimitEnd::new(
-            vescpkg_rs::Temperature::from_degrees_celsius(90.0),
-        ))
+        .set_motor_temperature_end(
+            effects,
+            vescpkg_rs::TemperatureLimitEnd::new(vescpkg_rs::Temperature::from_degrees_celsius(
+                90.0,
+            )),
+        )
         .unwrap();
     settings
-        .set_duty_cycle_limit(vescpkg_rs::DutyCycleLimit::new(
-            vescpkg_rs::Ratio::from_ratio_const(0.8),
-        ))
+        .set_duty_cycle_limit(
+            effects,
+            vescpkg_rs::DutyCycleLimit::new(vescpkg_rs::Ratio::from_ratio_const(0.8)),
+        )
         .unwrap();
     settings
-        .set_duty_cycle_minimum(vescpkg_rs::DutyCycleMinimum::new(
-            vescpkg_rs::Ratio::from_ratio_const(0.1),
-        ))
+        .set_duty_cycle_minimum(
+            effects,
+            vescpkg_rs::DutyCycleMinimum::new(vescpkg_rs::Ratio::from_ratio_const(0.1)),
+        )
         .unwrap();
     settings
-        .set_temperature_acceleration_decrease(vescpkg_rs::Ratio::from_ratio_const(0.75))
+        .set_temperature_acceleration_decrease(effects, vescpkg_rs::Ratio::from_ratio_const(0.75))
         .unwrap();
     assert_eq!(settings.motor_current_max().current().as_amps(), 80.0);
     assert_eq!(settings.duty_cycle_minimum().ratio().as_ratio(), 0.1);
@@ -545,14 +592,14 @@ fn typed_settings_read_write_and_persist() {
     );
     assert_eq!(settings.duty_cycle_limit().ratio().as_ratio(), 0.8);
     settings
-        .set_float(FirmwareFloatSetting::InputCurrentMax, 24.0)
+        .set_float(effects, FirmwareFloatSetting::InputCurrentMax, 24.0)
         .unwrap();
     assert_eq!(
         settings.get_float(FirmwareFloatSetting::InputCurrentMax),
         24.0
     );
     settings
-        .set_float(FirmwareFloatSetting::MotorCurrentMax, 42.0)
+        .set_float(effects, FirmwareFloatSetting::MotorCurrentMax, 42.0)
         .unwrap();
     assert_eq!(
         settings.get_float(FirmwareFloatSetting::MotorCurrentMax),
@@ -560,18 +607,20 @@ fn typed_settings_read_write_and_persist() {
     );
 
     settings
-        .set_int(FirmwareIntSetting::BatteryCellCount, 12)
+        .set_int(effects, FirmwareIntSetting::BatteryCellCount, 12)
         .unwrap();
     assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 4);
-    settings.set_int(FirmwareIntSetting::AppCanMode, 1).unwrap();
+    settings
+        .set_int(effects, FirmwareIntSetting::AppCanMode, 1)
+        .unwrap();
     assert_eq!(settings.get_int(FirmwareIntSetting::AppCanMode), 1);
     assert_eq!(settings.get_int(FirmwareIntSetting::BatteryCellCount), 12);
     assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 12);
     settings
-        .set_battery_cell_count(vescpkg_rs::BatteryCellCount::try_new(14).unwrap())
+        .set_battery_cell_count(effects, vescpkg_rs::BatteryCellCount::try_new(14).unwrap())
         .unwrap();
     assert_eq!(settings.battery_cell_count().unwrap().as_u16(), 14);
-    settings.store().unwrap();
+    settings.store(effects).unwrap();
 }
 
 #[test]
@@ -579,28 +628,29 @@ fn settings_reject_unknown_battery_chemistry() {
     let firmware = FirmwareTest::new();
     let settings = firmware.settings();
 
+    let effects = firmware.effects();
     assert_eq!(
-        settings.set_int(FirmwareIntSetting::BatteryType, 99),
+        settings.set_int(effects, FirmwareIntSetting::BatteryType, 99),
         Err(SettingsError::InvalidValue)
     );
 
     assert_eq!(
-        settings.set_int(FirmwareIntSetting::AppCanBaudRate, 99),
+        settings.set_int(effects, FirmwareIntSetting::AppCanBaudRate, 99),
         Err(SettingsError::InvalidValue)
     );
 
     assert_eq!(
-        settings.set_int(FirmwareIntSetting::AppCanMode, 99),
+        settings.set_int(effects, FirmwareIntSetting::AppCanMode, 99),
         Err(SettingsError::InvalidValue)
     );
 
     assert_eq!(
-        settings.set_int(FirmwareIntSetting::ImuAhrsMode, 99),
+        settings.set_int(effects, FirmwareIntSetting::ImuAhrsMode, 99),
         Err(SettingsError::InvalidValue)
     );
 
     assert_eq!(
-        settings.set_int(FirmwareIntSetting::AppShutdownMode, 99),
+        settings.set_int(effects, FirmwareIntSetting::AppShutdownMode, 99),
         Err(SettingsError::InvalidValue)
     );
 }
@@ -610,9 +660,10 @@ fn settings_report_firmware_rejections() {
     let firmware = FirmwareTest::new();
     let settings = firmware.settings();
 
+    let effects = firmware.effects();
     firmware.fail_settings_writes();
     assert!(matches!(
-        settings.set_int(FirmwareIntSetting::BatteryCellCount, 8),
+        settings.set_int(effects, FirmwareIntSetting::BatteryCellCount, 8),
         Err(SettingsError::Rejected {
             operation: "integer setting"
         })
@@ -620,7 +671,7 @@ fn settings_report_firmware_rejections() {
 
     firmware.fail_settings_store();
     assert!(matches!(
-        settings.store(),
+        settings.store(effects),
         Err(SettingsError::Rejected {
             operation: "settings persistence"
         })
@@ -632,8 +683,9 @@ fn settings_reject_non_finite_float_values_before_abi_call() {
     let firmware = FirmwareTest::new();
     let settings = firmware.settings();
 
+    let effects = firmware.effects();
     assert_eq!(
-        settings.set_float(FirmwareFloatSetting::MaxDuty, f32::NAN),
+        settings.set_float(effects, FirmwareFloatSetting::MaxDuty, f32::NAN),
         Err(SettingsError::InvalidValue)
     );
 }

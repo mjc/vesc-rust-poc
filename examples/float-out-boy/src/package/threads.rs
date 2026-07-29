@@ -95,7 +95,7 @@ fn float_out_boy_runtime_threads() -> Result<
 /// `third_party/float-out-boy/src/main.c:772`. This narrow Rust tick ports the currently
 /// source-backed caller tick, then sleeps the configured `loop_time_us` like
 /// `third_party/float-out-boy/src/main.c:1080`.
-#[cfg(any(test, target_arch = "arm"))]
+#[cfg(test)]
 pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
     threads: &impl FirmwareThreads,
     mut tick: F,
@@ -132,6 +132,69 @@ impl FloatOutBoyMainThreadTick {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
+#[derive(Clone, Copy)]
+struct FloatOutBoyMainThreadPrepare {
+    alert_level: Option<crate::beeper::FloatOutBoyBeeperLevel>,
+    restore_flywheel_config: bool,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn prepare_float_out_boy_main_thread_tick(
+    state: &mut FloatOutBoyPackageState,
+    telemetry: &impl MotorTelemetry,
+    imu: &impl Imu,
+    motor: &impl MotorOutput,
+    footpad_adc1: AdcVoltage,
+    footpad_adc2: AdcVoltage,
+    system_time_ticks: TimestampTicks,
+) -> FloatOutBoyMainThreadPrepare {
+    // C map: `float_out_boy_thd` refreshes runtime inputs, executes state/control
+    // logic, applies motor control, then sleeps `loop_time_us` through
+    // `third_party/float-out-boy/src/main.c:772-1080`.
+    // C calls `beeper_update` before its state switch at
+    // `third_party/float-out-boy/src/main.c:776-824`.
+    let alert_level = state.tick_beeper();
+    let restore_flywheel_config = state.refresh_main_loop_runtime_state(
+        telemetry,
+        imu,
+        motor,
+        footpad_adc1,
+        footpad_adc2,
+        system_time_ticks,
+    );
+    FloatOutBoyMainThreadPrepare {
+        alert_level,
+        restore_flywheel_config,
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+fn finish_float_out_boy_main_thread_tick(
+    state: &mut FloatOutBoyPackageState,
+    motor: &impl MotorOutput,
+    system_time_ticks: TimestampTicks,
+    prepared: FloatOutBoyMainThreadPrepare,
+) -> FloatOutBoyMainThreadTick {
+    let run_state = state
+        .all_data_payloads()
+        .base()
+        .status()
+        .ride_state()
+        .run_state();
+    state.apply_motor_control(motor, run_state, system_time_ticks);
+    state.sample_data_recorder(system_time_ticks);
+    let beeper_level = state.take_beeper_level().or(prepared.alert_level);
+
+    let configure_beeper = state.take_beeper_configuration_request();
+    let beeper_pin_level = match beeper_level {
+        None if configure_beeper => Some(crate::beeper::FloatOutBoyBeeperLevel::Low),
+        level => level,
+    };
+
+    FloatOutBoyMainThreadTick::new(state.configured_loop_time_us(), beeper_pin_level)
+}
+
+#[cfg(test)]
 #[inline]
 pub(crate) fn tick_float_out_boy_main_thread_with(
     state: &mut FloatOutBoyPackageState,
@@ -142,13 +205,8 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
     footpad_adc2: AdcVoltage,
     system_time_ticks: TimestampTicks,
 ) -> FloatOutBoyMainThreadTick {
-    // C map: `float_out_boy_thd` refreshes runtime inputs, executes state/control
-    // logic, applies motor control, then sleeps `loop_time_us` through
-    // `third_party/float-out-boy/src/main.c:772-1080`.
-    // C calls `beeper_update` before its state switch at
-    // `third_party/float-out-boy/src/main.c:776-824`.
-    let alert_level = state.tick_beeper();
-    state.refresh_main_loop_runtime_state(
+    let prepared = prepare_float_out_boy_main_thread_tick(
+        state,
         telemetry,
         imu,
         motor,
@@ -156,23 +214,16 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
         footpad_adc2,
         system_time_ticks,
     );
-    let run_state = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state();
-    state.apply_motor_control(motor, run_state, system_time_ticks);
-    state.sample_data_recorder(system_time_ticks);
-    let beeper_level = state.take_beeper_level().or(alert_level);
-
-    let configure_beeper = state.take_beeper_configuration_request();
-    let beeper_pin_level = match beeper_level {
-        None if configure_beeper => Some(crate::beeper::FloatOutBoyBeeperLevel::Low),
-        level => level,
-    };
-
-    FloatOutBoyMainThreadTick::new(state.configured_loop_time_us(), beeper_pin_level)
+    if prepared.restore_flywheel_config {
+        let loaded =
+            vescpkg_rs::test_support::with_firmware_effects(super::state::load_persisted_config);
+        state.commit_flywheel_restore(&loaded, system_time_ticks);
+        let migration = vescpkg_rs::test_support::with_firmware_effects(
+            super::state::migrate_legacy_firmware_imu_settings,
+        );
+        state.finish_configure_active(migration);
+    }
+    finish_float_out_boy_main_thread_tick(state, motor, system_time_ticks, prepared)
 }
 
 /// Run Float Out Boy's source-backed auxiliary thread scheduler shell.
@@ -292,45 +343,78 @@ struct FloatOutBoyMainThread;
 impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
     type State = FloatOutBoyPackageState;
 
-    fn run(ctx: vescpkg_rs::ThreadContext<Self::State>) {
+    fn run(mut ctx: vescpkg_rs::ThreadContext<Self::State>) {
         // C map: Float Out Boy v1.2.1 `float_out_boy_thd` starts at
         // `third_party/float-out-boy/src/main.c:767`.
         #[cfg(all(not(test), target_arch = "arm"))]
         {
-            let firmware = ctx.firmware();
+            let loaded = ctx.with_effects(super::state::load_persisted_config);
+            let startup_time = ctx.firmware().clock().now();
             let _ = ctx.with_state_mut(|state| {
-                state.load_persisted_config_on_main_thread(firmware.clock().now());
-                state.configure_loaded_config_on_main_thread();
+                state.begin_startup_configure(&loaded, startup_time);
             });
-            run_float_out_boy_main_thread_with(firmware.threads(), || {
-                let system_time_ticks = firmware.clock().now();
+            let migration = ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
+            let _ = ctx.with_state_mut(|state| state.finish_startup_configure(migration));
+
+            while !ctx.firmware().threads().should_terminate() {
+                let system_time_ticks = ctx.firmware().clock().now();
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
-                let (footpad_voltage1, footpad_voltage2) =
-                    read_float_out_boy_footpads(firmware.gpio());
-                let tick = ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(firmware.inputs());
-                    tick_float_out_boy_main_thread_with(
-                        state,
-                        firmware.telemetry(),
-                        firmware.imu(),
-                        firmware.motor(),
-                        footpad_voltage1,
-                        footpad_voltage2,
-                        system_time_ticks,
-                    )
+                let prepared = {
+                    let firmware = ctx.firmware();
+                    let (footpad_voltage1, footpad_voltage2) =
+                        read_float_out_boy_footpads(firmware.gpio());
+                    ctx.with_state_mut(|state| {
+                        state.refresh_controller_input(firmware.inputs());
+                        prepare_float_out_boy_main_thread_tick(
+                            state,
+                            firmware.telemetry(),
+                            firmware.imu(),
+                            firmware.motor(),
+                            footpad_voltage1,
+                            footpad_voltage2,
+                            system_time_ticks,
+                        )
+                    })
+                };
+
+                if prepared
+                    .as_ref()
+                    .is_some_and(|prepared| prepared.restore_flywheel_config)
+                {
+                    let loaded = ctx.with_effects(super::state::load_persisted_config);
+                    let now = ctx.firmware().clock().now();
+                    let _ = ctx.with_state_mut(|state| state.commit_flywheel_restore(&loaded, now));
+                    let migration =
+                        ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
+                    let _ = ctx.with_state_mut(|state| state.finish_configure_active(migration));
+                }
+
+                let tick = prepared.and_then(|prepared| {
+                    let firmware = ctx.firmware();
+                    ctx.with_state_mut(|state| {
+                        finish_float_out_boy_main_thread_tick(
+                            state,
+                            firmware.motor(),
+                            system_time_ticks,
+                            prepared,
+                        )
+                    })
                 });
-                tick.map_or(1, |tick| {
+                let sleep_us = tick.map_or(1, |tick| {
                     if let Some(level) = tick.beeper_pin_level {
-                        if let Ok(pin) = firmware.gpio().acquire_digital(DigitalPin::PPM) {
+                        if let Ok(pin) = ctx.firmware().gpio().acquire_digital(DigitalPin::PPM) {
                             let _ = pin.set_mode(GpioMode::Output);
                             let _ = pin.write(level);
                         }
                     }
                     tick.sleep_us()
-                })
-            });
+                });
+                ctx.firmware()
+                    .threads()
+                    .sleep_for(Duration::from_micros(u64::from(sleep_us)));
+            }
         }
 
         #[cfg(test)]
@@ -647,6 +731,7 @@ mod tests {
 
     #[test]
     fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
+        let _firmware = FirmwareTest::new();
         for (remote_type, expected) in [(0, true), (1, true), (2, false)] {
             let mut state =
                 FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
@@ -666,6 +751,7 @@ mod tests {
 
     #[test]
     fn enabling_the_beeper_after_startup_acquires_ppm_instead_of_reproducing_refloats_bug() {
+        let _firmware = FirmwareTest::new();
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut config = default_float_out_boy_config_bytes();
         config[79] = 2;

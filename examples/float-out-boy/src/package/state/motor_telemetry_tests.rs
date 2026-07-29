@@ -225,12 +225,14 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
         );
     let settings = FirmwareSettings;
-    settings
-        .set_input_current_max(InputCurrent::new(Current::from_amps(31.0)))
-        .unwrap();
-    settings
-        .set_input_current_min(InputCurrent::new(Current::from_amps(13.0)))
-        .unwrap();
+    firmware.with_effects(|effects| {
+        settings
+            .set_input_current_max(effects, InputCurrent::new(Current::from_amps(31.0)))
+            .unwrap();
+        settings
+            .set_input_current_min(effects, InputCurrent::new(Current::from_amps(13.0)))
+            .unwrap();
+    });
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let initial_electrical_speed = state.all_data_payloads.base().motor().electrical_speed();
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));

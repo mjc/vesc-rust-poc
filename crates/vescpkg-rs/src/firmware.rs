@@ -64,7 +64,7 @@ pub(crate) struct AppDataReplyBuffer {
 }
 
 impl AppDataReplyBuffer {
-    #[cfg(any(test, target_arch = "arm"))]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     #[must_use]
     pub(crate) const fn new() -> Self {
         Self {
@@ -93,7 +93,7 @@ pub struct AppDataReply<'a> {
 }
 
 impl AppDataReply<'_> {
-    #[cfg(any(test, all(not(feature = "test-support"), target_arch = "arm")))]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     fn new(buffer: &mut AppDataReplyBuffer) -> AppDataReply<'_> {
         AppDataReply { buffer }
     }
@@ -174,11 +174,30 @@ pub(crate) unsafe fn app_data_packet<'a>(data: *mut u8, len: u32) -> Option<AppD
     unsafe { borrowed_slice(data.cast_const(), len) }.map(AppDataPacket)
 }
 
+/// Permission to perform slow or re-entrant firmware effects.
+///
+/// Production package code cannot construct or retain this value. Lifecycle
+/// contexts lend it only for an explicit effect phase.
+pub struct FirmwareEffects {
+    _private: (),
+}
+
+impl FirmwareEffects {
+    pub(crate) const fn new() -> Self {
+        Self { _private: () }
+    }
+
+    pub(crate) fn with<R>(operation: impl for<'effects> FnOnce(&'effects Self) -> R) -> R {
+        operation(&Self::new())
+    }
+}
+
 /// One admitted firmware callback with short, exclusive package-state phases.
 ///
 /// The callback keeps package state alive until this context is dropped.
-/// [`Self::with_state`] acquires the state lock only for its closure, so
-/// firmware effects can run between state phases without holding that lock.
+/// [`Self::with_state`] acquires the state lock only for its closure, while
+/// [`Self::with_effects`] lends firmware-effect permission only outside that
+/// state borrow.
 pub struct StatefulCallbackContext<'a, T: crate::PackageRuntimeState> {
     state: crate::runtime::PackageStateSession<'a, T>,
 }
@@ -195,6 +214,18 @@ impl<'a, T: crate::PackageRuntimeState> StatefulCallbackContext<'a, T> {
     /// state cannot escape the closure.
     pub fn with_state<R>(&mut self, operation: impl for<'state> FnOnce(&'state mut T) -> R) -> R {
         self.state.with_state(operation)
+    }
+
+    /// Run one slow or potentially re-entrant firmware-effect phase.
+    ///
+    /// The borrowed permission cannot escape this closure. Because both state
+    /// and effect phases require exclusive context access, safe package code
+    /// cannot nest one inside the other.
+    pub fn with_effects<R>(
+        &mut self,
+        operation: impl for<'effects> FnOnce(&'effects FirmwareEffects) -> R,
+    ) -> R {
+        FirmwareEffects::with(operation)
     }
 }
 
@@ -263,6 +294,20 @@ fn prepare_app_data_reply<'a, T: AppDataHandler>(
     let mut reply = AppDataReply::new(buffer);
     T::handle(&mut context, packet, &mut reply);
     buffer.as_bytes().map(PreparedAppDataReply)
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn invoke_stateful_app_data_handler<T: AppDataHandler>(packet: &[u8]) -> bool {
+    let source = crate::PackageStateAccess::runtime(
+        <T::State as crate::PackageRuntimeState>::runtime_store(),
+    );
+    let Some(mut context) = StatefulCallbackContext::begin(source) else {
+        return false;
+    };
+    let mut buffer = AppDataReplyBuffer::new();
+    let mut reply = AppDataReply::new(&mut buffer);
+    T::handle(&mut context, AppDataPacket::from_bytes(packet), &mut reply);
+    true
 }
 
 /// Firmware ABI trampoline for a state-backed app-data handler.
@@ -530,6 +575,18 @@ where
         StatefulCallbackContext::begin(T::state_source())
             .is_some_and(|mut context| T::set_config(&mut context, payload).is_ok())
     })
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
+where
+    T: StatefulCustomConfigCallback<LEN>,
+{
+    let source = crate::PackageStateAccess::runtime(
+        <T::State as crate::PackageRuntimeState>::runtime_store(),
+    );
+    StatefulCallbackContext::begin(source)
+        .is_some_and(|mut context| T::set_config(&mut context, ConfigBytes::new(config)).is_ok())
 }
 
 /// Firmware XML pointer output for `get_cfg_xml` callbacks.
@@ -808,9 +865,11 @@ mod tests {
             reply: &mut AppDataReply<'_>,
         ) {
             context.with_state(|state| state.handled = true);
-            let effect_reentered = APP_DATA_DISPATCH_STATE
-                .with_mut(|state| state.effect_reentered = true)
-                .is_some();
+            let effect_reentered = context.with_effects(|_| {
+                APP_DATA_DISPATCH_STATE
+                    .with_mut(|state| state.effect_reentered = true)
+                    .is_some()
+            });
             context.with_state(|state| state.committed_after_effect = effect_reentered);
             if !packet.as_bytes().is_empty() {
                 let _ = reply.write(packet.as_bytes());
@@ -1256,9 +1315,10 @@ mod tests {
                 let config =
                     CustomConfigImage::from_serialized(config.as_bytes(), [1, 2, 3, 4]).ok_or(())?;
                 context.with_state(|state| state.config = config);
-                let effect_reentered = SLOT
-                    .with_mut(|state| state.effect_reentered = true)
-                    .is_some();
+                let effect_reentered = context.with_effects(|_| {
+                    SLOT.with_mut(|state| state.effect_reentered = true)
+                        .is_some()
+                });
                 context.with_state(|state| state.committed_after_effect = effect_reentered);
                 Ok(())
             }

@@ -66,7 +66,7 @@ impl<const CAPACITY: usize> FirmwareLog<CAPACITY> {
     }
 
     /// Send the complete message through firmware's constant `%s` path.
-    pub fn flush(&self) -> Result<usize, LogError> {
+    pub fn flush(&self, _effects: &crate::FirmwareEffects) -> Result<usize, LogError> {
         if self.truncated {
             return Err(LogError::Truncated);
         }

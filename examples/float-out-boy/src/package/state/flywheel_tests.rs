@@ -99,6 +99,21 @@ fn set_footpad(state: &mut FloatOutBoyPackageState, footpad: FloatOutBoyFootpadS
     );
 }
 
+fn refresh_imu_and_finish_flywheel_restore(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    now: TimestampTicks,
+) -> bool {
+    let restore = state.refresh_imu_runtime_state(firmware.imu(), now);
+    if restore {
+        let loaded = firmware.with_effects(load_persisted_config);
+        state.commit_flywheel_restore(&loaded, now);
+        let migration = firmware.with_effects(migrate_legacy_firmware_imu_settings);
+        state.finish_configure_active(migration);
+    }
+    restore
+}
+
 fn refresh_konami_at(state: &mut FloatOutBoyPackageState, pitch: AngleDegrees, ticks: u32) {
     state.refresh_konami_runtime_state(
         ImuPitch::new(AngleRadians::from(pitch)),
@@ -261,6 +276,7 @@ fn flywheel_start_rejects_first_calibration_below_seventy_degrees() {
 
 #[test]
 fn flywheel_reuses_calibration_until_valid_forced_recalibration() {
+    let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(ready_at(
         AngleDegrees::from_degrees(80.0),
         AngleDegrees::from_degrees(10.0),
@@ -524,7 +540,11 @@ fn flywheel_pitch_rate_projection_uses_raw_roll_before_calibration_offset() {
             imu_yaw_rate(AngularVelocity::ZERO),
         ));
 
-        state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
+        assert!(!refresh_imu_and_finish_flywheel_restore(
+            &mut state,
+            &firmware,
+            TimestampTicks::from_ticks(1),
+        ));
         assert!(state.apply_requested_motor_current(firmware.motor()));
 
         firmware.commanded_current().current()
@@ -846,6 +866,7 @@ fn flywheel_konami_uses_the_current_imu_pitch_like_float_out_boy() {
 
 #[test]
 fn headlight_konami_actions_are_temporary_and_start_confirmation() {
+    let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let mut config = state.serialized_config.as_bytes().to_vec();
@@ -1017,7 +1038,11 @@ fn either_single_footpad_aborts_flywheel_and_restores_config_without_current() {
         );
 
         set_footpad(&mut state, FloatOutBoyFootpadState::None);
-        state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(2));
+        assert!(refresh_imu_and_finish_flywheel_restore(
+            &mut state,
+            &firmware,
+            TimestampTicks::from_ticks(2),
+        ));
 
         let ride_state = state.all_data_payloads().base().status().ride_state();
         assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);

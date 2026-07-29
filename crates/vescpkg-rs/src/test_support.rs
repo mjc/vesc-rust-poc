@@ -18,10 +18,31 @@ use crate::{PackageArgument, PackageProgramAddress};
 #[cfg(test)]
 use vescpkg_rs_sys::AppDataHandler;
 
+/// Run host-test code with lifecycle-scoped firmware-effect permission.
+pub fn with_firmware_effects<R>(
+    operation: impl for<'effects> FnOnce(&'effects crate::FirmwareEffects) -> R,
+) -> R {
+    crate::FirmwareEffects::with(operation)
+}
+
+/// Invoke a stateful app-data handler through its real phased callback context.
+pub fn invoke_stateful_app_data_handler<T: crate::AppDataHandler>(packet: &[u8]) -> bool {
+    crate::firmware::invoke_stateful_app_data_handler::<T>(packet)
+}
+
+/// Invoke a stateful custom-config handler through its real phased callback context.
+pub fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
+where
+    T: crate::StatefulCustomConfigCallback<LEN>,
+{
+    crate::firmware::invoke_stateful_custom_config_handler::<T, LEN>(config)
+}
+
 /// Host fixture that observes ordinary `Firmware` calls through the test FFI.
 #[cfg(all(feature = "test-support", not(test)))]
 pub struct FirmwareTest {
     firmware: crate::Firmware,
+    effects: crate::FirmwareEffects,
     _lock: crate::test_ffi::FirmwareLockGuard,
 }
 
@@ -35,6 +56,7 @@ impl FirmwareTest {
         let lock = crate::test_ffi::lock_firmware();
         Self {
             firmware: crate::Firmware::new(),
+            effects: crate::FirmwareEffects::new(),
             _lock: lock,
         }
     }
@@ -87,6 +109,21 @@ impl FirmwareTest {
     #[must_use]
     pub fn eeprom(&self) -> crate::CustomEeprom {
         *self.firmware.eeprom()
+    }
+
+    /// Run package test code with the same scoped effect permission supplied
+    /// by firmware lifecycle contexts.
+    pub fn with_effects<R>(
+        &self,
+        operation: impl for<'effects> FnOnce(&'effects crate::FirmwareEffects) -> R,
+    ) -> R {
+        with_firmware_effects(operation)
+    }
+
+    /// Borrow firmware-effect permission for straightforward host fixtures.
+    #[must_use]
+    pub const fn effects(&self) -> &crate::FirmwareEffects {
+        &self.effects
     }
 
     /// Copy the most recent firmware log message into `output`.

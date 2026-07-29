@@ -36,10 +36,18 @@ impl vescpkg_rs::StatefulCustomConfigCallback<FLOAT_OUT_BOY_CONFIG_LEN>
         context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         config: ConfigBytes<'_, FLOAT_OUT_BOY_CONFIG_LEN>,
     ) -> Result<(), Self::Error> {
-        context
-            .with_state(|state| float_out_boy_set_cfg_payload_with_state(config, state))
-            .then_some(())
-            .ok_or(())
+        let Some(config) =
+            context.with_state(|state| state.prepare_serialized_config(config.as_bytes()))
+        else {
+            return Err(());
+        };
+        let stored =
+            context.with_effects(|effects| super::state::store_persisted_config(effects, &config));
+        let now = vescpkg_rs::FirmwareClock::current_timestamp();
+        context.with_state(|state| state.commit_custom_config(config, stored, now));
+        let migration = context.with_effects(super::state::migrate_legacy_firmware_imu_settings);
+        context.with_state(|state| state.finish_configure_active(migration));
+        Ok(())
     }
 
     // C map: `get_cfg_xml` in upstream returns `data_float_out_boy_config_` directly.
@@ -87,6 +95,7 @@ pub(super) fn install_test_float_out_boy_runtime_state(
     vescpkg_rs::test_support::install_state(&crate::__VESCPKG_PACKAGE_STATE, state)
 }
 
+#[cfg(test)]
 fn float_out_boy_set_cfg_payload_with_state(
     config: ConfigBytes<'_, FLOAT_OUT_BOY_CONFIG_LEN>,
     state: &mut FloatOutBoyPackageState,
@@ -94,16 +103,21 @@ fn float_out_boy_set_cfg_payload_with_state(
     // Upstream `set_cfg` gates special modes, deserializes, persists, and
     // reconfigures at `third_party/float-out-boy/src/main.c:2360-2386`; generated
     // `conf/confparser.c:187-190` rejects bad signatures before field reads.
-    // This byte-image step is intentionally only the deserialization/storage
-    // part; EEPROM write and `configure(d)` remain separate parity work.
-    let stored = state.store_serialized_config(config.as_bytes());
-    #[cfg(any(test, target_arch = "arm"))]
-    if stored {
-        let now = vescpkg_rs::FirmwareClock::current_timestamp();
-        state.refresh_idle_epoch(now);
-        state.start_internal_led_confirmation(now);
-    }
-    stored
+    // This test helper mirrors the production state/effect/state sequence
+    // without invoking the unsafe firmware pointer trampoline.
+    let Some(config) = state.prepare_serialized_config(config.as_bytes()) else {
+        return false;
+    };
+    let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+        super::state::store_persisted_config(effects, &config)
+    });
+    let now = vescpkg_rs::FirmwareClock::current_timestamp();
+    state.commit_custom_config(config, stored, now);
+    let migration = vescpkg_rs::test_support::with_firmware_effects(
+        super::state::migrate_legacy_firmware_imu_settings,
+    );
+    state.finish_configure_active(migration);
+    true
 }
 
 #[cfg(test)]
