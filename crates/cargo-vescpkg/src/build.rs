@@ -138,12 +138,16 @@ fn build_package_bytes(
     let loader = read("code.lisp")?.unwrap_or_else(|| DEFAULT_LOADER.to_owned());
     let qml = read("ui.qml")?.unwrap_or_default();
     let qml_path = if qml.is_empty() { "" } else { "ui.qml" };
-    let descriptor = read("pkgdesc.qml")?.unwrap_or_else(|| {
-        format!(
+    let descriptor = match read("pkgdesc.qml")? {
+        Some(descriptor) => {
+            validate_descriptor_artifacts(&descriptor, artifact_name, qml_path, output_dir)?;
+            descriptor
+        }
+        None => format!(
             "import QtQuick 2.15\n\nItem {{\n    property string pkgName: \"{}\"\n    property string pkgDescriptionMd: \"README.md\"\n    property string pkgLisp: \"code.lisp\"\n    property string pkgQml: \"{qml_path}\"\n    property bool pkgQmlIsFullscreen: {}\n    property string pkgOutput: \"{artifact_name}.vescpkg\"\n}}\n",
             package.display_name, package.qml_fullscreen,
-        )
-    });
+        ),
+    };
     validate_descriptor_fullscreen(&descriptor, package.qml_fullscreen)?;
     build_vesc_package(&VescPackageInput {
         name: &package.display_name,
@@ -155,6 +159,75 @@ fn build_package_bytes(
         qml_is_fullscreen: package.qml_fullscreen,
     })
     .map_err(BuildError::from)
+}
+
+fn validate_descriptor_artifacts(
+    descriptor: &str,
+    artifact_name: &str,
+    qml_path: &str,
+    output_dir: &Path,
+) -> Result<(), BuildError> {
+    let output_name = format!("{artifact_name}.vescpkg");
+    for (property, expected) in [
+        ("pkgDescriptionMd", "README.md"),
+        ("pkgLisp", "code.lisp"),
+        ("pkgQml", qml_path),
+        ("pkgOutput", output_name.as_str()),
+    ] {
+        let actual = descriptor_string_property(descriptor, property)?;
+        if actual != expected {
+            return Err(BuildError(format!(
+                "{property} must be `{expected}` for the staged artifact, found `{actual}`"
+            )));
+        }
+    }
+    for (property, path) in [
+        ("pkgDescriptionMd", "README.md"),
+        ("pkgLisp", "code.lisp"),
+        ("pkgQml", qml_path),
+    ] {
+        if !path.is_empty() && !output_dir.join(path).is_file() {
+            return Err(BuildError(format!(
+                "{property} names absent staged file `{path}`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn descriptor_string_property<'a>(
+    descriptor: &'a str,
+    property: &str,
+) -> Result<&'a str, BuildError> {
+    let values = descriptor
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(declaration, _)| {
+            declaration
+                .split_whitespace()
+                .eq(["property", "string", property])
+        })
+        .map(|(_, value)| value.trim().trim_end_matches(';').trim())
+        .map(|value| {
+            value
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .ok_or_else(|| {
+                    BuildError(format!(
+                        "{property} must be declared as a string literal, found `{value}`"
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    match values.as_slice() {
+        [value] => Ok(value),
+        [] => Err(BuildError(format!(
+            "pkgdesc.qml must declare property string {property}"
+        ))),
+        _ => Err(BuildError(format!(
+            "pkgdesc.qml declares {property} more than once"
+        ))),
+    }
 }
 
 fn validate_descriptor_fullscreen(descriptor: &str, expected: bool) -> Result<(), BuildError> {
@@ -903,6 +976,7 @@ mod tests {
         validate_writable_section_report,
     };
     use crate::package::Package;
+    use crate::package_wire::parse_vescpkg;
     use flate2::read::ZlibDecoder;
     use serde_json::json;
     use std::io::Read;
@@ -1091,9 +1165,18 @@ mod tests {
             .expect("QML fixture");
         std::fs::write(
             temp.path().join("pkgdesc.qml"),
-            "Item {\n    property bool pkgQmlIsFullscreen: true\n}\n",
+            "Item {\n\
+                 property string pkgDescriptionMd: \"README.md\"\n\
+                 property string pkgLisp: \"code.lisp\"\n\
+                 property string pkgQml: \"ui.qml\"\n\
+                 property bool pkgQmlIsFullscreen: true\n\
+                 property string pkgOutput: \"Fullscreen-fixture-0.1.0.vescpkg\"\n\
+             }\n",
         )
         .expect("descriptor fixture");
+        std::fs::write(temp.path().join("README.md"), "fixture\n").expect("README fixture");
+        std::fs::write(temp.path().join("code.lisp"), "(print \"fixture\")\n")
+            .expect("Lisp fixture");
         std::fs::create_dir(temp.path().join("src")).expect("payload directory");
         std::fs::write(temp.path().join("src/package_lib.bin"), b"native")
             .expect("payload fixture");
@@ -1115,12 +1198,103 @@ mod tests {
     }
 
     #[test]
+    fn float_out_boy_archive_embeds_a_descriptor_matching_its_staged_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for (name, contents) in [
+            (
+                "README.md",
+                include_str!("../../../examples/float-out-boy/package/README.md"),
+            ),
+            (
+                "code.lisp",
+                include_str!("../../../examples/float-out-boy/package/code.lisp"),
+            ),
+            (
+                "bms.lisp",
+                include_str!("../../../examples/float-out-boy/package/bms.lisp"),
+            ),
+            (
+                "ui.qml",
+                include_str!("../../../examples/float-out-boy/package/ui.qml"),
+            ),
+            (
+                "pkgdesc.qml",
+                include_str!("../../../examples/float-out-boy/package/pkgdesc.qml"),
+            ),
+        ] {
+            std::fs::write(temp.path().join(name), contents).expect("package fixture");
+        }
+        std::fs::create_dir(temp.path().join("src")).expect("payload directory");
+        std::fs::write(temp.path().join("src/package_lib.bin"), b"native")
+            .expect("payload fixture");
+        let package = PackageMetadata {
+            id: "float-out-boy".to_owned(),
+            name: "vesc-example-float-out-boy".to_owned(),
+            target_name: "vesc-example-float-out-boy".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Float Out Boy".to_owned(),
+            payload_kind: PayloadKind::Binary,
+            qml_fullscreen: false,
+        };
+
+        let bytes = build_package_bytes(&package, "Float-Out-Boy-0.1.0", temp.path())
+            .expect("build package");
+        let descriptor = parse_vescpkg(&bytes)
+            .expect("decode package")
+            .into_iter()
+            .find(|field| field.key == "pkgDescQml")
+            .map(|field| String::from_utf8(field.value).expect("UTF-8 descriptor"))
+            .expect("embedded descriptor");
+
+        assert!(descriptor.contains("pkgDescriptionMd: \"README.md\""));
+        assert!(descriptor.contains("pkgLisp: \"code.lisp\""));
+        assert!(descriptor.contains("pkgQml: \"ui.qml\""));
+        assert!(descriptor.contains("pkgOutput: \"Float-Out-Boy-0.1.0.vescpkg\""));
+        assert!(descriptor.contains("function isCompatible"));
+    }
+
+    #[test]
     fn rejects_conflicting_fullscreen_metadata_and_descriptor() {
         let error =
             validate_descriptor_fullscreen("property bool pkgQmlIsFullscreen: true\n", false)
                 .expect_err("contradictory descriptor");
 
         assert!(error.to_string().contains("Cargo metadata"));
+    }
+
+    #[test]
+    fn rejects_descriptor_paths_that_do_not_match_the_staged_artifact() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("code.lisp"), "(print \"fixture\")\n")
+            .expect("Lisp fixture");
+        std::fs::write(
+            temp.path().join("pkgdesc.qml"),
+            "Item {\n\
+                 property string pkgDescriptionMd: \"README.md\"\n\
+                 property string pkgLisp: \"code.lisp\"\n\
+                 property string pkgQml: \"\"\n\
+                 property string pkgOutput: \"Fixture-0.1.0.vescpkg\"\n\
+             }\n",
+        )
+        .expect("descriptor fixture");
+        let package = PackageMetadata {
+            id: "fixture".to_owned(),
+            name: "fixture".to_owned(),
+            target_name: "fixture".to_owned(),
+            version: "0.1.0".to_owned(),
+            display_name: "Fixture".to_owned(),
+            payload_kind: PayloadKind::Binary,
+            qml_fullscreen: false,
+        };
+
+        let error = build_package_bytes(&package, "Fixture-0.1.0", temp.path())
+            .expect_err("stale descriptor path");
+
+        assert!(
+            error
+                .to_string()
+                .contains("pkgDescriptionMd names absent staged file `README.md`")
+        );
     }
 
     #[test]
