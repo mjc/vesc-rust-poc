@@ -426,6 +426,11 @@ impl FloatOutBoyPackageState {
         self.serialized_config.startup().loop_time_us()
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn configured_main_loop_sample_rate(&self) -> vescpkg_rs::prelude::SampleRate {
+        self.serialized_config.startup().sample_rate()
+    }
+
     #[cfg(test)]
     pub(super) const fn firmware_imu_migration_for_test(&self) -> FirmwareImuMigration {
         self.firmware_imu_migration
