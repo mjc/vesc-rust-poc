@@ -5,10 +5,14 @@ use crate::domain::{
     FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, Current, Frequency, MotorCurrent, Rpm, SampleRate, VescSeconds,
+    AngleDegrees, AngularVelocity, Current, Frequency, MotorCurrent, Rpm, SampleRate, VescSeconds,
 };
 
 const LOOP_HERTZ_COMPAT: f32 = 720.0;
+const TURN_TILT_YAW_CUTOFF: Frequency = Frequency::from_hertz(25.0);
+const TURN_TILT_YAW_RATE_LIMIT: AngularVelocity = AngularVelocity::from_degrees_per_second(72.0);
+const TURN_TILT_YAW_RATE_THRESHOLD: AngularVelocity =
+    AngularVelocity::from_degrees_per_second(30.0);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct SmoothAngle {
@@ -65,7 +69,7 @@ struct AtrState {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct YawMotion {
     last: AngleDegrees,
-    change: AngleDegrees,
+    rate: AngularVelocity,
     aggregate: AngleDegrees,
 }
 
@@ -217,11 +221,12 @@ fn turn_target(
     let abs_erpm = erpm.abs().as_revolutions_per_minute();
     let mut target = if config.turn_tilt_strength().value() == 0.0
         || state.yaw.aggregate.abs() < config.turn_tilt_start_angle()
-        || state.yaw.abs_change() < AngleDegrees::from_degrees(0.04)
+        || state.yaw.rate.abs() < TURN_TILT_YAW_RATE_THRESHOLD
     {
         0.0
     } else {
-        let mut target = state.yaw.abs_change().as_degrees() * config.turn_tilt_strength().value();
+        let mut target = state.yaw.rate.abs().as_degrees_per_second() / LOOP_HERTZ_COMPAT
+            * config.turn_tilt_strength().value();
         let boost = if abs_erpm
             < config
                 .turn_tilt_erpm_boost_end()
@@ -260,30 +265,34 @@ fn turn_target(
 }
 
 impl YawMotion {
-    fn observe(&mut self, yaw: AngleDegrees) {
+    fn observe(&mut self, yaw: AngleDegrees, elapsed: VescSeconds, filter_rate: SampleRate) {
         // C map: yaw filtering and aggregation run before the state switch at
         // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
         // `third_party/float-out-boy/src/main.c:800`.
         let change = wrapped_yaw_delta(yaw, self.last);
         self.last = yaw;
-        let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
-        self.change = self.change * 0.8 + limited * 0.2;
-        if !same_source_sign(self.change, self.aggregate) {
+        let seconds = elapsed.as_seconds();
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return;
+        }
+        let limit = TURN_TILT_YAW_RATE_LIMIT.as_degrees_per_second();
+        let limited = (change.as_degrees() / seconds).clamp(-limit, limit);
+        let alpha = super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, filter_rate);
+        self.rate = AngularVelocity::from_degrees_per_second(
+            self.rate.as_degrees_per_second() * (1.0 - alpha) + limited * alpha,
+        );
+        if self.rate.is_negative() != self.aggregate.is_negative() {
             self.aggregate = AngleDegrees::ZERO;
         }
-        if self.abs_change() > AngleDegrees::from_degrees(0.04) {
-            self.aggregate = self.aggregate + self.change;
+        if self.rate.abs() > TURN_TILT_YAW_RATE_THRESHOLD {
+            self.aggregate = self.aggregate + change;
         }
-    }
-
-    fn abs_change(self) -> AngleDegrees {
-        self.change.abs()
     }
 }
 
 impl TurnTiltState {
-    fn aggregate(&mut self, yaw: AngleDegrees) {
-        self.yaw.observe(yaw);
+    fn aggregate(&mut self, yaw: AngleDegrees, elapsed: VescSeconds, filter_rate: SampleRate) {
+        self.yaw.observe(yaw, elapsed, filter_rate);
     }
 }
 
@@ -314,8 +323,13 @@ impl RideModifierState {
         *self = Self::default();
     }
 
-    pub(super) fn aggregate_yaw(&mut self, yaw: AngleDegrees) {
-        self.turn.aggregate(yaw);
+    pub(super) fn aggregate_yaw(
+        &mut self,
+        yaw: AngleDegrees,
+        elapsed: VescSeconds,
+        filter_rate: SampleRate,
+    ) {
+        self.turn.aggregate(yaw, elapsed, filter_rate);
     }
 
     #[cfg(test)]

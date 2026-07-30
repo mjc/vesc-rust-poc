@@ -13,6 +13,14 @@ fn amps(value: f32) -> Current {
     Current::from_amps(value)
 }
 
+fn nominal_elapsed() -> VescSeconds {
+    VescSeconds::from_seconds(1.0 / LOOP_HERTZ_COMPAT)
+}
+
+fn nominal_rate() -> SampleRate {
+    SampleRate::from_hertz(LOOP_HERTZ_COMPAT)
+}
+
 fn input() -> RideModifierInput {
     RideModifierInput {
         base_setpoint: AngleDegrees::ZERO,
@@ -37,10 +45,14 @@ fn active_turn_tilt() -> (FloatOutBoyConfigImage, RideModifierState) {
     let mut state = RideModifierState::default();
     for tick in 1..100 {
         let tick = i16::try_from(tick).unwrap_or(i16::MAX);
-        state.aggregate_yaw(degrees(f32::from(tick) * 0.1));
+        state.aggregate_yaw(
+            degrees(f32::from(tick) * 0.1),
+            nominal_elapsed(),
+            nominal_rate(),
+        );
         state.advance(&config, input());
     }
-    state.aggregate_yaw(degrees(10.0));
+    state.aggregate_yaw(degrees(10.0), nominal_elapsed(), nominal_rate());
     (config, state)
 }
 
@@ -54,6 +66,34 @@ fn turn_tilt_uses_filtered_yaw_and_erpm_direction_like_float_out_boy() {
 }
 
 #[test]
+fn turn_tilt_yaw_rate_matches_over_equal_time_at_different_cadences() {
+    let mut fast = RideModifierState::default();
+    let mut slow = RideModifierState::default();
+
+    for step in 1..=50_i16 {
+        fast.aggregate_yaw(
+            degrees(f32::from(step) * 0.1),
+            VescSeconds::from_seconds(0.002),
+            SampleRate::from_hertz(500.0),
+        );
+    }
+    for step in 1..=25_i16 {
+        slow.aggregate_yaw(
+            degrees(f32::from(step) * 0.2),
+            VescSeconds::from_seconds(0.004),
+            SampleRate::from_hertz(250.0),
+        );
+    }
+
+    assert!(
+        (fast.turn.yaw.rate.as_degrees_per_second() - slow.turn.yaw.rate.as_degrees_per_second())
+            .abs()
+            < 0.01
+    );
+    assert!((fast.turn.yaw.aggregate - slow.turn.yaw.aggregate).abs() < degrees(0.01));
+}
+
+#[test]
 fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
     let mut turn = TurnTiltState {
         yaw: YawMotion {
@@ -63,9 +103,11 @@ fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
         ..TurnTiltState::default()
     };
 
-    turn.aggregate(degrees(-179.95));
+    turn.aggregate(degrees(-179.95), nominal_elapsed(), nominal_rate());
 
-    assert!((turn.yaw.change.as_degrees() - 0.02).abs() < 0.000_01);
+    let alpha =
+        super::super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, nominal_rate());
+    assert!((turn.yaw.rate.as_degrees_per_second() - 72.0 * alpha).abs() < 0.000_1);
 }
 
 #[test]
@@ -73,15 +115,17 @@ fn turn_tilt_filters_zero_yaw_change_instead_of_replaying_stale_motion() {
     let mut turn = TurnTiltState {
         yaw: YawMotion {
             last: degrees(10.0),
-            change: degrees(0.1),
+            rate: AngularVelocity::from_degrees_per_second(72.0),
             ..YawMotion::default()
         },
         ..TurnTiltState::default()
     };
 
-    turn.aggregate(degrees(10.0));
+    turn.aggregate(degrees(10.0), nominal_elapsed(), nominal_rate());
 
-    assert!((turn.yaw.change.as_degrees() - 0.08).abs() < 0.000_01);
+    let alpha =
+        super::super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, nominal_rate());
+    assert!((turn.yaw.rate.as_degrees_per_second() - 72.0 * (1.0 - alpha)).abs() < 0.000_1);
 }
 
 #[test]
@@ -433,7 +477,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
         turn: TurnTiltState {
             yaw: YawMotion {
                 aggregate: degrees(20.0),
-                change: degrees(0.1),
+                rate: TURN_TILT_YAW_RATE_LIMIT,
                 ..YawMotion::default()
             },
             ..TurnTiltState::default()
@@ -502,7 +546,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     let active_turn = state.turn.angle.setpoint;
     assert!(active_turn.is_positive());
     state.turn.yaw.aggregate = AngleDegrees::ZERO;
-    state.turn.yaw.change = AngleDegrees::ZERO;
+    state.turn.yaw.rate = AngularVelocity::ZERO;
     state.update_turn(balance, rpm(3_000.0), VescSeconds::from_seconds(0.01));
     assert!(state.turn.angle.setpoint < active_turn);
 }
