@@ -93,7 +93,7 @@ fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
     );
     assert_eq!(
         table_size,
-        core::mem::offset_of!(crate::raw::VescIf, shutdown_disable) + pointer_size
+        core::mem::offset_of!(crate::raw::VescIf, foc_set_fw_override) + pointer_size
     );
 }
 
@@ -279,24 +279,21 @@ fn can_baud_representation_preserves_pinned_enum_values() {
 #[test]
 fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
-    assert_eq!(VescIfAbi::FIELD_COUNT, 253);
-    assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 248);
+    assert_eq!(VescIfAbi::FIELD_COUNT, 254);
+    assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 249);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(
         VescIfAbi::SOURCE_REPOSITORY,
-        "https://github.com/lukash/vesc_pkg_lib"
+        "https://github.com/vedderb/bldc"
     );
     assert_eq!(
         VescIfAbi::SOURCE_COMMIT,
-        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+        "0fc12dab64f2c06c2801bfdebf61256b0989ee06"
     );
-    assert_eq!(
-        VescIfAbi::SOURCE_HEADER,
-        "third_party/vesc_pkg_lib/vesc_c_if.h"
-    );
+    assert_eq!(VescIfAbi::SOURCE_HEADER, "lispBM/c_libs/vesc_c_if.h");
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
-    assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+    assert_eq!(VescIfAbi::ALL_SLOTS[253].name(), "foc_set_fw_override");
     assert_eq!(
         VescIfAbi::ALL_SLOTS[0].minimum_revision(),
         Stm32AbiRevision::Base
@@ -308,6 +305,10 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(
         VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_605_SLOT_COUNT].minimum_revision(),
         Stm32AbiRevision::Firmware606
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_606_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware700
     );
     assert!(
         VescIfAbi::ALL_SLOTS
