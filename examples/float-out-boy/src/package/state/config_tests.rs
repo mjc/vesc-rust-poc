@@ -18,9 +18,48 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
+
+#[test]
+fn cutoff_axis_fault_angles_use_one_byte_integer_degrees() {
+    let mut config = FloatOutBoyConfigImage::defaults();
+    let original = *config.as_bytes();
+
+    assert_eq!(
+        config.faults().pitch_angle(),
+        AngleDegrees::from_degrees(60.0)
+    );
+    assert_eq!(
+        config.faults().roll_angle(),
+        AngleDegrees::from_degrees(60.0)
+    );
+    assert_eq!(&config.as_bytes()[42..44], &[60, 60]);
+
+    assert!(
+        config
+            .editor()
+            .set_fault_pitch(AngleDegrees::from_degrees(45.0))
+    );
+    assert!(
+        config
+            .editor()
+            .set_fault_roll(AngleDegrees::from_degrees(90.0))
+    );
+
+    assert_eq!(
+        config.faults().pitch_angle(),
+        AngleDegrees::from_degrees(45.0)
+    );
+    assert_eq!(
+        config.faults().roll_angle(),
+        AngleDegrees::from_degrees(90.0)
+    );
+    assert_eq!(&config.as_bytes()[42..44], &[45, 90]);
+    assert_eq!(&config.as_bytes()[..42], &original[..42]);
+    assert_eq!(&config.as_bytes()[44..], &original[44..]);
+}
 
 fn handle_config_command(
     firmware: &FirmwareTest,
