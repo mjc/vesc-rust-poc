@@ -63,6 +63,11 @@ impl BalanceFilter {
         self.configure(config.mahony_kp(), config.mahony_kp_roll());
     }
 
+    #[cfg(test)]
+    pub(crate) const fn configured_gains(&self) -> (MahonyPitchGain, MahonyRollGain) {
+        self.feedback.configured_gains()
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn update(&mut self, sample: ImuReadSample) {
         // Float Out Boy's callback feeds gyro first, accel second at

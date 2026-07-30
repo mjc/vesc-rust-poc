@@ -76,6 +76,11 @@ impl LcmState {
         self.hardware_mode = hardware_mode;
     }
 
+    #[cfg(test)]
+    pub(super) const fn hardware_mode(self) -> u8 {
+        self.hardware_mode
+    }
+
     pub(super) fn configure(&mut self, config: crate::leds::FloatOutBoyLedsConfig) {
         if !self.enabled() {
             return;

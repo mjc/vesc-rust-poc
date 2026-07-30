@@ -270,6 +270,16 @@ impl FloatOutBoyPackageState {
         self.refresh_idle_epoch(now);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(in crate::package) fn begin_restore_persisted_config(
+        &mut self,
+        loaded: &FloatOutBoyPersistedConfig,
+        now: TimestampTicks,
+    ) {
+        self.apply_persisted_config(loaded);
+        self.begin_configure_active(now);
+    }
+
     pub(in crate::package) fn finish_configure_active(&mut self, migration: FirmwareImuMigration) {
         self.firmware_imu_migration = migration;
         self.alert_after_configure();
@@ -316,13 +326,14 @@ impl FloatOutBoyPackageState {
         &mut self,
         loaded: &FloatOutBoyPersistedConfig,
         disabled: bool,
+        now: TimestampTicks,
     ) -> Option<FloatOutBoyConfigImage> {
         if self.is_running() {
             return None;
         }
         self.apply_persisted_config(loaded);
         self.serialized_config.editor().set_disabled(disabled);
-        super::config_runtime::refresh_disabled_state(self);
+        self.begin_configure_active(now);
         Some(self.serialized_config)
     }
 

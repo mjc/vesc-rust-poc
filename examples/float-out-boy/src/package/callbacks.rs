@@ -70,7 +70,9 @@ fn handle_effectful_float_out_boy_packet(
         }
         FloatOutBoyAppDataCommand::ConfigRestore => {
             let loaded = context.with_effects(super::state::load_persisted_config);
-            context.with_state(|state| state.apply_persisted_config(&loaded));
+            let restored_at = now();
+            context.with_state(|state| state.begin_restore_persisted_config(&loaded, restored_at));
+            finish_restored_config(context, true);
             Some(true)
         }
         FloatOutBoyAppDataCommand::Lock => {
@@ -79,8 +81,10 @@ fn handle_effectful_float_out_boy_packet(
             };
             if !context.with_state(|state| state.is_running()) {
                 let loaded = context.with_effects(super::state::load_persisted_config);
-                let config = context
-                    .with_state(|state| state.apply_lock_from_persisted(&loaded, *disabled != 0));
+                let restored_at = now();
+                let config = context.with_state(|state| {
+                    state.apply_lock_from_persisted(&loaded, *disabled != 0, restored_at)
+                });
                 if let Some(config) = config {
                     let stored = context.with_effects(|effects| {
                         super::state::store_persisted_config(effects, &config)
@@ -90,6 +94,7 @@ fn handle_effectful_float_out_boy_packet(
                         context
                             .with_state(|state| state.acknowledge_command_config_write(written_at));
                     }
+                    finish_restored_config(context, true);
                 }
             }
             Some(true)

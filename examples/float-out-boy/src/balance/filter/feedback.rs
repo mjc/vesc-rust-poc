@@ -149,6 +149,14 @@ impl MahonyFeedbackConfig {
         Self { pitch, roll, yaw }
     }
 
+    #[cfg(test)]
+    pub(super) const fn configured_gains(self) -> (MahonyPitchGain, MahonyRollGain) {
+        (
+            MahonyPitchGain::new(self.pitch.0),
+            MahonyRollGain::new(self.roll.0),
+        )
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn accel_correction_gains(self, confidence: AccelConfidence) -> MahonyFeedbackGains {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` scales the

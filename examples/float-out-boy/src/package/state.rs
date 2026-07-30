@@ -569,6 +569,18 @@ impl FloatOutBoyPackageState {
         self.balance_filter = balance_filter;
     }
 
+    #[cfg(test)]
+    pub(crate) const fn configured_mahony_gains_for_test(
+        &self,
+    ) -> (vescpkg_rs::MahonyPitchGain, vescpkg_rs::MahonyRollGain) {
+        self.balance_filter.configured_gains()
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> u8 {
+        self.lcm.hardware_mode()
+    }
+
     pub(super) fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
         self.idle_ticks = now;
     }
@@ -885,7 +897,11 @@ impl FloatOutBoyPackageState {
             }
             FloatOutBoyAppDataCommand::ConfigRestore => {
                 let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                self.apply_persisted_config(&loaded);
+                self.begin_restore_persisted_config(&loaded, now());
+                let migration = vescpkg_rs::test_support::with_firmware_effects(
+                    migrate_legacy_firmware_imu_settings,
+                );
+                self.finish_configure_active(migration);
                 Some(true)
             }
             FloatOutBoyAppDataCommand::Lock => {
@@ -895,13 +911,19 @@ impl FloatOutBoyPackageState {
                 if !self.is_running() {
                     let loaded =
                         vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                    if let Some(config) = self.apply_lock_from_persisted(&loaded, *disabled != 0) {
+                    if let Some(config) =
+                        self.apply_lock_from_persisted(&loaded, *disabled != 0, now())
+                    {
                         let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
                             store_persisted_config(effects, &config)
                         });
                         if stored {
                             self.acknowledge_command_config_write(now());
                         }
+                        let migration = vescpkg_rs::test_support::with_firmware_effects(
+                            migrate_legacy_firmware_imu_settings,
+                        );
+                        self.finish_configure_active(migration);
                     }
                 }
                 Some(true)

@@ -38,6 +38,18 @@ fn handle_config_command(
     )
 }
 
+fn config_with_mahony_and_hardware_mode(
+    state: &FloatOutBoyPackageState,
+    mahony_kp: MahonyPitchGain,
+    hardware_mode: u8,
+) -> FloatOutBoyConfigImage {
+    let mut bytes = *state.serialized_config();
+    bytes[227] = hardware_mode;
+    let mut config = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid test config");
+    assert!(config.editor().set_mahony_kp(mahony_kp));
+    config
+}
+
 fn drain_one_short_beep(state: &mut FloatOutBoyPackageState) -> Vec<(u32, FloatOutBoyBeeperLevel)> {
     (1..=240)
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
@@ -415,6 +427,37 @@ fn eeprom_image_conversion_rejects_a_bad_signature() {
     );
 }
 
+fn assert_restored_runtime_state(
+    firmware: &FirmwareTest,
+    state: &FloatOutBoyPackageState,
+    saved: &FloatOutBoyConfigImage,
+) {
+    assert_eq!(&state.serialized_config, saved);
+    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(0));
+    assert_eq!(
+        state.configured_mahony_gains_for_test().0,
+        MahonyPitchGain::new(2.5)
+    );
+    assert_eq!(
+        state.lcm_hardware_mode_for_test(),
+        crate::lcm::FloatOutBoyLedMode::External.id()
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Disabled,
+    );
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::Applied
+    );
+    assert_live_only_firmware_imu_migration(firmware, 3);
+}
+
 #[test]
 fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let firmware = FirmwareTest::new();
@@ -422,7 +465,6 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.idle_ticks = TimestampTicks::from_ticks(7);
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
-    state.refresh_config_runtime_state();
     assert!(state.serialized_config.editor().set_disabled(true));
     assert!(
         state
@@ -430,7 +472,12 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(15.0))
     );
-    let saved = state.serialized_config;
+    let saved = config_with_mahony_and_hardware_mode(
+        &state,
+        MahonyPitchGain::new(2.5),
+        crate::lcm::FloatOutBoyLedMode::External.id(),
+    );
+    state.replace_active_config(&saved);
 
     assert!(handle_config_command(
         &firmware,
@@ -450,14 +497,27 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
         ],
     );
 
+    let mut volatile = config_with_mahony_and_hardware_mode(
+        &state,
+        MahonyPitchGain::new(3.0),
+        crate::lcm::FloatOutBoyLedMode::Off.id(),
+    );
     assert!(
-        state
-            .serialized_config
+        volatile
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(5.0))
     );
-    assert!(state.serialized_config.editor().set_disabled(false));
-    state.refresh_config_runtime_state();
+    assert!(volatile.editor().set_disabled(false));
+    state.replace_active_config(&volatile);
+    assert_eq!(
+        state.configured_mahony_gains_for_test().0,
+        MahonyPitchGain::new(3.0)
+    );
+    assert_eq!(
+        state.lcm_hardware_mode_for_test(),
+        crate::lcm::FloatOutBoyLedMode::Off.id()
+    );
+    firmware.clear_settings_write_observations();
     assert_eq!(
         state
             .all_data_payloads()
@@ -473,20 +533,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
         FloatOutBoyAppDataCommand::ConfigRestore,
         &[],
     ));
-    assert_eq!(state.serialized_config, saved);
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state(),
-        // Refloat 1.2.1 `COMMAND_CFG_RESTORE` calls only
-        // `read_cfg_from_eeprom`; it does not run `configure`.
-        FloatOutBoyRunState::Startup,
-    );
-    assert_eq!(state.tick_beeper(), None);
+    assert_restored_runtime_state(&firmware, &state, &saved);
 
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
@@ -650,6 +697,12 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(15.0))
     );
+    let saved = config_with_mahony_and_hardware_mode(
+        &state,
+        MahonyPitchGain::new(2.5),
+        crate::lcm::FloatOutBoyLedMode::External.id(),
+    );
+    state.replace_active_config(&saved);
     assert!(handle_config_command(
         &firmware,
         &mut state,
@@ -657,12 +710,18 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         &[],
     ));
     let _ = drain_one_short_beep(&mut state);
+    let mut volatile = config_with_mahony_and_hardware_mode(
+        &state,
+        MahonyPitchGain::new(3.0),
+        crate::lcm::FloatOutBoyLedMode::Off.id(),
+    );
     assert!(
-        state
-            .serialized_config
+        volatile
             .editor()
             .set_kp(vescpkg_rs::AngleCurrentGain::new(5.0))
     );
+    state.replace_active_config(&volatile);
+    firmware.clear_settings_write_observations();
 
     assert!(handle_config_command(
         &firmware,
@@ -674,6 +733,19 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         state.balance_config_for_test().kp().as_amps_per_degree(),
         15.0
     );
+    assert_eq!(
+        state.configured_mahony_gains_for_test().0,
+        MahonyPitchGain::new(2.5)
+    );
+    assert_eq!(
+        state.lcm_hardware_mode_for_test(),
+        crate::lcm::FloatOutBoyLedMode::External.id()
+    );
+    assert_eq!(
+        state.firmware_imu_migration_for_test(),
+        FirmwareImuMigration::Applied
+    );
+    assert_live_only_firmware_imu_migration(&firmware, 3);
     assert!(state.serialized_config.metadata().disabled());
     assert!(matches!(
         state
@@ -916,7 +988,7 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
 }
 
 #[test]
-fn parking_brake_mode_field_decodes_known_and_unknown_values() {
+fn parking_brake_mode_field_decodes_known_and_rejects_unknown_values() {
     let mut bytes = default_float_out_boy_config_bytes();
     assert_eq!(
         editable_config_from_bytes(&bytes)
@@ -927,11 +999,10 @@ fn parking_brake_mode_field_decodes_known_and_unknown_values() {
 
     bytes[101] = 0xff;
     assert_eq!(
-        editable_config_from_bytes(&bytes)
-            .motor_control()
-            .parking_brake_mode(),
+        crate::config::FloatOutBoyParkingBrakeMode::from(0xff),
         crate::config::FloatOutBoyParkingBrakeMode::Unknown(0xff)
     );
+    assert!(FloatOutBoyConfigImage::from_serialized(&bytes).is_none());
 }
 
 #[test]
