@@ -130,8 +130,10 @@ byte. Optional byte 15 is the secondary flag byte:
 `value / 10` degrees; `101..=255` means `-(value - 100) / 10` degrees. Thus
 `100` is `+10.0°`, `101` is `-0.1°`, and `255` is `-15.5°`.
 
-Minimal example: `[101, 6]` is rejected because the required 12-byte block is
-absent.
+Minimal valid example:
+`[101, 6, 0, 0, 0, 0, 0, 0, 80, 0, 0, 0, 0, 0]`. The seventh payload byte
+uses the lowest accepted constant-tilt encoding; the other required fields are
+zero.
 
 Boundary example: a payload with `variable_max = 255` applies `-15.5°`; a
 15-byte payload also applies the secondary flags.
@@ -284,3 +286,22 @@ page request and receives no data packet.
 
 These mutation commands do not all reply. The command table above is the
 response contract.
+
+Minimal valid examples:
+
+- `[101, 15, 0]` supplies a centered remote input;
+- `[101, 20]` queries effective light state without changing an override;
+- `[101, 24]` polls the LCM without adding a pending request payload;
+- `[101, 28, 151, 0, 0, 0, 0, 0]` clears charging state;
+- `[101, 35]` lists alerts since timestamp zero.
+
+Boundary examples:
+
+- `[101, 15, 128]` uses the reserved `i8::MIN` remote byte and is consumed
+  without changing input;
+- `[101, 20, 0, 0, 0, 3, 3]` updates both runtime light override bits and
+  returns their effective state;
+- command 26 forwards at most 64 extra payload bytes, discarding a longer tail;
+- command 28 accepts the complete signed `i16` voltage/current wire range;
+- `[101, 35, 255, 255, 255, 255]` requests only alert records newer than the
+  largest wire timestamp and still returns current alert state.
