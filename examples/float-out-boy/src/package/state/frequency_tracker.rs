@@ -82,12 +82,10 @@ impl FrequencyTracker {
         self.filter_frequency
     }
 
-    #[cfg(test)]
     pub(super) const fn elapsed(self) -> VescSeconds {
         self.elapsed
     }
 
-    #[cfg(test)]
     pub(super) const fn frequency(self) -> SampleRate {
         self.frequency
     }

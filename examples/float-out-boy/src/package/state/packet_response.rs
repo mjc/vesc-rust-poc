@@ -106,9 +106,7 @@ impl FloatOutBoyPackageState {
             &payloads,
             header,
             tail,
-            self.remote_control.input(),
-            self.ride_modifiers.atr_accel_diff(),
-            self.ride_modifiers.atr_speed_boost(),
+            self.realtime_live_values(),
         );
         reply(response.as_bytes())
     }

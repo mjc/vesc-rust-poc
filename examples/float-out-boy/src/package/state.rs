@@ -7,10 +7,12 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
-    FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
+    FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeLiveValues,
+    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 use crate::motor_torque::MotorTorqueConstant;
@@ -229,6 +231,19 @@ pub struct FloatOutBoyPackageState {
 }
 
 impl FloatOutBoyPackageState {
+    fn realtime_live_values(&self) -> FloatOutBoyRealtimeLiveValues {
+        FloatOutBoyRealtimeLiveValues::new(
+            FloatOutBoyRealtimeControlPeriod::new(self.frequency_trackers.imu.elapsed()),
+            FloatOutBoyRealtimeControlFrequency::new(self.frequency_trackers.imu.frequency()),
+            self.remote_control.input(),
+            FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(
+                self.ride_modifiers.atr_accel_diff(),
+            ),
+            FloatOutBoyRealtimeAtrSpeedBoost::from_units(self.ride_modifiers.atr_speed_boost()),
+            self.ride_modifiers.atr_transition_boost(),
+        )
+    }
+
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {

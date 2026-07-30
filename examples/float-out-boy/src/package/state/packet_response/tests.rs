@@ -167,7 +167,10 @@ fn realtime_packet_reports_live_firmware_fault_alert_like_float_out_boy() {
         ],
     ));
 
-    assert_eq!(packet[3] & 0x08, 0x08);
+    assert_ne!(
+        u32::from_be_bytes([packet[8], packet[9], packet[10], packet[11]]) & (1 << 20),
+        0
+    );
     assert_eq!(&packet[packet.len() - 9..packet.len() - 5], &[0, 0, 0, 1]);
     assert_eq!(packet.last(), Some(&5));
 }
@@ -344,13 +347,13 @@ fn metadata_packet_response_sends_realtime_ids_directly() {
 
     // C map: QML asks for this packet at `ui.qml.in:704-705`; Float Out Boy C replies
     // from `third_party/float-out-boy/src/main.c:1876-1901`.
-    assert_eq!(packet.len(), 404);
+    assert_eq!(packet.len(), 370);
     assert_eq!(
         &packet[..3],
         &[
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeDataIds.id(),
-            16,
+            18,
         ]
     );
 }

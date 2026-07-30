@@ -39,7 +39,7 @@ fn recorder_control_updates_live_realtime_flags() {
         &mut state,
         &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
     );
-    assert_eq!(sent[0][3] & 0x07, 0x07);
+    assert_eq!(sent[0][3], 1);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn recorder_samples_and_streams_source_wire_packets() {
         &mut state,
         &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[2, 1]),
     );
-    assert_eq!(&header[0][..7], &[101, 42, 0, 0, 0, 1, 10]);
+    assert_eq!(&header[0][..7], &[101, 42, 0, 0, 0, 1, 13]);
 
     let (_, data) = handle(
         &mut state,
@@ -94,7 +94,7 @@ fn recorder_samples_and_streams_source_wire_packets() {
         &data[0][..11],
         &[101, 43, 0, 0, 0, 0, 1, 2, 3, 4, 0b0000_1101]
     );
-    assert_eq!(data[0].len(), 31);
+    assert_eq!(data[0].len(), 37);
 }
 
 #[test]
@@ -337,20 +337,20 @@ fn data_response_paginates_at_the_refloat_send_buffer_boundary() {
             &[2, 2, 0, 0, 0, 0],
         ),
     );
-    assert_eq!(first_page[0].len(), 506);
+    assert_eq!(first_page[0].len(), 502);
     assert_eq!(&first_page[0][2..6], &[0, 0, 0, 0]);
     assert_eq!(&first_page[0][6..10], &[0, 0, 0, 1]);
-    assert_eq!(&first_page[0][481..485], &[0, 0, 0, 20]);
+    assert_eq!(&first_page[0][471..475], &[0, 0, 0, 16]);
 
     let (_, second_page) = handle(
         &mut state,
         &request(
             FloatOutBoyAppDataCommand::DataRecordRequest,
-            &[2, 2, 0, 0, 0, 20],
+            &[2, 2, 0, 0, 0, 16],
         ),
     );
-    assert_eq!(second_page[0].len(), 106);
-    assert_eq!(&second_page[0][2..6], &[0, 0, 0, 20]);
-    assert_eq!(&second_page[0][6..10], &[0, 0, 0, 21]);
-    assert_eq!(&second_page[0][81..85], &[0, 0, 0, 24]);
+    assert_eq!(second_page[0].len(), 254);
+    assert_eq!(&second_page[0][2..6], &[0, 0, 0, 16]);
+    assert_eq!(&second_page[0][6..10], &[0, 0, 0, 17]);
+    assert_eq!(&second_page[0][223..227], &[0, 0, 0, 24]);
 }

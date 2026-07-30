@@ -2,17 +2,16 @@ use crate::packet::FloatOutBoyPacket;
 use crate::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-    FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeTail,
-    FloatOutBoyRunState, realtime_value,
+    FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeLiveValues,
+    FloatOutBoyRealtimeTail, FloatOutBoyRunState, realtime_value,
 };
 use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees};
 
 // Float Out Boy v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/float-out-boy/src/main.c:1267-1269`.
 const FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN: usize = 72;
-// Float Out Boy v1.2.1 `cmd_realtime_data` declares its runtime-sized packet at
-// `third_party/float-out-boy/src/main.c:1904-1906`.
-const FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY: usize = 77;
+// The cutoff internal realtime packet is largest while both running and charging.
+const FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY: usize = 83;
 
 /// Variable-length Float Out Boy `COMMAND_REALTIME_DATA` response bytes from
 /// `third_party/float-out-boy/src/main.c:1904-1960`.
@@ -92,9 +91,7 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     payloads: &FloatOutBoyAllDataPayloads,
     header: FloatOutBoyRealtimeDataHeader,
     tail: FloatOutBoyRealtimeTail,
-    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
-    atr_accel_diff: f32,
-    atr_speed_boost: f32,
+    live: FloatOutBoyRealtimeLiveValues,
 ) -> FloatOutBoyRealtimeDataResponse {
     let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
@@ -111,29 +108,14 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     // Upstream writes `d->time.now` at `third_party/float-out-boy/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
     packet.push_u32(header.timestamp().as_ticks());
-    packet.push(header.state_byte_compat());
-    packet.push(header.footpad_flags_compat());
-    packet.push(header.stop_setpoint_byte_compat());
-    packet.push(header.beep_reason_compat());
+    packet.push_u32(header.state_flags_compat());
 
     for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
-        packet.push_float16_auto(realtime_value(
-            payloads,
-            item,
-            remote_input,
-            atr_accel_diff,
-            atr_speed_boost,
-        ));
+        packet.push_float16_auto(realtime_value(payloads, item, live));
     }
     if running {
         for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
-            packet.push_float16_auto(realtime_value(
-                payloads,
-                item,
-                remote_input,
-                atr_accel_diff,
-                atr_speed_boost,
-            ));
+            packet.push_float16_auto(realtime_value(payloads, item, live));
         }
     }
     if charging {

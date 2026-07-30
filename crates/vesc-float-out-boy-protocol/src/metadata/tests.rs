@@ -133,27 +133,29 @@ fn realtime_data_ids_response_matches_float_out_boy_qml_metadata() {
     // QML asks for IDs at `ui.qml.in:704-705`;
     // upstream `cmd_realtime_data_ids` writes the counted string sets at
     // `third_party/float-out-boy/src/main.c:1876-1901`, using IDs from `third_party/float-out-boy/src/rt_data.h:38-66`.
-    assert_eq!(bytes.len(), 404);
+    assert_eq!(bytes.len(), 370);
     assert_eq!(bytes.get(..2), Some(&[101, 32][..]));
     let mut index = 2;
     assert_eq!(
         take_id_list(&bytes, &mut index).as_slice(),
         &[
-            "motor.speed",
-            "motor.erpm",
-            "motor.current",
-            "motor.dir_current",
-            "motor.filt_current",
-            "motor.duty_cycle",
-            "motor.batt_voltage",
-            "motor.batt_current",
-            "motor.mosfet_temp",
-            "motor.motor_temp",
-            "imu.pitch",
-            "imu.balance_pitch",
-            "imu.roll",
-            "footpad.adc1",
-            "footpad.adc2",
+            "control.dt",
+            "control.freq",
+            "speed",
+            "erpm",
+            "current",
+            "dir_current",
+            "filt_current",
+            "duty_cycle",
+            "batt_voltage",
+            "batt_current",
+            "mosfet_temp",
+            "motor_temp",
+            "pitch",
+            "balance_pitch",
+            "roll",
+            "adc_left",
+            "adc_right",
             "remote.input",
         ]
     );
@@ -169,6 +171,7 @@ fn realtime_data_ids_response_matches_float_out_boy_qml_metadata() {
             "balance_current",
             "atr.accel_diff",
             "atr.speed_boost",
+            "atr.transition_boost",
             "booster.torque",
         ]
     );
