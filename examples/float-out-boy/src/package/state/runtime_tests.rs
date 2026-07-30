@@ -853,15 +853,8 @@ fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
     let setpoints = state.all_data_payloads().base().setpoints();
-    // C `remote_update` starts the configured per-loop step with its 0.02 ramp factor,
-    // then adds it to the production setpoint at
-    // `third_party/float-out-boy/src/remote.c:70-94` and
-    // `third_party/float-out-boy/src/main.c:876-879`.
-    let expected = 0.02 * 25.0
-        / editable_config_from_state(&state)
-            .startup()
-            .sample_rate()
-            .as_hertz();
+    // Pinned Refloat SmoothSetpoint first step at 500 Hz for a five-degree target.
+    let expected = 0.000_089_363_82;
     let remote = setpoints.remote().angle().as_degrees();
     let board = setpoints.board().angle().as_degrees();
     assert!((remote - expected).abs() < 0.000_001, "remote={remote}");

@@ -609,7 +609,8 @@ fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
     assert!(tick_realtime_data(&mut state, &telemetry, 0));
     assert!(tick_realtime_data(&mut state, &telemetry, 1));
     let base = state.all_data_payloads().base();
-    let expected_remote = 0.02 * 25.0 / 500.0;
+    // Pinned Refloat SmoothSetpoint first step at 500 Hz for a five-degree target.
+    let expected_remote = 0.000_089_363_82;
     let expected_board = 1.9 + expected_remote;
     let setpoint_error = expected_board - 2.0;
     let expected_current = expected_smoothed_current(&state, setpoint_error);
