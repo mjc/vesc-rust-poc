@@ -6,7 +6,7 @@ use super::{FloatOutBoyMode, FloatOutBoyPackageState, LoopConfig};
 use crate::config::FloatOutBoyFlywheelConfig;
 use vescpkg_rs::WireByte;
 use vescpkg_rs::prelude::{AngleCurrentGain, RateCurrentGain};
-use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio};
+use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio, VescSeconds};
 
 const FLYWHEEL_COMMAND_ARMED: u8 = 0x80;
 const FLYWHEEL_COMMAND_MASK: u8 = 0x7f;
@@ -289,30 +289,45 @@ impl FloatOutBoyPackageState {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn runtime_duty_pushback_step(&self) -> AngleDegrees {
+        self.runtime_duty_pushback_step_elapsed(
+            self.serialized_config
+                .startup()
+                .sample_rate()
+                .sample_period()
+                .unwrap_or(VescSeconds::ZERO),
+        )
+    }
+
+    pub(super) fn runtime_duty_pushback_step_elapsed(&self, elapsed: VescSeconds) -> AngleDegrees {
         let speed = self.flywheel.config().map_or_else(
             || self.serialized_config.duty_pushback_speed(),
             |config| config.duty_speed,
         );
-        self.runtime_setpoint_step(speed)
+        AngleDegrees::from(speed * elapsed)
     }
 
+    #[cfg(test)]
     pub(super) fn runtime_tiltback_return_step(&self) -> AngleDegrees {
+        self.runtime_tiltback_return_step_elapsed(
+            self.serialized_config
+                .startup()
+                .sample_rate()
+                .sample_period()
+                .unwrap_or(VescSeconds::ZERO),
+        )
+    }
+
+    pub(super) fn runtime_tiltback_return_step_elapsed(
+        &self,
+        elapsed: VescSeconds,
+    ) -> AngleDegrees {
         let speed = self.flywheel.config().map_or_else(
             || self.serialized_config.tiltback_return_speed(),
             |config| config.duty_speed,
         );
-        self.runtime_setpoint_step(speed)
-    }
-
-    fn runtime_setpoint_step(&self, speed: AngularVelocity) -> AngleDegrees {
-        self.serialized_config
-            .startup()
-            .sample_rate()
-            .sample_period()
-            .map_or(AngleDegrees::ZERO, |period| {
-                AngleDegrees::from(speed * period)
-            })
+        AngleDegrees::from(speed * elapsed)
     }
 
     pub(super) fn runtime_balance_loop_config(&self) -> LoopConfig {

@@ -799,14 +799,6 @@ impl FloatOutBoyStartupConfig<'_> {
     pub(crate) const fn dirty_landings_enabled(self) -> bool {
         self.0.as_bytes()[Self::DIRTY_LANDINGS_OFFSET] != 0
     }
-
-    pub(crate) fn centering_step(self) -> AngleDegrees {
-        self.sample_rate()
-            .sample_period()
-            .map_or(AngleDegrees::from_degrees(0.0), |period| {
-                AngleDegrees::from(self.startup_speed() * period)
-            })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

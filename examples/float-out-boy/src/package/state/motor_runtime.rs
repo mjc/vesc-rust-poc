@@ -11,7 +11,16 @@ use vescpkg_rs::prelude::{
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
-const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
+const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
+const MOTOR_DATA_EMA_CUTOFF: Frequency = Frequency::from_hertz(1.0);
+
+pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
+    if configured.as_hertz() < 1.0 {
+        DEFAULT_CURRENT_FILTER_FREQUENCY
+    } else {
+        configured
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyMotorCurrentFilter {
@@ -79,7 +88,11 @@ pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &im
     state.battery_cell_count = telemetry.battery_cell_count();
 }
 
-pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
+pub(super) fn refresh(
+    state: &mut FloatOutBoyPackageState,
+    telemetry: &impl MotorTelemetry,
+    elapsed: vescpkg_rs::prelude::VescSeconds,
+) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
     let motor = base.motor();
@@ -91,12 +104,16 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
+    let smoothing = super::motor_kinematics::refloat_ema_alpha(
+        MOTOR_DATA_EMA_CUTOFF,
+        state.frequency_trackers.main.filter_frequency(),
+    );
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(
-        state.serialized_config.motor_current_filter_frequency(),
-        state.serialized_config.startup().sample_rate(),
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
+        state.frequency_trackers.main.filter_frequency(),
     );
     let directional_current = telemetry.directional_motor_current();
     let filtered_current = state.motor_current_filter.process(directional_current);
@@ -104,7 +121,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
-    state.motor_kinematics.record(motor_erpm);
+    state.motor_kinematics.record(motor_erpm, elapsed);
     let motor = FloatOutBoyAllDataMotorPayload::new(
         BatteryVoltage::new(telemetry.input_voltage().voltage()),
         electrical_speed,
@@ -115,13 +132,11 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
             filtered_current,
             BatteryCurrent::new(
                 previous_battery_current
-                    + (next_battery_current - previous_battery_current)
-                        * MOTOR_DATA_SMOOTHING_FACTOR,
+                    + (next_battery_current - previous_battery_current) * smoothing.as_ratio(),
             ),
         ),
         DutyCycle::new(SignedRatio::clamped(
-            previous_duty_cycle
-                + MOTOR_DATA_SMOOTHING_FACTOR * (raw_duty_cycle - previous_duty_cycle),
+            previous_duty_cycle + smoothing.as_ratio() * (raw_duty_cycle - previous_duty_cycle),
         )),
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.
@@ -130,6 +145,14 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
             .map(|current| MotorCurrent::new(current.current())),
     );
     state.all_data_payloads = payloads.with_base(base.with_motor(motor));
+}
+
+pub(super) fn reconfigure_filters(state: &mut FloatOutBoyPackageState, frequency: SampleRate) {
+    state.motor_current_filter.configure(
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
+        frequency,
+    );
+    state.motor_kinematics.configure(frequency);
 }
 
 #[cfg(test)]

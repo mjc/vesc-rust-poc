@@ -2,7 +2,9 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate};
+use vescpkg_rs::prelude::{
+    Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, VescSeconds,
+};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -18,13 +20,14 @@ struct BalanceCurrentEmaAlpha(Ratio);
 impl BalanceCurrentEmaAlpha {
     #[must_use]
     #[inline]
-    fn from_sample_rate(sample_rate: SampleRate) -> Self {
+    fn from_elapsed(elapsed: VescSeconds) -> Self {
         // C map: Refloat main at caff10a configures this 25 Hz filter in
         // `src/main.c:168-175` and uses the bounded second-order approximation of
         // `1 - e^-omega` from `src/filters/ema.c:24-30`.
-        let omega =
-            (core::f32::consts::TAU * (BALANCE_CURRENT_FILTER_CUTOFF / sample_rate)).min(0.5);
-        Self(Ratio::clamped(omega - 0.5 * omega * omega))
+        Self(Ratio::clamped(super::ema_alpha(
+            BALANCE_CURRENT_FILTER_CUTOFF.as_hertz(),
+            elapsed,
+        )))
     }
 
     #[must_use]
@@ -51,7 +54,7 @@ impl PitchBasedDemand {
         self,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> PitchBasedCurrent {
         if softstart_pid_limit.current() < motor_current_max.current() {
             PitchBasedCurrent {
@@ -62,7 +65,7 @@ impl PitchBasedDemand {
                 // soft-start current limit at 100 A/s.
                 softstart_pid_limit: softstart_pid_limit
                     + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
+                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed),
                     )),
             }
         } else {
@@ -71,6 +74,15 @@ impl PitchBasedDemand {
                 softstart_pid_limit,
             }
         }
+    }
+}
+
+fn valid_elapsed_seconds(elapsed: VescSeconds) -> f32 {
+    let seconds = elapsed.as_seconds();
+    if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
     }
 }
 
@@ -89,12 +101,12 @@ impl PitchBasedCurrent {
         booster: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> Self {
         PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
             softstart_pid_limit,
             motor_current_max,
-            hertz,
+            elapsed,
         )
     }
 }
@@ -125,8 +137,8 @@ impl RequestedCurrent {
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
-        sample_rate: SampleRate,
         traction_control: FloatOutBoyTractionControlState,
+        elapsed: VescSeconds,
     ) -> MotorCurrent {
         match traction_control {
             // C map: Refloat main at caff10a resets the EMA to zero while its
@@ -136,7 +148,7 @@ impl RequestedCurrent {
                 // C map: Refloat main at caff10a updates the EMA as
                 // `previous += alpha * (target - previous)` in
                 // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
-                BalanceCurrentEmaAlpha::from_sample_rate(sample_rate).update(previous, self.0)
+                BalanceCurrentEmaAlpha::from_elapsed(elapsed).update(previous, self.0)
             }
         }
     }

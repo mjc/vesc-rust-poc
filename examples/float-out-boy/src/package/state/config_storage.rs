@@ -420,4 +420,9 @@ impl FloatOutBoyPackageState {
         // startup default instead of dividing by zero.
         self.serialized_config.startup().loop_time_us()
     }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn configured_main_loop_sample_rate(&self) -> vescpkg_rs::prelude::SampleRate {
+        self.serialized_config.startup().sample_rate()
+    }
 }

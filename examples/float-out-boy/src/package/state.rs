@@ -40,6 +40,9 @@ mod data_recorder;
 mod data_recorder_tests;
 mod flywheel;
 mod footpad_runtime;
+mod frequency_tracker;
+#[cfg(test)]
+mod frequency_tracker_tests;
 mod handtest;
 mod haptic_feedback;
 mod imu_runtime;
@@ -177,6 +180,7 @@ pub struct FloatOutBoyPackageState {
     motor_control: FloatOutBoyMotorControl,
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
+    frequency_trackers: frequency_tracker::FrequencyTrackers,
     reverse_total_erpm: Rpm,
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
@@ -390,8 +394,10 @@ impl FloatOutBoyPackageState {
     #[inline(never)]
     fn play_motor_click(&mut self) {
         let startup = self.serialized_config.startup();
-        self.motor_control
-            .play_click(startup.click_current(), startup.sample_rate());
+        self.motor_control.play_click(
+            startup.click_current(),
+            self.frequency_trackers.main.filter_frequency(),
+        );
     }
 
     /// Apply motor control for the current run state.
@@ -415,7 +421,38 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn update_balance_filter(&mut self, sample: vescpkg_rs::prelude::ImuReadSample) {
+        self.frequency_trackers
+            .imu
+            .update(sample.period().duration());
         self.balance_filter.update(sample);
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn initialize_frequency_tracking(
+        &mut self,
+        imu_frequency: vescpkg_rs::prelude::SampleRate,
+        now: TimestampTicks,
+    ) {
+        self.frequency_trackers.main = frequency_tracker::FrequencyTracker::new(
+            self.serialized_config.startup().sample_rate(),
+            now,
+        );
+        self.frequency_trackers.imu = frequency_tracker::FrequencyTracker::new(
+            frequency_tracker::imu_start_frequency(imu_frequency),
+            now,
+        );
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn allocate_motor_kinematics_history(&mut self) -> bool {
+        self.motor_kinematics.allocate_history()
+    }
+
+    pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
+        if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
+            motor_runtime::reconfigure_filters(self, frequency);
+        }
+        let _ = self.frequency_trackers.imu.check(running, now);
     }
 
     pub(crate) fn initialize_balance_filter(&mut self, orientation: vescpkg_rs::ImuOrientation) {
@@ -508,6 +545,7 @@ impl FloatOutBoyPackageState {
         self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
     }
 
+    #[cfg(test)]
     pub(crate) fn refresh_main_loop_runtime_state(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -517,22 +555,49 @@ impl FloatOutBoyPackageState {
         footpad_adc2: AdcVoltage,
         system_time_ticks: TimestampTicks,
     ) -> bool {
+        let elapsed = self
+            .serialized_config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .unwrap_or(vescpkg_rs::prelude::VescSeconds::ZERO);
+        self.refresh_main_loop_runtime_state_elapsed(
+            telemetry,
+            imu,
+            motor,
+            (footpad_adc1, footpad_adc2),
+            system_time_ticks,
+            elapsed,
+        )
+    }
+
+    pub(crate) fn refresh_main_loop_runtime_state_elapsed(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        imu: &impl Imu,
+        motor: &impl MotorOutput,
+        footpads: (AdcVoltage, AdcVoltage),
+        system_time_ticks: TimestampTicks,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) -> bool {
+        self.frequency_trackers.main.update(elapsed);
         // Keep the ARM refresh phases in separate frames so LTO cannot merge
         // their independent stack use inside VESC's fixed thread working area.
         self.refresh_config_runtime_state();
-        self.refresh_motor_runtime_state(telemetry);
+        self.refresh_motor_runtime_state_elapsed(telemetry, elapsed);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
         self.alert_tracker.update_firmware_fault(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
         );
-        self.refresh_footpad_runtime_state(footpad_adc1, footpad_adc2);
+        self.refresh_footpad_runtime_state(footpads.0, footpads.1);
         let restore_flywheel_config =
             self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
-        self.refresh_imu_runtime_state(imu, system_time_ticks) || restore_flywheel_config
+        self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed)
+            || restore_flywheel_config
     }
 
     fn refresh_konami_runtime_state(
@@ -720,15 +785,30 @@ impl FloatOutBoyPackageState {
             || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
     }
 
-    #[cfg_attr(target_arch = "arm", inline(never))]
+    #[cfg(test)]
     pub(crate) fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+        let elapsed = self
+            .serialized_config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .unwrap_or(vescpkg_rs::prelude::VescSeconds::ZERO);
+        self.refresh_motor_runtime_state_elapsed(telemetry, elapsed);
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    pub(crate) fn refresh_motor_runtime_state_elapsed(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) {
         #[cfg(test)]
         {
             if !self.motor_config_initialized {
                 self.refresh_motor_config_runtime_state(telemetry);
             }
         }
-        motor_runtime::refresh(self, telemetry);
+        motor_runtime::refresh(self, telemetry, elapsed);
     }
 
     pub(crate) fn refresh_motor_config_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
@@ -744,13 +824,29 @@ impl FloatOutBoyPackageState {
         footpad_runtime::refresh(self, adc1, adc2);
     }
 
-    #[cfg_attr(target_arch = "arm", inline(never))]
+    #[cfg(test)]
     fn refresh_imu_runtime_state(
         &mut self,
         imu: &impl Imu,
         system_time_ticks: TimestampTicks,
     ) -> bool {
-        imu_runtime::refresh(self, imu, system_time_ticks)
+        let elapsed = self
+            .serialized_config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .unwrap_or(vescpkg_rs::prelude::VescSeconds::ZERO);
+        self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn refresh_imu_runtime_state_elapsed(
+        &mut self,
+        imu: &impl Imu,
+        system_time_ticks: TimestampTicks,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) -> bool {
+        imu_runtime::refresh(self, imu, system_time_ticks, elapsed)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

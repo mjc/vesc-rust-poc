@@ -437,6 +437,31 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
 }
 
 #[test]
+fn refloat_main_loop_timing_uses_system_ticks_and_compensates_work() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
+
+    assert_eq!(timing.nominal_sleep(), Duration::from_micros(1_200));
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.000_31)),
+        Duration::from_micros(900),
+    );
+}
+
+#[test]
+fn refloat_main_loop_timing_keeps_one_tick_after_a_delayed_iteration() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
+
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.025)),
+        Duration::from_micros(100),
+    );
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(f32::NAN)),
+        timing.nominal_sleep(),
+    );
+}
+
+#[test]
 fn float_out_boy_aux_thread_lowers_priority_and_sleeps_like_float_out_boy_aux_loop() {
     let firmware = FirmwareTest::new();
     firmware.terminate_threads_after_checks(2);
