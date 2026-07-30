@@ -7,7 +7,7 @@ fn input() -> RideModifierInput {
         remote_setpoint: AngleDegrees::ZERO,
         balance_pitch: AngleDegrees::ZERO,
         motor_erpm: Rpm::from_revolutions_per_minute(3_000.0),
-        filtered_current: Current::ZERO,
+        filtered_torque: MotorTorque::ZERO,
         motor_current: MotorCurrent::new(Current::ZERO),
         acceleration: Rpm::ZERO,
         darkride: false,
@@ -21,6 +21,10 @@ fn nominal_elapsed() -> VescSeconds {
 
 fn nominal_rate() -> SampleRate {
     SampleRate::from_hertz(LOOP_HERTZ_COMPAT)
+}
+
+fn compat_torque(current_amps: f32) -> MotorTorque {
+    MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(Current::from_amps(current_amps))
 }
 
 #[test]
@@ -281,25 +285,32 @@ fn atr_transition_boost_scales_only_opposite_sign_transitions() {
 }
 
 #[test]
-fn low_speed_high_current_uses_torque_direction_like_refloat() {
+fn low_speed_high_torque_uses_torque_direction_like_refloat() {
     assert_eq!(
-        current_domain_direction(
+        motor_direction(
             Rpm::from_revolutions_per_minute(-250.0),
-            Current::from_amps(30.0),
+            MotorTorque::from_newton_meters(18.0),
         ),
         SmoothSetpointDirection::Forward
     );
     assert_eq!(
-        current_domain_direction(
+        motor_direction(
             Rpm::from_revolutions_per_minute(-251.0),
-            Current::from_amps(30.0),
+            MotorTorque::from_newton_meters(18.0),
         ),
         SmoothSetpointDirection::Reverse
     );
     assert_eq!(
-        current_domain_direction(
+        motor_direction(
             Rpm::from_revolutions_per_minute(-250.0),
-            Current::from_amps(29.9),
+            MotorTorque::from_newton_meters(17.9),
+        ),
+        SmoothSetpointDirection::Reverse
+    );
+    assert_eq!(
+        motor_direction(
+            Rpm::from_revolutions_per_minute(-250.0),
+            MotorTorque::from_newton_meters(-18.0),
         ),
         SmoothSetpointDirection::Reverse
     );
@@ -390,7 +401,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         (-100.0, true, -3.0),
     ] {
         assert_eq!(
-            torque_target(balance, Current::from_amps(current), braking),
+            torque_target(balance, compat_torque(current), braking),
             AngleDegrees::from_degrees(expected),
         );
     }
@@ -403,7 +414,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
     };
     state.update_torque(
         balance,
-        Current::from_amps(100.0),
+        compat_torque(100.0),
         motor,
         VescSeconds::from_seconds(0.01),
     );
@@ -412,12 +423,76 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
     for _ in 0..100 {
         state.update_torque(
             balance,
-            Current::ZERO,
+            MotorTorque::ZERO,
             motor,
             VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.torque.value() < active);
+}
+
+#[test]
+fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
+    let mut config = FloatOutBoyConfigImage::defaults();
+    let mut editor = config.editor();
+    assert!(editor.set_torque_tilt_start_current(MotorCurrent::new(Current::from_amps(10.0))));
+    assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
+    assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
+    let current = Current::from_amps(30.0);
+    let low_torque_constant = MotorTorqueConstant::from_firmware_config(
+        vescpkg_rs::prelude::FocMotorFluxLinkage::new(
+            vescpkg_rs::prelude::FluxLinkage::from_webers(0.004),
+        ),
+        vescpkg_rs::prelude::MotorPoleCount::try_new(14).ok(),
+    );
+
+    let compatibility_target = torque_target(
+        config.balance(),
+        MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(current),
+        false,
+    );
+    let configured_target = torque_target(
+        config.balance(),
+        low_torque_constant.torque_from_current(current),
+        false,
+    );
+
+    assert_f32_eq!(compatibility_target.as_degrees(), 2.0);
+    assert_eq!(configured_target, AngleDegrees::ZERO);
+}
+
+#[test]
+fn atr_expected_acceleration_switches_slope_at_fifteen_newton_meters() {
+    let erpm = Rpm::from_revolutions_per_minute(1_000.0);
+    let ratio = PidScale::new(2.0);
+    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let factor = 2.0 * compatibility_constant;
+    let offset = 8.0 * compatibility_constant;
+
+    let below = atr_expected_acceleration(MotorTorque::from_newton_meters(14.0), erpm, ratio);
+    let boundary = atr_expected_acceleration(MotorTorque::from_newton_meters(15.0), erpm, ratio);
+    let above = atr_expected_acceleration(MotorTorque::from_newton_meters(16.0), erpm, ratio);
+
+    assert_f32_eq!(below, (14.0 - offset) / factor);
+    assert_f32_eq!(boundary, (15.0 - offset) / factor);
+    assert_f32_eq!(above, boundary + 1.0 / (factor * 1.3));
+}
+
+#[test]
+fn atr_expected_acceleration_preserves_torque_and_erpm_signs() {
+    let ratio = PidScale::new(1.0);
+    let forward = atr_expected_acceleration(
+        MotorTorque::from_newton_meters(20.0),
+        Rpm::from_revolutions_per_minute(1_000.0),
+        ratio,
+    );
+    let reverse = atr_expected_acceleration(
+        MotorTorque::from_newton_meters(-20.0),
+        Rpm::from_revolutions_per_minute(-1_000.0),
+        ratio,
+    );
+
+    assert_f32_eq!(forward, -reverse);
 }
 
 #[test]
@@ -438,7 +513,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     let mut state = RideModifierState::default();
     let accelerating = RideModifierInput {
         motor_erpm: Rpm::from_revolutions_per_minute(4_000.0),
-        filtered_current: Current::from_amps(30.0),
+        filtered_torque: compat_torque(30.0),
         motor_current: MotorCurrent::new(Current::from_amps(30.0)),
         ..input()
     };
@@ -457,7 +532,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     assert!((state.atr.speed_boost - 1.0 / 7.0).abs() < 0.000_001);
 
     let braking = RideModifierInput {
-        filtered_current: Current::from_amps(-30.0),
+        filtered_torque: compat_torque(-30.0),
         motor_current: MotorCurrent::new(Current::from_amps(-30.0)),
         ..accelerating
     };
@@ -476,7 +551,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     let before_recovery = state.atr.angle.value();
     for _ in 0..1_000 {
         let recovery = RideModifierInput {
-            filtered_current: Current::from_amps(8.0),
+            filtered_torque: compat_torque(8.0),
             motor_current: MotorCurrent::new(Current::from_amps(8.0)),
             ..accelerating
         };
