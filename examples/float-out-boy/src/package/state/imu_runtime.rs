@@ -938,7 +938,6 @@ fn advance_running_control(
     state.runtime_board_setpoint = board_setpoint;
     let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
         state.serialized_config.input_tilt_angle_limit(),
-        state.serialized_config.input_tilt_speed(),
         elapsed,
         phase.darkride_active,
     );
