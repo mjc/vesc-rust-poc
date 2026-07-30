@@ -1,4 +1,7 @@
-use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
+use crate::bms::{
+    FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsStartupGrace,
+    FloatOutBoyBmsThresholds,
+};
 use vescpkg_rs::{TimestampTicks, VescSeconds, WrappingTimer, timer_older};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +54,7 @@ impl BmsRuntimeState {
             enabled,
             self.sample,
             thresholds,
-            startup_timeout_elapsed,
+            FloatOutBoyBmsStartupGrace::from_elapsed(startup_timeout_elapsed),
         );
     }
 
