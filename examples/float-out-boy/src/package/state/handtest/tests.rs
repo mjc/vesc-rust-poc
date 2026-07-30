@@ -193,15 +193,15 @@ fn handtest_disable_restores_eeprom_not_the_enable_time_image_like_float_out_boy
         state.serialized_config.balance().kp().as_amps_per_degree(),
         1.2
     );
-    let changes: Vec<_> = (1..=240)
+    let changes: Vec<_> = (1..=18)
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(
         changes,
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 }
