@@ -1,4 +1,4 @@
-use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Rpm, SampleRate, VescSeconds};
+use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate, VescSeconds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SmoothSetpointDirection {
@@ -7,15 +7,19 @@ pub(super) enum SmoothSetpointDirection {
 }
 
 impl SmoothSetpointDirection {
-    pub(super) fn from_erpm(erpm: Rpm) -> Self {
-        if erpm.is_negative() {
-            Self::Reverse
-        } else {
+    pub(super) const fn from_forward(forward: bool) -> Self {
+        if forward {
             Self::Forward
+        } else {
+            Self::Reverse
         }
     }
 
-    const fn is_forward(self) -> bool {
+    pub(super) fn from_erpm(erpm: Rpm) -> Self {
+        Self::from_forward(!erpm.is_negative())
+    }
+
+    pub(super) const fn is_forward(self) -> bool {
         matches!(self, Self::Forward)
     }
 }
@@ -24,6 +28,12 @@ impl SmoothSetpointDirection {
 #[repr(transparent)]
 pub(super) struct SmoothSetpointMultiplier(f32);
 
+impl Default for SmoothSetpointMultiplier {
+    fn default() -> Self {
+        Self::ONE
+    }
+}
+
 impl SmoothSetpointMultiplier {
     pub(super) const ONE: Self = Self::from_factor(1.0);
 
@@ -31,31 +41,31 @@ impl SmoothSetpointMultiplier {
         Self(factor)
     }
 
-    const fn factor(self) -> f32 {
+    pub(super) const fn factor(self) -> f32 {
         self.0
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-struct FilterAlpha(f32);
+struct FilterAlpha(Ratio);
 
 impl FilterAlpha {
     fn from_time_constant(time_constant: VescSeconds, frequency: SampleRate) -> Self {
         let omega = (1.0 / (time_constant.as_seconds() * frequency.as_hertz())).min(0.5);
-        Self(omega - 0.5 * omega * omega)
+        Self(Ratio::clamped(omega - 0.5 * omega * omega))
     }
 
     const fn scaled(self, factor: f32) -> Self {
-        Self(self.0 * factor)
+        Self(Ratio::clamped(self.0.as_ratio() * factor))
     }
 
     const fn factor(self, multiplier: SmoothSetpointMultiplier) -> f32 {
-        self.0 * multiplier.factor()
+        self.0.as_ratio() * multiplier.factor()
     }
 
     const fn retained(self) -> f32 {
-        1.0 - self.0
+        self.0.complement().as_ratio()
     }
 }
 
@@ -251,8 +261,8 @@ mod tests {
             SampleRate::from_hertz(500.0),
         );
 
-        assert!((alpha.0 - 0.375).abs() < f32::EPSILON);
-        assert!((alpha.scaled(2.146).0 - 0.804_75).abs() < f32::EPSILON);
+        assert!((alpha.0.as_ratio() - 0.375).abs() < f32::EPSILON);
+        assert!((alpha.scaled(2.146).0.as_ratio() - 0.804_75).abs() < f32::EPSILON);
     }
 
     #[test]

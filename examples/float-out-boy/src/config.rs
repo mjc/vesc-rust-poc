@@ -834,8 +834,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_booster_current -> MotorCurrent, offset: 116, scale: 100.0;
         TORQUE_TILT_START_CURRENT_FIELD: CustomConfigMotorCurrentField => torque_tilt_start_current -> MotorCurrent, offset: 118, scale: 100.0;
         TORQUE_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => torque_tilt_angle_limit -> AngleDegrees, offset: 120, scale: 100.0;
-        TORQUE_TILT_ON_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_on_speed -> AngularVelocity, offset: 122, scale: 100.0;
-        TORQUE_TILT_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_off_speed -> AngularVelocity, offset: 124, scale: 100.0;
         TORQUE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_strength -> PidScale, offset: 126, scale: 1000.0;
         TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_regen_strength -> PidScale, offset: 128, scale: 1000.0;
         TURN_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => turn_tilt_strength -> PidScale, offset: 130, scale: 100.0;
@@ -848,9 +846,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         ATR_THRESHOLD_DOWN_FIELD: CustomConfigAngleField => atr_threshold_down -> AngleDegrees, offset: 151, scale: 100.0;
         ATR_SPEED_BOOST_FIELD: CustomConfigPidScaleField => atr_speed_boost -> PidScale, offset: 153, scale: 10000.0;
         ATR_ANGLE_LIMIT_FIELD: CustomConfigAngleField => atr_angle_limit -> AngleDegrees, offset: 155, scale: 100.0;
-        ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField => atr_on_speed -> AngularVelocity, offset: 157, scale: 100.0;
-        ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => atr_off_speed -> AngularVelocity, offset: 159, scale: 100.0;
-        ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField => atr_response_boost -> PidScale, offset: 161, scale: 1000.0;
         ATR_TRANSITION_BOOST_FIELD: CustomConfigPidScaleField => atr_transition_boost -> PidScale, offset: 163, scale: 1000.0;
         ATR_AMPS_ACCEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_accel_ratio -> PidScale, offset: 167, scale: 100.0;
         ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
@@ -860,6 +855,11 @@ impl FloatOutBoyBalanceConfig<'_> {
         TURN_TILT_ERPM_BOOST_END_FIELD: CustomConfigElectricalSpeedField => turn_tilt_erpm_boost_end -> Rpm, offset: 142, map: ElectricalSpeed::rpm;
         TURN_TILT_YAW_AGGREGATE_FIELD: CustomConfigWireByteField => turn_tilt_yaw_aggregate -> AngleDegrees, offset: 144, map: |value: WireByte| AngleDegrees::from_degrees(f32::from(value.as_u8()));
     }
+    const TORQUE_TILT_ON_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 122, scale: 100.0);
+    const TORQUE_TILT_OFF_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 124, scale: 100.0);
+    const ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 157, scale: 100.0);
+    const ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 159, scale: 100.0);
+    const ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 161, scale: 1000.0);
 
     pub(crate) fn turn_tilt_erpm_boost(self) -> u16 {
         u16::from_be_bytes([self.0.as_bytes()[140], self.0.as_bytes()[141]])
