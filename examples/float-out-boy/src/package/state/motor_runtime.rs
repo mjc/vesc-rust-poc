@@ -11,7 +11,16 @@ use vescpkg_rs::prelude::{
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
+const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
+
+pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
+    if configured.as_hertz() < 1.0 {
+        DEFAULT_CURRENT_FILTER_FREQUENCY
+    } else {
+        configured
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyMotorCurrentFilter {
@@ -95,7 +104,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(
-        state.serialized_config.motor_current_filter_frequency(),
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         state.frequency_trackers.main.filter_frequency(),
     );
     let directional_current = telemetry.directional_motor_current();
@@ -137,7 +146,7 @@ pub(super) fn reconfigure_current_filter(
     frequency: SampleRate,
 ) {
     state.motor_current_filter.configure(
-        state.serialized_config.motor_current_filter_frequency(),
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         frequency,
     );
 }
