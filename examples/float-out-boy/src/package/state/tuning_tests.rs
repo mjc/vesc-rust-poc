@@ -1,5 +1,6 @@
 use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
 use crate::beeper::FloatOutBoyBeeperLevel;
+use crate::config::FloatOutBoyParkingBrakeMode;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
 };
@@ -568,6 +569,74 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     assert_eq!(&bytes[119..121], &[0x04, 0xE2]);
     assert_eq!(bytes[248], 1);
     assert_eq!(state.tick_beeper(), None);
+}
+
+#[test]
+fn tune_other_decodes_cutoff_negative_variable_tilt_boundaries() {
+    let firmware = FirmwareTest::new();
+
+    for (encoded, expected_degrees) in [
+        (35, 3.5),
+        (100, 10.0),
+        (101, -0.1),
+        (110, -1.0),
+        (u8::MAX, -15.5),
+    ] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut packet = OTHER_TUNE_PACKET.to_vec();
+        packet[12] = encoded;
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+        assert_f32_eq!(
+            state.serialized_config.tiltback_variable_max().as_degrees(),
+            expected_degrees
+        );
+    }
+}
+
+#[test]
+fn tune_other_applies_cutoff_secondary_flags() {
+    let firmware = FirmwareTest::new();
+
+    for (flags, moving_faults_disabled, foot_beep_enabled, parking_brake_mode) in [
+        (0b0000, false, false, FloatOutBoyParkingBrakeMode::Always),
+        (0b0001, true, false, FloatOutBoyParkingBrakeMode::Always),
+        (0b0010, false, true, FloatOutBoyParkingBrakeMode::Always),
+        (0b0100, false, false, FloatOutBoyParkingBrakeMode::Idle),
+        (0b1000, false, false, FloatOutBoyParkingBrakeMode::Never),
+        (0b1111, true, true, FloatOutBoyParkingBrakeMode::Unknown(3)),
+    ] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut packet = OTHER_TUNE_PACKET.to_vec();
+        packet.push(flags);
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+        assert_eq!(
+            state.serialized_config.faults().moving_faults_disabled(),
+            moving_faults_disabled,
+            "flags {flags:#06b}",
+        );
+        assert_eq!(
+            state.serialized_config.foot_beep_enabled(),
+            foot_beep_enabled,
+            "flags {flags:#06b}",
+        );
+        assert_eq!(
+            state.serialized_config.motor_control().parking_brake_mode(),
+            parking_brake_mode,
+            "flags {flags:#06b}",
+        );
+    }
 }
 
 #[test]
