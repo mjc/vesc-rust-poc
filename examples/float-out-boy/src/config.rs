@@ -14,6 +14,8 @@ use crate::{
     },
 };
 use vescpkg_rs::CustomConfigResetField;
+#[cfg(test)]
+use vescpkg_rs::CustomConfigSampleRateField;
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
@@ -28,8 +30,8 @@ use vescpkg_rs::{
     CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
     CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
     CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
-    CustomConfigRatioField, CustomConfigSampleRateField, CustomConfigScaledVoltageField,
-    CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
+    CustomConfigRatioField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
+    CustomConfigWireByteField, WireByte,
 };
 
 mod flywheel;
@@ -62,6 +64,7 @@ vescpkg_rs::firmware_section_static!(
 // `third_party/float-out-boy/src/Makefile:12-29`.
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
+pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE: SampleRate = SampleRate::from_hertz(500.0);
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[179] != 0;
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: u8 = FLOAT_OUT_BOY_DEFAULT_CONFIG[227];
@@ -270,7 +273,7 @@ impl FloatOutBoyConfigImage {
             brkbooster_angle: balance.brake_booster_angle(),
             brkbooster_ramp: balance.brake_booster_ramp(),
             brkbooster_current: balance.brake_booster_current(),
-            hertz: self.startup().sample_rate(),
+            hertz: FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
         }
     }
 
@@ -436,7 +439,7 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
-    generated_config_setters! { set_hertz(sample_rate: SampleRate) => FloatOutBoyStartupConfig::HERTZ_FIELD; }
+    generated_config_setters! { set_legacy_hertz_for_test(sample_rate: SampleRate) => FloatOutBoyStartupConfig::LEGACY_HERTZ_FIELD; }
 
     generated_config_setters! { set_startup_pitch_tolerance(angle: AngleDegrees) => FloatOutBoyStartupConfig::PITCH_TOLERANCE_FIELD; }
 
@@ -661,15 +664,13 @@ vescpkg_rs::generated_custom_config_view! {
     }
 }
 
-// Upstream defines `hertz` at `third_party/float-out-boy/src/conf/settings.xml:223-246`,
-// then serializes startup tolerances/speed/flags at
-// `third_party/float-out-boy/src/conf/settings.xml:3966-3972`.
+// Refloat removed `hertz` in 7c72c6d3. Its v1.2.1 bytes remain reserved so
+// every later persisted field keeps the same offset.
 vescpkg_rs::generated_custom_config_view! {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub(crate) struct FloatOutBoyStartupConfig<'a>(&'a FloatOutBoyConfigImage);
     len: FLOAT_OUT_BOY_CONFIG_LEN;
     fields {
-        HERTZ_FIELD: CustomConfigSampleRateField => sample_rate -> SampleRate, offset: 18;
         PITCH_TOLERANCE_FIELD: CustomConfigAngleField => pitch_tolerance -> AngleDegrees, offset: 91, scale: 100.0;
         ROLL_TOLERANCE_FIELD: CustomConfigAngleField => roll_tolerance -> AngleDegrees, offset: 93, scale: 100.0;
         SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
@@ -681,8 +682,17 @@ vescpkg_rs::generated_custom_config_view! {
 }
 
 impl FloatOutBoyStartupConfig<'_> {
+    #[cfg(test)]
+    const LEGACY_HERTZ_FIELD: CustomConfigSampleRateField = vescpkg_rs::generated_custom_config_field!(CustomConfigSampleRateField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 18);
+
+    pub(crate) fn sample_rate(self) -> SampleRate {
+        let _ = self;
+        FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE
+    }
+
     pub(crate) fn loop_time_us(self) -> u32 {
-        crate::wire::saturating_trunc_f32_to_u32(1_000_000.0 / self.sample_rate().as_hertz())
+        let _ = self;
+        2_000
     }
 }
 

@@ -230,7 +230,7 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
     assert!(
         config
             .editor()
-            .set_hertz(vescpkg_rs::SampleRate::from_hertz(100.0))
+            .set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(100.0))
     );
     assert!(
         config
@@ -251,14 +251,14 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
     ));
 
     let base = state.all_data_payloads().base();
-    // Float Out Boy RUNNING `SAT_CENTERING` uses `startup_speed / hertz` from
-    // `third_party/float-out-boy/src/main.c:172` via
+    // Float Out Boy RUNNING `SAT_CENTERING` uses startup speed and the fixed
+    // 500 Hz main loop via
     // `get_setpoint_adjustment_step_size` at
     // `third_party/float-out-boy/src/main.c:304-310`; `rate_limitf` applies that
     // step toward target zero at `third_party/float-out-boy/src/utils.c:25-33`,
     // and the main loop publishes the new setpoint at
     // `third_party/float-out-boy/src/main.c:869-875`.
-    assert_f32_eq!(base.setpoints().board().angle().as_degrees(), 1.5);
+    assert_f32_eq!(base.setpoints().board().angle().as_degrees(), 1.9);
     assert_eq!(
         base.status().ride_state().setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::Centering

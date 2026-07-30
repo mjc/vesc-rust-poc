@@ -16,7 +16,7 @@ use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
 fn output_alpha() -> f32 {
-    let omega = 2.0 * core::f32::consts::PI * 25.0 / 832.0;
+    let omega = 2.0 * core::f32::consts::PI * 25.0 / 500.0;
     omega - 0.5 * omega * omega
 }
 

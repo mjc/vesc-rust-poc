@@ -15,7 +15,9 @@ use vescpkg_rs::{StatefulCustomConfigCallback, TimestampTicks};
 fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     let mut config = default_float_out_boy_config_bytes();
     config.edit_float_out_boy_config(|config| {
-        assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(f32::from(hertz))));
+        assert!(
+            config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(f32::from(hertz)))
+        );
         assert!(config.set_meta_is_default(false));
     });
     config
