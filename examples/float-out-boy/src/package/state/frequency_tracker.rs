@@ -1,4 +1,4 @@
-use vescpkg_rs::prelude::{SampleRate, TimestampTicks, VescSeconds};
+use vescpkg_rs::prelude::{Frequency, SampleRate, TimestampTicks, VescSeconds};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::timer_older_whole_seconds;
 
@@ -36,7 +36,10 @@ impl FrequencyTracker {
             elapsed: VescSeconds::from_seconds(0.0),
             frequency,
             filter_frequency: frequency,
-            alpha: ema_alpha(frequency),
+            alpha: super::motor_kinematics::refloat_ema_alpha(
+                Frequency::from_hertz(1.0),
+                frequency,
+            ),
             filter_last_update: now,
             first: true,
             running: false,
@@ -66,7 +69,10 @@ impl FrequencyTracker {
             && change > 0.03
         {
             self.filter_frequency = self.frequency;
-            self.alpha = ema_alpha(self.filter_frequency);
+            self.alpha = super::motor_kinematics::refloat_ema_alpha(
+                Frequency::from_hertz(1.0),
+                self.filter_frequency,
+            );
             self.filter_last_update = now;
             self.first = false;
             self.recalculations = self.recalculations.saturating_add(1);
@@ -94,11 +100,6 @@ impl FrequencyTracker {
     pub(super) const fn recalculations(self) -> u32 {
         self.recalculations
     }
-}
-
-fn ema_alpha(update_frequency: SampleRate) -> f32 {
-    let omega = (2.0 * core::f32::consts::PI / update_frequency.as_hertz()).min(0.5);
-    omega - 0.5 * omega * omega
 }
 
 #[cfg(any(test, target_arch = "arm"))]

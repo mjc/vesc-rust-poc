@@ -443,9 +443,14 @@ impl FloatOutBoyPackageState {
         );
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn allocate_motor_kinematics_history(&mut self) -> bool {
+        self.motor_kinematics.allocate_history()
+    }
+
     pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
         if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
-            motor_runtime::reconfigure_current_filter(self, frequency);
+            motor_runtime::reconfigure_filters(self, frequency);
         }
         let _ = self.frequency_trackers.imu.check(running, now);
     }
@@ -579,7 +584,7 @@ impl FloatOutBoyPackageState {
         // Keep the ARM refresh phases in separate frames so LTO cannot merge
         // their independent stack use inside VESC's fixed thread working area.
         self.refresh_config_runtime_state();
-        self.refresh_motor_runtime_state(telemetry);
+        self.refresh_motor_runtime_state_elapsed(telemetry, elapsed);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
         self.alert_tracker.update_firmware_fault(
             telemetry.firmware_fault(),
@@ -780,15 +785,30 @@ impl FloatOutBoyPackageState {
             || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
     }
 
-    #[cfg_attr(target_arch = "arm", inline(never))]
+    #[cfg(test)]
     pub(crate) fn refresh_motor_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
+        let elapsed = self
+            .serialized_config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .unwrap_or(vescpkg_rs::prelude::VescSeconds::ZERO);
+        self.refresh_motor_runtime_state_elapsed(telemetry, elapsed);
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    pub(crate) fn refresh_motor_runtime_state_elapsed(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) {
         #[cfg(test)]
         {
             if !self.motor_config_initialized {
                 self.refresh_motor_config_runtime_state(telemetry);
             }
         }
-        motor_runtime::refresh(self, telemetry);
+        motor_runtime::refresh(self, telemetry, elapsed);
     }
 
     pub(crate) fn refresh_motor_config_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {

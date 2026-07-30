@@ -4,7 +4,11 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
-use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, Rpm, VescSeconds};
+use vescpkg_rs::prelude::{
+    AngleDegrees, Current, Frequency, MotorCurrent, Rpm, SampleRate, VescSeconds,
+};
+
+const LOOP_HERTZ_COMPAT: f32 = 720.0;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct SmoothAngle {
@@ -453,24 +457,28 @@ impl RideModifierState {
             let sign = current.signum();
             (sign * 25.0 - erpm_sign * 8.0) / ratio + sign * (abs_torque - 25.0) / (ratio * 1.3)
         };
-        let mut forward = input.motor_erpm.is_positive();
-        if abs_erpm < 250.0 && abs_torque > 30.0 {
-            forward = expected > 0.0;
-        }
-        let new_diff = expected
-            - input
-                .acceleration
-                .as_revolutions_per_minute()
-                .clamp(-5.0, 5.0);
-        let accept = if abs_erpm > 2_000.0 {
-            0.1
+        let forward = if abs_erpm > 250.0 || current < 30.0 {
+            !input.motor_erpm.is_negative()
+        } else {
+            current >= 0.0
+        };
+        let measured =
+            (input.acceleration.as_revolutions_per_minute() / LOOP_HERTZ_COMPAT).clamp(-5.0, 5.0);
+        let new_diff = expected - measured;
+        let cutoff_hertz = if abs_erpm > 2_000.0 {
+            1.0
         } else if abs_erpm > 1_000.0 {
-            0.05
+            6.0
         } else if abs_erpm > 250.0 {
-            0.02
+            10.0
         } else {
             0.0
         };
+        let update_rate = SampleRate::from_hertz(1.0 / elapsed.as_seconds());
+        let accept = super::motor_kinematics::refloat_ema_alpha(
+            Frequency::from_hertz(cutoff_hertz),
+            update_rate,
+        );
         self.atr.accel_diff = if accept == 0.0 {
             0.0
         } else {

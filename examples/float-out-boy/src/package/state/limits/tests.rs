@@ -66,11 +66,11 @@ fn float_out_boy_limits_keep_source_backed_typed_values() {
 
     assert_eq!(
         traction_loss::ACCELERATION_DETECT,
-        Rpm::from_revolutions_per_minute(15.0)
+        Rpm::from_revolutions_per_minute(10_000.0)
     );
     assert_eq!(
         traction_loss::ACCELERATION_CLEAR,
-        Rpm::from_revolutions_per_minute(10.0)
+        Rpm::from_revolutions_per_minute(7_000.0)
     );
     assert_eq!(traction_loss::DUTY, SignedRatio::from_ratio_const(0.3));
     assert_eq!(
