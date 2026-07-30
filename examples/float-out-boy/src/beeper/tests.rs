@@ -48,7 +48,7 @@ fn beeper_enable_decodes_exact_float_out_boy_generated_offset() {
     assert!(config.editor().set_beeper_enabled(true));
 
     assert!(config.beeper_enabled());
-    assert_eq!(config.as_bytes()[242], 1);
+    assert_eq!(config.as_bytes()[248], 1);
 }
 
 #[test]
@@ -57,8 +57,8 @@ fn continuous_warning_flags_decode_exact_float_out_boy_generated_offsets() {
 
     assert!(config.foot_beep_enabled());
     assert!(!config.duty_beep_enabled());
-    assert_eq!(config.as_bytes()[28], 1);
-    assert_eq!(config.as_bytes()[50], 0);
+    assert_eq!(config.as_bytes()[48], 1);
+    assert_eq!(config.as_bytes()[70], 0);
 }
 
 #[test]

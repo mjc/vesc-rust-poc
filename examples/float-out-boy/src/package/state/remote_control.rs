@@ -1,13 +1,11 @@
-use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
 use crate::package::state::smooth_setpoint::{
     SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
-use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Rpm, SampleRate,
-    TimestampTicks, VescSeconds,
+    VescSeconds,
 };
 
 fn zero_motor_current() -> MotorCurrent {
@@ -140,6 +138,7 @@ impl RemoteControlState {
     pub(super) fn update_input_tilt(
         &mut self,
         angle_limit: AngleDegrees,
+        filter_time_constant: VescSeconds,
         sample_rate: SampleRate,
         darkride: bool,
     ) -> AngleDegrees {
@@ -148,13 +147,14 @@ impl RemoteControlState {
         sample_rate
             .sample_period()
             .map_or(self.input_tilt.value(), |elapsed| {
-                self.update_input_tilt_elapsed(angle_limit, elapsed, darkride)
+                self.update_input_tilt_elapsed(angle_limit, filter_time_constant, elapsed, darkride)
             })
     }
 
     pub(super) fn update_input_tilt_elapsed(
         &mut self,
         angle_limit: AngleDegrees,
+        filter_time_constant: VescSeconds,
         elapsed: VescSeconds,
         darkride: bool,
     ) -> AngleDegrees {
@@ -162,11 +162,13 @@ impl RemoteControlState {
         if !seconds.is_finite() || seconds <= 0.0 {
             return self.input_tilt.value();
         }
+        let speed_time_constant =
+            VescSeconds::from_seconds(filter_time_constant.as_seconds() * 0.25);
         self.input_tilt.configure(
             SmoothSetpointConfig {
-                time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_time_constant: VescSeconds::from_seconds(0.05),
-                off_speed_time_constant: VescSeconds::from_seconds(0.05),
+                time_constant: filter_time_constant,
+                on_speed_time_constant: speed_time_constant,
+                off_speed_time_constant: speed_time_constant,
                 winddown_time_constant: VescSeconds::from_seconds(0.2),
                 on_speed_up: AngularVelocity::from_degrees_per_second(100.0),
                 off_speed_up: AngularVelocity::from_degrees_per_second(100.0),
@@ -208,22 +210,8 @@ impl RemoteControlState {
         }
     }
 
-    pub(super) fn request_ready_current(
-        &mut self,
-        motor_erpm: Rpm,
-        remote_throttle: FloatOutBoyRemoteThrottleConfig<'_>,
-        system_time_ticks: TimestampTicks,
-        disengage_ticks: WrappingTimer,
-    ) -> Option<MotorCurrent> {
-        // C map: READY falls through to `do_rc_move(d)` after startup checks at
-        // `third_party/float-out-boy/src/main.c:1033-1069`.
-        self.request_active_move_current(motor_erpm).or_else(|| {
-            self.request_remote_throttle_current(
-                remote_throttle,
-                system_time_ticks,
-                disengage_ticks,
-            )
-        })
+    pub(super) fn request_ready_current(&mut self, motor_erpm: Rpm) -> Option<MotorCurrent> {
+        self.request_active_move_current(motor_erpm)
     }
 
     fn request_active_move_current(&mut self, motor_erpm: Rpm) -> Option<MotorCurrent> {
@@ -244,39 +232,6 @@ impl RemoteControlState {
             self.target = DeciampCurrent::from_deciamps(self.target.as_deciamps() / 2);
         }
         Some(self.current)
-    }
-
-    fn request_remote_throttle_current(
-        &mut self,
-        remote_throttle: FloatOutBoyRemoteThrottleConfig<'_>,
-        system_time_ticks: TimestampTicks,
-        disengage_ticks: WrappingTimer,
-    ) -> Option<MotorCurrent> {
-        // C map: READY remote throttle stays idle until the max current,
-        // grace period, and deadband checks all pass at
-        // `third_party/float-out-boy/src/main.c:291-298`.
-        let current_max = remote_throttle.current_max();
-        let input = self.input.ratio().as_ratio();
-        let grace_period = remote_throttle.grace_period();
-        if current_max <= MotorCurrent::new(Current::ZERO)
-            || !disengage_ticks.older_than(system_time_ticks, grace_period)
-            || input.abs() <= 0.02
-        {
-            self.current = zero_motor_current();
-            return None;
-        }
-
-        let servo = if remote_throttle.invert_throttle() {
-            -input
-        } else {
-            input
-        };
-        let target_current = current_max * servo;
-        // Upstream READY falls through to `do_rc_move(d)` at
-        // `third_party/float-out-boy/src/main.c:1069`, where the remote-throttle idle
-        // branch filters and requests `rc_current` at
-        // `third_party/float-out-boy/src/main.c:291-298`.
-        Some(self.filter_current(target_current))
     }
 
     fn filter_current(&mut self, target_current: MotorCurrent) -> MotorCurrent {

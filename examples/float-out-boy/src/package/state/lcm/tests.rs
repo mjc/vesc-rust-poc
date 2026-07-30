@@ -136,7 +136,7 @@ fn external_lcm_configuration_uses_serialized_led_brightness_like_refloat() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::External.id();
     assert!(state.store_serialized_config(&config));
 
     assert_eq!(
@@ -154,7 +154,7 @@ fn lights_control_is_temporary_across_later_config_writes() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::External.id();
     assert!(state.store_serialized_config(&config));
 
     assert_eq!(
@@ -176,7 +176,7 @@ fn lights_control_is_temporary_across_later_config_writes() {
     assert!(state.serialized_config.leds_enabled());
     assert!(state.serialized_config.headlights_enabled());
 
-    config[120] = 40;
+    config[137] = 40;
     assert!(state.store_serialized_config(&config));
     assert_eq!(
         dispatch(
@@ -201,7 +201,7 @@ fn lights_control_partial_mask_tracks_unoverridden_config_field() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::External.id();
     assert!(state.store_serialized_config(&config));
 
     assert_eq!(
@@ -221,7 +221,7 @@ fn lights_control_partial_mask_tracks_unoverridden_config_field() {
         [101, 20, 2]
     );
 
-    config[176] = 0;
+    config[181] = 0;
     assert!(state.store_serialized_config(&config));
     assert_eq!(
         dispatch(
@@ -263,7 +263,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
         payloads.mode4(),
     );
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
     let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
         &mut state,

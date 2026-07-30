@@ -18,7 +18,7 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
 
@@ -44,7 +44,7 @@ fn config_with_mahony_and_hardware_mode(
     hardware_mode: u8,
 ) -> FloatOutBoyConfigImage {
     let mut bytes = *state.serialized_config();
-    bytes[227] = hardware_mode;
+    bytes[232] = hardware_mode;
     let mut config = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid test config");
     assert!(config.editor().set_mahony_kp(mahony_kp));
     config
@@ -119,28 +119,27 @@ fn package_default_is_the_complete_source_startup_state() {
 }
 
 #[test]
-fn legacy_loop_hertz_is_ignored_without_shifting_stored_config() {
-    let _firmware = FirmwareTest::new();
-    let mut incoming = default_float_out_boy_config_bytes();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+fn refloat_1_2_1_config_signature_resets_to_cutoff_defaults() {
+    let firmware = FirmwareTest::new();
+    let mut legacy = [0; FLOAT_OUT_BOY_EEPROM_LEN];
+    legacy[..4].copy_from_slice(&[0x90, 0xb7, 0xa9, 0xba]);
+    firmware
+        .with_effects(|effects| firmware.eeprom().write_bytes(effects, &legacy))
+        .unwrap();
 
-    assert_eq!(state.configured_loop_time_us(), 2_000);
+    let state = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
 
-    incoming.edit_float_out_boy_config(|config| {
-        assert!(config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(50.0)));
-        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0)));
-        assert!(config.set_meta_is_default(false));
-    });
-    let expected = incoming;
-    assert!(state.store_serialized_config(&incoming));
-
-    // The old field is padding: accepting a v1.2.1 image must not shift or
-    // corrupt startup pitch or anything after it.
-    assert_eq!(state.configured_loop_time_us(), 2_000);
-    assert_eq!(*state.serialized_config.as_bytes(), expected);
     assert_eq!(
-        state.serialized_config.startup().pitch_tolerance(),
-        AngleDegrees::from_degrees(7.0)
+        state.config_load_outcome_for_test(),
+        FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage
+    );
+    assert_eq!(state.serialized_config, FloatOutBoyConfigImage::defaults());
+    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(
+        &state.serialized_config.as_bytes()[..4],
+        &[0x19, 0x1a, 0x6c, 0x1b]
     );
 }
 
@@ -637,7 +636,7 @@ fn successful_config_save_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
@@ -666,13 +665,15 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
     let firmware = FirmwareTest::new();
     let defaults = default_float_out_boy_config_bytes();
     let mut changed = defaults;
-    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+    for range in [4..18, 24..28, 87..95, 97..99, 108..118, 119..135, 143..180] {
         changed[range].fill(0xAA);
     }
-    changed[242] = 0;
+    changed[248] = 1;
     changed[48] = 0x55;
-    changed[75] = 0x66;
-    changed[118] = 0x77;
+    changed[95] = 0x66;
+    changed[105] = 0x77;
+    changed[135] = 0x88;
+    changed[180] = 0x99;
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.replace_serialized_config_for_test(
         &FloatOutBoyConfigImage::from_serialized(&changed).expect("valid test image"),
@@ -685,13 +686,15 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
         &[],
     ));
     let actual = state.serialized_config.as_bytes();
-    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+    for range in [4..18, 24..28, 87..95, 97..99, 108..118, 119..135, 143..180] {
         assert_eq!(&actual[range.clone()], &defaults[range]);
     }
-    assert_eq!(actual[242], defaults[242]);
+    assert_eq!(actual[248], defaults[248]);
     assert_eq!(actual[48], 0x55);
-    assert_eq!(actual[75], 0x66);
-    assert_eq!(actual[118], 0x77);
+    assert_eq!(actual[95], 0x66);
+    assert_eq!(actual[105], 0x77);
+    assert_eq!(actual[135], 0x88);
+    assert_eq!(actual[180], 0x99);
     assert_eq!(state.tick_beeper(), None);
 }
 
@@ -786,7 +789,7 @@ fn successful_lock_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
@@ -918,11 +921,8 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
     assert_f32_eq!(balance.brake_booster_angle().as_degrees(), 8.0);
     assert_f32_eq!(balance.brake_booster_ramp().as_degrees(), 4.0);
     assert_f32_eq!(balance.brake_booster_current().current().as_amps(), 0.0);
-    assert_f32_eq!(
-        config.remote_throttle().current_max().current().as_amps(),
-        0.0
-    );
-    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 10.0);
+    assert_eq!(config.remote().max_move_speed(), vescpkg_rs::Speed::ZERO);
+    assert_f32_eq!(config.remote().grace_period().as_seconds(), 10.0);
 }
 
 #[test]
@@ -932,9 +932,9 @@ fn default_led_runtime_flags_follow_generated_config_image() {
     assert!(config.leds_enabled());
     assert!(config.headlights_enabled());
     assert!(config.lights_off_when_lifted());
-    assert_eq!(config.as_bytes()[175], 1);
-    assert_eq!(config.as_bytes()[176], 1);
-    assert_eq!(config.as_bytes()[179], 1);
+    assert_eq!(config.as_bytes()[180], 1);
+    assert_eq!(config.as_bytes()[181], 1);
+    assert_eq!(config.as_bytes()[184], 1);
 }
 
 #[test]
@@ -946,14 +946,7 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
         assert!(
             config.set_startup_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(25.0,))
         );
-        assert!(
-            config.set_remote_throttle_current_max(vescpkg_rs::MotorCurrent::new(
-                vescpkg_rs::Current::from_amps(12.0),
-            ))
-        );
-        assert!(
-            config.set_remote_throttle_grace_period(vescpkg_rs::VescSeconds::from_seconds(1.5,))
-        );
+        assert!(config.set_remote_grace_period(vescpkg_rs::VescSeconds::from_seconds(1.5,)));
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
         assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.75)));
         assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.004)));
@@ -980,11 +973,8 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
         config.startup().startup_speed().as_degrees_per_second(),
         25.0
     );
-    assert_f32_eq!(
-        config.remote_throttle().current_max().current().as_amps(),
-        12.0
-    );
-    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 1.5);
+    assert_eq!(config.remote().max_move_speed(), vescpkg_rs::Speed::ZERO);
+    assert_f32_eq!(config.remote().grace_period().as_seconds(), 1.5);
     assert_f32_eq!(balance.kp().as_amps_per_degree(), 15.0);
     assert_f32_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.75);
     assert_f32_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.004);
@@ -1007,7 +997,7 @@ fn parking_brake_mode_field_decodes_known_and_rejects_unknown_values() {
         crate::config::FloatOutBoyParkingBrakeMode::Idle
     );
 
-    bytes[101] = 0xff;
+    bytes[118] = 0xff;
     assert_eq!(
         crate::config::FloatOutBoyParkingBrakeMode::from(0xff),
         crate::config::FloatOutBoyParkingBrakeMode::Unknown(0xff)
@@ -1031,7 +1021,7 @@ fn handtest_safety_overrides_encode_named_semantic_values() {
 
     // These currently unwired tune categories have no domain readers yet;
     // verify their generated float16 storage at the serializer boundary.
-    for offset in [67, 71, 126, 128, 130, 145, 147] {
+    for offset in [87, 91, 139, 141, 143, 156, 158] {
         assert_eq!(&config.as_bytes()[offset..offset + 2], &[0, 0]);
     }
 }
@@ -1343,13 +1333,13 @@ fn storing_led_config_defers_internal_renderer_replacement_to_the_aux_thread() {
     let mut bytes = default_float_out_boy_config_bytes();
 
     assert!(state.internal_leds.is_none());
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     assert!(state.internal_leds.is_none());
     state.apply_pending_internal_led_refresh();
     assert!(state.internal_leds.is_some());
 
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Off.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Off.id();
     assert!(state.store_serialized_config(&bytes));
     assert!(state.internal_leds.is_some());
     state.apply_pending_internal_led_refresh();
@@ -1361,7 +1351,7 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     state.apply_pending_internal_led_refresh();
 
@@ -1381,7 +1371,7 @@ fn storing_internal_led_config_while_both_footpads_are_pressed_still_sets_up() {
         FloatOutBoyMode::Normal,
     ));
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
 
     assert!(state.store_serialized_config(&bytes));
     state.apply_pending_internal_led_refresh();
@@ -1394,7 +1384,7 @@ fn startup_sets_up_internal_leds_after_the_physical_footpad_sample_even_when_bot
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     state.serialized_config = editable_config_from_bytes(&bytes);
 
     state.configure_loaded_config_on_main_thread();

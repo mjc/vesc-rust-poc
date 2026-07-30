@@ -859,7 +859,6 @@ fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
         ));
     edit_config(&mut state, |config| {
         assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
     });
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
@@ -1005,13 +1004,15 @@ fn running_torque_and_atr_update_runtime_setpoints_like_float_out_boy() {
         assert!(config.set_torque_tilt_start_current(MotorCurrent::new(Current::ZERO)));
         assert!(config.set_torque_tilt_strength(PidScale::new(0.1)));
         assert!(config.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_torque_tilt_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(
+            config.set_torque_tilt_on_speed_limit(AngularVelocity::from_degrees_per_second(100.0))
+        );
         assert!(config.set_atr_strength_up(PidScale::new(1.0)));
         assert!(config.set_atr_strength_down(PidScale::new(1.0)));
         assert!(config.set_atr_threshold_up(AngleDegrees::ZERO));
         assert!(config.set_atr_threshold_down(AngleDegrees::ZERO));
-        assert!(config.set_atr_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
-        assert!(config.set_atr_off_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_on_speed_limit(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_off_speed_limit(AngularVelocity::from_degrees_per_second(100.0)));
     });
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
@@ -1084,7 +1085,7 @@ fn tick_running_protective_pushback(
 
 fn enable_bms(state: &mut FloatOutBoyPackageState) {
     let mut config = default_float_out_boy_config_bytes();
-    config[265] = 1;
+    config[271] = 1;
     assert!(state.store_serialized_config(&config));
 }
 

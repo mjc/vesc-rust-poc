@@ -4,7 +4,10 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
 };
 use std::vec::Vec;
-use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent, TimestampTicks};
+use vescpkg_rs::prelude::{
+    AngleCurrentGain, AngleDegrees, AngularVelocity, Current, MahonyRollGain, MotorCurrent,
+    TimestampTicks,
+};
 use vescpkg_rs::test_support::FirmwareTest;
 
 const TUNE_DEFAULTS_PACKET: &[u8] = &[
@@ -322,30 +325,29 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
         (10, [0x65, 0x90]),
         (14, [0x00, 0x1E]),
         (16, [0x00, 0x50]),
-        (104, [0x00, 0xD2]),
-        (118, [0x07, 0x6C]),
-        (120, [0x01, 0x5E]),
-        (122, [0x00, 0x96]),
-        (124, [0x03, 0x84]),
-        (126, [0x00, 0x96]),
-        (128, [0x01, 0x2C]),
-        (130, [0x01, 0xF4]),
-        (132, [0x01, 0x2C]),
-        (136, [0x07, 0xD0]),
-        (145, [0x00, 0x00]),
-        (147, [0x02, 0xBC]),
-        (149, [0x01, 0x2C]),
-        (151, [0x01, 0x90]),
-        (153, [0xF2, 0x54]),
-        (155, [0x03, 0x84]),
-        (157, [0x01, 0x90]),
-        (159, [0x01, 0xF4]),
-        (161, [0x05, 0xDC]),
-        (163, [0x0B, 0xB8]),
-        (167, [0x03, 0x20]),
-        (169, [0x03, 0x84]),
-        (171, [0x00, 0x64]),
-        (173, [0x07, 0xD0]),
+        (121, [0x00, 0xD2]),
+        (135, [0x07, 0x6C]),
+        (137, [0x01, 0x5E]),
+        (34, [0x00, 0x96]),
+        (36, [0x03, 0x84]),
+        (139, [0x00, 0x96]),
+        (141, [0x01, 0x2C]),
+        (143, [0x01, 0xF4]),
+        (145, [0x01, 0x2C]),
+        (149, [0x07, 0xD0]),
+        (156, [0x00, 0x00]),
+        (158, [0x02, 0xBC]),
+        (160, [0x01, 0x2C]),
+        (162, [0x01, 0x90]),
+        (164, [0xF2, 0x54]),
+        (166, [0x03, 0x84]),
+        (24, [0x01, 0x90]),
+        (26, [0x01, 0xF4]),
+        (168, [0x0B, 0xB8]),
+        (172, [0x03, 0x20]),
+        (174, [0x03, 0x84]),
+        (176, [0x00, 0x64]),
+        (178, [0x07, 0xD0]),
     ] {
         assert_eq!(&bytes[offset..offset + 2], &expected);
     }
@@ -360,6 +362,44 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
             (52, FloatOutBoyBeeperLevel::High),
             (78, FloatOutBoyBeeperLevel::Low),
         ],
+    );
+}
+
+#[test]
+fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut packet = RUNTIME_TUNE_PACKET.to_vec();
+    packet.extend_from_slice(&[0x54, 0x63]);
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        &packet,
+    ));
+
+    let config = state.serialized_config;
+    assert_eq!(config.filter().mahony_kp_roll(), MahonyRollGain::new(1.4));
+    assert_eq!(
+        config.balance().turn_tilt_start_angle(),
+        AngleDegrees::from_degrees(5.0)
+    );
+    assert_eq!(
+        config.balance().atr_filter().on_speed_limit(),
+        AngularVelocity::from_degrees_per_second(6.0)
+    );
+    assert_eq!(
+        config.balance().atr_filter().off_speed_limit(),
+        AngularVelocity::from_degrees_per_second(12.0)
+    );
+    assert_eq!(
+        config.balance().torque_tilt_filter().on_speed_limit(),
+        AngularVelocity::from_degrees_per_second(6.0)
+    );
+    assert_eq!(
+        config.balance().torque_tilt_filter().off_speed_limit(),
+        AngularVelocity::from_degrees_per_second(9.0)
     );
 }
 
@@ -434,8 +474,8 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
     ));
 
     let bytes = state.serialized_config.as_bytes();
-    assert_eq!(&bytes[44..51], &[0x00, 0xFA, 0x01, 0x2C, 0x03, 0x52, 1]);
-    assert_eq!(&bytes[64..66], &[0x00, 0x96]);
+    assert_eq!(&bytes[64..71], &[0x00, 0xFA, 0x01, 0x2C, 0x03, 0x52, 1]);
+    assert_eq!(&bytes[84..86], &[0x00, 0x96]);
     let changes: Vec<_> = (1..=560)
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
@@ -468,20 +508,19 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     ));
 
     let bytes = state.serialized_config.as_bytes();
-    assert_eq!(&bytes[39..44], &[1, 0, 1, 1, 1]);
+    assert_eq!(&bytes[59..64], &[1, 0, 1, 1, 1]);
     assert_eq!(
-        &bytes[67..84],
+        &bytes[87..102],
         &[
-            0x13, 0x88, 0x07, 0xD0, 0x00, 0xFA, 0x01, 0x5E, 0x0F, 0xA0, 0x01, 0x2C, 2, 0x04, 0xB0,
-            0x03, 0x20
+            0x13, 0x88, 0x07, 0xD0, 0x00, 0xFA, 0x01, 0x5E, 0x0F, 0xA0, 0x01, 0x2C, 2, 0x04, 0xB0
         ]
     );
     assert_eq!(
-        &bytes[91..101],
+        &bytes[108..118],
         &[0x00, 0xC8, 0x05, 0xDC, 0x09, 0xC4, 7, 1, 1, 1]
     );
-    assert_eq!(&bytes[102..104], &[0x04, 0xE2]);
-    assert_eq!(bytes[242], 1);
+    assert_eq!(&bytes[119..121], &[0x04, 0xE2]);
+    assert_eq!(bytes[248], 1);
     assert_eq!(state.tick_beeper(), None);
 }
 

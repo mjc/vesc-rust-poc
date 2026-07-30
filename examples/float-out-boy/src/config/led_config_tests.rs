@@ -12,7 +12,7 @@ use super::{
 };
 
 #[test]
-fn decodes_refloat_1_2_1_default_led_config() {
+fn decodes_pinned_refloat_cutoff_default_led_config() {
     let (hardware, leds) = FloatOutBoyConfigImage::defaults()
         .led_configs()
         .expect("generated default LED fields are valid");
@@ -56,15 +56,15 @@ fn decodes_refloat_1_2_1_default_led_config() {
 }
 
 #[test]
-fn decodes_hardware_mode_from_refloat_byte_227() {
+fn decodes_hardware_mode_from_cutoff_byte_232() {
     let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    bytes[224] = FloatOutBoyLedColor::Fuchsia.id();
-    bytes[227] = FloatOutBoyLedMode::Both.id();
-    bytes[228] = FloatOutBoyLedPin::C9.id();
-    bytes[229] = FloatOutBoyLedPinConfig::NoPullup.id();
-    bytes[230] = FloatOutBoyLedStripOrder::Third.id();
-    bytes[232] = FloatOutBoyLedColorOrder::Wrgb.id();
-    bytes[233] = 1;
+    bytes[229] = FloatOutBoyLedColor::Fuchsia.id();
+    bytes[232] = FloatOutBoyLedMode::Both.id();
+    bytes[233] = FloatOutBoyLedPin::C9.id();
+    bytes[234] = FloatOutBoyLedPinConfig::NoPullup.id();
+    bytes[235] = FloatOutBoyLedStripOrder::Third.id();
+    bytes[237] = FloatOutBoyLedColorOrder::Wrgb.id();
+    bytes[238] = 1;
 
     let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
     let (hardware, _) = image.led_configs().expect("valid LED fields");
@@ -86,7 +86,7 @@ fn decodes_hardware_mode_from_refloat_byte_227() {
 
 #[test]
 fn serialized_image_rejects_out_of_range_refloat_led_enums() {
-    for offset in [177, 181, 184, 227, 228, 229, 230, 232] {
+    for offset in [182, 186, 189, 232, 233, 234, 235, 237] {
         let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
         bytes[offset] = u8::MAX;
 
@@ -99,7 +99,7 @@ fn serialized_image_rejects_out_of_range_refloat_led_enums() {
 
 #[test]
 fn led_validation_acceptance_matches_typed_decode_for_every_single_byte_mutation() {
-    for offset in 175..242 {
+    for offset in 180..247 {
         for value in u8::MIN..=u8::MAX {
             let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
             bytes[offset] = value;
