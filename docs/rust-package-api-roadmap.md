@@ -2,7 +2,7 @@
 
 This page preserves the original migration ladder for the Rust-backed VESC
 package work. The implemented general-purpose SDK surface and current
-compatibility evidence live in [the SDK compatibility matrix](sdk-compatibility.md)
+compatibility boundaries live in [the SDK capability reference](sdk-compatibility.md)
 and the pinned design roadmap. This workspace is unofficial and is not an
 official VESC project or endorsed Rust package API.
 
