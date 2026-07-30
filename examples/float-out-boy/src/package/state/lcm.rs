@@ -47,7 +47,7 @@ fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] 
     } else {
         (front, config.status.brightness_headlights_off)
     };
-    [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0) as u8)
+    [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0).clamp(0.0, 100.0) as u8)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,7 +113,7 @@ impl LcmState {
 
         self.name.fill(0);
         let payload = nul_terminated_prefix(payload);
-        let len = payload.len().min(MAX_LCM_NAME_LENGTH);
+        let len = payload.len().min(MAX_LCM_NAME_LENGTH - 1);
         self.name[..len].copy_from_slice(&payload[..len]);
     }
 
@@ -122,7 +122,7 @@ impl LcmState {
             return;
         }
 
-        self.brightness.copy_from_slice(&payload[..3]);
+        self.brightness = [payload[0], payload[1], payload[2]].map(|value| value.min(100));
         let extra = &payload[3..];
         self.payload_size = extra.len().min(MAX_LCM_PAYLOAD_LENGTH);
         self.payload[..self.payload_size].copy_from_slice(&extra[..self.payload_size]);

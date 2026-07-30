@@ -36,6 +36,42 @@ fn handle_packet(
     )
 }
 
+fn last_log(firmware: &FirmwareTest) -> Vec<u8> {
+    let mut bytes = [0; 128];
+    let len = firmware.copy_last_log(&mut bytes);
+    bytes[..len].to_vec()
+}
+
+#[test]
+fn app_data_callback_logs_exact_truncated_header_lengths_before_dispatch() {
+    let _state_lock = super::super::custom_config::lock_test_float_out_boy_config_state();
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let installed =
+        super::super::custom_config::install_test_float_out_boy_runtime_state(&mut state);
+    assert!(installed.is_some());
+
+    for (packet, expected) in [
+        (
+            [].as_slice(),
+            b"Received command data too short: 0 bytes.".as_slice(),
+        ),
+        (
+            [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID].as_slice(),
+            b"Received command data too short: 1 bytes.".as_slice(),
+        ),
+        (
+            [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID - 1, 0].as_slice(),
+            b"Invalid Package ID: 100".as_slice(),
+        ),
+    ] {
+        assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(
+            packet
+        ));
+        assert_eq!(last_log(&firmware), expected);
+    }
+}
+
 #[test]
 fn handler_rejects_empty_and_sends_valid_packets() {
     let app_data = TimestampTicks::from_ticks(0);
