@@ -1,7 +1,7 @@
 # VESC C ABI Boundary Inventory
 
 The authoritative complete STM32 inventory is generated from the pinned
-`vesc_c_if.h` by `vescpkg-rs-sys`; see [the SDK compatibility matrix](sdk-compatibility.md)
+`vesc_c_if.h` by `vescpkg-rs-sys`; see [the SDK capability reference](sdk-compatibility.md)
 and [the sys-crate test inventory](testing/vescpkg-rs-sys.md) for the 254-slot
 manifest, layout checks, and capability gates. This page preserves the original
 LispBM/extension boundary as a focused example of how raw ABI slots become safe
