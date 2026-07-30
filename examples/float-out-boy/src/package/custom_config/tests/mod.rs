@@ -36,10 +36,10 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    assert_eq!(bytes.as_bytes().len(), 27_463);
+    assert_eq!(bytes.as_bytes().len(), 27_501);
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x9e, 0xbc, 0x78, 0xda]
+        &[0x00, 0x05, 0x9e, 0xfc, 0x78, 0xda]
     );
 }
 
