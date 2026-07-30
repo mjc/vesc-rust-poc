@@ -1,3 +1,6 @@
+use super::smooth_setpoint::{
+    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
+};
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
@@ -75,7 +78,7 @@ struct YawMotion {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct TurnTiltState {
-    angle: SmoothAngle,
+    angle: SmoothSetpoint,
     yaw: YawMotion,
 }
 
@@ -320,7 +323,12 @@ pub(super) struct RideModifierInput {
 
 impl RideModifierState {
     pub(super) fn reset(&mut self) {
-        *self = Self::default();
+        self.nose = AngleDegrees::ZERO;
+        self.torque = SmoothAngle::default();
+        self.atr = AtrState::default();
+        self.brake = SmoothAngle::default();
+        self.turn.angle.reset();
+        self.turn.yaw = YawMotion::default();
     }
 
     pub(super) fn aggregate_yaw(
@@ -366,6 +374,7 @@ impl RideModifierState {
             return;
         }
         if matches!(input.wheelslip, FloatOutBoyWheelSlipState::Detected) {
+            self.configure_turn_setpoint(elapsed);
             self.wind_down_for_wheelslip();
             return;
         }
@@ -384,7 +393,7 @@ impl RideModifierState {
     fn wind_down_for_wheelslip(&mut self) {
         // C map: wheelslip freezes nose angling and winds modifier state down
         // at `third_party/float-out-boy/src/main.c:881-887`.
-        self.turn.angle.setpoint = self.turn.angle.setpoint * 0.995;
+        self.turn.angle.wind_down();
         self.torque.setpoint = self.torque.setpoint * 0.995;
         self.atr.angle.setpoint = self.atr.angle.setpoint * 0.995;
         self.atr.angle.target = self.atr.angle.target * 0.99;
@@ -398,7 +407,7 @@ impl RideModifierState {
         let modifier = if input.darkride {
             AngleDegrees::ZERO
         } else {
-            self.nose + self.turn.angle.setpoint + combined_torque
+            self.nose + self.turn.angle.value() + combined_torque
         };
         let board = input.base_setpoint + input.remote_setpoint + modifier;
         FloatOutBoyRealtimeRuntimeSetpoints::new(
@@ -406,7 +415,7 @@ impl RideModifierState {
             FloatOutBoyRealtimeRuntimeSetpoint::new(self.atr.angle.setpoint),
             FloatOutBoyRealtimeRuntimeSetpoint::new(self.brake.setpoint),
             FloatOutBoyRealtimeRuntimeSetpoint::new(self.torque.setpoint),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(self.turn.angle.setpoint),
+            FloatOutBoyRealtimeRuntimeSetpoint::new(self.turn.angle.value()),
             FloatOutBoyRealtimeRuntimeSetpoint::new(input.remote_setpoint),
         )
     }
@@ -592,14 +601,40 @@ impl RideModifierState {
         erpm: Rpm,
         elapsed: VescSeconds,
     ) {
+        if config.turn_tilt_strength().value() == 0.0 {
+            return;
+        }
+        self.configure_turn_setpoint(elapsed);
         // C map: turn target gates, boosts, direction, and ramp mirror
-        // `third_party/float-out-boy/src/turn_tilt.c:74-130`.
+        // `src/turn_tilt.c` at the pinned Refloat cutoff.
         let target = turn_target(&self.turn, config, erpm);
-        smooth_ramp(
-            &mut self.turn.angle,
+        self.turn.angle.update(
             target,
-            loop_step(config.turn_tilt_speed(), elapsed),
-            0.04,
+            SmoothSetpointDirection::from_erpm(erpm),
+            SmoothSetpointMultiplier::ONE,
+            elapsed,
+        );
+    }
+
+    fn configure_turn_setpoint(&mut self, elapsed: VescSeconds) {
+        let seconds = elapsed.as_seconds();
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return;
+        }
+        // Current Refloat removed the legacy serialized turn-tilt speed and
+        // configures its SmoothSetpoint at a fixed 20 degrees/second.
+        self.turn.angle.configure(
+            SmoothSetpointConfig {
+                time_constant: VescSeconds::from_seconds(0.2),
+                on_speed_time_constant: VescSeconds::from_seconds(0.1),
+                off_speed_time_constant: VescSeconds::from_seconds(0.1),
+                winddown_time_constant: VescSeconds::from_seconds(0.2),
+                on_speed_up: AngularVelocity::from_degrees_per_second(20.0),
+                off_speed_up: AngularVelocity::from_degrees_per_second(20.0),
+                on_speed_down: AngularVelocity::from_degrees_per_second(20.0),
+                off_speed_down: AngularVelocity::from_degrees_per_second(20.0),
+            },
+            SampleRate::from_hertz(1.0 / seconds),
         );
     }
 
