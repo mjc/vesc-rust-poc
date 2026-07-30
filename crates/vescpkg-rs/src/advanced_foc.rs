@@ -4,7 +4,7 @@
     reason = "error variants document failures"
 )]
 
-use crate::{DutyCycle, ElectricalSpeed, OpenLoopCurrent, OpenLoopPhase};
+use crate::{Current, DutyCycle, ElectricalSpeed, OpenLoopCurrent, OpenLoopPhase};
 
 /// Failure returned when the loaded firmware does not expose an open-loop slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +114,21 @@ impl AdvancedFoc {
         }
         .then_some(())
         .ok_or(AdvancedFocError::Unavailable)
+    }
+
+    /// Override field-weakening current through the firmware 7.00 ABI slot.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the current is physically safe for the motor,
+    /// controller, battery, and operating speed.
+    pub unsafe fn set_field_weakening_override(
+        &self,
+        current: Current,
+    ) -> Result<(), AdvancedFocError> {
+        unsafe { crate::ffi::foc_set_fw_override(current.as_amps()) }
+            .then_some(())
+            .ok_or(AdvancedFocError::Unavailable)
     }
 }
 
