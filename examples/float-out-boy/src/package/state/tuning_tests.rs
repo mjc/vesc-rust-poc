@@ -541,6 +541,48 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
 }
 
 #[test]
+fn tilt_tune_optional_speed_pushback_threshold_is_cutoff_compatible() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_speed_pushback_threshold(vescpkg_rs::WireByte::new(12))
+    );
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        TILT_TUNE_PACKET,
+    ));
+    assert_f32_eq!(
+        state
+            .serialized_config
+            .speed_pushback_threshold()
+            .as_kilometers_per_hour(),
+        12.0
+    );
+
+    let mut extended = TILT_TUNE_PACKET.to_vec();
+    extended.push(34);
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        &extended,
+    ));
+    assert_f32_eq!(
+        state
+            .serialized_config
+            .speed_pushback_threshold()
+            .as_kilometers_per_hour(),
+        34.0
+    );
+}
+
+#[test]
 fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());

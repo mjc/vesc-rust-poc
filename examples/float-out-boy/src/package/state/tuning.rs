@@ -271,8 +271,16 @@ pub(super) fn handle_runtime_tune_packet(
 }
 
 pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes: &[u8]) -> bool {
-    let Some([flags, return_speed, duty, duty_angle, duty_speed, ..]) =
-        float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::TuneTilt)
+    let Some(
+        [
+            flags,
+            return_speed,
+            duty,
+            duty_angle,
+            duty_speed,
+            optional @ ..,
+        ],
+    ) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::TuneTilt)
     else {
         return false;
     };
@@ -293,6 +301,12 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
                     0.0,
                     AngularVelocity::from_degrees_per_second,
                 ),
+            );
+        }
+        if let Some(speed_pushback) = optional.first() {
+            updated &= config.set(
+                C::SPEED_PUSHBACK_THRESHOLD_FIELD,
+                WireByte::new(*speed_pushback),
             );
         }
         updated
