@@ -8,7 +8,7 @@ use crate::domain::{
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
@@ -526,9 +526,8 @@ impl FloatOutBoyPackageState {
                 self.balance_loop.balance_current,
             ))
             .with_attitude(attitude)
-            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
-                self.motor_torque_constant
-                    .motor_current_from_torque(self.balance_loop.booster_torque),
+            .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::new(
+                self.balance_loop.booster_torque,
             ));
         self.all_data_payloads = payloads.with_base(base);
 

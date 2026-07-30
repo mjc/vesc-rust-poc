@@ -136,7 +136,7 @@ fn float_out_boy_main_thread_tick_drives_duty_haptic_through_typed_motor_audio()
         ),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(

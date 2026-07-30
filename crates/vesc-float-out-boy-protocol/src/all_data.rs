@@ -10,7 +10,7 @@ use super::all_data_wire::{
 };
 use super::realtime::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
     FloatOutBoyRealtimeRuntimeSetpoints,
 };
@@ -75,7 +75,7 @@ vescpkg_rs::typed_field_groups! {
         status: FloatOutBoyAllDataStatus => status => with_status,
         footpad: FloatOutBoyFootpadSample => footpad => with_footpad,
         setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints => with_setpoints,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current => with_booster_current,
+        booster_torque: FloatOutBoyRealtimeBoosterTorque => booster_torque => with_booster_torque,
         motor: FloatOutBoyAllDataMotorPayload => motor => with_motor,
     }
     /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
@@ -170,7 +170,7 @@ impl FloatOutBoyAllDataBasePayload {
 
         packet.push_scaled_i16(float_out_boy_degrees(self.attitude.pitch().angle()), 10.0);
         packet.push(float_out_boy_offset_scaled_u8(
-            self.booster_current.current().current().as_amps(),
+            self.booster_torque.torque().as_newton_meters(),
             1.0,
             128.0,
         ));

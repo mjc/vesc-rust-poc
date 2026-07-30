@@ -255,7 +255,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
                 crate::domain::FloatOutBoyFootpadState::None,
             ),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),

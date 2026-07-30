@@ -6,6 +6,147 @@
 
 use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 
+/// Signed motor torque in newton-metres.
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct MotorTorque(f32);
+
+impl MotorTorque {
+    /// Zero motor torque.
+    pub const ZERO: Self = Self(0.0);
+
+    /// Build a signed motor-torque value from newton-metres.
+    #[must_use]
+    pub const fn from_newton_meters(newton_meters: f32) -> Self {
+        Self(newton_meters)
+    }
+
+    /// Return this motor torque in newton-metres.
+    #[must_use]
+    pub const fn as_newton_meters(self) -> f32 {
+        self.0
+    }
+
+    /// Return the torque magnitude.
+    #[must_use]
+    pub const fn abs(self) -> Self {
+        Self(self.0.abs())
+    }
+
+    /// Return whether the torque is negative.
+    #[must_use]
+    pub const fn is_negative(self) -> bool {
+        self.0 < 0.0
+    }
+
+    /// Return whether the torque is positive.
+    #[must_use]
+    pub const fn is_positive(self) -> bool {
+        self.0 > 0.0
+    }
+
+    /// Return a factor carrying the torque sign.
+    #[must_use]
+    pub const fn signum(self) -> f32 {
+        if self.is_negative() { -1.0 } else { 1.0 }
+    }
+
+    /// Add another torque.
+    #[must_use]
+    pub fn plus(self, other: Self) -> Self {
+        self + other
+    }
+
+    /// Subtract another torque.
+    #[must_use]
+    pub fn minus(self, other: Self) -> Self {
+        self - other
+    }
+
+    /// Scale this torque.
+    #[must_use]
+    pub fn scaled_by(self, factor: f32) -> Self {
+        self * factor
+    }
+
+    /// Linearly interpolate toward a target torque.
+    #[must_use]
+    pub fn lerp(self, target: Self, alpha: f32) -> Self {
+        self + (target - self) * alpha
+    }
+}
+
+/// Positive motor-torque limit magnitude.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct MotorTorqueLimit(MotorTorque);
+
+impl MotorTorqueLimit {
+    /// Normalize a configured torque limit to its positive magnitude.
+    #[must_use]
+    pub const fn new(torque: MotorTorque) -> Self {
+        Self(torque.abs())
+    }
+
+    /// Clamp signed motor torque to this positive magnitude.
+    #[must_use]
+    pub fn clamp(self, torque: MotorTorque) -> MotorTorque {
+        MotorTorque::from_newton_meters(
+            torque
+                .as_newton_meters()
+                .clamp(-self.0.as_newton_meters(), self.0.as_newton_meters()),
+        )
+    }
+}
+
+impl MotorTorque {
+    /// Clamp this signed torque to a positive limit magnitude.
+    #[must_use]
+    pub fn clamped_to(self, limit: MotorTorqueLimit) -> Self {
+        limit.clamp(self)
+    }
+}
+
+impl core::ops::Add for MotorTorque {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl core::ops::Sub for MotorTorque {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl core::ops::Mul<f32> for MotorTorque {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self(self.0 * rhs)
+    }
+}
+
+impl core::ops::Div<f32> for MotorTorque {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self(self.0 / rhs)
+    }
+}
+
+impl core::ops::Neg for MotorTorque {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]

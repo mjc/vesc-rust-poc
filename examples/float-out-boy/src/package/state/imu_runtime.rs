@@ -14,7 +14,7 @@ use super::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyPackageState, FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
     FloatOutBoyWheelSlipState, Imu, MotorCurrent, RideModifierInput, Rpm, TimestampTicks,
@@ -979,9 +979,7 @@ fn advance_running_control(
         let gyro = imu.angular_rate();
         let mut loop_state = state.balance_loop;
         loop_state.balance_current = base.balance_current().current();
-        loop_state.booster_torque = state
-            .motor_torque_constant
-            .torque_from_motor_current(base.booster_current().current());
+        loop_state.booster_torque = base.booster_torque().torque();
         let balance_loop = loop_state.advance_balance_loop_elapsed(
             state.runtime_balance_loop_config(),
             LoopInput {
@@ -1005,10 +1003,8 @@ fn advance_running_control(
         );
         state.balance_loop = balance_loop.state;
         *base = base
-            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
-                state
-                    .motor_torque_constant
-                    .motor_current_from_torque(state.balance_loop.booster_torque),
+            .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::new(
+                state.balance_loop.booster_torque,
             ))
             .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
                 state.balance_loop.balance_current,
@@ -1054,7 +1050,7 @@ pub(super) fn refresh(
             .with_setpoints(
                 FloatOutBoyRealtimeRuntimeSetpoints::default().with_board(board_setpoint),
             )
-            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::default())
+            .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::default())
             .with_motor(
                 base.motor()
                     .with_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),

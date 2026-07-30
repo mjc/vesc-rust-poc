@@ -5,7 +5,7 @@ use crate::domain::{
     FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyDarkRideState,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use crate::motor_torque::MotorTorqueConstant;
@@ -418,7 +418,9 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             no_footpads,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+            ),
             motor,
         ),
         payloads.mode2(),

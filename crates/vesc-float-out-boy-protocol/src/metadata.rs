@@ -9,7 +9,7 @@ pub const FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN: usize = 60;
 // Float Out Boy v1.2.1 `cmd_realtime_data_ids` writes the counted ID-list packet at
 // `third_party/float-out-boy/src/main.c:1876-1901`.
 /// Length of the FOB realtime-data ID-list response.
-pub const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
+pub const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 404;
 
 const FLOAT_OUT_BOY_PACKAGE_NAME: &[u8] = b"Float Out Boy";
 const FLOAT_OUT_BOY_VERSION_SUFFIX: &[u8] = b"";
@@ -59,7 +59,7 @@ vescpkg_rs::firmware_section_static!(
             \x0fbalance_current\
             \x0eatr.accel_diff\
             \x0fatr.speed_boost\
-            \x0fbooster.current"
+            \x0ebooster.torque"
 );
 
 /// Fixed-capacity FOB package-info response.

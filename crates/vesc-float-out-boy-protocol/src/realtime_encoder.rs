@@ -77,7 +77,7 @@ pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
         packet.push_float32_auto(payloads.mode4().current().current().as_amps());
         packet.push_float32_auto(payloads.mode4().voltage().voltage().as_volts());
     } else {
-        packet.push_float32_auto(base.booster_current().current().current().as_amps());
+        packet.push_float32_auto(base.booster_torque().torque().as_newton_meters());
         packet.push_float32_auto(motor.directional_motor_current().current().as_amps());
     }
     packet.push_float32_auto(remote_input.ratio().as_ratio());
