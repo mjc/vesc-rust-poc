@@ -1001,6 +1001,118 @@ mod tests {
         assert!(!xml.to_ascii_lowercase().contains("refloat"));
     }
 
+    fn xml_tag_value<'a>(block: &'a str, tag: &str) -> Option<&'a str> {
+        let opening = format!("<{tag}>");
+        let closing = format!("</{tag}>");
+        let value = block.split_once(&opening)?.1.split_once(&closing)?.0;
+        Some(value.trim())
+    }
+
+    fn integer_parameter_blocks(xml: &str) -> Vec<(String, &str)> {
+        let mut blocks = Vec::new();
+        let mut offset = 0;
+        for line in xml.split_inclusive('\n') {
+            let trimmed = line.trim();
+            if line.starts_with("        <")
+                && !trimmed.starts_with("</")
+                && let Some(name) = trimmed
+                    .strip_prefix('<')
+                    .and_then(|value| value.strip_suffix('>'))
+            {
+                let closing = format!("        </{name}>");
+                let remaining = &xml[offset..];
+                if let Some(end) = remaining.find(&closing) {
+                    let block = &remaining[..end + closing.len()];
+                    if xml_tag_value(block, "type") == Some("2") {
+                        blocks.push((name.to_owned(), block));
+                    }
+                }
+            }
+            offset += line.len();
+        }
+        blocks
+    }
+
+    fn integer_wire_range(vtx: u8) -> Option<(i64, i64)> {
+        match vtx {
+            1 => Some((i64::from(u8::MIN), i64::from(u8::MAX))),
+            2 => Some((i64::from(i8::MIN), i64::from(i8::MAX))),
+            3 => Some((i64::from(u16::MIN), i64::from(u16::MAX))),
+            4 => Some((i64::from(i16::MIN), i64::from(i16::MAX))),
+            5 => Some((i64::from(u32::MIN), i64::from(u32::MAX))),
+            6 => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
+            _ => None,
+        }
+    }
+
+    fn integer_wire_round_trip(value: i64, vtx: u8) -> i64 {
+        match vtx {
+            1 => i64::from(u8::try_from(value).expect("u8 range")),
+            2 => i64::from(i8::try_from(value).expect("i8 range")),
+            3 => i64::from(u16::try_from(value).expect("u16 range")),
+            4 => i64::from(i16::try_from(value).expect("i16 range")),
+            5 => i64::from(u32::try_from(value).expect("u32 range")),
+            6 => i64::from(i32::try_from(value).expect("i32 range")),
+            _ => panic!("unsupported integer parameter wire type"),
+        }
+    }
+
+    #[test]
+    fn float_out_boy_checked_config_source_matches_packaged_blob() {
+        let compressed =
+            include_bytes!("../../../examples/float-out-boy/src/conf/float_out_boy_config.dat");
+        let expected = include_str!("../../../examples/float-out-boy/src/conf/settings.xml");
+        let mut actual = String::new();
+        ZlibDecoder::new(&compressed[4..])
+            .read_to_string(&mut actual)
+            .expect("Float Out Boy config XML");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn float_out_boy_integer_ui_ranges_fit_wire_types() {
+        let xml = include_str!("../../../examples/float-out-boy/src/conf/settings.xml");
+
+        for (name, block) in integer_parameter_blocks(xml) {
+            let min = xml_tag_value(block, "minInt")
+                .expect("integer parameter minimum")
+                .parse::<i64>()
+                .expect("integer parameter minimum value");
+            let max = xml_tag_value(block, "maxInt")
+                .expect("integer parameter maximum")
+                .parse::<i64>()
+                .expect("integer parameter maximum value");
+            let vtx = xml_tag_value(block, "vTx")
+                .expect("integer parameter wire type")
+                .parse::<u8>()
+                .expect("integer parameter wire type value");
+            let (wire_min, wire_max) =
+                integer_wire_range(vtx).expect("supported integer parameter wire type");
+
+            assert!(
+                (wire_min..=wire_max).contains(&min) && (wire_min..=wire_max).contains(&max),
+                "{name} range {min}..={max} does not fit vTx {vtx} range {wire_min}..={wire_max}"
+            );
+            assert_eq!(integer_wire_round_trip(min, vtx), min, "{name} minimum");
+            assert_eq!(integer_wire_round_trip(max, vtx), max, "{name} maximum");
+        }
+    }
+
+    #[test]
+    fn float_out_boy_runtime_allocation_retains_pointer_provenance() {
+        let source = include_str!(
+            "../../../examples/float-out-boy/src/package/state/internal_leds/hardware.rs"
+        );
+        let runtime_owner = source
+            .split("pub(super) struct PulseAllocation")
+            .next()
+            .expect("runtime allocation source");
+
+        assert!(!runtime_owner.contains("address: usize"));
+        assert!(!runtime_owner.contains("without_provenance"));
+    }
+
     #[test]
     fn float_out_boy_qml_migrates_legacy_tune_archive_identity() {
         let qml = include_str!("../../../examples/float-out-boy/package/ui.qml");

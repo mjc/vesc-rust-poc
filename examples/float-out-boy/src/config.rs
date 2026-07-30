@@ -41,13 +41,13 @@ mod handtest_safety;
 
 pub(crate) use flywheel::FloatOutBoyFlywheelConfig;
 
-// Float Out Boy v1.2.1 generated custom-config XML blob. Upstream generates this from
-// `third_party/float-out-boy/src/conf/settings.xml` via `third_party/float-out-boy/src/Makefile:28-31`
-// and exposes `data_float_out_boy_config_` through `get_cfg_xml` at
+// Float Out Boy v1.2.1 generated custom-config XML blob. The checked source is
+// `conf/settings.xml`; upstream generates the equivalent data from that file via
+// `third_party/float-out-boy/src/Makefile:28-31` and exposes `data_float_out_boy_config_` through `get_cfg_xml` at
 // `third_party/float-out-boy/src/main.c:2388-2396`.
 vescpkg_rs::firmware_section_static!(
     ".text.float_out_boy_config_xml",
-    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 24_809] = *include_bytes!("conf/float_out_boy_config.dat")
+    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_763] = *include_bytes!("conf/float_out_boy_config.dat")
 );
 
 // Float Out Boy v1.2.1 generated serialized default custom config. Upstream
@@ -183,13 +183,15 @@ mod led_config_tests {
     }
 
     #[test]
-    fn rejects_out_of_range_refloat_led_enums() {
+    fn serialized_image_rejects_out_of_range_refloat_led_enums() {
         for offset in [177, 181, 184, 227, 228, 229, 230, 232] {
             let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
             bytes[offset] = u8::MAX;
-            let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
 
-            assert!(image.led_configs().is_none(), "offset {offset}");
+            assert!(
+                FloatOutBoyConfigImage::from_serialized(&bytes).is_none(),
+                "offset {offset}"
+            );
         }
     }
 }
@@ -275,9 +277,24 @@ impl FloatOutBoyConfigImage {
         // `third_party/float-out-boy/src/main.c:1178-1185` and
         // `third_party/float-out-boy/src/main.c:2368-2386`.
         let bytes = <&[u8; FLOAT_OUT_BOY_CONFIG_LEN]>::try_from(bytes).ok()?;
-        bytes
-            .starts_with(&FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES)
-            .then_some(Self(CustomConfigImage::new(*bytes)))
+        if !bytes.starts_with(&FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES) {
+            return None;
+        }
+        Self::has_valid_semantics(bytes).then(|| Self(CustomConfigImage::new(*bytes)))
+    }
+
+    fn has_valid_semantics(bytes: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
+        let sample_rate = u16::from_be_bytes([bytes[18], bytes[19]]);
+        (50..=4_000).contains(&sample_rate)
+            && u16::from_be_bytes([bytes[85], bytes[86]]) < 10_000
+            && bytes[79] <= 2
+            && bytes[101] <= 2
+            && FloatOutBoyLedConfigDecoder::new(bytes).validate().is_some()
+            && u16::from_be_bytes([bytes[142], bytes[143]]) > 0
+            && bytes[144] > 0
+            && u16::from_be_bytes([bytes[244], bytes[245]]) > 0
+            && u16::from_be_bytes([bytes[248], bytes[249]]) > 0
+            && u16::from_be_bytes([bytes[252], bytes[253]]) > 0
     }
 
     pub(crate) const fn as_bytes(&self) -> &[u8; FLOAT_OUT_BOY_CONFIG_LEN] {
@@ -514,21 +531,30 @@ pub(crate) struct FloatOutBoyHapticConfig<'a>(&'a FloatOutBoyConfigImage);
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHapticConfig<'_> {
     const DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 244, scale: 1.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 246, scale: 10.0);
     const ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 248, scale: 1.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 250, scale: 10.0);
     const VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 252, scale: 1.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 254, scale: 10.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 256, scale: 10000.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const CURRENT_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 258, scale: 10000.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const MIN_STRENGTH_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 260, scale: 10000.0);
+    #[cfg(any(test, target_arch = "arm"))]
     const MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 262);
+    #[cfg(any(test, target_arch = "arm"))]
     const STRENGTH_CURVATURE_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 263, scale: 1000.0);
 
     pub(crate) fn duty_frequency(self) -> AudioFrequency {
         AudioFrequency::new(generated_field(Self::DUTY_FREQUENCY_FIELD.read(self.0)))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn duty_strength(self) -> AudioVoltage {
         AudioVoltage::new(generated_field(Self::DUTY_STRENGTH_FIELD.read(self.0)))
     }
@@ -537,6 +563,7 @@ impl FloatOutBoyHapticConfig<'_> {
         AudioFrequency::new(generated_field(Self::ERROR_FREQUENCY_FIELD.read(self.0)))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn error_strength(self) -> AudioVoltage {
         AudioVoltage::new(generated_field(Self::ERROR_STRENGTH_FIELD.read(self.0)))
     }
@@ -545,22 +572,27 @@ impl FloatOutBoyHapticConfig<'_> {
         AudioFrequency::new(generated_field(Self::VIBRATE_FREQUENCY_FIELD.read(self.0)))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn vibrate_strength(self) -> MotorCurrent {
         generated_field(Self::VIBRATE_STRENGTH_FIELD.read(self.0))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn duty_solid_offset(self) -> Ratio {
         generated_field(Self::DUTY_SOLID_OFFSET_FIELD.read(self.0))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn current_threshold(self) -> Ratio {
         generated_field(Self::CURRENT_THRESHOLD_FIELD.read(self.0))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn min_strength(self) -> Ratio {
         generated_field(Self::MIN_STRENGTH_FIELD.read(self.0))
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn max_strength_speed(self) -> Speed {
         generated_field(Self::MAX_STRENGTH_SPEED_FIELD.read(self.0)).scaled(
             1.0,
@@ -569,6 +601,7 @@ impl FloatOutBoyHapticConfig<'_> {
         )
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn strength_curvature(self) -> Ratio {
         generated_field(Self::STRENGTH_CURVATURE_FIELD.read(self.0))
     }
@@ -658,6 +691,49 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
             .with_rear_strip(rear_strip);
 
         (self.offset == 242).then_some((hardware, leds))
+    }
+
+    fn validate(mut self) -> Option<()> {
+        self.boolean()?;
+        self.boolean()?;
+        self.transition()?;
+        self.transition()?;
+        self.boolean()?;
+        self.boolean()?;
+        for _ in 0..4 {
+            self.validate_bar()?;
+        }
+        self.ratio(10_000.0)?;
+        self.ratio(10_000.0)?;
+        self.boolean()?;
+        self.ratio(10_000.0)?;
+        self.ratio(10_000.0)?;
+        self.u16()?;
+        self.validate_bar()?;
+        self.mode()?;
+        self.pin()?;
+        self.pin_config()?;
+        for _ in 0..3 {
+            self.validate_strip()?;
+        }
+        (self.offset == 242).then_some(())
+    }
+
+    fn validate_bar(&mut self) -> Option<()> {
+        self.animation_mode()?;
+        self.ratio(10_000.0)?;
+        self.color()?;
+        self.color()?;
+        self.u16()?;
+        Some(())
+    }
+
+    fn validate_strip(&mut self) -> Option<()> {
+        self.strip_order()?;
+        self.byte()?;
+        self.color_order()?;
+        self.boolean()?;
+        Some(())
     }
 
     fn byte(&mut self) -> Option<u8> {

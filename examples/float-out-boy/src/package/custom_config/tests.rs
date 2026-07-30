@@ -36,10 +36,10 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    assert_eq!(bytes.as_bytes().len(), 24_809);
+    assert_eq!(bytes.as_bytes().len(), 25_763);
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x5c, 0xd3, 0x78, 0xda]
+        &[0x00, 0x05, 0x5c, 0xce, 0x78, 0xda]
     );
 }
 
@@ -172,6 +172,74 @@ fn custom_config_set_callback_rejects_bad_signature_like_float_out_boy() {
     // C map: `third_party/float-out-boy/src/conf/confparser.c:187-190` rejects bad signatures before
     // any field storage.
     assert_eq!(*current.as_bytes(), default_float_out_boy_config_bytes());
+}
+
+#[test]
+fn custom_config_set_callback_rejects_zero_hertz_before_persistence() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let incoming = float_out_boy_config_with_hertz(0);
+
+    assert!(!set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
+    assert_ne!(state.configured_loop_time_us(), u32::MAX);
+    assert_eq!(
+        *FloatOutBoyCustomConfig::current_config(&state).as_bytes(),
+        default_float_out_boy_config_bytes()
+    );
+}
+
+#[test]
+fn custom_config_set_callback_rejects_full_input_deadband() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let mut incoming = default_float_out_boy_config_bytes();
+    incoming.edit_float_out_boy_config(|config| {
+        assert!(config.set_input_tilt_deadband(vescpkg_rs::Ratio::from_ratio_const(1.0)));
+    });
+
+    assert!(!set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
+    assert_eq!(
+        *FloatOutBoyCustomConfig::current_config(&state).as_bytes(),
+        default_float_out_boy_config_bytes()
+    );
+}
+
+#[test]
+fn custom_config_set_callback_rejects_zero_runtime_divisors() {
+    let _firmware = FirmwareTest::new();
+    let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    for offset in [142, 244, 248, 252] {
+        let mut incoming = default_float_out_boy_config_bytes();
+        incoming[offset..offset + 2].fill(0);
+        assert!(
+            state.prepare_serialized_config(&incoming).is_none(),
+            "zero divisor at offset {offset} must be rejected"
+        );
+    }
+
+    let mut incoming = default_float_out_boy_config_bytes();
+    incoming[144] = 0;
+    assert!(state.prepare_serialized_config(&incoming).is_none());
+}
+
+#[test]
+fn custom_config_set_callback_rejects_invalid_modes_and_led_layout() {
+    let _firmware = FirmwareTest::new();
+    let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    for (offset, value) in [(79, 3), (101, u8::MAX), (227, u8::MAX)] {
+        let mut incoming = default_float_out_boy_config_bytes();
+        incoming[offset] = value;
+        assert!(
+            state.prepare_serialized_config(&incoming).is_none(),
+            "invalid mode at offset {offset} must be rejected"
+        );
+    }
 }
 
 #[test]
