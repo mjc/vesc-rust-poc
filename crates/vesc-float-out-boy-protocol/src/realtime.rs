@@ -186,8 +186,8 @@ realtime_data_items! {
         ImuPitch => "pitch" => crate::degrees(attitude.pitch().angle()),
         ImuBalancePitch => "balance_pitch" => crate::degrees(attitude.balance_pitch().angle()),
         ImuRoll => "roll" => crate::degrees(attitude.roll().angle()),
-        FootpadAdc1 => "adc_left" => base.footpad().adc1_volts(),
-        FootpadAdc2 => "adc_right" => base.footpad().adc2_volts(),
+        FootpadAdc1 => "adc_left" => base.footpad().left_voltage().as_volts(),
+        FootpadAdc2 => "adc_right" => base.footpad().right_voltage().as_volts(),
         RemoteInput => "remote.input" => live.remote_input().ratio().as_ratio(),
     }
     runtime {

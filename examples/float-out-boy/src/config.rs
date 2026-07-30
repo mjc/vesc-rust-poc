@@ -4,6 +4,8 @@
 
 use crate::balance::LoopConfig;
 use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
+#[cfg(any(test, target_arch = "arm"))]
+use crate::domain::FloatOutBoyFootpadAdcMapping;
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
@@ -205,6 +207,8 @@ impl FloatOutBoyConfigImage {
         INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField => input_tilt_remote_type -> u8, offset: 99, map: WireByte::as_u8;
         INPUT_TILT_INVERT_FIELD: CustomConfigFlagField => input_tilt_inverted -> bool, offset: 102;
         INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField => input_tilt_deadband -> Ratio, offset: 103, scale: 10000.0;
+        #[cfg(any(test, target_arch = "arm"))]
+        FOOTPAD_ADC_SWAP_FIELD: CustomConfigFlagField => footpad_adc_swapped -> bool, offset: 247;
         SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField => speed_pushback_threshold -> Speed, offset: 83, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 232, map: WireByte::as_u8;
     }
@@ -322,6 +326,11 @@ impl FloatOutBoyConfigImage {
 
     pub(crate) fn editor(&mut self) -> FloatOutBoyConfigEditor<'_> {
         FloatOutBoyConfigEditor(self.0.editor())
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn footpad_adc_mapping(&self) -> FloatOutBoyFootpadAdcMapping {
+        FloatOutBoyFootpadAdcMapping::from_swapped(self.footpad_adc_swapped())
     }
 }
 
