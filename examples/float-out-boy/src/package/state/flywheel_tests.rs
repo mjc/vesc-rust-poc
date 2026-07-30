@@ -16,7 +16,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw, WireByte};
 
 fn output_alpha() -> f32 {
-    let omega = 2.0 * core::f32::consts::PI * 25.0 / 832.0;
+    let omega = 2.0 * core::f32::consts::PI * 25.0 / 500.0;
     omega - 0.5 * omega * omega
 }
 
@@ -590,7 +590,7 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
     );
     let initial_board_setpoint = state.all_data_payloads().base().setpoints().board().angle();
-    let duty_step = AngleDegrees::from_degrees(5.0 / 832.0);
+    let duty_step = AngleDegrees::from_degrees(5.0 / 500.0);
 
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 

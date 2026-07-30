@@ -17,7 +17,7 @@ const _: [(); 912] = [(); core::mem::size_of::<MotorKinematicsTracker>()];
 impl Default for MotorKinematicsTracker {
     fn default() -> Self {
         let mut tracker = Self(vescpkg_rs::MotorKinematics::default());
-        tracker.configure(SampleRate::from_hertz(832.0));
+        tracker.configure(crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE);
         tracker
     }
 }

@@ -24,7 +24,10 @@ impl Default for FrequencyTrackers {
     fn default() -> Self {
         let epoch = TimestampTicks::from_ticks(0);
         Self {
-            main: FrequencyTracker::new(SampleRate::from_hertz(832.0), epoch),
+            main: FrequencyTracker::new(
+                crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
+                epoch,
+            ),
             imu: FrequencyTracker::new(SampleRate::from_hertz(620.0), epoch),
         }
     }

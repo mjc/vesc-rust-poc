@@ -357,9 +357,9 @@ mod tests {
         FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
         angle_step, slew_toward,
     };
+    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, VescSeconds};
     #[cfg(feature = "math")]
     use crate::{Frequency, SampleRate};
-    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, VescSeconds};
 
     #[test]
     fn typed_angle_ramp_preserves_centering_and_per_sample_step() {
