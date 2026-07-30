@@ -1,6 +1,6 @@
 use super::{
-    ExtBms, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
-    FloatOutBoyBmsThresholds,
+    ExtBms, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsStartupGrace,
+    FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds,
 };
 use crate::config::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
 use crate::package::test_support::sample_all_data_payloads;
@@ -97,7 +97,12 @@ fn bms_thresholds_decode_exact_generated_offsets_and_signed_temperatures() {
 
 #[test]
 fn disabled_bms_clears_every_fault_like_float_out_boy_bms_update() {
-    let faults = FloatOutBoyBmsFaults::evaluate(false, sample(), thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        false,
+        sample(),
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Elapsed,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
@@ -113,7 +118,12 @@ fn stale_bms_after_startup_timeout_reports_connection_only() {
         VescSeconds::from_seconds(6.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        stale,
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Elapsed,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::CONNECTION);
 }
@@ -129,7 +139,12 @@ fn stale_bms_during_startup_grace_does_not_report_connection() {
         VescSeconds::from_seconds(6.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        stale,
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Active,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
@@ -145,7 +160,12 @@ fn stale_bms_during_startup_grace_suppresses_telemetry_faults() {
         VescSeconds::from_seconds(6.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        stale,
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Active,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
@@ -161,7 +181,12 @@ fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
         VescSeconds::from_seconds(5.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, at_timeout, thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        at_timeout,
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Elapsed,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
@@ -177,7 +202,12 @@ fn bms_threshold_crossings_set_every_float_out_boy_fault() {
         VescSeconds::ZERO,
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds(), false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        sample,
+        thresholds(),
+        FloatOutBoyBmsStartupGrace::Active,
+    );
 
     for fault in [
         FloatOutBoyBmsFaults::BMS_OVER_TEMPERATURE,
@@ -212,7 +242,12 @@ fn equal_or_disabled_bms_thresholds_do_not_fault() {
         FloatOutBoyBmsTemperature::from_degrees_celsius(0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds, false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        true,
+        sample,
+        thresholds,
+        FloatOutBoyBmsStartupGrace::Active,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
