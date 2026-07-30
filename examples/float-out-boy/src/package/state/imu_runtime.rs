@@ -1075,7 +1075,11 @@ pub(super) fn refresh(
         );
     } else if phase.run_state == FloatOutBoyRunState::Ready
         && !phase.state_stop_fault
-        && let Some(current) = state.remote_control.request_ready_current(phase.motor_erpm)
+        && let Some(current) = state.remote_control.request_ready_current(
+            base.motor().vehicle_speed().speed(),
+            elapsed,
+            state.motor_torque_constant,
+        )
     {
         state.request_motor_current(current);
     }

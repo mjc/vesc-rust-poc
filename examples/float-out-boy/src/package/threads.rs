@@ -379,7 +379,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 let (footpad_voltage1, footpad_voltage2) =
                     read_float_out_boy_footpads(firmware.gpio());
                 ctx.with_state_mut(|state| {
-                    state.refresh_controller_input(firmware.inputs());
+                    state.refresh_controller_input(firmware.inputs(), system_time_ticks);
                     prepare_float_out_boy_main_thread_tick(
                         state,
                         firmware.telemetry(),

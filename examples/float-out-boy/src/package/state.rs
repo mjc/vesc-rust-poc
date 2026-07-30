@@ -257,38 +257,36 @@ impl FloatOutBoyPackageState {
         clippy::trivially_copy_pass_by_ref,
         reason = "the capability reference keeps the package input seam explicit"
     )]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::FirmwareInputs) {
-        // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
-        // applies deadband rescaling, then optional inversion at
-        // `third_party/float-out-boy/src/remote.c:36-68`.
+    pub(crate) fn refresh_controller_input(
+        &mut self,
+        input: &vescpkg_rs::FirmwareInputs,
+        now: TimestampTicks,
+    ) {
+        // C map: cutoff `remote_input` gives command input priority for 0.5 s,
+        // selects UART/PPM, rejects samples at 0.5 s, then applies physical
+        // deadband, move-idle, and tilt-inversion behavior.
         let config = self.serialized_config;
-        let value = match config.input_tilt_remote_type() {
+        let input = match config.input_tilt_remote_type() {
             1 => input.remote().ok().and_then(|remote| {
-                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| remote.joystick_y().ratio().as_ratio())
+                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(0.5))
+                    .then(|| remote.joystick_y().ratio())
             }),
             2 => input.ppm().ok().and_then(|ppm| {
-                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| ppm.value().ratio().as_ratio())
+                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(0.5))
+                    .then(|| ppm.value().ratio())
             }),
             _ => None,
-        }
-        .unwrap_or(0.0);
-        let deadband = config.input_tilt_deadband().as_ratio();
-        let value = if value.abs() < deadband {
-            0.0
-        } else {
-            value.signum() * (value.abs() - deadband) / (1.0 - deadband)
-        };
-        let value = if config.input_tilt_inverted() {
-            -value
-        } else {
-            value
         };
         self.remote_control
-            .set_input(crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-                vescpkg_rs::SignedRatio::clamped(value),
-            ));
+            .refresh_physical_input(remote_control::PhysicalRemoteInput {
+                raw: input,
+                now,
+                disengage_epoch: self.disengage_ticks.started(),
+                deadband: config.input_tilt_deadband(),
+                inverted: config.input_tilt_inverted(),
+                maximum_move_speed: config.remote().max_move_speed(),
+                move_grace: config.remote().grace_period(),
+            });
     }
 
     /// Build startup state and apply the config persisted by firmware.
@@ -430,6 +428,18 @@ impl FloatOutBoyPackageState {
     #[must_use]
     pub const fn all_data_payloads(&self) -> FloatOutBoyAllDataPayloads {
         self.all_data_payloads
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) const fn remote_input_for_test(
+        &self,
+    ) -> crate::domain::FloatOutBoyRealtimeRemoteInput {
+        self.remote_control.input()
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) fn remote_move_target_for_test(&self) -> Option<vescpkg_rs::Speed> {
+        self.remote_control.move_target_for_test()
     }
 
     /// Request a motor current for the next motor-control apply step.
@@ -840,8 +850,25 @@ impl FloatOutBoyPackageState {
         restore_flywheel_config
     }
 
-    fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
-        remote_control::handle_packet(self.all_data_payloads, &mut self.remote_control, bytes)
+    fn handle_remote_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
+        let [package_id, command, ..] = bytes else {
+            return false;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
+            || *command != FloatOutBoyAppDataCommand::Remote.id()
+        {
+            return false;
+        }
+        self.remote_control.handle_packet(
+            now(),
+            self.disengage_ticks.started(),
+            self.serialized_config.remote().max_move_speed(),
+            bytes,
+        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -1021,7 +1048,7 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
-            || self.handle_rc_move_packet(bytes)
+            || self.handle_remote_packet(now, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

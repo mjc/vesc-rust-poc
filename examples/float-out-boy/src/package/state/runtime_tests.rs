@@ -880,11 +880,11 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         let firmware = FirmwareTest::new();
         firmware.set_ppm_input(
             PpmInput::new(SignedRatio::from_ratio_const(ppm)),
-            PpmAge::new(VescSeconds::from_seconds(0.5)),
+            PpmAge::new(VescSeconds::from_seconds(0.4999)),
         );
         firmware.set_remote_input(
             JoystickY::new(SignedRatio::from_ratio_const(uart)),
-            RemoteAge::new(VescSeconds::from_seconds(0.5)),
+            RemoteAge::new(VescSeconds::from_seconds(0.4999)),
         );
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         edit_config(&mut state, |config| {
@@ -893,7 +893,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             assert!(config.set_input_tilt_inverted(true));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         let actual = state.remote_control.input().ratio().as_ratio();
         assert!(
@@ -906,18 +906,18 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         let firmware = FirmwareTest::new();
         firmware.set_ppm_input(
             PpmInput::new(SignedRatio::from_ratio_const(0.8)),
-            PpmAge::new(VescSeconds::from_seconds(1.0)),
+            PpmAge::new(VescSeconds::from_seconds(0.5)),
         );
         firmware.set_remote_input(
             JoystickY::new(SignedRatio::from_ratio_const(0.8)),
-            RemoteAge::new(VescSeconds::from_seconds(1.0)),
+            RemoteAge::new(VescSeconds::from_seconds(0.5)),
         );
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         assert!(state.remote_control.input().ratio().as_ratio().abs() < f32::EPSILON);
     }
@@ -934,7 +934,7 @@ fn controller_input_fails_closed_when_the_selected_optional_slot_is_absent() {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         assert_f32_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
     }
