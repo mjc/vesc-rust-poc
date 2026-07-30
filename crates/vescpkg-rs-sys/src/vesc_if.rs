@@ -211,7 +211,9 @@ impl VescIfPresence {
     /// Infer the strongest descriptive profile supported by observed presence.
     #[must_use]
     pub fn revision(self) -> Stm32AbiRevision {
-        if self.supports_revision(Stm32AbiRevision::Firmware606) {
+        if self.supports_revision(Stm32AbiRevision::Firmware700) {
+            Stm32AbiRevision::Firmware700
+        } else if self.supports_revision(Stm32AbiRevision::Firmware606) {
             Stm32AbiRevision::Firmware606
         } else if self.supports_revision(Stm32AbiRevision::Firmware605) {
             Stm32AbiRevision::Firmware605
@@ -238,6 +240,8 @@ pub enum Stm32AbiRevision {
     Firmware605,
     /// The table including the firmware 6.06 extension.
     Firmware606,
+    /// The table including the firmware 7.00 extension.
+    Firmware700,
     /// A table whose observed shape does not match a known profile.
     UnknownCompatible,
 }
@@ -249,7 +253,8 @@ impl Stm32AbiRevision {
         match self {
             Self::Base => Some(VescIfAbi::BASE_SLOT_COUNT),
             Self::Firmware605 => Some(VescIfAbi::FIRMWARE_605_SLOT_COUNT),
-            Self::Firmware606 => Some(VescIfAbi::FIELD_COUNT),
+            Self::Firmware606 => Some(VescIfAbi::FIRMWARE_606_SLOT_COUNT),
+            Self::Firmware700 => Some(VescIfAbi::FIELD_COUNT),
             Self::UnknownCompatible => None,
         }
     }
@@ -686,8 +691,10 @@ impl VescIfSlot {
             Stm32AbiRevision::Base
         } else if index < VescIfAbi::FIRMWARE_605_SLOT_COUNT {
             Stm32AbiRevision::Firmware605
-        } else {
+        } else if index < VescIfAbi::FIRMWARE_606_SLOT_COUNT {
             Stm32AbiRevision::Firmware606
+        } else {
+            Stm32AbiRevision::Firmware700
         }
     }
 
@@ -727,6 +734,8 @@ macro_rules! define_vesc_if_abi {
             pub const BASE_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_605_FIRST_SLOT;
             /// First slot added by the firmware 6.06 interface extension.
             pub const FIRMWARE_605_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_606_FIRST_SLOT;
+            /// First slot added by the firmware 7.00 interface extension.
+            pub const FIRMWARE_606_SLOT_COUNT: usize = c_vesc_if::FIRMWARE_700_FIRST_SLOT;
             /// Complete ordered manifest of every entry in the pinned `VESC_IF` table.
             ///
             /// `ALL_SLOTS` is the authoritative layout inventory and is generated directly
