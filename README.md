@@ -6,15 +6,16 @@ This workspace provides a `no_std` package-author API, raw firmware ABI bindings
 
 The project is experimental, its APIs are not stable, and it is not affiliated with or endorsed by the VESC project.
 
-## Nix development shell
+## Nix development environment
 
-The Nix development shell supplies the Rust toolchain, ARM target, linker tools, and native dependencies:
+Direnv loads the flake's Rust toolchain, ARM target, linker tools, and native
+dependencies:
 
 ```console
-$ nix develop
+$ direnv allow
 ```
 
-All commands below assume that shell is active.
+All commands below assume that environment is active.
 
 ## Quick start
 
