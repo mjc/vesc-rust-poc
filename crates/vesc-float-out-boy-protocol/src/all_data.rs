@@ -153,8 +153,14 @@ impl FloatOutBoyAllDataBasePayload {
         let handtest = matches!(ride_state.mode(), FloatOutBoyMode::HandTest);
         let switch_state = self.footpad.state().switch_compat() | u8::from(handtest) << 3;
         packet.push((switch_state & 0x0f) | (self.status.beep_reason.id() << 4));
-        packet.push(float_out_boy_scaled_u8(self.footpad.adc1_volts(), 50.0));
-        packet.push(float_out_boy_scaled_u8(self.footpad.adc2_volts(), 50.0));
+        packet.push(float_out_boy_scaled_u8(
+            self.footpad.left_voltage().as_volts(),
+            50.0,
+        ));
+        packet.push(float_out_boy_scaled_u8(
+            self.footpad.right_voltage().as_volts(),
+            50.0,
+        ));
 
         for setpoint in [
             self.setpoints.board(),
