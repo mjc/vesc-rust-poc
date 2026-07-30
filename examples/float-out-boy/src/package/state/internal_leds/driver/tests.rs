@@ -238,11 +238,15 @@ fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
             distance: 0.0,
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         },
         FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: false,
         },
     );

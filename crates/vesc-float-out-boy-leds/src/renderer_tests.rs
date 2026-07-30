@@ -25,6 +25,8 @@ fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedUpdate {
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         },
     )
@@ -689,6 +691,19 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         ]
     );
 
+    let mut low_battery = super::FloatOutBoyLedStripFrame::new(config);
+    low_battery.render_battery_status(0.1, false, 0.0, overlay);
+    assert_eq!(
+        channels(&low_battery),
+        [
+            [0x26, 0x0c, 0x08, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+        ]
+    );
+
     let mut duty_reversed = super::FloatOutBoyLedStripFrame::new(config);
     duty_reversed.render_status_progress(
         0.8,
@@ -707,6 +722,43 @@ fn footpad_and_status_progress_pixels_match_refloat() {
             [0xff, 0xb0, 0x30, 0],
         ]
     );
+}
+
+#[test]
+fn current_saturation_progress_pixels_match_refloat() {
+    let config = super::FloatOutBoyLedStripConfig::new(
+        super::FloatOutBoyLedStripOrder::First,
+        5,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let first = |frame: &super::FloatOutBoyLedStripFrame| {
+        frame
+            .physical_pixel(0)
+            .map(super::FloatOutBoyLedPixel::channels)
+            .unwrap_or_default()
+    };
+    let overlay = super::FloatOutBoyLedOverlay {
+        strip_brightness: Ratio::from_ratio_const(1.0),
+        on_off_fade: Ratio::from_ratio_const(1.0),
+        blend: Ratio::from_ratio_const(1.0),
+    };
+
+    for (kind, value, expected) in [
+        (
+            super::FloatOutBoyStatusProgress::MotorCurrent,
+            0.4,
+            [0xff, 0x50, 0x90, 0],
+        ),
+        (
+            super::FloatOutBoyStatusProgress::BatteryCurrent,
+            0.2,
+            [0, 0xff, 0x80, 0],
+        ),
+    ] {
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+        frame.render_status_progress(value, kind, Ratio::from_ratio_const(0.0), false, overlay);
+        assert_eq!(first(&frame), expected);
+    }
 }
 
 #[test]
@@ -868,6 +920,8 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
             distance,
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         })
     };
@@ -977,7 +1031,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
     let hardware =
         crate::lcm::FloatOutBoyHardwareLedsConfig::new(crate::lcm::FloatOutBoyLedMode::Internal)
             .with_status_strip(strip);
-    let input = |footpad, duty| {
+    let input = |footpad, duty, motor_current, battery_current| {
         super::FloatOutBoyLedUpdate::with_status(
             super::FloatOutBoyLedUpdate {
                 run_state: crate::FloatOutBoyRunState::Running,
@@ -988,11 +1042,15 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
                 distance: 0.0,
                 battery_level: 0.0,
                 duty_cycle: 0.0,
+                motor_current_saturation: 0.0,
+                battery_current_saturation: 0.0,
                 moving: true,
             },
             super::FloatOutBoyLedStatusUpdate {
                 battery_level: 0.45,
                 duty_cycle: duty,
+                motor_current_saturation: motor_current,
+                battery_current_saturation: battery_current,
                 moving: true,
             },
         )
@@ -1011,7 +1069,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
     for tick in 1..=10 {
         renderer.update(
             config,
-            input(crate::FloatOutBoyFootpadState::None, 0.0),
+            input(crate::FloatOutBoyFootpadState::None, 0.0, 0.0, 0.0),
             f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
@@ -1029,7 +1087,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
     for tick in 11..=17 {
         renderer.update(
             config,
-            input(crate::FloatOutBoyFootpadState::None, 0.9),
+            input(crate::FloatOutBoyFootpadState::None, 0.9, 0.0, 0.0),
             f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
@@ -1047,7 +1105,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
     renderer.start_confirmation(17.0 / 30.0);
     renderer.update(
         config,
-        input(crate::FloatOutBoyFootpadState::Both, 0.0),
+        input(crate::FloatOutBoyFootpadState::Both, 0.0, 0.0, 0.0),
         17.0 / 30.0 + 0.4,
     );
     assert_eq!(
@@ -1058,6 +1116,44 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
             [0xa0, 0x40, 0xff, 0],
             [0x4e, 0x1f, 0x7d, 0],
             [0, 0, 0, 0],
+        ]
+    );
+
+    let mut motor_current = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+    for tick in 1..=10 {
+        motor_current.update(
+            config,
+            input(crate::FloatOutBoyFootpadState::None, 0.7, 1.0, 0.9),
+            1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+        );
+    }
+    assert_eq!(
+        channels(&motor_current),
+        [
+            [0xff, 0x50, 0x90, 0],
+            [0xff, 0x50, 0x90, 0],
+            [0xff, 0x50, 0x90, 0],
+            [0xff, 0x38, 0x28, 0],
+            [0xff, 0x38, 0x28, 0],
+        ]
+    );
+
+    let mut battery_current = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+    for tick in 1..=10 {
+        battery_current.update(
+            config,
+            input(crate::FloatOutBoyFootpadState::None, 0.7, 0.9, 1.0),
+            2.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+        );
+    }
+    assert_eq!(
+        channels(&battery_current),
+        [
+            [0, 0xff, 0x80, 0],
+            [0, 0xff, 0x80, 0],
+            [0, 0xff, 0x80, 0],
+            [0xff, 0x38, 0x28, 0],
+            [0xff, 0x38, 0x28, 0],
         ]
     );
 }
@@ -1090,7 +1186,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
     .enabled();
     let strip = super::FloatOutBoyLedStripConfig::new(
         super::FloatOutBoyLedStripOrder::First,
-        1,
+        2,
         FloatOutBoyLedColorOrder::Grb,
     );
     let hardware =
@@ -1106,11 +1202,15 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             distance: 0.0,
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         },
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: false,
         },
     );
@@ -1179,7 +1279,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
     .status_on_front_when_lifted();
     let strip = super::FloatOutBoyLedStripConfig::new(
         super::FloatOutBoyLedStripOrder::First,
-        1,
+        2,
         FloatOutBoyLedColorOrder::Grb,
     );
     let hardware =
@@ -1197,11 +1297,15 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
                 distance: 0.0,
                 battery_level: 0.0,
                 duty_cycle: 0.0,
+                motor_current_saturation: 0.0,
+                battery_current_saturation: 0.0,
                 moving: true,
             },
             super::FloatOutBoyLedStatusUpdate {
                 battery_level: 1.0,
                 duty_cycle: 0.0,
+                motor_current_saturation: 0.0,
+                battery_current_saturation: 0.0,
                 moving: false,
             },
         )
@@ -1259,6 +1363,8 @@ fn headlight_transition_uses_elapsed_time_like_refloat() {
         distance: 0.0,
         battery_level: 0.0,
         duty_cycle: 0.0,
+        motor_current_saturation: 0.0,
+        battery_current_saturation: 0.0,
         moving: true,
     };
     let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
@@ -1283,6 +1389,8 @@ fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
         distance: 0.0,
         battery_level: 0.0,
         duty_cycle: 0.0,
+        motor_current_saturation: 0.0,
+        battery_current_saturation: 0.0,
         moving: true,
     };
     let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
@@ -1322,6 +1430,8 @@ fn disabled_front_stays_dark_while_lifted_like_refloat() {
             distance: 0.0,
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         })
     };
@@ -1368,6 +1478,8 @@ fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
             distance: 0.0,
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         })
     };
@@ -1407,6 +1519,8 @@ fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
                     distance: $distance,
                     battery_level: 0.0,
                     duty_cycle: 0.0,
+                    motor_current_saturation: 0.0,
+                    battery_current_saturation: 0.0,
                     moving: true,
                 },
                 current_time,
