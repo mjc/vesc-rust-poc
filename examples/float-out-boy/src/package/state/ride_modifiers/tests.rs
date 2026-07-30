@@ -268,9 +268,9 @@ fn nose_angling_covers_source_thresholds_limits_directions_and_winddown() {
     }
 
     let mut state = RideModifierState::default();
-    state.update_nose(&config, rpm(10_000.0), SampleRate::from_hertz(100.0));
+    state.update_nose(&config, rpm(10_000.0), VescSeconds::from_seconds(0.01));
     assert!((state.nose.as_degrees() - 1.0).abs() < 0.000_001);
-    state.update_nose(&config, Rpm::ZERO, SampleRate::from_hertz(100.0));
+    state.update_nose(&config, Rpm::ZERO, VescSeconds::from_seconds(0.01));
     assert_eq!(state.nose, AngleDegrees::ZERO);
 }
 
@@ -328,7 +328,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         amps(100.0),
         false,
         3_000.0,
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     let active = state.torque.setpoint;
     assert!(active.is_positive());
@@ -337,7 +337,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         Current::ZERO,
         false,
         3_000.0,
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     assert!(state.torque.setpoint < active);
 }
@@ -372,7 +372,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             false,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     let accelerating_setpoint = state.atr.angle.setpoint;
@@ -392,7 +392,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             true,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.atr.angle.setpoint.is_negative());
@@ -411,7 +411,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             false,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.atr.angle.setpoint > before_recovery);
@@ -478,7 +478,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
             true,
             3_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     let sustained = state.brake.setpoint;
@@ -493,16 +493,16 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
             false,
             3_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.brake.setpoint < sustained);
 
-    state.update_turn(balance, rpm(3_000.0), SampleRate::from_hertz(100.0));
+    state.update_turn(balance, rpm(3_000.0), VescSeconds::from_seconds(0.01));
     let active_turn = state.turn.angle.setpoint;
     assert!(active_turn.is_positive());
     state.turn.yaw.aggregate = AngleDegrees::ZERO;
     state.turn.yaw.change = AngleDegrees::ZERO;
-    state.update_turn(balance, rpm(3_000.0), SampleRate::from_hertz(100.0));
+    state.update_turn(balance, rpm(3_000.0), VescSeconds::from_seconds(0.01));
     assert!(state.turn.angle.setpoint < active_turn);
 }

@@ -1,7 +1,7 @@
 use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyRealtimeRuntimeSetpoint};
-use vescpkg_rs::prelude::SampleRate;
+use vescpkg_rs::prelude::VescSeconds;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit,
 };
@@ -310,14 +310,14 @@ impl Currents {
         booster_current: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> PitchBasedCurrent {
         PitchBasedCurrent::from_rate_and_booster(
             self.rate_damping,
             booster_current,
             softstart_pid_limit,
             motor_current_max,
-            hertz,
+            elapsed,
         )
     }
 

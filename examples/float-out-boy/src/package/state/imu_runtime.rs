@@ -207,7 +207,6 @@ struct TransitionPhase {
     motor_erpm: Rpm,
     control: ControlConditions,
     motor_acceleration: Rpm,
-    startup_centering_step: AngleDegrees,
 }
 
 struct FaultInputs {
@@ -642,7 +641,6 @@ fn evaluate_transition_phase(
         && roll_abs < push_start::ANGLE
         && !(faults.reversestop_enabled() && motor_erpm.is_negative());
     let state_engage = ready_engage || ready_darkride || ready_push_start;
-    let startup_centering_step = startup.centering_step();
     let stop_event = first_transition_stop(&normal, &darkride);
     let reverse_stop_entry_pending = !matches!(
         ride_state.setpoint_adjustment(),
@@ -741,7 +739,6 @@ fn evaluate_transition_phase(
             darkride_active,
         },
         motor_acceleration,
-        startup_centering_step,
     }
 }
 
@@ -836,6 +833,7 @@ fn apply_protective_setpoint(
     signals: &ProtectionSignals,
     system_time_ticks: TimestampTicks,
     control: &mut RunningControl,
+    elapsed: VescSeconds,
 ) {
     let duty = base.motor().duty_cycle().ratio().as_ratio();
     if duty > state.runtime_duty_pushback_threshold().as_ratio() {
@@ -847,7 +845,7 @@ fn apply_protective_setpoint(
         control.board_setpoint = rate_limit_angle(
             control.board_setpoint,
             directional_angle(state.runtime_duty_pushback_angle(), phase.motor_erpm),
-            state.runtime_duty_pushback_step(),
+            state.runtime_duty_pushback_step_elapsed(elapsed),
         );
         return;
     }
@@ -967,7 +965,7 @@ fn apply_protective_setpoint(
         control.board_setpoint = rate_limit_angle(
             control.board_setpoint,
             target,
-            state.runtime_duty_pushback_step(),
+            state.runtime_duty_pushback_step_elapsed(elapsed),
         );
         return;
     }
@@ -988,7 +986,7 @@ fn apply_protective_setpoint(
         control.board_setpoint = rate_limit_angle(
             control.board_setpoint,
             AngleDegrees::ZERO,
-            state.runtime_tiltback_return_step(),
+            state.runtime_tiltback_return_step_elapsed(elapsed),
         );
     }
 }
@@ -1004,6 +1002,7 @@ fn advance_running_control(
     system_time_ticks: TimestampTicks,
     phase: &TransitionPhase,
     mut runtime: RuntimeValues,
+    elapsed: VescSeconds,
 ) -> (RunningControl, RuntimeValues) {
     let signals = protection_signals(state, base);
     if signals.battery_voltage < signals.high_voltage_threshold && !signals.bms_cell_over_voltage {
@@ -1076,11 +1075,15 @@ fn advance_running_control(
             control.ride_state = control
                 .ride_state
                 .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
-        } else if control.board_setpoint.abs() < phase.startup_centering_step {
-            control.board_setpoint = AngleDegrees::ZERO;
         } else {
-            control.board_setpoint = control.board_setpoint
-                - phase.startup_centering_step * control.board_setpoint.signum();
+            let step =
+                AngleDegrees::from(state.serialized_config.startup().startup_speed() * elapsed);
+            if control.board_setpoint.abs() < step {
+                control.board_setpoint = AngleDegrees::ZERO;
+            } else {
+                control.board_setpoint =
+                    control.board_setpoint - step * control.board_setpoint.signum();
+            }
         }
     }
 
@@ -1123,6 +1126,7 @@ fn advance_running_control(
             &signals,
             system_time_ticks,
             &mut control,
+            elapsed,
         );
     }
     if matches!(
@@ -1133,13 +1137,13 @@ fn advance_running_control(
         control.board_setpoint = AngleDegrees::ZERO;
     }
     state.runtime_board_setpoint = control.board_setpoint;
-    let remote_setpoint = state.remote_control.update_input_tilt(
+    let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
         state.serialized_config.input_tilt_angle_limit(),
         state.serialized_config.input_tilt_speed(),
-        state.serialized_config.startup().sample_rate(),
+        elapsed,
         phase.control.darkride_active,
     );
-    runtime.setpoints = state.ride_modifiers.advance(
+    runtime.setpoints = state.ride_modifiers.advance_elapsed(
         &state.serialized_config,
         RideModifierInput {
             base_setpoint: control.board_setpoint,
@@ -1152,6 +1156,7 @@ fn advance_running_control(
             darkride: phase.control.darkride_active,
             wheelslip: control.ride_state.wheelslip(),
         },
+        elapsed,
     );
     if !matches!(control.ride_state.mode(), FloatOutBoyMode::Flywheel) {
         let warning = matches!(
@@ -1172,7 +1177,7 @@ fn advance_running_control(
     let mut loop_state = state.balance_loop;
     loop_state.balance_current = runtime.balance_current.current();
     loop_state.booster_current = runtime.booster_current.current();
-    let balance_loop = loop_state.advance_balance_loop(
+    let balance_loop = loop_state.advance_balance_loop_elapsed(
         state.runtime_balance_loop_config(),
         LoopInput {
             setpoint: runtime.setpoints.board(),
@@ -1190,6 +1195,7 @@ fn advance_running_control(
             darkride: control.ride_state.darkride(),
             traction_control: state.ride_flags.traction_control,
         },
+        elapsed,
     );
     state.balance_loop = balance_loop.state;
     runtime.booster_current =
@@ -1210,6 +1216,7 @@ pub(super) fn refresh(
     state: &mut FloatOutBoyPackageState,
     imu: &impl Imu,
     system_time_ticks: TimestampTicks,
+    elapsed: VescSeconds,
 ) -> bool {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
@@ -1262,8 +1269,15 @@ pub(super) fn refresh(
         && !phase.events.state_engage
         && !phase.events.state_stop_fault
     {
-        let (control, next_runtime) =
-            advance_running_control(state, imu, &base, system_time_ticks, &phase, runtime);
+        let (control, next_runtime) = advance_running_control(
+            state,
+            imu,
+            &base,
+            system_time_ticks,
+            &phase,
+            runtime,
+            elapsed,
+        );
         phase.ride_state = control.ride_state;
         phase.beep_reason = control.beep_reason;
         phase.beeper_alert = control.beeper_alert;

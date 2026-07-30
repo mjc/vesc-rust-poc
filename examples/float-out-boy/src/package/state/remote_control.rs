@@ -1,8 +1,10 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
+#[cfg(test)]
+use vescpkg_rs::prelude::SampleRate;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, Rpm, SampleRate, TimestampTicks,
+    AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, Rpm, TimestampTicks, VescSeconds,
 };
 use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
 
@@ -175,6 +177,7 @@ impl RemoteControlState {
         self.tilt_setpoint = AngleDegrees::ZERO;
     }
 
+    #[cfg(test)]
     pub(super) fn update_input_tilt(
         &mut self,
         angle_limit: AngleDegrees,
@@ -187,36 +190,45 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/remote.c:30-34,70-94`.
         sample_rate
             .sample_period()
-            .map_or(self.tilt_setpoint, |period| {
-                let step = AngleDegrees::from(speed * period).as_degrees();
-                let direction = if darkride { -1.0 } else { 1.0 };
-                let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
-                let setpoint = self.tilt_setpoint.as_degrees();
-                let target_diff = target - setpoint;
-                if target_diff.abs() < 2.0 {
-                    self.tilt_ramped_step = AngleDegrees::from_degrees(
-                        0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
-                    );
-                    let centering_step = self
-                        .tilt_ramped_step
-                        .as_degrees()
-                        .abs()
-                        .min((target_diff / 2.0).abs() * step)
-                        * target_diff.signum();
-                    self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
-                        AngleDegrees::from_degrees(target)
-                    } else {
-                        AngleDegrees::from_degrees(setpoint + centering_step)
-                    };
-                } else {
-                    self.tilt_ramped_step = AngleDegrees::from_degrees(
-                        0.02 * step * target_diff.signum()
-                            + 0.98 * self.tilt_ramped_step.as_degrees(),
-                    );
-                    self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
-                }
-                self.tilt_setpoint
+            .map_or(self.tilt_setpoint, |elapsed| {
+                self.update_input_tilt_elapsed(angle_limit, speed, elapsed, darkride)
             })
+    }
+
+    pub(super) fn update_input_tilt_elapsed(
+        &mut self,
+        angle_limit: AngleDegrees,
+        speed: AngularVelocity,
+        elapsed: VescSeconds,
+        darkride: bool,
+    ) -> AngleDegrees {
+        let step = AngleDegrees::from(speed * elapsed).as_degrees();
+        let direction = if darkride { -1.0 } else { 1.0 };
+        let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
+        let setpoint = self.tilt_setpoint.as_degrees();
+        let target_diff = target - setpoint;
+        if target_diff.abs() < 2.0 {
+            self.tilt_ramped_step = AngleDegrees::from_degrees(
+                0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
+            );
+            let centering_step = self
+                .tilt_ramped_step
+                .as_degrees()
+                .abs()
+                .min((target_diff / 2.0).abs() * step)
+                * target_diff.signum();
+            self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
+                AngleDegrees::from_degrees(target)
+            } else {
+                AngleDegrees::from_degrees(setpoint + centering_step)
+            };
+        } else {
+            self.tilt_ramped_step = AngleDegrees::from_degrees(
+                0.02 * step * target_diff.signum() + 0.98 * self.tilt_ramped_step.as_degrees(),
+            );
+            self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
+        }
+        self.tilt_setpoint
     }
 
     pub(super) const fn input(self) -> crate::domain::FloatOutBoyRealtimeRemoteInput {

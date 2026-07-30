@@ -50,6 +50,32 @@ fn input_tilt_reversal_respects_float_out_boy_ramp_down() {
 }
 
 #[test]
+fn input_tilt_uses_measured_elapsed_time_after_a_delayed_iteration() {
+    let angle_limit = AngleDegrees::from_degrees(10.0);
+    let speed = AngularVelocity::from_degrees_per_second(25.0);
+    let input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(1.0));
+    let mut nominal = RemoteControlState::default();
+    let mut delayed = RemoteControlState::default();
+    nominal.set_input(input);
+    delayed.set_input(input);
+
+    let nominal = nominal.update_input_tilt_elapsed(
+        angle_limit,
+        speed,
+        VescSeconds::from_seconds(0.002),
+        false,
+    );
+    let delayed = delayed.update_input_tilt_elapsed(
+        angle_limit,
+        speed,
+        VescSeconds::from_seconds(0.004),
+        false,
+    );
+
+    assert_eq!(delayed, nominal * 2.0);
+}
+
+#[test]
 fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
     let mut remote_control = RemoteControlState::default();
     remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(

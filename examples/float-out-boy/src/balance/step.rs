@@ -1,4 +1,5 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopOutput, LoopState};
+use vescpkg_rs::prelude::VescSeconds;
 
 use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
 
@@ -31,7 +32,22 @@ impl LoopState {
     /// `third_party/float-out-boy/src/booster.c:32-75`, and
     /// `third_party/float-out-boy/src/imu.c:43-53`.
     #[inline]
+    #[cfg(test)]
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
+        let elapsed = config
+            .hertz
+            .sample_period()
+            .unwrap_or_else(|| VescSeconds::from_seconds(0.0));
+        self.advance_balance_loop_elapsed(config, input, elapsed)
+    }
+
+    #[inline]
+    pub(crate) fn advance_balance_loop_elapsed(
+        self,
+        config: LoopConfig,
+        input: LoopInput,
+        elapsed: VescSeconds,
+    ) -> LoopOutput {
         let (pid_currents, state) = PidPhase::from_step(config, input).update_state(self);
         let booster_current =
             BoosterPhase::from_step(config, input).filtered_current(state.booster_current);
@@ -39,7 +55,7 @@ impl LoopState {
             booster_current,
             state.softstart_pid_limit,
             input.motor_current_max,
-            config.hertz,
+            elapsed,
         );
         let state = state.with_booster_current_and_softstart_limit(
             booster_current,

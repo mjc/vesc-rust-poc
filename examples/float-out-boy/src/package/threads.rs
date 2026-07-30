@@ -152,9 +152,9 @@ fn prepare_float_out_boy_main_thread_tick(
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
     motor: &impl MotorOutput,
-    footpad_adc1: AdcVoltage,
-    footpad_adc2: AdcVoltage,
+    footpads: (AdcVoltage, AdcVoltage),
     system_time_ticks: TimestampTicks,
+    elapsed: VescSeconds,
 ) -> FloatOutBoyMainThreadPrepare {
     // C map: `float_out_boy_thd` refreshes runtime inputs, executes state/control
     // logic, applies motor control, then sleeps `loop_time_us` through
@@ -162,13 +162,13 @@ fn prepare_float_out_boy_main_thread_tick(
     // C calls `beeper_update` before its state switch at
     // `third_party/float-out-boy/src/main.c:776-824`.
     let alert_level = state.tick_beeper_at(system_time_ticks);
-    let restore_flywheel_config = state.refresh_main_loop_runtime_state(
+    let restore_flywheel_config = state.refresh_main_loop_runtime_state_elapsed(
         telemetry,
         imu,
         motor,
-        footpad_adc1,
-        footpad_adc2,
+        footpads,
         system_time_ticks,
+        elapsed,
     );
     FloatOutBoyMainThreadPrepare {
         alert_level,
@@ -215,6 +215,16 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
     store_backup: impl FnOnce() -> bool,
 ) -> Option<bool> {
+    let running = matches!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        crate::domain::FloatOutBoyRunState::Running
+    );
+    state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
     state.render_internal_leds(telemetry, current_time, paint_leds);
     let stored = state.aux_backup_due(odometer).then(|| {
@@ -309,8 +319,13 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             });
             let migration = ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
             let _ = ctx.with_state_mut(|state| state.finish_startup_configure(migration));
+            let imu_frequency = vescpkg_rs::FirmwareSettings.imu_sample_rate().sample_rate();
+            let frequency_epoch = ctx.firmware().clock().now();
+            let _ = ctx.with_state_mut(|state| {
+                state.initialize_frequency_tracking(imu_frequency, frequency_epoch);
+            });
 
-            let timing = ctx
+            let mut timing = ctx
                 .with_state_mut(|state| {
                     FloatOutBoyMainLoopTiming::from_sample_rate(
                         state.configured_main_loop_sample_rate(),
@@ -320,10 +335,12 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0))
                 });
             let mut next_sleep = timing.nominal_sleep();
+            let mut loop_timer = ctx.firmware().clock().timer_now();
             while !ctx.firmware().threads().should_terminate() {
                 let firmware = ctx.firmware();
                 firmware.threads().sleep_for(next_sleep);
-                let loop_timer = firmware.clock().timer_now();
+                let elapsed = firmware.clock().timer_elapsed_since(loop_timer);
+                loop_timer = firmware.clock().timer_now();
                 let system_time_ticks = firmware.clock().now();
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
@@ -339,9 +356,9 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                             firmware.telemetry(),
                             firmware.imu(),
                             firmware.motor(),
-                            footpad_voltage1,
-                            footpad_voltage2,
+                            (footpad_voltage1, footpad_voltage2),
                             system_time_ticks,
+                            elapsed,
                         )
                     })
                 };
@@ -376,6 +393,13 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                             let _ = pin.write(level);
                         }
                     }
+                }
+                if let Some(configured) = ctx.with_state_mut(|state| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        state.configured_main_loop_sample_rate(),
+                    )
+                }) {
+                    timing = configured;
                 }
                 next_sleep =
                     timing.sleep_after_work(ctx.firmware().clock().timer_elapsed_since(loop_timer));

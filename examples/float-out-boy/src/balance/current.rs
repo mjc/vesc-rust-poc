@@ -2,7 +2,9 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate};
+use vescpkg_rs::prelude::{
+    Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate, VescSeconds,
+};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -51,7 +53,7 @@ impl PitchBasedDemand {
         self,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> PitchBasedCurrent {
         if softstart_pid_limit.current() < motor_current_max.current() {
             PitchBasedCurrent {
@@ -62,7 +64,7 @@ impl PitchBasedDemand {
                 // soft-start current limit at 100 A/s.
                 softstart_pid_limit: softstart_pid_limit
                     + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
+                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed),
                     )),
             }
         } else {
@@ -71,6 +73,15 @@ impl PitchBasedDemand {
                 softstart_pid_limit,
             }
         }
+    }
+}
+
+fn valid_elapsed_seconds(elapsed: VescSeconds) -> f32 {
+    let seconds = elapsed.as_seconds();
+    if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
     }
 }
 
@@ -89,12 +100,12 @@ impl PitchBasedCurrent {
         booster: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> Self {
         PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
             softstart_pid_limit,
             motor_current_max,
-            hertz,
+            elapsed,
         )
     }
 }

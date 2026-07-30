@@ -87,6 +87,25 @@ fn advance_loop(config: LoopConfig, input: LoopInput, state: LoopState) -> LoopO
 }
 
 #[test]
+fn balance_loop_softstart_uses_measured_elapsed_time() {
+    let state = LoopState {
+        softstart_pid_limit: motor_current(Current::ZERO),
+        ..base_state()
+    };
+
+    let output = state.advance_balance_loop_elapsed(
+        base_config(),
+        base_input(),
+        VescSeconds::from_seconds(0.004),
+    );
+
+    assert_current(
+        output.state.softstart_pid_limit,
+        motor_current(Current::from_amps(0.4)),
+    );
+}
+
+#[test]
 fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_float_out_boy_pid() {
     let config = LoopConfig {
         kp_brake: PidScale::new(2.0),
