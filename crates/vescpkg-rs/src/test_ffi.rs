@@ -365,6 +365,7 @@ fn reset_temperature_settings() {
     TEMPERATURE_ACCELERATION_DECREASE.store(0.0_f32.to_bits(), Ordering::Relaxed);
 }
 
+#[allow(clippy::too_many_lines, reason = "resets the flat fake-firmware state")]
 fn reset_motor_state() {
     KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
@@ -841,7 +842,7 @@ pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) ->
         return Some(false);
     }
     value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
-    value.buf_size = buffer_size as u32;
+    value.buf_size = u32::try_from(buffer_size).unwrap_or(u32::MAX);
     value.buf_pos = 0;
     Some(true)
 }

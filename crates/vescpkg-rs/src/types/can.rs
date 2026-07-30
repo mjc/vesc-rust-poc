@@ -64,6 +64,7 @@ impl core::error::Error for CanStandardIdError {}
 
 impl CanStandardIdError {
     /// Return the rejected ID.
+    #[must_use]
     pub const fn value(self) -> u16 {
         self.value
     }
@@ -169,6 +170,7 @@ impl CanPayloadLenError {
 
 impl CanExtendedIdError {
     /// Return the rejected ID.
+    #[must_use]
     pub const fn value(self) -> u32 {
         self.value
     }

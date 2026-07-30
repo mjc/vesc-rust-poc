@@ -1,4 +1,8 @@
 //! Exclusive terminal command registration with scoped argument views.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::ffi::{CStr, c_char};
 use core::marker::PhantomData;
@@ -21,6 +25,11 @@ pub enum TerminalError {
     /// Another package currently owns the terminal callback.
     Busy,
 }
+
+impl_error!(TerminalError {
+    Unavailable => "terminal callback slot is unavailable",
+    Busy => "terminal callback slot is already owned",
+});
 
 /// Safe callback behavior for one terminal command.
 pub trait TerminalHandler {
@@ -121,13 +130,14 @@ unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *
     H::run(TerminalArgs {
         argv,
         index: 0,
-        length: arg_count as usize,
+        length: usize::try_from(arg_count).unwrap_or(0),
         _lifetime: PhantomData,
     });
 }
 
 impl crate::Firmware {
     /// Return the optional terminal capability handle.
+    #[must_use]
     pub fn terminal(&self) -> Terminal {
         Terminal::new()
     }
@@ -136,6 +146,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional terminal capability handle.
+    #[must_use]
     pub fn terminal(&self) -> Terminal {
         Terminal::new()
     }

@@ -1,4 +1,8 @@
 //! Exclusive low-level PWM callback registration.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +19,11 @@ pub enum PwmCallbackError {
     /// Another callback lease is still active.
     AlreadyRegistered,
 }
+
+impl_error!(PwmCallbackError {
+    Unavailable => "PWM callback registration is unavailable",
+    AlreadyRegistered => "PWM callback is already registered",
+});
 
 static PWM_CALLBACK_REGISTERED: AtomicBool = AtomicBool::new(false);
 static PWM_CALLBACK_ACTIVE: AtomicBool = AtomicBool::new(false);

@@ -1,4 +1,8 @@
 //! Bounded, allocation-free firmware logging.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::fmt;
 
@@ -12,6 +16,12 @@ pub enum LogError {
     /// The target firmware does not expose its logging slot.
     Unsupported,
 }
+
+impl_error!(LogError {
+    Truncated => "firmware log message exceeds its fixed buffer",
+    InteriorNul => "firmware log message contains an interior NUL byte",
+    Unsupported => "firmware logging is unavailable",
+});
 
 /// A fixed-capacity log message that never allocates.
 pub struct FirmwareLog<const CAPACITY: usize> {

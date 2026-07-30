@@ -1,7 +1,7 @@
 //! Target-side SDK for Rust VESC packages.
 //!
 //! Link this crate into native VESC package code. It wraps `vescpkg-rs-sys` with
-//! lifecycle, LispBM extension, app-data, GPIO, and typed firmware helpers.
+//! lifecycle, `LispBM` extension, app-data, GPIO, and typed firmware helpers.
 //!
 //! Device builds stay `no_std`; package crates must opt into the `alloc`
 //! feature before installing the VESC-backed global allocator.
@@ -11,25 +11,6 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
-// The SDK's public wrappers intentionally mirror the pinned firmware ABI. Keep
-// the pedantic gate visible while staging these broad API/documentation lints
-// for a later, targeted cleanup instead of weakening the normal warning gate.
-#![allow(
-    clippy::borrow_as_ptr,
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::doc_markdown,
-    clippy::float_cmp,
-    clippy::inline_always,
-    clippy::missing_errors_doc,
-    clippy::must_use_candidate,
-    clippy::ptr_cast_constness,
-    clippy::return_self_not_must_use,
-    clippy::semicolon_if_nothing_returned,
-    clippy::too_many_lines,
-    reason = "the ABI-shaped SDK surface is kept stable while pedantic cleanup is staged"
-)]
 
 #[cfg(target_arch = "arm")]
 #[panic_handler]
@@ -65,7 +46,25 @@ macro_rules! call_vesc_ffi {
     }};
 }
 
+macro_rules! impl_error {
+    ($error:ident { $($variant:ident => $message:literal),+ $(,)? }) => {
+        impl core::fmt::Display for $error {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(match self {
+                    $(Self::$variant => $message),+
+                })
+            }
+        }
+
+        impl core::error::Error for $error {}
+    };
+}
+
 #[cfg(all(feature = "test-support", not(test)))]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "firmware tick durations are represented as f32 seconds"
+)]
 fn tick_count_as_seconds(ticks: u32, ticks_per_second: f32) -> f32 {
     ticks as f32 / ticks_per_second
 }

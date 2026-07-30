@@ -1,4 +1,8 @@
 //! Motor-domain semantic wrappers.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 
@@ -21,6 +25,7 @@ macro_rules! current_type {
             }
 
             /// Return the absolute current while preserving the domain wrapper.
+            #[must_use]
             pub const fn abs(self) -> Self {
                 Self(self.0.abs())
             }
@@ -200,6 +205,7 @@ impl AudioChannel {
     }
 
     /// Encode the channel index for the audio boundary.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -213,6 +219,7 @@ pub struct AudioChannelError {
 
 impl AudioChannelError {
     /// Return the rejected channel.
+    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }
@@ -288,6 +295,7 @@ pub enum FirmwareFaultId {
 
 impl FirmwareFaultId {
     /// Convert the known ABI identifier to the app-data compatibility byte.
+    #[must_use]
     pub const fn wire_code(self) -> FirmwareFaultWireCode {
         FirmwareFaultWireCode(self as u8 + 1)
     }
@@ -356,11 +364,13 @@ pub struct FirmwareFaultWireCode(u8);
 
 impl FirmwareFaultWireCode {
     /// Build a token from an app-data fault-code byte.
+    #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
         Self(code)
     }
 
     /// Return the app-data fault-code byte.
+    #[must_use]
     pub const fn wire_code(self) -> u8 {
         self.0
     }
@@ -373,6 +383,7 @@ pub struct MotorCurrentLimit(Current);
 
 impl MotorCurrentLimit {
     /// Normalize a configured motor-current limit to its positive magnitude.
+    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
@@ -384,6 +395,7 @@ impl MotorCurrentLimit {
     }
 
     /// Return the positive current-limit magnitude.
+    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }
@@ -392,6 +404,7 @@ impl MotorCurrentLimit {
     ///
     /// This follows VESC's comparison semantics: a zero limit clamps nonzero
     /// current to signed zero, while NaN operands leave the current unchanged.
+    #[must_use]
     pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         let requested = current.current();
         if requested.abs().is_greater_than(self.0) {
@@ -450,6 +463,7 @@ pub enum MotorSelection {
 
 impl MotorSelection {
     /// Return the firmware motor-control thread index.
+    #[must_use]
     pub const fn index(self) -> i32 {
         self as i32
     }
@@ -458,6 +472,18 @@ impl MotorSelection {
 /// A firmware motor-selection value outside the documented `0..=2` contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MotorSelectionError(pub i32);
+
+impl core::fmt::Display for MotorSelectionError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            formatter,
+            "motor selection {} is outside the firmware range 0..=2",
+            self.0
+        )
+    }
+}
+
+impl core::error::Error for MotorSelectionError {}
 
 impl TryFrom<i32> for MotorSelection {
     type Error = MotorSelectionError;

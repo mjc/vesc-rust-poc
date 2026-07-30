@@ -1,4 +1,8 @@
 //! Exclusive, checked access to the optional VESC UART peripheral.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,6 +26,14 @@ pub enum UartError {
     InvalidRead,
 }
 
+impl_error!(UartError {
+    Unavailable => "UART capability is unavailable",
+    Busy => "UART is already owned by the SDK",
+    Rejected => "firmware rejected the UART operation",
+    BufferTooLong => "UART write exceeds the firmware ABI length",
+    InvalidRead => "firmware returned an invalid UART read value",
+});
+
 /// Optional UART capability handle.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Uart;
@@ -37,6 +49,7 @@ pub enum UartDuplexMode {
 
 impl UartDuplexMode {
     /// Return the raw half-duplex flag expected by the firmware ABI.
+    #[must_use]
     pub const fn is_half_duplex(self) -> bool {
         matches!(self, Self::HalfDuplex)
     }
@@ -120,6 +133,7 @@ impl Drop for UartSession {
 
 impl crate::Firmware {
     /// Return the optional UART capability handle.
+    #[must_use]
     pub fn uart(&self) -> Uart {
         Uart::new()
     }
@@ -128,6 +142,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional UART capability handle.
+    #[must_use]
     pub fn uart(&self) -> Uart {
         Uart::new()
     }

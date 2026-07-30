@@ -1,4 +1,8 @@
 //! Owned packet framing around the concrete VESC `PACKET_STATE_t` layout.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::marker::PhantomData;
 #[cfg(feature = "alloc")]
@@ -32,6 +36,13 @@ pub enum PacketError {
     /// Another packet codec already owns the global firmware callback.
     Busy,
 }
+
+impl_error!(PacketError {
+    Unavailable => "packet framing capability is unavailable",
+    EmptyPacket => "packet payload is empty",
+    PacketTooLong => "packet exceeds the firmware framing buffer",
+    Busy => "packet codec is already registered",
+});
 
 /// Safe callback behavior for a packet codec.
 pub trait PacketHandler {
@@ -69,6 +80,7 @@ pub struct OwnedPacketRegistration<H: PacketHandler> {
 
 impl<H: PacketHandler> PacketCodec<H> {
     /// Construct an unregistered packet codec with zeroed framing state.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             state: PacketState {
@@ -106,7 +118,7 @@ impl<H: PacketHandler> PacketCodec<H> {
             return Err(PacketError::Busy);
         }
         let registered = unsafe {
-            crate::ffi::packet_init(packet_send::<H>, packet_process::<H>, &mut self.state)
+            crate::ffi::packet_init(packet_send::<H>, packet_process::<H>, &raw mut self.state)
         };
         if registered {
             PACKET_CODEC_ACTIVE.store(true, Ordering::Release);
@@ -175,7 +187,8 @@ fn send_packet(state: &mut PacketState, data: &mut [u8]) -> Result<(), PacketErr
     if data.len() > MAX_PACKET_BYTES {
         return Err(PacketError::PacketTooLong);
     }
-    unsafe { crate::ffi::packet_send_packet(data.as_mut_ptr(), data.len() as u32, state) }
+    let length = u32::try_from(data.len()).map_err(|_| PacketError::PacketTooLong)?;
+    unsafe { crate::ffi::packet_send_packet(data.as_mut_ptr(), length, state) }
         .then_some(())
         .ok_or(PacketError::Unavailable)
 }

@@ -1,4 +1,8 @@
 //! Checked firmware plotting helpers.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::ffi::CStr;
 
@@ -11,6 +15,11 @@ pub enum PlotError {
     /// A graph index or point value is invalid.
     InvalidValue,
 }
+
+impl_error!(PlotError {
+    Unavailable => "firmware plotting is unavailable",
+    InvalidValue => "plot value or graph index is invalid",
+});
 
 /// Optional firmware plotting capability.
 #[derive(Debug, Clone, Copy, Default)]
@@ -58,6 +67,7 @@ impl Plot {
 
 impl crate::Firmware {
     /// Return the optional firmware plotting capability.
+    #[must_use]
     pub fn plot(&self) -> Plot {
         Plot::new()
     }
@@ -66,6 +76,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional firmware plotting capability.
+    #[must_use]
     pub fn plot(&self) -> Plot {
         Plot::new()
     }

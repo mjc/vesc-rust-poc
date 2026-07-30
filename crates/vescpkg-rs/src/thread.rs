@@ -173,6 +173,7 @@ pub struct Firmware {
 impl Firmware {
     /// Borrow the firmware CAN transport and status capability.
     #[cfg(not(test))]
+    #[must_use]
     pub fn can(&self) -> &crate::CanBus {
         &self.can
     }
@@ -200,6 +201,7 @@ impl Firmware {
 
     /// Borrow the package custom-EEPROM capability.
     #[cfg(not(test))]
+    #[must_use]
     pub fn eeprom(&self) -> &crate::CustomEeprom {
         &self.eeprom
     }
@@ -241,12 +243,14 @@ impl Firmware {
 
     /// Borrow typed controller input and output-safety state.
     #[cfg(not(test))]
+    #[must_use]
     pub fn inputs(&self) -> &crate::FirmwareInputs {
         &self.inputs
     }
 
     /// Borrow the typed live firmware settings capability.
     #[cfg(not(test))]
+    #[must_use]
     pub fn settings(&self) -> &crate::FirmwareSettings {
         &self.settings
     }

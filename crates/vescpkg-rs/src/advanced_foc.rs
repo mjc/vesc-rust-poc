@@ -1,4 +1,8 @@
 //! Explicitly unsafe open-loop FOC controls.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::{DutyCycle, ElectricalSpeed, OpenLoopCurrent, OpenLoopPhase};
 
@@ -9,6 +13,10 @@ pub enum AdvancedFocError {
     /// The requested FOC capability is absent from the loaded function table.
     Unavailable,
 }
+
+impl_error!(AdvancedFocError {
+    Unavailable => "advanced FOC capability is unavailable",
+});
 
 /// Low-level FOC controls whose physical effects cannot be made safe by Rust.
 #[derive(Debug, Clone, Copy, Default)]
@@ -111,6 +119,7 @@ impl AdvancedFoc {
 
 impl crate::Firmware {
     /// Return the explicitly unsafe advanced FOC control surface.
+    #[must_use]
     pub fn advanced_foc(&self) -> AdvancedFoc {
         AdvancedFoc::new()
     }
@@ -119,6 +128,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the explicitly unsafe advanced FOC control surface.
+    #[must_use]
     pub fn advanced_foc(&self) -> AdvancedFoc {
         AdvancedFoc::new()
     }
