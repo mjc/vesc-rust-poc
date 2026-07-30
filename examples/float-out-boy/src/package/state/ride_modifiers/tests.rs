@@ -107,7 +107,7 @@ fn turn_tilt_yaw_rate_matches_over_equal_time_at_different_cadences() {
 }
 
 #[test]
-fn disabling_turn_tilt_winds_down_an_existing_setpoint() {
+fn disabling_turn_tilt_preserves_an_existing_setpoint_like_refloat() {
     let mut config = FloatOutBoyConfigImage::defaults();
     let mut editor = config.editor();
     assert!(editor.set_turn_tilt_strength(PidScale::new(5.0)));
@@ -137,7 +137,7 @@ fn disabling_turn_tilt_winds_down_an_existing_setpoint() {
     assert!(config.editor().set_turn_tilt_strength(PidScale::new(0.0)));
     let disabled = state.advance(&config, input()).turn_tilt().angle();
 
-    assert!(disabled < active);
+    assert_eq!(disabled, active);
 }
 
 #[test]
@@ -161,13 +161,6 @@ fn brake_tilt_uses_balance_offset_while_regenerating_like_float_out_boy() {
 fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_out_boy() {
     let mut state = RideModifierState {
         nose: AngleDegrees::from_degrees(1.0),
-        turn: TurnTiltState {
-            angle: SmoothAngle {
-                setpoint: AngleDegrees::from_degrees(2.0),
-                ..SmoothAngle::default()
-            },
-            ..TurnTiltState::default()
-        },
         atr: AtrState {
             angle: SmoothAngle {
                 target: AngleDegrees::from_degrees(4.0),
@@ -185,7 +178,12 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
             setpoint: AngleDegrees::from_degrees(3.0),
             ..SmoothAngle::default()
         },
+        ..RideModifierState::default()
     };
+    state
+        .turn
+        .angle
+        .set_value_for_test(AngleDegrees::from_degrees(2.0));
     let config = FloatOutBoyConfigImage::defaults();
 
     let setpoints = state.advance(
@@ -199,7 +197,7 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
     assert_eq!(state.nose, AngleDegrees::from_degrees(1.0));
     assert_eq!(
         setpoints.turn_tilt().angle(),
-        AngleDegrees::from_degrees(2.0 * 0.995)
+        AngleDegrees::from_degrees(2.0 * (1.0 - 0.009_95))
     );
     assert_eq!(
         setpoints.torque_tilt().angle(),
@@ -220,7 +218,7 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
     assert_eq!(state.brake.target, AngleDegrees::from_degrees(5.0 * 0.99));
     assert_eq!(
         setpoints.board().angle(),
-        AngleDegrees::from_degrees(1.0 + 2.0 * 0.995 + (4.0 + 5.0) * 0.995),
+        AngleDegrees::from_degrees(1.0 + 2.0 * (1.0 - 0.009_95) + (4.0 + 5.0) * 0.995),
     );
 }
 
@@ -228,19 +226,16 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
 fn darkride_keeps_remote_tilt_but_suppresses_ride_modifiers_like_float_out_boy() {
     let mut state = RideModifierState {
         nose: AngleDegrees::from_degrees(1.0),
-        turn: TurnTiltState {
-            angle: SmoothAngle {
-                setpoint: AngleDegrees::from_degrees(2.0),
-                ..SmoothAngle::default()
-            },
-            ..TurnTiltState::default()
-        },
         torque: SmoothAngle {
             setpoint: AngleDegrees::from_degrees(3.0),
             ..SmoothAngle::default()
         },
         ..RideModifierState::default()
     };
+    state
+        .turn
+        .angle
+        .set_value_for_test(AngleDegrees::from_degrees(2.0));
     let retained = state;
     let config = FloatOutBoyConfigImage::defaults();
     let setpoints = state.advance(
@@ -551,13 +546,15 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
         Rpm::from_revolutions_per_minute(3_000.0),
         VescSeconds::from_seconds(0.01),
     );
-    let active_turn = state.turn.angle.setpoint;
+    let active_turn = state.turn.angle.value();
     assert!(active_turn.is_positive());
     state.turn.yaw.clear_motion();
-    state.update_turn(
-        balance,
-        Rpm::from_revolutions_per_minute(3_000.0),
-        VescSeconds::from_seconds(0.01),
-    );
-    assert!(state.turn.angle.setpoint < active_turn);
+    for _ in 0..100 {
+        state.update_turn(
+            balance,
+            Rpm::from_revolutions_per_minute(3_000.0),
+            VescSeconds::from_seconds(0.01),
+        );
+    }
+    assert!(state.turn.angle.value() < active_turn);
 }
