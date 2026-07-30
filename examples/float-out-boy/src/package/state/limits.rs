@@ -83,9 +83,9 @@ pub(super) mod traction_loss {
     // C map: wheelslip detection and traction-control clear thresholds at
     // `third_party/float-out-boy/src/main.c:551-575`.
     pub(in crate::package::state) const ACCELERATION_DETECT: Rpm =
-        Rpm::from_revolutions_per_minute(15.0);
+        Rpm::from_revolutions_per_minute(10_000.0);
     pub(in crate::package::state) const ACCELERATION_CLEAR: Rpm =
-        Rpm::from_revolutions_per_minute(10.0);
+        Rpm::from_revolutions_per_minute(7_000.0);
     pub(in crate::package::state) const DUTY: SignedRatio = SignedRatio::from_ratio_const(0.3);
     pub(in crate::package::state) const DUTY_MARGIN: Ratio = Ratio::from_ratio_const(0.05);
     pub(in crate::package::state) const CLEAR_DELAY: VescSeconds = VescSeconds::from_seconds(0.2);

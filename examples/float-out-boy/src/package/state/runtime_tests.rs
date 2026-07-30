@@ -536,8 +536,9 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
             .abs()
             < 0.0001
     );
-    assert_f32_eq!(motor.battery_current().current().as_amps(), 0.04);
-    assert_f32_eq!(motor.duty_cycle().ratio().as_ratio(), 0.00375);
+    let alpha = vescpkg_rs::ema_alpha(Frequency::from_hertz(1.0), SampleRate::from_hertz(832.0));
+    assert_f32_eq!(motor.battery_current().current().as_amps(), 4.0 * alpha);
+    assert_f32_eq!(motor.duty_cycle().ratio().as_ratio(), 0.375 * alpha);
 }
 
 #[test]
@@ -1210,10 +1211,10 @@ fn set_protective_ride_state(
 }
 
 fn settle_motor_acceleration(state: &mut FloatOutBoyPackageState, motor_erpm: Rpm) {
-    for _ in 0..40 {
+    for _ in 0..255 {
         state
             .motor_kinematics
-            .record(motor_erpm, super::motor_kinematics::ABS_ERPM_SMOOTHING);
+            .record(motor_erpm, VescSeconds::from_seconds(1.0 / 720.0));
     }
 }
 
