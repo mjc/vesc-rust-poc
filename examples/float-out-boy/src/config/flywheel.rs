@@ -23,11 +23,12 @@ impl FloatOutBoyConfigEditor<'_> {
         self.apply_handtest_safety_overrides()
             && self.set(S::PITCH_TOLERANCE_FIELD, AngleDegrees::from_degrees(0.2))
             && self.set(S::ROLL_TOLERANCE_FIELD, AngleDegrees::from_degrees(25.0))
-            && self.set(F::PITCH_FIELD, AngleDegrees::from_degrees(6.0))
-            && self.set(
-                F::ROLL_FIELD,
-                AngleDegrees::from_degrees(if config.relaxed_roll { 90.0 } else { 35.0 }),
-            )
+            && self.set_fault_pitch(AngleDegrees::from_degrees(6.0))
+            && self.set_fault_roll(AngleDegrees::from_degrees(if config.relaxed_roll {
+                90.0
+            } else {
+                35.0
+            }))
             && self.set(B::KP_FIELD, config.kp)
             && self.set(B::KP2_FIELD, config.kp2)
             && self.set(C::DUTY_PUSHBACK_ANGLE_FIELD, config.duty_angle)

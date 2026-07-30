@@ -4,15 +4,12 @@ use crate::domain::{
     FloatOutBoyRealtimeRemoteInput, FloatOutBoyRunState,
 };
 use crate::package::state::FloatOutBoyPackageState;
-use crate::package::test_support::{
-    FloatOutBoyConfigTestBytes, editable_config_from_bytes,
-    sample_all_data_payloads_with_ride_state,
-};
-use vescpkg_rs::WrappingTimer;
+use crate::package::test_support::sample_all_data_payloads_with_ride_state;
 use vescpkg_rs::prelude::{
-    AngleDegrees, Current, DeciampCurrent, MotorCurrent, Rpm, SampleRate, SignedRatio,
-    TimestampTicks, VescSeconds,
+    AngleDegrees, DeciampCurrent, Rpm, SampleRate, SignedRatio, VescSeconds,
 };
+
+const FILTER_TIME: VescSeconds = VescSeconds::from_seconds(0.2);
 
 #[test]
 fn input_tilt_first_update_matches_refloat_smooth_setpoint() {
@@ -23,11 +20,37 @@ fn input_tilt_first_update_matches_refloat_smooth_setpoint() {
 
     let setpoint = remote_control.update_input_tilt(
         AngleDegrees::from_degrees(10.0),
+        FILTER_TIME,
         SampleRate::from_hertz(500.0),
         false,
     );
 
     assert!((setpoint.as_degrees() - 0.000_178_73).abs() < 0.000_000_1);
+}
+
+#[test]
+fn input_tilt_uses_serialized_filter_time_constant() {
+    let input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(1.0));
+    let mut faster = RemoteControlState::default();
+    let mut slower = RemoteControlState::default();
+    faster.set_input(input);
+    slower.set_input(input);
+
+    let faster_setpoint = faster.update_input_tilt(
+        AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.1),
+        SampleRate::from_hertz(500.0),
+        false,
+    );
+    let slower_setpoint = slower.update_input_tilt(
+        AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.4),
+        SampleRate::from_hertz(500.0),
+        false,
+    );
+
+    assert!(faster_setpoint > slower_setpoint);
+    assert!(slower_setpoint > AngleDegrees::ZERO);
 }
 
 #[test]
@@ -39,14 +62,14 @@ fn input_tilt_reversal_eventually_crosses_zero() {
     let angle_limit = AngleDegrees::from_degrees(10.0);
     let sample_rate = SampleRate::from_hertz(500.0);
     for _ in 0..100 {
-        remote_control.update_input_tilt(angle_limit, sample_rate, false);
+        remote_control.update_input_tilt(angle_limit, FILTER_TIME, sample_rate, false);
     }
     let rising = remote_control.input_tilt.value();
     remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
         SignedRatio::from_ratio_const(-1.0),
     ));
     for _ in 0..500 {
-        remote_control.update_input_tilt(angle_limit, sample_rate, false);
+        remote_control.update_input_tilt(angle_limit, FILTER_TIME, sample_rate, false);
     }
     let reversed = remote_control.input_tilt.value();
 
@@ -64,10 +87,20 @@ fn input_tilt_stays_within_five_percent_over_equal_time_at_different_cadences() 
     delayed.set_input(input);
 
     for _ in 0..50 {
-        nominal.update_input_tilt_elapsed(angle_limit, VescSeconds::from_seconds(0.002), false);
+        nominal.update_input_tilt_elapsed(
+            angle_limit,
+            FILTER_TIME,
+            VescSeconds::from_seconds(0.002),
+            false,
+        );
     }
     for _ in 0..25 {
-        delayed.update_input_tilt_elapsed(angle_limit, VescSeconds::from_seconds(0.004), false);
+        delayed.update_input_tilt_elapsed(
+            angle_limit,
+            FILTER_TIME,
+            VescSeconds::from_seconds(0.004),
+            false,
+        );
     }
 
     let difference = (delayed.input_tilt.value() - nominal.input_tilt.value()).abs();
@@ -88,8 +121,18 @@ fn darkride_mirrors_the_remote_tilt_setpoint() {
     darkride.set_input(input);
     let elapsed = VescSeconds::from_seconds(0.002);
     for _ in 0..100 {
-        upright.update_input_tilt_elapsed(AngleDegrees::from_degrees(10.0), elapsed, false);
-        darkride.update_input_tilt_elapsed(AngleDegrees::from_degrees(10.0), elapsed, true);
+        upright.update_input_tilt_elapsed(
+            AngleDegrees::from_degrees(10.0),
+            FILTER_TIME,
+            elapsed,
+            false,
+        );
+        darkride.update_input_tilt_elapsed(
+            AngleDegrees::from_degrees(10.0),
+            FILTER_TIME,
+            elapsed,
+            true,
+        );
     }
 
     assert_eq!(darkride.input_tilt.value(), -upright.input_tilt.value());
@@ -103,6 +146,7 @@ fn runtime_reset_clears_remote_tilt_motion() {
     ));
     remote_control.update_input_tilt(
         AngleDegrees::from_degrees(10.0),
+        FILTER_TIME,
         SampleRate::from_hertz(500.0),
         false,
     );
@@ -113,7 +157,7 @@ fn runtime_reset_clears_remote_tilt_motion() {
 }
 
 #[test]
-fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
+fn cutoff_schema_does_not_reuse_removed_remote_current_limit() {
     let mut remote_control = RemoteControlState::default();
     remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
         SignedRatio::from_ratio_const(0.5),
@@ -122,30 +166,11 @@ fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
-    let mut config = *state.serialized_config();
-    config.edit_float_out_boy_config(|config| {
-        assert!(
-            config.set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0,)))
-        );
-    });
-    config.edit_float_out_boy_config(|config| {
-        assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
-    });
-    let config = editable_config_from_bytes(&config);
-    let remote_throttle = config.remote_throttle();
-
-    let requested_current = remote_control
-        .request_remote_throttle_current(
-            remote_throttle,
-            TimestampTicks::from_ticks(1),
-            WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
-        )
-        .expect("remote throttle should request current");
-
-    // Upstream `do_rc_move(d)` uses default inverted throttle and filters
-    // `rc_current = old * 0.95 + target * 0.05` before requesting current
-    // at `third_party/float-out-boy/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
-    assert_f32_eq!(requested_current.current().as_amps(), -0.25);
+    assert_eq!(
+        state.serialized_config.remote().max_move_speed(),
+        vescpkg_rs::Speed::ZERO
+    );
+    assert_eq!(remote_control.request_ready_current(Rpm::ZERO), None);
 }
 
 #[test]

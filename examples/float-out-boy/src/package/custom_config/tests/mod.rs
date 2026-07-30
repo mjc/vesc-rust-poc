@@ -12,12 +12,10 @@ use crate::package::test_support::{
 use vescpkg_rs::test_support::{FirmwareTest, invoke_stateful_custom_config_handler};
 use vescpkg_rs::{StatefulCustomConfigCallback, TimestampTicks};
 
-fn float_out_boy_config_with_hertz(hertz: u16) -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
+fn nondefault_float_out_boy_config() -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     let mut config = default_float_out_boy_config_bytes();
     config.edit_float_out_boy_config(|config| {
-        assert!(
-            config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(f32::from(hertz)))
-        );
+        assert!(config.set_startup_pitch_tolerance(vescpkg_rs::AngleDegrees::from_degrees(7.0)));
         assert!(config.set_meta_is_default(false));
     });
     config
@@ -38,10 +36,10 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    assert_eq!(bytes.as_bytes().len(), 25_763);
+    assert_eq!(bytes.as_bytes().len(), 27_463);
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x5c, 0xce, 0x78, 0xda]
+        &[0x00, 0x05, 0x9e, 0xbc, 0x78, 0xda]
     );
 }
 
@@ -49,13 +47,13 @@ fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
 fn custom_config_default_callback_returns_upstream_serialized_defaults() {
     let config = FloatOutBoyCustomConfig::default_config();
 
-    // Float Out Boy v1.2.1 default `get_cfg` allocates a temporary config,
+    // The pinned cutoff default `get_cfg` allocates a temporary config,
     // applies generated defaults, and serializes it at `third_party/float-out-boy/src/main.c:2339-2350`.
     // The generated format comes from `third_party/float-out-boy/src/Makefile:28-31`;
     // generated `conf/confparser.h:11-12` fixes signature/length, and
     // generated `conf/confparser.c:8-178,363-531` writes these bytes.
     assert_eq!(*config.as_bytes(), default_float_out_boy_config_bytes());
-    assert_eq!(&config.as_bytes()[..4], &[0x90, 0xb7, 0xa9, 0xba]);
+    assert_eq!(&config.as_bytes()[..4], &[0x19, 0x1a, 0x6c, 0x1b]);
 }
 
 #[test]
@@ -98,7 +96,7 @@ fn stateful_custom_config_set_callback_writes_runtime_state() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
     assert!(runtime_state.is_some());
-    let incoming = float_out_boy_config_with_hertz(500);
+    let incoming = nondefault_float_out_boy_config();
 
     assert!(runtime_set_config(&incoming));
     let persisted = firmware
@@ -114,7 +112,7 @@ fn stateful_custom_config_set_callback_writes_runtime_state() {
 #[test]
 fn stateful_custom_config_set_callback_returns_false_without_runtime_state() {
     let _state_lock = lock_test_float_out_boy_config_state();
-    let incoming = float_out_boy_config_with_hertz(500);
+    let incoming = nondefault_float_out_boy_config();
 
     // C map: upstream `set_cfg` needs `Data *` before storing into
     // `d->float_conf` at `third_party/float-out-boy/src/main.c:2368`.
@@ -139,7 +137,7 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.replace_idle_epoch_for_test(TimestampTicks::from_ticks(7));
     let mut incoming = default_float_out_boy_config_bytes();
-    incoming[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    incoming[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_meta_is_default(false));
     });
@@ -177,10 +175,13 @@ fn custom_config_set_callback_rejects_bad_signature_like_float_out_boy() {
 }
 
 #[test]
-fn custom_config_set_callback_rejects_zero_hertz_before_persistence() {
+fn custom_config_set_callback_rejects_zero_filter_time_constant_before_persistence() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-    let incoming = float_out_boy_config_with_hertz(0);
+    let mut incoming = default_float_out_boy_config_bytes();
+    incoming.edit_float_out_boy_config(|config| {
+        assert!(config.set_atr_filter_time_constant(vescpkg_rs::VescSeconds::ZERO));
+    });
 
     assert!(!set_float_out_boy_custom_config_for_test(
         &mut state, &incoming
@@ -215,7 +216,7 @@ fn custom_config_set_callback_rejects_zero_runtime_divisors() {
     let _firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-    for offset in [142, 244, 248, 252] {
+    for offset in [153, 250, 254, 258] {
         let mut incoming = default_float_out_boy_config_bytes();
         incoming[offset..offset + 2].fill(0);
         assert!(
@@ -225,7 +226,7 @@ fn custom_config_set_callback_rejects_zero_runtime_divisors() {
     }
 
     let mut incoming = default_float_out_boy_config_bytes();
-    incoming[144] = 0;
+    incoming[155] = 0;
     assert!(state.prepare_serialized_config(&incoming).is_none());
 }
 
@@ -234,7 +235,7 @@ fn custom_config_set_callback_rejects_invalid_modes_and_led_layout() {
     let _firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-    for (offset, value) in [(79, 3), (101, u8::MAX), (227, u8::MAX)] {
+    for (offset, value) in [(99, 3), (118, u8::MAX), (232, u8::MAX)] {
         let mut incoming = default_float_out_boy_config_bytes();
         incoming[offset] = value;
         assert!(

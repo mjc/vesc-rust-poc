@@ -502,7 +502,6 @@ fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(2.0)));
     edit_config(&mut state, |config| {
-        assert!(config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(100.0)));
         assert!(config.set_startup_speed(AngularVelocity::from_degrees_per_second(50.0)));
     });
     (telemetry, state)
@@ -622,7 +621,6 @@ fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
         ));
     edit_config(&mut state, |config| {
         assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
     });
 
     assert!(tick_realtime_data(&mut state, &telemetry, 0));

@@ -230,11 +230,6 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
     assert!(
         config
             .editor()
-            .set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(100.0))
-    );
-    assert!(
-        config
-            .editor()
             .set_startup_speed(AngularVelocity::from_degrees_per_second(50.0))
     );
     state.replace_serialized_config_for_test(&config);

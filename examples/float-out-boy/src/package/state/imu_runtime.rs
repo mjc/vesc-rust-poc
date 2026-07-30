@@ -938,6 +938,10 @@ fn advance_running_control(
     state.runtime_board_setpoint = board_setpoint;
     let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
         state.serialized_config.input_tilt_angle_limit(),
+        state
+            .serialized_config
+            .balance()
+            .remote_filter_time_constant(),
         elapsed,
         phase.darkride_active,
     );
@@ -1071,12 +1075,7 @@ pub(super) fn refresh(
         );
     } else if phase.run_state == FloatOutBoyRunState::Ready
         && !phase.state_stop_fault
-        && let Some(current) = state.remote_control.request_ready_current(
-            phase.motor_erpm,
-            state.serialized_config.remote_throttle(),
-            system_time_ticks,
-            state.disengage_ticks,
-        )
+        && let Some(current) = state.remote_control.request_ready_current(phase.motor_erpm)
     {
         state.request_motor_current(current);
     }
