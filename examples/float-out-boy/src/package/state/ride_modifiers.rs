@@ -7,12 +7,12 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, Frequency, MotorCurrent, PidScale, Rpm, SampleRate,
-    VescSeconds,
+    AngleDegrees, AngularVelocity, Frequency, MotorCurrent, PidScale, Rpm, SampleRate, VescSeconds,
 };
 
-const LOOP_HERTZ_COMPAT: f32 = 720.0;
+const LOOP_RATE_COMPAT: SampleRate = SampleRate::from_hertz(720.0);
 const TURN_TILT_YAW_CUTOFF: Frequency = Frequency::from_hertz(25.0);
 const TURN_TILT_YAW_RATE_LIMIT: AngularVelocity = AngularVelocity::from_degrees_per_second(72.0);
 const TURN_TILT_YAW_RATE_THRESHOLD: AngularVelocity =
@@ -31,13 +31,25 @@ fn rate_limit(value: AngleDegrees, target: AngleDegrees, step: AngleDegrees) -> 
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct AtrState {
     angle: SmoothSetpoint,
-    accel_diff: f32,
-    speed_boost: f32,
+    accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
+    speed_boost: FloatOutBoyRealtimeAtrSpeedBoost,
     transition_target: AngleDegrees,
     transition_boost: SmoothSetpointMultiplier,
+}
+
+impl Default for AtrState {
+    fn default() -> Self {
+        Self {
+            angle: SmoothSetpoint::default(),
+            accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
+            speed_boost: FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
+            transition_target: AngleDegrees::ZERO,
+            transition_boost: SmoothSetpointMultiplier::ONE,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -96,11 +108,13 @@ fn atr_transition_multiplier(
     SmoothSetpointMultiplier::from_factor(factor)
 }
 
-fn current_domain_direction(erpm: Rpm, current: Current) -> SmoothSetpointDirection {
-    if erpm.abs().as_revolutions_per_minute() > 250.0 || current.as_amps() < 30.0 {
+fn motor_direction(erpm: Rpm, torque: MotorTorque) -> SmoothSetpointDirection {
+    if erpm.abs().as_revolutions_per_minute() > 250.0
+        || torque < MotorTorque::from_newton_meters(18.0)
+    {
         SmoothSetpointDirection::from_erpm(erpm)
     } else {
-        SmoothSetpointDirection::from_forward(!current.is_negative())
+        SmoothSetpointDirection::from_forward(!torque.is_negative())
     }
 }
 
@@ -133,21 +147,43 @@ fn nose_target(config: &FloatOutBoyConfigImage, erpm: Rpm) -> AngleDegrees {
 
 fn torque_target(
     config: crate::config::FloatOutBoyBalanceConfig<'_>,
-    current: Current,
+    torque: MotorTorque,
     braking: bool,
 ) -> AngleDegrees {
-    let strength = if braking {
+    let configured_strength = if braking {
         config.torque_tilt_regen_strength().value()
     } else {
         config.torque_tilt_strength().value()
     };
+    let strength =
+        configured_strength / MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let start_torque = MotorTorqueConstant::REFLOAT_COMPAT
+        .torque_from_current(config.torque_tilt_start_current().current());
     AngleDegrees::from_degrees(
-        ((current.as_amps().abs() - config.torque_tilt_start_current().current().as_amps())
-            .max(0.0)
-            * strength)
+        ((torque.abs().as_newton_meters() - start_torque.as_newton_meters()).max(0.0) * strength)
             .min(config.torque_tilt_angle_limit().as_degrees())
-            * current.signum(),
+            * torque.signum().as_ratio(),
     )
+}
+
+fn atr_expected_acceleration(
+    torque: MotorTorque,
+    erpm: Rpm,
+    configured_ratio: PidScale,
+) -> FloatOutBoyRealtimeAtrAccelerationDiff {
+    let torque = torque.as_newton_meters();
+    let abs_torque = torque.abs();
+    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let torque_offset = 8.0 * compatibility_constant;
+    let factor = configured_ratio.value() * compatibility_constant;
+    let expected = if abs_torque < 15.0 {
+        (torque - erpm.signum() * torque_offset) / factor
+    } else {
+        let sign = torque.signum();
+        (sign * 15.0 - erpm.signum() * torque_offset) / factor
+            + sign * (abs_torque - 15.0) / (factor * 1.3)
+    };
+    FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(expected)
 }
 
 fn turn_target(
@@ -162,7 +198,7 @@ fn turn_target(
     {
         0.0
     } else {
-        let mut target = state.yaw.rate.abs().as_degrees_per_second() / LOOP_HERTZ_COMPAT
+        let mut target = state.yaw.rate.abs().as_degrees_per_second() / LOOP_RATE_COMPAT.as_hertz()
             * config.turn_tilt_strength().value();
         let boost = if abs_erpm
             < config
@@ -216,7 +252,8 @@ impl YawMotion {
         let limited = (change.as_degrees() / seconds).clamp(-limit, limit);
         let alpha = super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, filter_rate);
         self.rate = AngularVelocity::from_degrees_per_second(
-            self.rate.as_degrees_per_second() * (1.0 - alpha) + limited * alpha,
+            self.rate.as_degrees_per_second() * (1.0 - alpha.as_ratio())
+                + limited * alpha.as_ratio(),
         );
         if self.rate.is_negative() != self.aggregate.is_negative() {
             self.aggregate = AngleDegrees::ZERO;
@@ -248,7 +285,7 @@ pub(super) struct RideModifierInput {
     pub(super) remote_setpoint: AngleDegrees,
     pub(super) balance_pitch: AngleDegrees,
     pub(super) motor_erpm: Rpm,
-    pub(super) filtered_current: Current,
+    pub(super) filtered_torque: MotorTorque,
     pub(super) motor_current: MotorCurrent,
     pub(super) acceleration: Rpm,
     pub(super) darkride: bool,
@@ -266,7 +303,7 @@ impl ModifierMotorState {
     fn from_input(input: RideModifierInput) -> Self {
         Self {
             erpm: input.motor_erpm,
-            direction: current_domain_direction(input.motor_erpm, input.filtered_current),
+            direction: motor_direction(input.motor_erpm, input.filtered_torque),
             braking: input.motor_current.is_negative(),
         }
     }
@@ -281,8 +318,8 @@ impl RideModifierState {
         self.nose = AngleDegrees::ZERO;
         self.torque.reset();
         self.atr.angle.reset();
-        self.atr.accel_diff = 0.0;
-        self.atr.speed_boost = 0.0;
+        self.atr.accel_diff = FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0);
+        self.atr.speed_boost = FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0);
         self.atr.transition_target = AngleDegrees::ZERO;
         self.atr.transition_boost = SmoothSetpointMultiplier::ONE;
         self.brake.reset();
@@ -342,7 +379,7 @@ impl RideModifierState {
         let motor = ModifierMotorState::from_input(input);
         self.update_nose(config, input.motor_erpm, elapsed);
         self.update_turn(balance, motor, elapsed);
-        self.update_torque(balance, input.filtered_current, motor, elapsed);
+        self.update_torque(balance, input.filtered_torque, motor, elapsed);
         self.update_atr(balance, input, motor, elapsed);
         self.update_brake(balance, input, motor, elapsed);
     }
@@ -389,13 +426,13 @@ impl RideModifierState {
     fn update_torque(
         &mut self,
         config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        current: Current,
+        torque: MotorTorque,
         motor: ModifierMotorState,
         elapsed: VescSeconds,
     ) {
-        self.configure_torque_setpoint(elapsed);
+        self.configure_torque_setpoint(config, elapsed);
         self.torque.update(
-            torque_target(config, current, motor.braking),
+            torque_target(config, torque, motor.braking),
             motor.direction,
             SmoothSetpointMultiplier::ONE,
             elapsed,
@@ -412,24 +449,18 @@ impl RideModifierState {
         let Some(update_rate) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
-        self.configure_atr_setpoint(elapsed);
-        let current = input.filtered_current.as_amps();
-        let abs_torque = current.abs();
+        self.configure_atr_setpoint(config, elapsed);
         let ratio = if motor.braking {
-            config.atr_amps_decel_ratio().value()
+            config.atr_amps_decel_ratio()
         } else {
-            config.atr_amps_accel_ratio().value()
+            config.atr_amps_accel_ratio()
         };
-        let erpm_sign = motor.erpm.signum();
-        let expected = if abs_torque < 25.0 {
-            (current - erpm_sign * 8.0) / ratio
-        } else {
-            let sign = current.signum();
-            (sign * 25.0 - erpm_sign * 8.0) / ratio + sign * (abs_torque - 25.0) / (ratio * 1.3)
-        };
+        let expected =
+            atr_expected_acceleration(input.filtered_torque, motor.erpm, ratio).as_erpm_delta();
         let forward = motor.direction.is_forward();
-        let measured =
-            (input.acceleration.as_revolutions_per_minute() / LOOP_HERTZ_COMPAT).clamp(-5.0, 5.0);
+        let measured = (input.acceleration.as_revolutions_per_minute()
+            / LOOP_RATE_COMPAT.as_hertz())
+        .clamp(-5.0, 5.0);
         let new_diff = expected - measured;
         let abs_erpm = motor.abs_erpm();
         let cutoff_hertz = if abs_erpm > 2_000.0 {
@@ -445,12 +476,14 @@ impl RideModifierState {
             Frequency::from_hertz(cutoff_hertz),
             update_rate,
         );
-        self.atr.accel_diff = if accept == 0.0 {
+        let accel_diff = if accept.is_zero() {
             0.0
         } else {
-            self.atr.accel_diff * (1.0 - accept) + new_diff * accept
+            self.atr.accel_diff.as_erpm_delta() * (1.0 - accept.as_ratio())
+                + new_diff * accept.as_ratio()
         };
-        let mut strength = if forward == (self.atr.accel_diff > 0.0) {
+        self.atr.accel_diff = FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(accel_diff);
+        let mut strength = if forward == (accel_diff > 0.0) {
             config.atr_strength_up().value()
         } else {
             config.atr_strength_down().value()
@@ -462,17 +495,18 @@ impl RideModifierState {
             } else {
                 3_000.0
             };
-            self.atr.speed_boost = ((abs_erpm - 3_000.0) / divisor).min(1.0) * configured;
-            strength += strength * self.atr.speed_boost;
+            let speed_boost = ((abs_erpm - 3_000.0) / divisor).min(1.0) * configured;
+            self.atr.speed_boost = FloatOutBoyRealtimeAtrSpeedBoost::from_units(speed_boost);
+            strength += strength * speed_boost;
         } else {
-            self.atr.speed_boost = 0.0;
+            self.atr.speed_boost = FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0);
         }
         let threshold = if motor.braking {
             config.atr_threshold_down().as_degrees()
         } else {
             config.atr_threshold_up().as_degrees()
         };
-        let mut target = strength * self.atr.accel_diff;
+        let mut target = strength * accel_diff;
         target = if target.abs() < threshold {
             0.0
         } else {
@@ -484,8 +518,8 @@ impl RideModifierState {
         ));
         let transition_alpha =
             super::motor_kinematics::refloat_ema_alpha(Frequency::from_hertz(6.0), update_rate);
-        self.atr.transition_target =
-            self.atr.transition_target + (target - self.atr.transition_target) * transition_alpha;
+        self.atr.transition_target = self.atr.transition_target
+            + (target - self.atr.transition_target) * transition_alpha.as_ratio();
         self.atr.transition_boost = atr_transition_multiplier(
             self.atr.angle.value(),
             self.atr.transition_target,
@@ -506,6 +540,7 @@ impl RideModifierState {
         motor: ModifierMotorState,
         elapsed: VescSeconds,
     ) {
+        let accel_diff = self.atr.accel_diff.as_erpm_delta();
         self.configure_brake_setpoint(config, elapsed);
         let strength = config.brake_tilt_strength().value();
         let factor = if strength == 0.0 {
@@ -522,12 +557,10 @@ impl RideModifierState {
                 != motor.erpm.signum().is_sign_negative()
         {
             let mut downhill = 1.0;
-            if (input.motor_erpm.as_revolutions_per_minute() > 1_000.0
-                && self.atr.accel_diff < -1.0)
-                || (input.motor_erpm.as_revolutions_per_minute() < -1_000.0
-                    && self.atr.accel_diff > 1.0)
+            if (input.motor_erpm.as_revolutions_per_minute() > 1_000.0 && accel_diff < -1.0)
+                || (input.motor_erpm.as_revolutions_per_minute() < -1_000.0 && accel_diff > 1.0)
             {
-                downhill += self.atr.accel_diff.abs() / 2.0;
+                downhill += accel_diff.abs() / 2.0;
             }
             if downhill <= 2.0 {
                 target = balance_offset / (factor * downhill);
@@ -583,7 +616,11 @@ impl RideModifierState {
         );
     }
 
-    fn configure_torque_setpoint(&mut self, elapsed: VescSeconds) {
+    fn configure_torque_setpoint(
+        &mut self,
+        config: crate::config::FloatOutBoyBalanceConfig<'_>,
+        elapsed: VescSeconds,
+    ) {
         let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
@@ -593,16 +630,20 @@ impl RideModifierState {
                 on_speed_time_constant: VescSeconds::from_seconds(0.08),
                 off_speed_time_constant: VescSeconds::from_seconds(0.16),
                 winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(24.0),
-                off_speed_up: AngularVelocity::from_degrees_per_second(24.0),
-                on_speed_down: AngularVelocity::from_degrees_per_second(24.0),
-                off_speed_down: AngularVelocity::from_degrees_per_second(24.0),
+                on_speed_up: config.torque_tilt_on_speed(),
+                off_speed_up: config.torque_tilt_off_speed(),
+                on_speed_down: config.torque_tilt_on_speed(),
+                off_speed_down: config.torque_tilt_off_speed(),
             },
             frequency,
         );
     }
 
-    fn configure_atr_setpoint(&mut self, elapsed: VescSeconds) {
+    fn configure_atr_setpoint(
+        &mut self,
+        config: crate::config::FloatOutBoyBalanceConfig<'_>,
+        elapsed: VescSeconds,
+    ) {
         let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
@@ -612,10 +653,10 @@ impl RideModifierState {
                 on_speed_time_constant: VescSeconds::from_seconds(0.1),
                 off_speed_time_constant: VescSeconds::from_seconds(0.01),
                 winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(24.0),
-                off_speed_up: AngularVelocity::from_degrees_per_second(24.0),
-                on_speed_down: AngularVelocity::from_degrees_per_second(24.0),
-                off_speed_down: AngularVelocity::from_degrees_per_second(24.0),
+                on_speed_up: config.atr_on_speed(),
+                off_speed_up: config.atr_off_speed(),
+                on_speed_down: config.atr_on_speed(),
+                off_speed_down: config.atr_off_speed(),
             },
             frequency,
         );
@@ -629,18 +670,16 @@ impl RideModifierState {
         let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
-        let off_speed = AngularVelocity::from_degrees_per_second(
-            24.0 / config.brake_tilt_lingering().value().max(1.0),
-        );
+        let off_speed = config.atr_off_speed() / config.brake_tilt_lingering().value().max(1.0);
         self.brake.configure(
             SmoothSetpointConfig {
                 time_constant: VescSeconds::from_seconds(0.3),
                 on_speed_time_constant: VescSeconds::from_seconds(0.1),
                 off_speed_time_constant: VescSeconds::from_seconds(0.01),
                 winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(24.0),
+                on_speed_up: config.atr_on_speed(),
                 off_speed_up: off_speed,
-                on_speed_down: AngularVelocity::from_degrees_per_second(24.0),
+                on_speed_down: config.atr_on_speed(),
                 off_speed_down: off_speed,
             },
             frequency,
@@ -653,17 +692,17 @@ impl RideModifierState {
         elapsed: VescSeconds,
     ) {
         self.configure_turn_setpoint(elapsed);
-        self.configure_torque_setpoint(elapsed);
-        self.configure_atr_setpoint(elapsed);
+        self.configure_torque_setpoint(config, elapsed);
+        self.configure_atr_setpoint(config, elapsed);
         self.configure_brake_setpoint(config, elapsed);
     }
 
     pub(super) const fn atr_accel_diff(self) -> FloatOutBoyRealtimeAtrAccelerationDiff {
-        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(self.atr.accel_diff)
+        self.atr.accel_diff
     }
 
     pub(super) const fn atr_speed_boost(self) -> FloatOutBoyRealtimeAtrSpeedBoost {
-        FloatOutBoyRealtimeAtrSpeedBoost::from_units(self.atr.speed_boost)
+        self.atr.speed_boost
     }
 }
 

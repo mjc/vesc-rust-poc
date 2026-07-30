@@ -1127,7 +1127,9 @@ fn advance_running_control(
             remote_setpoint,
             balance_pitch: phase.balance_pitch.angle_degrees(),
             motor_erpm: phase.motor_erpm,
-            filtered_current: base.motor().filtered_motor_current().current().current(),
+            filtered_torque: state
+                .motor_torque_constant
+                .torque_from_current(base.motor().filtered_motor_current().current().current()),
             motor_current: base.motor().motor_current(),
             acceleration: phase.motor_acceleration,
             darkride: phase.control.darkride_active,
