@@ -15,6 +15,21 @@ use std::vec::Vec;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
+#[test]
+fn zero_current_filter_frequency_uses_refloat_twenty_hertz_fallback() {
+    let mut filter = vescpkg_rs::BiquadLowPass::default();
+    filter.configure(
+        super::motor_runtime::current_filter_frequency(Frequency::ZERO),
+        SampleRate::from_hertz(832.0),
+        0.707,
+    );
+
+    let directional = -6.75;
+    let filtered = filter.process(directional);
+    assert!(filtered < 0.0);
+    assert!(filtered > directional);
+}
+
 fn handle_all_data_mode(
     state: &mut FloatOutBoyPackageState,
     now: TimestampTicks,

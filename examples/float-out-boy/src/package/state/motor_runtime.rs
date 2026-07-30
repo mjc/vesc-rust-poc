@@ -6,12 +6,21 @@ use crate::domain::{
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
-    BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, MotorCurrent,
-    SampleRate, SignedRatio,
+    BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
+    MotorCurrent, SampleRate, SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
+const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
+
+pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
+    if configured.as_hertz() < 1.0 {
+        DEFAULT_CURRENT_FILTER_FREQUENCY
+    } else {
+        configured
+    }
+}
 
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     state.duty_max_with_margin = telemetry
@@ -43,7 +52,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(
-        state.serialized_config.motor_current_filter_frequency(),
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         state.frequency_trackers.main.filter_frequency(),
         CURRENT_FILTER_Q,
     );
@@ -94,7 +103,7 @@ pub(super) fn reconfigure_current_filter(
     frequency: SampleRate,
 ) {
     state.motor_current_filter.configure(
-        state.serialized_config.motor_current_filter_frequency(),
+        current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         frequency,
         CURRENT_FILTER_Q,
     );
