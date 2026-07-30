@@ -39,7 +39,7 @@ fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     assert_eq!(bytes.as_bytes().len(), FLOAT_OUT_BOY_CONFIG_XML.len());
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x5c, 0xce, 0x78, 0xda]
+        &[0x00, 0x05, 0x9e, 0xf7, 0x78, 0xda]
     );
 }
 
