@@ -26,6 +26,24 @@ use driver::FloatOutBoyInternalLedDriver;
 #[cfg(target_arch = "arm")]
 pub(super) type RuntimeAllocation = vescpkg_rs::FallibleBox<FloatOutBoyInternalLedRuntime>;
 
+#[cfg(target_arch = "arm")]
+pub(in crate::package) struct FloatOutBoyInternalLedAuxWork {
+    runtime: Option<RuntimeAllocation>,
+    effective_config: Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)>,
+    frame: FloatOutBoyLedFrameUpdate,
+    current_time: f32,
+    refresh: bool,
+    confirmation: Option<TimestampTicks>,
+}
+
+#[cfg(target_arch = "arm")]
+pub(in crate::package) struct FloatOutBoyInternalLedAuxResult {
+    runtime: Option<RuntimeAllocation>,
+    retry_refresh: bool,
+    deferred_confirmation: Option<TimestampTicks>,
+    operational: bool,
+}
+
 #[derive(Debug, PartialEq)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
 pub(super) struct FloatOutBoyInternalLedRuntime {
@@ -55,6 +73,13 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
+        self.internal_led_confirmation_pending
+            .get_or_insert(system_time_ticks);
+    }
+
+    #[cfg(test)]
     pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
         if self.internal_led_refresh_pending {
             self.internal_led_confirmation_pending
@@ -62,10 +87,7 @@ impl FloatOutBoyPackageState {
             return;
         }
         let current_time = system_time_ticks.as_vesc_seconds().as_seconds();
-        #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
-        #[cfg(target_arch = "arm")]
-        let runtime = self.internal_leds.as_deref_mut();
         if let Some(runtime) = runtime {
             runtime.renderer.start_confirmation(current_time);
         }
@@ -99,6 +121,7 @@ impl FloatOutBoyPackageState {
             #[cfg(target_arch = "arm")]
             {
                 self.internal_leds = Some(runtime);
+                self.internal_leds_operational = true;
             }
         }
     }
@@ -144,25 +167,81 @@ impl FloatOutBoyPackageState {
 
         if destroyed {
             self.internal_leds = None;
+            #[cfg(target_arch = "arm")]
+            {
+                self.internal_leds_operational = false;
+            }
         }
         destroyed
     }
 
+    #[cfg(test)]
     pub(crate) fn internal_leds_operational(&self) -> bool {
-        #[cfg(test)]
-        let runtime = self.internal_leds.as_ref();
-        #[cfg(target_arch = "arm")]
-        let runtime = self.internal_leds.as_deref();
-        runtime.is_some_and(|runtime| runtime.driver.is_operational())
+        self.internal_leds
+            .as_ref()
+            .is_some_and(|runtime| runtime.driver.is_operational())
+    }
+
+    #[cfg(all(not(test), target_arch = "arm"))]
+    pub(crate) const fn internal_leds_operational(&self) -> bool {
+        self.internal_leds_operational
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(in crate::package) fn prepare_internal_led_aux_work(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        current_time: f32,
+    ) -> FloatOutBoyInternalLedAuxWork {
+        FloatOutBoyInternalLedAuxWork {
+            runtime: self.internal_leds.take(),
+            effective_config: self.effective_led_config(),
+            frame: self.internal_led_frame(telemetry),
+            current_time,
+            refresh: core::mem::take(&mut self.internal_led_refresh_pending),
+            confirmation: self.internal_led_confirmation_pending.take(),
+        }
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(in crate::package) fn commit_internal_led_aux_work(
+        &mut self,
+        result: FloatOutBoyInternalLedAuxResult,
+    ) {
+        self.internal_leds = result.runtime;
+        self.internal_led_refresh_pending |= result.retry_refresh;
+        if let Some(timestamp) = result.deferred_confirmation {
+            self.internal_led_confirmation_pending
+                .get_or_insert(timestamp);
+        }
+        self.internal_leds_operational = result.operational;
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.
+    #[cfg(test)]
     pub(crate) fn render_internal_leds(
         &mut self,
         telemetry: &impl MotorTelemetry,
         current_time: f32,
         paint: impl FnOnce(&FloatOutBoyLedRenderer),
     ) {
+        let frame = self.internal_led_frame(telemetry);
+        #[cfg(test)]
+        let runtime = self.internal_leds.as_mut();
+        #[cfg(target_arch = "arm")]
+        let runtime = self.internal_leds.as_deref_mut();
+        if let Some(runtime) = runtime {
+            if runtime.renderer.update(runtime.config, frame, current_time)
+                && runtime
+                    .driver
+                    .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+            {
+                paint(&runtime.renderer);
+            }
+        }
+    }
+
+    fn internal_led_frame(&self, telemetry: &impl MotorTelemetry) -> FloatOutBoyLedFrameUpdate {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
         let filtered_current = base.motor().filtered_motor_current().current().current();
@@ -185,7 +264,7 @@ impl FloatOutBoyPackageState {
             battery_current,
             battery_limit.current(),
         );
-        let frame = FloatOutBoyLedFrameUpdate::new(
+        FloatOutBoyLedFrameUpdate::new(
             FloatOutBoyLedUpdate {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
@@ -206,19 +285,74 @@ impl FloatOutBoyPackageState {
                     .abs()
                     > 100.0,
             },
-        );
-        #[cfg(test)]
-        let runtime = self.internal_leds.as_mut();
-        #[cfg(target_arch = "arm")]
-        let runtime = self.internal_leds.as_deref_mut();
-        if let Some(runtime) = runtime {
-            if runtime.renderer.update(runtime.config, frame, current_time)
-                && runtime
-                    .driver
-                    .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+        )
+    }
+}
+
+#[cfg(target_arch = "arm")]
+impl FloatOutBoyInternalLedAuxWork {
+    pub(in crate::package) fn execute(mut self) -> FloatOutBoyInternalLedAuxResult {
+        let retry_refresh = self.refresh && !self.refresh_runtime();
+        let deferred_confirmation = self.confirmation.filter(|_| retry_refresh);
+        if let (Some(timestamp), Some(runtime)) = (
+            self.confirmation.filter(|_| !retry_refresh),
+            self.runtime.as_deref_mut(),
+        ) {
+            runtime
+                .renderer
+                .start_confirmation(timestamp.as_vesc_seconds().as_seconds());
+        }
+        if let Some(runtime) = self.runtime.as_deref_mut() {
+            if let Some((_, config)) = self.effective_config {
+                runtime.config = config;
+            }
+            if runtime
+                .renderer
+                .update(runtime.config, self.frame, self.current_time)
             {
-                paint(&runtime.renderer);
+                let _ =
+                    runtime
+                        .driver
+                        .paint(&runtime.renderer, hardware::quiesce, hardware::restart);
             }
         }
+        let operational = self
+            .runtime
+            .as_deref()
+            .is_some_and(|runtime| runtime.driver.is_operational());
+        FloatOutBoyInternalLedAuxResult {
+            runtime: self.runtime,
+            retry_refresh,
+            deferred_confirmation,
+            operational,
+        }
+    }
+
+    fn refresh_runtime(&mut self) -> bool {
+        if !self
+            .runtime
+            .as_deref_mut()
+            .is_none_or(|runtime| runtime.driver.destroy(hardware::teardown))
+        {
+            return false;
+        }
+        self.runtime = self
+            .effective_config
+            .filter(|(hardware, _)| hardware.uses_internal_leds())
+            .and_then(|(hardware, config)| {
+                let runtime = FloatOutBoyInternalLedRuntime {
+                    renderer: FloatOutBoyLedRenderer::new(hardware, config, 0.0),
+                    config,
+                    driver: FloatOutBoyInternalLedDriver::new(hardware),
+                };
+                let mut runtime = vescpkg_rs::FallibleBox::try_new(runtime).ok()?;
+                runtime
+                    .driver
+                    .setup(hardware::setup, |pin| {
+                        let _ = hardware::teardown(pin);
+                    })
+                    .then_some(runtime)
+            });
+        true
     }
 }

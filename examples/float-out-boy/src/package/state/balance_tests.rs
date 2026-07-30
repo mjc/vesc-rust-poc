@@ -17,9 +17,7 @@ use crate::domain::{
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
-#[test]
-fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
-    let lifecycle = TimestampTicks::from_ticks(0);
+fn ready_zero_attitude_firmware() -> FirmwareTest {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
@@ -27,6 +25,13 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         ImuPitch::new(AngleRadians::from_radians(0.0)),
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
+    telemetry
+}
+
+#[test]
+fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
+    let lifecycle = TimestampTicks::from_ticks(0);
+    let telemetry = ready_zero_attitude_firmware();
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
     let payloads = sample_all_data_payloads_with_ride_state(
@@ -107,13 +112,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
 #[test]
 fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new();
-    telemetry.set_imu_ready(true);
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_radians(0.0)),
-        ImuPitch::new(AngleRadians::from_radians(0.0)),
-        ImuYaw::new(AngleRadians::from_radians(0.0)),
-    );
+    let telemetry = ready_zero_attitude_firmware();
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
     let payloads = sample_all_data_payloads_with_ride_state(
@@ -166,10 +165,13 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         - first_base.attitude().balance_pitch().angle_degrees())
     .as_degrees();
     let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
+    let integration_scale = sample_rate
+        .sample_period()
+        .map_or(0.0, |period| 720.0 * period.as_seconds());
     assert!(
-        (first_integral - first_error * 0.1).abs() < 0.0001,
+        (first_integral - first_error * 0.1 * integration_scale).abs() < 0.0001,
         "{first_integral} != {}",
-        first_error * 0.1
+        first_error * 0.1 * integration_scale
     );
     let first_current = telemetry.commanded_current();
     let expected_first_current = refloat_main_filtered_balance_current(
@@ -199,7 +201,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         - second_base.attitude().balance_pitch().angle_degrees())
     .as_degrees();
     let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
-    let expected_integral = first_integral + second_error * 0.1;
+    let expected_integral = first_integral + second_error * 0.1 * integration_scale;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,
         "{second_integral} != {expected_integral}"
@@ -215,13 +217,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
 #[test]
 fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new();
-    telemetry.set_imu_ready(true);
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_radians(0.0)),
-        ImuPitch::new(AngleRadians::from_radians(0.0)),
-        ImuYaw::new(AngleRadians::from_radians(0.0)),
-    );
+    let telemetry = ready_zero_attitude_firmware();
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
     let payloads = sample_all_data_payloads_with_ride_state(
@@ -282,13 +278,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
 #[test]
 fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new();
-    telemetry.set_imu_ready(true);
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_radians(0.0)),
-        ImuPitch::new(AngleRadians::from_radians(0.0)),
-        ImuYaw::new(AngleRadians::from_radians(0.0)),
-    );
+    let telemetry = ready_zero_attitude_firmware();
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
 
@@ -358,13 +348,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
 #[test]
 fn app_data_running_upright_wheelslip_keeps_filtering_current_like_refloat_main() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new();
-    telemetry.set_imu_ready(true);
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_radians(0.0)),
-        ImuPitch::new(AngleRadians::from_radians(0.0)),
-        ImuYaw::new(AngleRadians::from_radians(0.0)),
-    );
+    let telemetry = ready_zero_attitude_firmware();
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
     let payloads = sample_all_data_payloads_with_ride_state(

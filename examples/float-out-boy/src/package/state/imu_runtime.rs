@@ -15,7 +15,7 @@ use super::{
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStopCondition, FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState, Imu,
-    LoopInput, MotorCurrent, RideModifierInput, Rpm, TimestampTicks, float_out_boy_ticks_elapsed,
+    MotorCurrent, RideModifierInput, Rpm, TimestampTicks, float_out_boy_ticks_elapsed,
     float_out_boy_ticks_elapsed_seconds,
 };
 use crate::bms::FloatOutBoyBmsFault;
@@ -24,6 +24,9 @@ use vescpkg_rs::prelude::{
     AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
+
+#[cfg(test)]
+use super::LoopInput;
 
 fn rate_limit_angle(
     current: AngleDegrees,
@@ -194,6 +197,7 @@ struct TransitionPhase {
     events: TransitionEvents,
     ready_flywheel_stop: bool,
     balance_pitch: FloatOutBoyRealtimeBalancePitch,
+    #[cfg(test)]
     pitch_degrees: AngleDegrees,
     imu_pitch: ImuPitch,
     imu_roll: ImuRoll,
@@ -724,6 +728,7 @@ fn evaluate_transition_phase(
         },
         ready_flywheel_stop,
         balance_pitch,
+        #[cfg(test)]
         pitch_degrees,
         imu_pitch,
         imu_roll,
@@ -1146,36 +1151,41 @@ fn advance_running_control(
         }
     }
 
-    let gyro = imu.angular_rate();
-    let mut loop_state = state.balance_loop;
-    loop_state.balance_current = runtime.balance_current.current();
-    loop_state.booster_current = runtime.booster_current.current();
-    let balance_loop = loop_state.advance_balance_loop_elapsed(
-        state.runtime_balance_loop_config(),
-        LoopInput {
-            setpoint: runtime.setpoints.board(),
-            brake_tilt_setpoint: runtime.setpoints.brake_tilt(),
-            balance_pitch: phase.balance_pitch.angle_degrees(),
-            raw_pitch: phase.pitch_degrees,
-            roll: imu.roll(),
-            gyro_pitch: gyro.pitch(),
-            gyro_yaw: gyro.yaw(),
-            motor_erpm: base.motor().electrical_speed(),
-            motor_current: base.motor().motor_current(),
-            motor_current_max: state.motor_current_max,
-            motor_current_min: state.motor_current_min,
-            mode: control.ride_state.mode(),
-            darkride: control.ride_state.darkride(),
-            traction_control: state.ride_flags.traction_control,
-        },
-        elapsed,
-    );
-    state.balance_loop = balance_loop.state;
-    runtime.booster_current =
-        FloatOutBoyRealtimeBoosterCurrent::new(state.balance_loop.booster_current);
-    runtime.balance_current =
-        FloatOutBoyRealtimeBalanceCurrent::new(state.balance_loop.balance_current);
-    state.request_motor_current(balance_loop.requested_current);
+    #[cfg(test)]
+    {
+        let gyro = imu.angular_rate();
+        let mut loop_state = state.balance_loop;
+        loop_state.balance_current = runtime.balance_current.current();
+        loop_state.booster_current = runtime.booster_current.current();
+        let balance_loop = loop_state.advance_balance_loop_elapsed(
+            state.runtime_balance_loop_config(),
+            LoopInput {
+                setpoint: runtime.setpoints.board(),
+                brake_tilt_setpoint: runtime.setpoints.brake_tilt(),
+                balance_pitch: phase.balance_pitch.angle_degrees(),
+                raw_pitch: phase.pitch_degrees,
+                roll: imu.roll(),
+                gyro_pitch: gyro.pitch(),
+                gyro_yaw: gyro.yaw(),
+                motor_erpm: base.motor().electrical_speed(),
+                motor_current: base.motor().motor_current(),
+                motor_current_max: state.motor_current_max,
+                motor_current_min: state.motor_current_min,
+                mode: control.ride_state.mode(),
+                darkride: control.ride_state.darkride(),
+                traction_control: state.ride_flags.traction_control,
+            },
+            elapsed,
+        );
+        state.balance_loop = balance_loop.state;
+        runtime.booster_current =
+            FloatOutBoyRealtimeBoosterCurrent::new(state.balance_loop.booster_current);
+        runtime.balance_current =
+            FloatOutBoyRealtimeBalanceCurrent::new(state.balance_loop.balance_current);
+        state.request_motor_current(balance_loop.requested_current);
+    }
+    #[cfg(not(test))]
+    let _ = imu;
     (control, runtime)
 }
 
@@ -1255,16 +1265,6 @@ pub(super) fn refresh(
         phase.beep_reason = control.beep_reason;
         phase.beeper_alert = control.beeper_alert;
         runtime = next_runtime;
-    } else if matches!(phase.run_state, FloatOutBoyRunState::Ready)
-        && !phase.events.state_stop_fault
-        && let Some(current) = state.remote_control.request_ready_current(
-            phase.motor_erpm,
-            state.serialized_config.remote_throttle(),
-            system_time_ticks,
-            state.disengage_ticks,
-        )
-    {
-        state.request_motor_current(current);
     }
 
     if let Some((reason, alert)) = refresh_ready_alert(

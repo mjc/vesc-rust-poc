@@ -241,6 +241,10 @@ fn ready_engage_plays_the_configured_three_transition_motor_click_like_refloat()
         AngleDegrees::from_degrees(0.05),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
+    state.initialize_frequency_tracking(
+        SampleRate::from_hertz(832.0),
+        TimestampTicks::from_ticks(0),
+    );
     configure_startup_click(&mut state, WireByte::new(6));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
