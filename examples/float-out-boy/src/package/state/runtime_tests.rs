@@ -760,7 +760,7 @@ fn running_speed_or_sag_fixture(
 }
 
 #[test]
-fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
+fn running_input_tilt_ignores_the_removed_legacy_speed_like_refloat() {
     let (now, telemetry, mut state) = running_speed_or_sag_fixture(
         InputVoltage::new(Voltage::from_volts(72.0)),
         DirectionalMotorCurrent::new(Current::ZERO),
@@ -779,15 +779,9 @@ fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
     let setpoints = state.all_data_payloads().base().setpoints();
-    // C `remote_update` starts the configured per-loop step with its 0.02 ramp factor,
-    // then adds it to the production setpoint at
-    // `third_party/float-out-boy/src/remote.c:70-94` and
-    // `third_party/float-out-boy/src/main.c:876-879`.
-    let expected = 0.02 * 25.0
-        / editable_config_from_state(&state)
-            .startup()
-            .sample_rate()
-            .as_hertz();
+    // Current Refloat removed the configured speed and uses 100 degrees/second;
+    // the legacy image value above must not alter this first 500 Hz step.
+    let expected = 0.000_089_363_82;
     let remote = setpoints.remote().angle().as_degrees();
     let board = setpoints.board().angle().as_degrees();
     assert!((remote - expected).abs() < 0.000_001, "remote={remote}");

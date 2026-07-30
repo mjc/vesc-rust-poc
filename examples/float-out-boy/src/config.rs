@@ -195,7 +195,6 @@ impl FloatOutBoyConfigImage {
         TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
         NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
         INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
-        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
         HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => high_voltage_pushback_angle -> AngleDegrees, offset: 51, scale: 100.0;
         HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => high_voltage_threshold -> Voltage, offset: 55, scale: 100.0;
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
@@ -215,6 +214,9 @@ impl FloatOutBoyConfigImage {
         // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 227, map: WireByte::as_u8;
     }
+    // Retain the legacy byte slot for image compatibility. Current Refloat
+    // removed `inputtilt_speed` and configures remote tilt at 100 degrees/second.
+    const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 82, scale: 100.0);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
