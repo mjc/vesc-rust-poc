@@ -10,39 +10,6 @@ pub(super) mod quick_stop {
     pub(in crate::package::state) const PITCH: AngleDegrees = AngleDegrees::from_degrees(14.0);
 }
 
-pub(super) mod reverse_stop {
-    use super::{AngleDegrees, Rpm};
-
-    // C map: reverse-stop entry and fault thresholds at
-    // `third_party/float-out-boy/src/main.c:436-455,538-552`.
-    pub(in crate::package::state) const ENTRY_ERPM: Rpm = Rpm::from_revolutions_per_minute(200.0);
-    pub(in crate::package::state) const TOLERANCE_ERPM: Rpm =
-        Rpm::from_revolutions_per_minute(20_000.0);
-    pub(in crate::package::state) const TOTAL_ERPM: Rpm =
-        Rpm::from_revolutions_per_minute(200_000.0);
-    pub(in crate::package::state) const PITCH: AngleDegrees = AngleDegrees::from_degrees(18.0);
-    pub(in crate::package::state) const TIMER_FAST_PITCH: AngleDegrees =
-        AngleDegrees::from_degrees(10.0);
-    pub(in crate::package::state) const TIMER_SLOW_PITCH: AngleDegrees =
-        AngleDegrees::from_degrees(5.0);
-    const RATE_ANGLE: AngleDegrees = AngleDegrees::from_degrees(0.08);
-    const RATE_ERPM: Rpm = Rpm::from_revolutions_per_minute(1_000.0);
-
-    pub(in crate::package::state) fn carryover_total_erpm(
-        interpolated_target: AngleDegrees,
-    ) -> Rpm {
-        // C map: preserve an error-pushback target when entering reverse-stop
-        // at `third_party/float-out-boy/src/main.c:541-546`.
-        -(TOLERANCE_ERPM + RATE_ERPM * (interpolated_target / RATE_ANGLE))
-    }
-
-    pub(in crate::package::state) fn target_angle(reverse_total_erpm: Rpm) -> AngleDegrees {
-        // C map: `REVSTOP_ERPM_INCR` and the target calculation at
-        // `third_party/float-out-boy/src/main.c:100,525-529`.
-        RATE_ANGLE * ((reverse_total_erpm.abs() - TOLERANCE_ERPM) / RATE_ERPM)
-    }
-}
-
 // C map: pitch/quickstop remote-setpoint suppression at
 // `third_party/float-out-boy/src/main.c:419-421,499-506`.
 pub(super) const REMOTE_SETPOINT_FAULT_ANGLE: AngleDegrees = AngleDegrees::from_degrees(30.0);

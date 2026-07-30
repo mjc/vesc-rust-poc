@@ -52,6 +52,9 @@ mod motor_runtime;
 mod motor_telemetry_tests;
 mod packet_response;
 mod remote_control;
+mod reverse_stop;
+#[cfg(test)]
+mod reverse_stop_tests;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
@@ -77,6 +80,7 @@ use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
 use remote_control::RemoteControlState;
+use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
     FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent, float_out_boy_first_stop_event,
@@ -174,7 +178,8 @@ pub struct FloatOutBoyPackageState {
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
     frequency_trackers: frequency_tracker::FrequencyTrackers,
-    reverse_total_erpm: Rpm,
+    reverse_stop: ReverseStop,
+    motor_distance_meters: f32,
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: vescpkg_rs::BiquadLowPass,
     remote_control: RemoteControlState,
@@ -188,7 +193,6 @@ pub struct FloatOutBoyPackageState {
     idle_voltage: BatteryVoltage,
     fault_switch_ticks: WrappingTimer,
     fault_switch_half_ticks: WrappingTimer,
-    reverse_ticks: WrappingTimer,
     fault_angle_pitch_ticks: WrappingTimer,
     fault_angle_roll_ticks: WrappingTimer,
     high_voltage_ticks: WrappingTimer,
