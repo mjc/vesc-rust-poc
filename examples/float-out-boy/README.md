@@ -9,7 +9,6 @@ The port has a different name on purpose. It follows Refloat's behavior and pack
 From the workspace root:
 
 ```console
-$ nix develop
 $ cargo nextest run -p vesc-example-float-out-boy --features test-support
 $ cargo run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 ```
