@@ -188,9 +188,13 @@ fn run_lisp_stats(command: DeviceArgs) -> ExitCode {
 
 fn run_firmware_values(command: DeviceArgs) -> ExitCode {
     match deploy::run_firmware_values_probe(command.into_target()) {
-        Ok(values) => {
+        Ok(report) => {
+            let version = report.firmware_version();
+            let values = report.values();
             println!(
-                "firmware values: odometer={}m uptime={}ms",
+                "firmware {}.{} values: odometer={}m uptime={}ms",
+                version.major(),
+                version.minor(),
                 values.odometer_meters(),
                 values.uptime_ms(),
             );
