@@ -44,7 +44,6 @@ impl FrequencyTracker {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn update(&mut self, elapsed: VescSeconds) {
         self.elapsed = elapsed;
         let target = 1.0 / elapsed.as_seconds();

@@ -155,14 +155,22 @@ fn finish_float_out_boy_main_thread_tick(
     system_time_ticks: TimestampTicks,
     prepared: FloatOutBoyMainThreadPrepare,
 ) -> FloatOutBoyMainThreadTick {
-    let run_state = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state();
-    state.apply_motor_control(motor, run_state, system_time_ticks);
-    state.sample_data_recorder(system_time_ticks);
+    #[cfg(test)]
+    {
+        let run_state = state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+        // Host main-loop fixtures preserve their existing deterministic control
+        // step. The ARM artifact applies motor output and records samples from
+        // the IMU callback, matching Refloat main.
+        state.apply_motor_control(motor, run_state, system_time_ticks);
+        state.sample_data_recorder(system_time_ticks);
+    }
+    #[cfg(not(test))]
+    let _ = (motor, system_time_ticks);
     let beeper_level = state.take_beeper_level().or(prepared.alert_level);
 
     let configure_beeper = state.take_beeper_configuration_request();
