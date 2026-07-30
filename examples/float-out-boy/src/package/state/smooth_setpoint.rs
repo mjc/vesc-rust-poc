@@ -7,15 +7,19 @@ pub(super) enum SmoothSetpointDirection {
 }
 
 impl SmoothSetpointDirection {
-    pub(super) fn from_erpm(erpm: Rpm) -> Self {
-        if erpm.is_negative() {
-            Self::Reverse
-        } else {
+    pub(super) const fn from_forward(forward: bool) -> Self {
+        if forward {
             Self::Forward
+        } else {
+            Self::Reverse
         }
     }
 
-    const fn is_forward(self) -> bool {
+    pub(super) fn from_erpm(erpm: Rpm) -> Self {
+        Self::from_forward(!erpm.is_negative())
+    }
+
+    pub(super) const fn is_forward(self) -> bool {
         matches!(self, Self::Forward)
     }
 }
@@ -24,6 +28,12 @@ impl SmoothSetpointDirection {
 #[repr(transparent)]
 pub(super) struct SmoothSetpointMultiplier(f32);
 
+impl Default for SmoothSetpointMultiplier {
+    fn default() -> Self {
+        Self::ONE
+    }
+}
+
 impl SmoothSetpointMultiplier {
     pub(super) const ONE: Self = Self::from_factor(1.0);
 
@@ -31,7 +41,7 @@ impl SmoothSetpointMultiplier {
         Self(factor)
     }
 
-    const fn factor(self) -> f32 {
+    pub(super) const fn factor(self) -> f32 {
         self.0
     }
 }
