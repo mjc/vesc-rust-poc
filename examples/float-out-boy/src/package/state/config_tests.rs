@@ -18,7 +18,7 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
 
@@ -112,22 +112,29 @@ fn assert_live_only_firmware_imu_migration(firmware: &FirmwareTest, float_writes
 }
 
 #[test]
-fn configured_loop_time_uses_float_out_boy_hertz_config() {
+fn legacy_loop_hertz_is_ignored_without_shifting_stored_config() {
     let _firmware = FirmwareTest::new();
     let mut incoming = default_float_out_boy_config_bytes();
     let mut state = FloatOutBoyPackageState::default();
 
-    assert_eq!(state.configured_loop_time_us(), 1201);
+    assert_eq!(state.configured_loop_time_us(), 2_000);
 
     incoming.edit_float_out_boy_config(|config| {
-        assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(500.0)));
+        assert!(config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(50.0)));
+        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0)));
+        assert!(config.set_meta_is_default(false));
     });
+    let expected = incoming;
     assert!(state.store_serialized_config(&incoming));
 
-    // Upstream generated serialization places `hertz` after the first
-    // seven float16 config fields; `configure(d)` then uses it as
-    // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
-    assert_eq!(state.configured_loop_time_us(), 2000);
+    // The old field is padding: accepting a v1.2.1 image must not shift or
+    // corrupt startup pitch or anything after it.
+    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(*state.serialized_config.as_bytes(), expected);
+    assert_eq!(
+        state.serialized_config.startup().pitch_tolerance(),
+        AngleDegrees::from_degrees(7.0)
+    );
 }
 
 #[test]

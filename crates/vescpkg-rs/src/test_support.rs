@@ -636,6 +636,13 @@ impl FirmwareTest {
     }
 
     #[must_use]
+    /// Configure the typed signed trip distance.
+    pub fn with_signed_trip_distance(self, distance: crate::SignedTripDistance) -> Self {
+        crate::test_ffi::set_signed_distance(distance);
+        self
+    }
+
+    #[must_use]
     /// Configure the typed MOSFET and motor temperatures.
     pub fn with_temperatures(
         self,

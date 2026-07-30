@@ -1,4 +1,4 @@
-use vescpkg_rs::prelude::{Frequency, SampleRate, TimestampTicks, VescSeconds};
+use vescpkg_rs::prelude::{Frequency, Ratio, SampleRate, TimestampTicks, VescSeconds};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::timer_older_whole_seconds;
 
@@ -7,7 +7,7 @@ pub(super) struct FrequencyTracker {
     elapsed: VescSeconds,
     frequency: SampleRate,
     filter_frequency: SampleRate,
-    alpha: f32,
+    alpha: Ratio,
     filter_last_update: TimestampTicks,
     first: bool,
     running: bool,
@@ -24,7 +24,10 @@ impl Default for FrequencyTrackers {
     fn default() -> Self {
         let epoch = TimestampTicks::from_ticks(0);
         Self {
-            main: FrequencyTracker::new(SampleRate::from_hertz(832.0), epoch),
+            main: FrequencyTracker::new(
+                crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
+                epoch,
+            ),
             imu: FrequencyTracker::new(SampleRate::from_hertz(620.0), epoch),
         }
     }
@@ -47,12 +50,12 @@ impl FrequencyTracker {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn update(&mut self, elapsed: VescSeconds) {
         self.elapsed = elapsed;
         let target = 1.0 / elapsed.as_seconds();
         self.frequency = SampleRate::from_hertz(
-            self.frequency.as_hertz() + self.alpha * (target - self.frequency.as_hertz()),
+            self.frequency.as_hertz()
+                + self.alpha.as_ratio() * (target - self.frequency.as_hertz()),
         );
     }
 

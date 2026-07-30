@@ -14,7 +14,7 @@ impl FloatOutBoyConfigEditor<'_> {
         self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, is_default)
     }
 
-    generated_config_setters! { set_hertz(sample_rate: SampleRate) => FloatOutBoyStartupConfig::HERTZ_FIELD; }
+    generated_config_setters! { set_legacy_hertz_for_test(sample_rate: SampleRate) => FloatOutBoyStartupConfig::LEGACY_HERTZ_FIELD; }
 
     pub(crate) fn set_moving_faults_disabled(&mut self, disabled: bool) -> bool {
         self.set_flag(

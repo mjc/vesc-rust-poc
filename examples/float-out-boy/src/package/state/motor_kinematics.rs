@@ -48,7 +48,7 @@ impl Default for MotorKinematicsTracker {
             window: 0,
             pending_window: 0,
         };
-        tracker.configure(SampleRate::from_hertz(832.0));
+        tracker.configure(crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE);
         tracker
     }
 }

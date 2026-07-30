@@ -117,7 +117,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
     assert_eq!(telemetry.thread_sleep_count(), 1);
     assert_eq!(
         telemetry.thread_sleep_durations(),
-        [Duration::from_micros(1201), Duration::ZERO]
+        [Duration::from_millis(2), Duration::ZERO]
     );
 }
 
@@ -413,7 +413,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
 }
 
 #[test]
-fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy_loop() {
+fn float_out_boy_main_thread_sleeps_with_fixed_loop_time_like_refloat() {
     let firmware = FirmwareTest::new();
     firmware.terminate_threads_after_checks(2);
     let threads = firmware.threads();
@@ -421,9 +421,7 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
 
     super::run_float_out_boy_main_thread_with(threads, || {
         tick_calls += 1;
-        // Upstream `configure(d)` stores `d->loop_time_us` from
-        // `d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`, then
-        // `float_out_boy_thd` sleeps that configured value at `third_party/float-out-boy/src/main.c:1080`.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz.
         2000
     });
 
