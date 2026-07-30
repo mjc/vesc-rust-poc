@@ -235,6 +235,14 @@ impl ModifierMotorState {
 }
 
 impl RideModifierState {
+    pub(super) const fn atr_transition_boost(
+        &self,
+    ) -> crate::domain::FloatOutBoyRealtimeAtrTransitionBoost {
+        crate::domain::FloatOutBoyRealtimeAtrTransitionBoost::from_factor(
+            self.atr.transition_boost.factor(),
+        )
+    }
+
     pub(super) fn reset(&mut self) {
         self.nose = AngleDegrees::ZERO;
         self.torque.reset();

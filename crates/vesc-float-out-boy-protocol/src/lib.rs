@@ -66,13 +66,15 @@ pub use self::packet::{
 };
 pub use self::realtime::{
     FLOAT_OUT_BOY_REALTIME_DATA_ITEMS, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterTorque,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
-    FloatOutBoyRealtimeTail, realtime_value,
+    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAtrAccelerationDiff,
+    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeAtrTransitionBoost,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
+    FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeLiveValues,
+    FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
+    FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, realtime_value,
 };
 pub use self::realtime_encoder::{
     FloatOutBoyRealtimeDataResponse, encode_float_out_boy_get_realtime_data_response_with_remote,

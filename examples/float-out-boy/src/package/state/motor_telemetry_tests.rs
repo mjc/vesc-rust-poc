@@ -355,10 +355,10 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     ));
     // Float Out Boy writes realtime values as float16 at `third_party/float-out-boy/src/main.c:1943-1954`
     // using `buffer_append_float16_auto` from `third_party/float-out-boy/src/conf/buffer.c:143-145`.
-    assert_eq!(packet.len(), 53);
+    assert_eq!(packet.len(), 57);
     assert_eq!(&packet[..3], &[101, 31, 4]);
-    assert_eq!(&packet[24..26], &[85, 67]);
-    assert_eq!(&packet[28..32], &[80, 160, 82, 16]);
+    assert_eq!(&packet[28..30], &[85, 67]);
+    assert_eq!(&packet[32..36], &[80, 160, 82, 16]);
 }
 
 #[test]

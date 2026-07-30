@@ -214,13 +214,10 @@ bitflags::bitflags! {
 }
 
 impl FloatOutBoyDataRecorderFlags {
-    /// Pack recorder and fatal-error bits in the FOB realtime wire layout.
+    /// Pack cutoff recorder activity in the realtime extra-flags byte.
     #[must_use]
-    pub const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
-        vescpkg_rs::protocol_buffer::flag_if(
-            matches!(fatal_error, FloatOutBoyFatalErrorState::Present),
-            0x8,
-        ) | self.bits()
+    pub const fn realtime_extra_flags_compat(self) -> u8 {
+        if self.contains(Self::RECORDING) { 1 } else { 0 }
     }
 }
 

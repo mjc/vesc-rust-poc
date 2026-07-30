@@ -10,7 +10,7 @@ use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
-const HEADER_RESPONSE_LEN: usize = 159;
+const HEADER_RESPONSE_LEN: usize = 172;
 const DATA_RESPONSE_CAPACITY: usize = 511;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
@@ -135,9 +135,7 @@ impl FloatOutBoyPackageState {
             vescpkg_rs::protocol_buffer::float16_auto_bits(realtime_value(
                 &payloads,
                 item,
-                self.remote_control.input(),
-                self.ride_modifiers.atr_accel_diff(),
-                self.ride_modifiers.atr_speed_boost(),
+                self.realtime_live_values(),
             ))
         });
         let mut sample = [0; SAMPLE_SIZE];
@@ -217,14 +215,17 @@ impl FloatOutBoyPackageState {
     }
 }
 
-const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0a\
-    \x0amotor.erpm\
-    \x11motor.dir_current\
-    \x10motor.duty_cycle\
-    \x12motor.batt_voltage\
-    \x09imu.pitch\
-    \x11imu.balance_pitch\
+const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0d\
+    \x0acontrol.dt\
+    \x0ccontrol.freq\
+    \x04erpm\
+    \x0bdir_current\
+    \x0aduty_cycle\
+    \x0cbatt_voltage\
+    \x05pitch\
+    \x0dbalance_pitch\
     \x08setpoint\
     \x0catr.setpoint\
     \x14torque_tilt.setpoint\
-    \x0fbalance_current";
+    \x0fbalance_current\
+    \x14atr.transition_boost";

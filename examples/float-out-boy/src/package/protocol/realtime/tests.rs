@@ -2,13 +2,31 @@ use super::super::super::test_support::sample_all_data_payloads;
 use super::*;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem, FloatOutBoyRealtimeRemoteInput,
-    FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
+    FloatOutBoyRealtimeAtrTransitionBoost, FloatOutBoyRealtimeControlFrequency,
+    FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeLiveValues, FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, FirmwareFaultWireCode, SignedRatio, Speed, TimestampTicks,
-    VehicleSpeed,
+    AngleDegrees, AngleRadians, FirmwareFaultWireCode, SampleRate, SignedRatio, Speed,
+    TimestampTicks, VehicleSpeed, VescSeconds,
 };
+
+fn live_values(
+    remote: FloatOutBoyRealtimeRemoteInput,
+    period: f32,
+    frequency: f32,
+    transition_boost: f32,
+) -> FloatOutBoyRealtimeLiveValues {
+    FloatOutBoyRealtimeLiveValues::new(
+        FloatOutBoyRealtimeControlPeriod::new(VescSeconds::from_seconds(period)),
+        FloatOutBoyRealtimeControlFrequency::new(SampleRate::from_hertz(frequency)),
+        remote,
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
+        FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
+        FloatOutBoyRealtimeAtrTransitionBoost::from_factor(transition_boost),
+    )
+}
 
 fn encode_float_out_boy_get_realtime_data_response(
     payloads: &FloatOutBoyAllDataPayloads,
@@ -33,9 +51,12 @@ fn encode_float_out_boy_realtime_data_response(
             payloads.base().status().beep_reason(),
         ),
         FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
-        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
-        0.0,
-        0.0,
+        live_values(
+            FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+            0.002,
+            500.0,
+            1.0,
+        ),
     )
 }
 
@@ -114,9 +135,7 @@ fn booster_telemetry_reports_newton_meters_separately_from_motor_current() {
         realtime_value(
             &payloads,
             FloatOutBoyRealtimeDataItem::BoosterTorque,
-            remote,
-            0.0,
-            0.0,
+            live_values(remote, 0.002, 500.0, 1.0),
         ),
         4.0,
     );
@@ -139,16 +158,14 @@ fn realtime_encoders_use_live_remote_input_like_float_out_boy() {
         realtime_value(
             &payloads,
             FloatOutBoyRealtimeDataItem::RemoteInput,
-            input,
-            0.0,
-            0.0,
+            live_values(input, 0.002, 500.0, 1.0),
         ),
         0.5,
     );
 }
 
 #[test]
-fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
+fn legacy_and_internal_realtime_encode_every_live_modifier_with_source_signs() {
     let payloads = sample_all_data_payloads();
     let legacy = encode_float_out_boy_get_realtime_data_response(&payloads);
 
@@ -166,12 +183,12 @@ fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
     let command_31 =
         encode_float_out_boy_realtime_data_response(&payloads, TimestampTicks::from_ticks(0));
     let bytes = command_31.as_bytes();
-    assert!((decode_normal_float16([bytes[44], bytes[45]]) - 1.0).abs() < 0.001);
-    assert_eq!(&bytes[46..48], &[0, 0]);
-    assert!((decode_normal_float16([bytes[48], bytes[49]]) + 1.0).abs() < 0.001);
-    assert!((decode_normal_float16([bytes[50], bytes[51]]) - 2.0).abs() < 0.001);
-    assert!((decode_normal_float16([bytes[52], bytes[53]]) + 2.0).abs() < 0.001);
-    assert!((decode_normal_float16([bytes[54], bytes[55]]) - 3.0).abs() < 0.001);
+    assert!((decode_normal_float16([bytes[48], bytes[49]]) - 1.0).abs() < 0.001);
+    assert_eq!(&bytes[50..52], &[0, 0]);
+    assert!((decode_normal_float16([bytes[52], bytes[53]]) + 1.0).abs() < 0.001);
+    assert!((decode_normal_float16([bytes[54], bytes[55]]) - 2.0).abs() < 0.001);
+    assert!((decode_normal_float16([bytes[56], bytes[57]]) + 2.0).abs() < 0.001);
+    assert!((decode_normal_float16([bytes[58], bytes[59]]) - 3.0).abs() < 0.001);
 }
 
 #[test]
@@ -195,19 +212,44 @@ fn app_data_processes_non_running_realtime_data_like_float_out_boy_qml() {
     // QML reads `c_REALTIME_DATA` at `ui.qml.in:853-925`; upstream
     // `cmd_realtime_data` writes this non-running packet shape at
     // `third_party/float-out-boy/src/main.c:1904-1960`.
-    assert_eq!(bytes.len(), 53);
+    assert_eq!(bytes.len(), 57);
     assert_eq!(&bytes[..2], &[101, 31]);
     assert_eq!(bytes[2], 0x04);
     assert_eq!(bytes[3], 0);
     assert_eq!(&bytes[4..8], &[0, 0, 0, 0]);
-    assert_eq!(bytes[8], 1);
-    assert_eq!(bytes[9], 0);
-    assert_eq!(bytes[10], 0);
-    assert_eq!(bytes[11], 0);
-    assert!(bytes[12..44].iter().all(|byte| *byte == 0));
-    assert_eq!(&bytes[44..48], &[0, 0, 0, 0]);
-    assert_eq!(&bytes[48..52], &[0, 0, 0, 0]);
-    assert_eq!(bytes[52], 0);
+    assert_eq!(&bytes[8..12], &[1, 0, 0, 0]);
+    assert!((decode_normal_float16([bytes[12], bytes[13]]) - 0.002).abs() < 0.000_01);
+    assert!((decode_normal_float16([bytes[14], bytes[15]]) - 500.0).abs() < 0.1);
+    assert!(bytes[16..48].iter().all(|byte| *byte == 0));
+    assert_eq!(&bytes[48..56], &[0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(bytes[56], 0);
+}
+
+#[test]
+fn internal_realtime_encodes_typed_control_timing_and_atr_transition_boost() {
+    let payloads = sample_all_data_payloads();
+    let base = payloads.base();
+    let response = encode_float_out_boy_realtime_data_response_with_runtime(
+        &payloads,
+        FloatOutBoyRealtimeDataHeader::new(
+            TimestampTicks::from_ticks(7),
+            base.status().ride_state(),
+            base.footpad().state(),
+            base.status().beep_reason(),
+        ),
+        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
+        live_values(
+            FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+            0.004,
+            250.0,
+            1.75,
+        ),
+    );
+    let bytes = response.as_bytes();
+
+    assert!((decode_normal_float16([bytes[12], bytes[13]]) - 0.004).abs() < 0.000_01);
+    assert!((decode_normal_float16([bytes[14], bytes[15]]) - 250.0).abs() < 0.1);
+    assert!((decode_normal_float16([bytes[66], bytes[67]]) - 1.75).abs() < 0.001);
 }
 
 #[test]
@@ -235,8 +277,8 @@ fn command_31_motor_speed_encodes_kilometres_per_hour_like_float_out_boy() {
         // first command-31 data item at `ui.qml.in:853-925` as speed.
         assert_eq!(bytes.len(), baseline.as_bytes().len());
         assert_eq!(&bytes[..12], &baseline.as_bytes()[..12]);
-        assert_eq!(&bytes[12..14], &expected);
-        assert_eq!(&bytes[14..], &baseline.as_bytes()[14..]);
+        assert_eq!(&bytes[16..18], &expected);
+        assert_eq!(&bytes[18..], &baseline.as_bytes()[18..]);
     }
 }
 
@@ -247,7 +289,7 @@ fn command_31_qml_visible_motor_speed_is_kilometres_per_hour() {
         TimestampTicks::from_ticks(0),
     );
     let bytes = response.as_bytes();
-    let qml_value = decode_normal_float16([bytes[12], bytes[13]]);
+    let qml_value = decode_normal_float16([bytes[16], bytes[17]]);
 
     assert!((qml_value - 3.6).abs() < 0.001);
 }

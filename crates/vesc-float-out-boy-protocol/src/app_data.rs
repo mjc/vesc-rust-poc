@@ -68,10 +68,12 @@ vesc_protocol::wire_enum! {
     ChargingState = 28,
     /// LCM battery request.
     LcmGetBattery = 29,
-    /// Realtime data path.
+    /// Internal realtime data compatibility path.
     RealtimeData = 31,
-    /// Realtime data ID list.
+    /// Internal realtime data compatibility ID list.
     RealtimeDataIds = 32,
+    /// Public mask-selected realtime data path.
+    RealtimeDataSelected = 33,
     /// Alert list request.
     AlertsList = 35,
     /// Alert control command.
