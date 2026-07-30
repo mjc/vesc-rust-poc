@@ -770,6 +770,10 @@ pub struct FloatOutBoyLedStatusUpdate {
     pub battery_level: f32,
     /// Raw VESC duty-cycle fraction.
     pub duty_cycle: f32,
+    /// Motor-current saturation fraction.
+    pub motor_current_saturation: f32,
+    /// Battery-current saturation fraction.
+    pub battery_current_saturation: f32,
     /// Whether motor distance changed during this update.
     pub moving: bool,
 }
@@ -794,7 +798,7 @@ impl FloatOutBoyLedFrameUpdate {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyStatusDynamics {
     brightness: f32,
-    duty_blend: f32,
+    utilization_blend: f32,
     idle_blend: f32,
     idle_time: f32,
     animation_start: f32,
@@ -816,8 +820,10 @@ struct FloatOutBoyStatusLayers {
     reverse: bool,
     red_percentage: Ratio,
     battery: f32,
-    duty: f32,
-    duty_blend: Ratio,
+    utilization: f32,
+    utilization_kind: FloatOutBoyStatusProgress,
+    utilization_blend: Ratio,
+    current_time: f32,
     sensors: (Ratio, Ratio),
     confirmation_progress: f32,
 }
@@ -826,7 +832,7 @@ impl FloatOutBoyStatusDynamics {
     const fn new() -> Self {
         Self {
             brightness: 0.0,
-            duty_blend: 0.0,
+            utilization_blend: 0.0,
             idle_blend: 0.0,
             idle_time: 0.0,
             animation_start: 0.0,
@@ -859,28 +865,41 @@ impl FloatOutBoyStatusDynamics {
         sensors: (Ratio, Ratio),
         reset_idle: bool,
         current_time: f32,
-    ) -> (f32, Ratio, Ratio, f32) {
+    ) -> (f32, FloatOutBoyStatusProgress, Ratio, Ratio, f32) {
         let status_config = config.status();
         if reset_idle || input.footpad.is_pressed() {
             self.idle_time = current_time;
         }
 
-        let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
-            && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
-        {
-            (status.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
+        let (duty, motor_current, battery_current) =
+            if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
+                && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+            {
+                (
+                    (status.duty_cycle.abs() * 10.0 / 9.0).clamp(0.0, 1.0),
+                    status.motor_current_saturation.clamp(0.0, 1.0),
+                    status.battery_current_saturation.clamp(0.0, 1.0),
+                )
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+        let (utilization, utilization_kind) = if battery_current > duty.max(motor_current) {
+            (battery_current, FloatOutBoyStatusProgress::BatteryCurrent)
+        } else if motor_current > duty {
+            (motor_current, FloatOutBoyStatusProgress::MotorCurrent)
         } else {
-            0.0
+            (duty, FloatOutBoyStatusProgress::Duty)
         };
-        let duty_threshold = status_config.duty_threshold().as_ratio().max(0.15);
-        let duty_target = if duty > duty_threshold {
+        let utilization_threshold = status_config.duty_threshold().as_ratio().max(0.15);
+        let utilization_target = if utilization > utilization_threshold {
             1.0
-        } else if duty < duty_threshold - 0.1 {
+        } else if utilization < utilization_threshold - 0.1 {
             0.0
         } else {
-            self.duty_blend
+            self.utilization_blend
         };
-        self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
+        self.utilization_blend =
+            rate_limit(self.utilization_blend, utilization_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
         if sensors.0.is_full() || sensors.1.is_full() {
             self.idle_blend = 0.0;
@@ -899,8 +918,9 @@ impl FloatOutBoyStatusDynamics {
             self.idle_time = current_time;
         }
         (
-            duty,
-            Ratio::clamped(self.duty_blend),
+            utilization,
+            utilization_kind,
+            Ratio::clamped(self.utilization_blend),
             Ratio::clamped(self.idle_blend),
             current_time - self.animation_start,
         )
@@ -1119,10 +1139,10 @@ impl FloatOutBoyLedRenderer {
         status: FloatOutBoyLedStatusUpdate,
         fade: Ratio,
         reset_idle: bool,
-    ) -> (f32, Ratio) {
+    ) -> (f32, FloatOutBoyStatusProgress, Ratio) {
         let status_config = config.status();
         let sensors = self.dynamics.sensor_fades();
-        let (duty, duty_blend, idle_blend, idle_animation_time) =
+        let (utilization, utilization_kind, utilization_blend, idle_blend, idle_animation_time) =
             self.status_dynamics
                 .update(config, input, status, sensors, reset_idle, current_time);
 
@@ -1135,19 +1155,21 @@ impl FloatOutBoyLedRenderer {
             reverse: false,
             red_percentage: status_config.red_bar_percentage(),
             battery: status.battery_level.clamp(0.0, 1.0),
-            duty,
-            duty_blend,
+            utilization,
+            utilization_kind,
+            utilization_blend,
+            current_time,
             sensors,
             confirmation_progress: (current_time - self.confirmation_start) / 0.8,
         });
-        (duty, duty_blend)
+        (utilization, utilization_kind, utilization_blend)
     }
 
     fn compose_front_status(
         &mut self,
         config: FloatOutBoyLedsConfig,
         status: FloatOutBoyLedStatusUpdate,
-        (duty, duty_blend): (f32, Ratio),
+        (utilization, utilization_kind, utilization_blend): (f32, FloatOutBoyStatusProgress, Ratio),
         fade: Ratio,
         current_time: f32,
     ) {
@@ -1164,8 +1186,10 @@ impl FloatOutBoyLedRenderer {
             reverse: true,
             red_percentage: config.status().red_bar_percentage(),
             battery: status.battery_level.clamp(0.0, 1.0),
-            duty,
-            duty_blend,
+            utilization,
+            utilization_kind,
+            utilization_blend,
+            current_time,
             sensors: self.dynamics.sensor_fades(),
             confirmation_progress: (current_time - self.confirmation_start) / 0.8,
         });
@@ -1214,10 +1238,14 @@ pub struct FloatOutBoyLedStripFrame {
 /// Refloat status-bar progress source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatOutBoyStatusProgress {
-    /// Battery progress, with a red low end.
+    /// Battery progress.
     Battery,
     /// Duty progress, with a red high end.
     Duty,
+    /// Motor-current saturation, with a red high end.
+    MotorCurrent,
+    /// Battery-current saturation, with a red high end.
+    BatteryCurrent,
 }
 
 /// Shared brightness and blend inputs for one LED overlay.
@@ -1321,8 +1349,10 @@ impl FloatOutBoyLedStripFrame {
             reverse,
             red_percentage,
             battery,
-            duty,
-            duty_blend,
+            utilization,
+            utilization_kind,
+            utilization_blend,
+            current_time,
             sensors: (left, right),
             confirmation_progress,
         } = layers;
@@ -1344,22 +1374,21 @@ impl FloatOutBoyLedStripFrame {
             on_off_fade: fade,
             blend: amount,
         };
-        if !idle_blend.is_full() && !duty_blend.is_full() {
-            self.render_status_progress(
+        if !idle_blend.is_full() && !utilization_blend.is_full() {
+            self.render_battery_status(
                 battery,
-                FloatOutBoyStatusProgress::Battery,
-                red_percentage,
                 reverse,
+                current_time,
                 overlay(blend.min(idle_blend.complement())),
             );
         }
-        if !idle_blend.is_full() && !duty_blend.is_zero() {
+        if !idle_blend.is_full() && !utilization_blend.is_zero() {
             self.render_status_progress(
-                duty,
-                FloatOutBoyStatusProgress::Duty,
+                utilization,
+                utilization_kind,
                 red_percentage,
                 reverse,
-                overlay(duty_blend),
+                overlay(utilization_blend),
             );
         }
         if !idle_blend.is_full() && (!left.is_zero() || !right.is_zero()) {
@@ -1370,7 +1399,7 @@ impl FloatOutBoyLedStripFrame {
         }
     }
 
-    /// Paint Refloat's battery or duty progress display over this strip.
+    /// Paint one Refloat status-utilization progress display over this strip.
     fn render_status_progress(
         &mut self,
         value: f32,
@@ -1399,21 +1428,22 @@ impl FloatOutBoyLedStripFrame {
             FloatOutBoyStatusProgress::Duty => FloatOutBoyLedPixel {
                 channels: [0xff, 0xb0, 0x30, 0],
             },
+            FloatOutBoyStatusProgress::MotorCurrent => FloatOutBoyLedPixel {
+                channels: [0xff, 0x50, 0x90, 0],
+            },
+            FloatOutBoyStatusProgress::BatteryCurrent => FloatOutBoyLedPixel {
+                channels: [0, 0xff, 0x80, 0],
+            },
         };
-        let low_battery = matches!(kind, FloatOutBoyStatusProgress::Battery)
-            && -vescpkg_rs::floor(-progress)
-                <= f32::from(u8::try_from(red_count).unwrap_or_default());
 
         for index in 0..len {
             let (target, dim) = if index <= offset {
-                let target = if (matches!(kind, FloatOutBoyStatusProgress::Duty)
-                    && index >= red_offset)
-                    || low_battery
-                {
-                    red
-                } else {
-                    base
-                };
+                let target =
+                    if !matches!(kind, FloatOutBoyStatusProgress::Battery) && index >= red_offset {
+                        red
+                    } else {
+                        base
+                    };
                 (target, if index == offset { remaining } else { 1.0 })
             } else {
                 (FloatOutBoyLedPixel::default(), 1.0)
@@ -1430,6 +1460,39 @@ impl FloatOutBoyLedStripFrame {
                 overlay.blend,
             );
         }
+    }
+
+    /// Paint Refloat's battery bar and pulse one red LED at or below one pixel.
+    fn render_battery_status(
+        &mut self,
+        value: f32,
+        reverse: bool,
+        current_time: f32,
+        overlay: FloatOutBoyLedOverlay,
+    ) {
+        let battery = value.clamp(0.0, 1.0);
+        self.render_status_progress(
+            battery,
+            FloatOutBoyStatusProgress::Battery,
+            Ratio::from_ratio_const(0.0),
+            reverse,
+            overlay,
+        );
+
+        let len = usize::from(self.config.count());
+        if len == 0 || battery > 1.0 / f32::from(u8::try_from(len).unwrap_or(u8::MAX)) {
+            return;
+        }
+        let index = if reverse { len.saturating_sub(1) } else { 0 };
+        let blink = 0.15 + 0.85 * refloat_cosine_progress(current_time * 2.0);
+        self.render_pixel_blended(
+            index,
+            FloatOutBoyLedPixel {
+                channels: [0xff, 0x50, 0x38, 0],
+            },
+            overlay.brightness(blink),
+            overlay.blend,
+        );
     }
 
     /// Paint Refloat's disabled red pulse.
