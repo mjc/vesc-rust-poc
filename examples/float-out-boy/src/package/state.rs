@@ -565,13 +565,16 @@ impl FloatOutBoyPackageState {
             frequency_tracker::imu_start_frequency(imu_frequency),
             now,
         );
+        self.initialize_data_recorder_sample_rate(imu_frequency);
     }
 
     pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
         if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
             motor_runtime::reconfigure_filters(self, frequency);
         }
-        let _ = self.frequency_trackers.imu.check(running, now);
+        if let Some(frequency) = self.frequency_trackers.imu.check(running, now) {
+            self.refresh_data_recorder_sample_rate(frequency);
+        }
     }
 
     pub(crate) fn initialize_balance_filter(&mut self, orientation: vescpkg_rs::ImuOrientation) {
