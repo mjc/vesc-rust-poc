@@ -259,9 +259,9 @@ fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     assert_eq!(
         changes,
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 }
@@ -356,9 +356,9 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
     assert_eq!(
         changes,
         [
-            (300, FloatOutBoyBeeperLevel::Low),
-            (600, FloatOutBoyBeeperLevel::High),
-            (900, FloatOutBoyBeeperLevel::Low),
+            (26, FloatOutBoyBeeperLevel::Low),
+            (52, FloatOutBoyBeeperLevel::High),
+            (78, FloatOutBoyBeeperLevel::Low),
         ],
     );
 }
@@ -442,13 +442,13 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
     assert_eq!(
         changes,
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
-            (320, FloatOutBoyBeeperLevel::High),
-            (400, FloatOutBoyBeeperLevel::Low),
-            (480, FloatOutBoyBeeperLevel::High),
-            (560, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
+            (24, FloatOutBoyBeeperLevel::High),
+            (30, FloatOutBoyBeeperLevel::Low),
+            (36, FloatOutBoyBeeperLevel::High),
+            (42, FloatOutBoyBeeperLevel::Low),
         ],
     );
 }

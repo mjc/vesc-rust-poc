@@ -389,9 +389,9 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         assert_eq!(
             changes,
             [
-                (80, FloatOutBoyBeeperLevel::Low),
-                (160, FloatOutBoyBeeperLevel::High),
-                (240, FloatOutBoyBeeperLevel::Low),
+                (6, FloatOutBoyBeeperLevel::Low),
+                (12, FloatOutBoyBeeperLevel::High),
+                (18, FloatOutBoyBeeperLevel::Low),
             ],
         );
     }
