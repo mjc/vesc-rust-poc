@@ -5,6 +5,99 @@ use std::vec::Vec;
 use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultId};
 use vescpkg_rs::test_support::FirmwareTest;
 
+fn selected_packet(flags: u8, mask1: u32, mask2: &[u8]) -> Vec<u8> {
+    let mut packet = vec![
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::RealtimeDataSelected.id(),
+        flags,
+    ];
+    packet.extend_from_slice(&mask1.to_be_bytes());
+    packet.extend_from_slice(mask2);
+    packet
+}
+
+#[test]
+fn selected_realtime_handler_rejects_truncated_required_payload() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    for payload_len in 0..5 {
+        let mut packet = vec![
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeDataSelected.id(),
+        ];
+        packet.resize(2 + payload_len, 0);
+        assert!(!state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+    }
+}
+
+#[test]
+fn selected_realtime_handler_treats_partial_mask2_as_zero() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    for partial in [&[0xaa][..], &[0xaa, 0xbb][..], &[0xaa, 0xbb, 0xcc][..]] {
+        let mut response = Vec::new();
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(7),
+            &mut |bytes| {
+                response.extend_from_slice(bytes);
+                true
+            },
+            &selected_packet(0, 0, partial),
+        ));
+        assert_eq!(response, [101, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7]);
+    }
+}
+
+#[test]
+fn selected_realtime_handler_refreshes_live_telemetry_before_encoding() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let mut response = Vec::new();
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(9),
+        &mut |bytes| {
+            response.extend_from_slice(bytes);
+            true
+        },
+        &selected_packet(0, 0, &(1_u32 << 0).to_be_bytes()),
+    ));
+
+    assert_eq!(
+        &response[..15],
+        &[101, 33, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 9]
+    );
+    assert_eq!(&response[15..], &[0, 0, 0, 0]);
+}
+
+#[test]
+fn selected_realtime_handler_fails_closed_without_requested_gnss() {
+    let firmware = FirmwareTest::new();
+    firmware.set_gnss_available(false);
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut replied = false;
+
+    assert!(!state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| {
+            replied = true;
+            true
+        },
+        &selected_packet(0, 0, &(1_u32 << 9).to_be_bytes()),
+    ));
+    assert!(!replied);
+}
+
 #[test]
 fn realtime_packet_response_uses_system_ticks_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0x0102_0304);
