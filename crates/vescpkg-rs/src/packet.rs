@@ -25,6 +25,8 @@ pub(crate) fn disable_callback_dispatch() {
 pub enum PacketError {
     /// The loaded firmware does not expose the packet slot.
     Unavailable,
+    /// A packet payload is empty.
+    EmptyPacket,
     /// A packet exceeds the pinned firmware framing buffer.
     PacketTooLong,
     /// Another packet codec already owns the global firmware callback.
@@ -167,6 +169,9 @@ fn process_byte(state: &mut PacketState, byte: u8) -> Result<(), PacketError> {
 }
 
 fn send_packet(state: &mut PacketState, data: &mut [u8]) -> Result<(), PacketError> {
+    if data.is_empty() {
+        return Err(PacketError::EmptyPacket);
+    }
     if data.len() > MAX_PACKET_BYTES {
         return Err(PacketError::PacketTooLong);
     }

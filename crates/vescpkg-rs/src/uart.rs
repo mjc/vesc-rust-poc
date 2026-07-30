@@ -26,7 +26,7 @@ pub enum UartError {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Uart;
 
-/// Select the UART wiring mode used when opening a lease.
+/// Select the UART wiring mode used when taking over the peripheral.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UartDuplexMode {
     /// Use separate transmit and receive lines.
@@ -42,8 +42,11 @@ impl UartDuplexMode {
     }
 }
 
-/// Exclusive UART ownership lease.
-pub struct UartLease {
+/// Exclusive SDK session for a UART peripheral taken over from the VESC app.
+///
+/// Dropping this session releases SDK-side exclusivity only. The firmware UART
+/// setup can persist and this API cannot restore the previous VESC app.
+pub struct UartSession {
     _private: (),
 }
 
@@ -52,8 +55,16 @@ impl Uart {
         Self
     }
 
-    /// Acquire the UART and configure its baud and duplex mode.
-    pub fn open(&self, baud: BaudRate, mode: UartDuplexMode) -> Result<UartLease, UartError> {
+    /// Take over the UART and configure its baud and duplex mode.
+    ///
+    /// Firmware can persistently disable the current VESC app while starting
+    /// UART. Dropping the returned session does not stop UART or restore that
+    /// app; it only permits another SDK-side takeover attempt.
+    pub fn take_over(
+        &self,
+        baud: BaudRate,
+        mode: UartDuplexMode,
+    ) -> Result<UartSession, UartError> {
         if UART_OWNED
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
@@ -62,7 +73,7 @@ impl Uart {
         }
         let started = unsafe { crate::ffi::uart_start(baud.as_u32(), mode.is_half_duplex()) };
         match started {
-            Some(true) => Ok(UartLease { _private: () }),
+            Some(true) => Ok(UartSession { _private: () }),
             Some(false) => {
                 UART_OWNED.store(false, Ordering::Release);
                 Err(UartError::Rejected)
@@ -75,7 +86,7 @@ impl Uart {
     }
 }
 
-impl UartLease {
+impl UartSession {
     /// Write a bounded byte slice and return the number of bytes accepted.
     pub fn write(&self, data: &[u8]) -> Result<usize, UartError> {
         let size = u32::try_from(data.len()).map_err(|_| UartError::BufferTooLong)?;
@@ -101,7 +112,7 @@ impl UartLease {
     }
 }
 
-impl Drop for UartLease {
+impl Drop for UartSession {
     fn drop(&mut self) {
         UART_OWNED.store(false, Ordering::Release);
     }

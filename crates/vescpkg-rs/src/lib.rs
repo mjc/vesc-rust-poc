@@ -271,7 +271,7 @@ pub use imu::{
     ImuReadCallbackLease, ImuReadHandler, register_imu_read_callback,
 };
 pub use init::{PackageStart, PackageStartError};
-pub use motor::{MotorOutput, MotorReleaseOutcome, MotorTelemetry};
+pub use motor::{MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
 pub use packet::OwnedPacketRegistration;
@@ -287,7 +287,7 @@ pub use thread::{
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
-pub use uart::{Uart, UartError, UartLease};
+pub use uart::{Uart, UartError, UartSession};
 
 /// CAN transport and status snapshot helpers for package code.
 mod can_bus;
@@ -357,7 +357,7 @@ pub mod prelude {
         StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
         TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
         ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
-        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
+        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartSession,
     };
 }
 

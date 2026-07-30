@@ -61,6 +61,18 @@ fn command_processing_reports_absent_optional_slots() {
 }
 
 #[test]
+fn command_processing_rejects_empty_packets_without_claiming_the_reply_slot() {
+    let firmware = FirmwareTest::new();
+    let commands = firmware.commands();
+
+    assert!(matches!(
+        commands.process::<Handler>(&mut []),
+        Err(CommandError::EmptyPacket)
+    ));
+    assert!(commands.process::<Handler>(&mut [1]).is_ok());
+}
+
+#[test]
 fn package_stop_releases_command_reply_state_before_next_registration() {
     let firmware = FirmwareTest::new();
     let mut packet = [1_u8];
