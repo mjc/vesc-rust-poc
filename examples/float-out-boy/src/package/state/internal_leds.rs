@@ -108,12 +108,7 @@ impl FloatOutBoyPackageState {
         hardware: FloatOutBoyHardwareLedsConfig,
         config: FloatOutBoyLedsConfig,
     ) {
-        if hardware.uses_internal_leds()
-            && !matches!(
-                self.all_data_payloads.base().footpad().state(),
-                crate::FloatOutBoyFootpadState::Both
-            )
-        {
+        if hardware.uses_internal_leds() {
             self.configure_internal_leds(hardware, config);
         }
     }
@@ -170,6 +165,26 @@ impl FloatOutBoyPackageState {
     ) {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
+        let filtered_current = base.motor().filtered_motor_current().current().current();
+        let motor_limit = if base.motor().motor_current().is_negative() {
+            self.motor_current_min
+        } else {
+            self.motor_current_max
+        };
+        let motor_current_saturation = super::haptic_feedback::normalized_current_saturation(
+            filtered_current,
+            motor_limit.current(),
+        );
+        let battery_current = base.motor().battery_current().current();
+        let battery_limit = if battery_current.is_negative() {
+            self.battery_current_min
+        } else {
+            self.battery_current_max
+        };
+        let battery_current_saturation = super::haptic_feedback::normalized_current_saturation(
+            battery_current,
+            battery_limit.current(),
+        );
         let frame = FloatOutBoyLedFrameUpdate::new(
             FloatOutBoyLedUpdate {
                 run_state: ride_state.run_state(),
@@ -181,7 +196,9 @@ impl FloatOutBoyPackageState {
             },
             FloatOutBoyLedStatusUpdate {
                 battery_level: telemetry.battery_level().as_fraction(),
-                duty_cycle: telemetry.duty_cycle().ratio().as_ratio(),
+                duty_cycle: base.motor().duty_cycle().ratio().as_ratio(),
+                motor_current_saturation,
+                battery_current_saturation,
                 moving: telemetry
                     .electrical_speed()
                     .rpm()
