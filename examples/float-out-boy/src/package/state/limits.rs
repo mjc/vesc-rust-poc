@@ -1,28 +1,7 @@
-use vescpkg_rs::prelude::{AngleDegrees, Ratio, Rpm, SignedRatio, VescSeconds};
+use vescpkg_rs::prelude::{AngleDegrees, Rpm, SignedRatio, VescSeconds};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ReverseStopRate {
-    angle: AngleDegrees,
-    erpm: Rpm,
-}
-
-impl ReverseStopRate {
-    const FLOAT_OUT_BOY: Self = Self {
-        angle: AngleDegrees::from_degrees(0.08),
-        erpm: Rpm::from_revolutions_per_minute(1_000.0),
-    };
-
-    #[must_use]
-    fn angle_for(self, erpm: Rpm) -> AngleDegrees {
-        self.angle * (erpm / self.erpm)
-    }
-
-    #[must_use]
-    fn erpm_for(self, angle: AngleDegrees) -> Rpm {
-        self.erpm * (angle / self.angle)
-    }
-}
-
+// These are named modules rather than one-instance structs: each value remains
+// domain typed, while the namespace preserves which FOB behavior owns it.
 pub(super) mod quick_stop {
     use super::{AngleDegrees, Rpm};
 
@@ -31,46 +10,11 @@ pub(super) mod quick_stop {
     pub(in crate::package::state) const PITCH: AngleDegrees = AngleDegrees::from_degrees(14.0);
 }
 
-pub(super) mod reverse_stop {
-    use super::{AngleDegrees, ReverseStopRate, Rpm};
-
-    // C map: reverse-stop entry and fault thresholds at
-    // `third_party/float-out-boy/src/main.c:436-455,538-552`.
-    pub(in crate::package::state) const ENTRY_ERPM: Rpm = Rpm::from_revolutions_per_minute(200.0);
-    pub(in crate::package::state) const TOLERANCE_ERPM: Rpm =
-        Rpm::from_revolutions_per_minute(20_000.0);
-    pub(in crate::package::state) const TOTAL_ERPM: Rpm =
-        Rpm::from_revolutions_per_minute(200_000.0);
-    pub(in crate::package::state) const PITCH: AngleDegrees = AngleDegrees::from_degrees(18.0);
-    pub(in crate::package::state) const TIMER_FAST_PITCH: AngleDegrees =
-        AngleDegrees::from_degrees(10.0);
-    pub(in crate::package::state) const TIMER_SLOW_PITCH: AngleDegrees =
-        AngleDegrees::from_degrees(5.0);
-    const RATE: ReverseStopRate = ReverseStopRate::FLOAT_OUT_BOY;
-
-    #[must_use]
-    pub(in crate::package::state) fn carryover_total_erpm(
-        interpolated_target: AngleDegrees,
-    ) -> Rpm {
-        // C map: preserve an error-pushback target when entering reverse-stop
-        // at `third_party/float-out-boy/src/main.c:541-546`.
-        -(TOLERANCE_ERPM + RATE.erpm_for(interpolated_target))
-    }
-
-    #[must_use]
-    pub(in crate::package::state) fn target_angle(reverse_total_erpm: Rpm) -> AngleDegrees {
-        // C map: `REVSTOP_ERPM_INCR` and the target calculation at
-        // `third_party/float-out-boy/src/main.c:100,525-529`.
-        RATE.angle_for(reverse_total_erpm.abs() - TOLERANCE_ERPM)
-    }
-}
-
 // C map: pitch/quickstop remote-setpoint suppression at
 // `third_party/float-out-boy/src/main.c:419-421,499-506`.
 pub(super) const REMOTE_SETPOINT_FAULT_ANGLE: AngleDegrees = AngleDegrees::from_degrees(30.0);
 
-// C map: moving switch-fault suppression roll limit at
-// `third_party/float-out-boy/src/main.c:393-397`.
+// C map: moving switch-fault suppression roll limit at `third_party/float-out-boy/src/main.c:393-397`.
 pub(super) const MOVING_FAULT_ROLL: AngleDegrees = AngleDegrees::from_degrees(40.0);
 
 pub(super) mod darkride {
@@ -100,7 +44,8 @@ pub(super) mod push_start {
 }
 
 pub(super) mod traction_loss {
-    use super::{Ratio, Rpm, SignedRatio, VescSeconds};
+    use super::{Rpm, SignedRatio, VescSeconds};
+    use vescpkg_rs::prelude::Ratio;
 
     // C map: wheelslip detection and traction-control clear thresholds at
     // `third_party/float-out-boy/src/main.c:551-575`.

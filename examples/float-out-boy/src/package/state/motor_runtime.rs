@@ -109,6 +109,7 @@ pub(super) fn refresh(
         state.frequency_trackers.main.filter_frequency(),
     );
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
+    state.motor_distance = telemetry.signed_trip_distance();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(

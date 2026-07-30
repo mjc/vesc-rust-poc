@@ -20,7 +20,7 @@ use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
     MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
-    TemperatureLimitStart, TimestampTicks,
+    SignedTripDistance, TemperatureLimitStart, TimestampTicks,
 };
 use vescpkg_rs::{
     Imu, MotorOutput, MotorTelemetry, timer_older as float_out_boy_ticks_elapsed_seconds,
@@ -56,6 +56,9 @@ mod motor_runtime;
 mod motor_telemetry_tests;
 mod packet_response;
 mod remote_control;
+mod reverse_stop;
+#[cfg(test)]
+mod reverse_stop_tests;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
@@ -83,6 +86,7 @@ use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
 use remote_control::RemoteControlState;
+use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 
 // C map: `aux_thd` stores backup data after more than 200 m while not running
@@ -181,7 +185,8 @@ pub struct FloatOutBoyPackageState {
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
     frequency_trackers: frequency_tracker::FrequencyTrackers,
-    reverse_total_erpm: Rpm,
+    reverse_stop: ReverseStop,
+    motor_distance: SignedTripDistance,
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
     remote_control: RemoteControlState,
@@ -195,7 +200,6 @@ pub struct FloatOutBoyPackageState {
     idle_voltage: BatteryVoltage,
     fault_switch_ticks: TimestampTicks,
     fault_switch_half_ticks: TimestampTicks,
-    reverse_ticks: TimestampTicks,
     fault_angle_pitch_ticks: TimestampTicks,
     fault_angle_roll_ticks: TimestampTicks,
     high_voltage_ticks: TimestampTicks,
