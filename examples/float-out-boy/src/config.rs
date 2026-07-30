@@ -676,6 +676,17 @@ impl From<u8> for FloatOutBoyParkingBrakeMode {
     }
 }
 
+impl From<FloatOutBoyParkingBrakeMode> for u8 {
+    fn from(value: FloatOutBoyParkingBrakeMode) -> Self {
+        match value {
+            FloatOutBoyParkingBrakeMode::Always => 0,
+            FloatOutBoyParkingBrakeMode::Idle => 1,
+            FloatOutBoyParkingBrakeMode::Never => 2,
+            FloatOutBoyParkingBrakeMode::Unknown(value) => value,
+        }
+    }
+}
+
 // Upstream serializes default parking brake mode and brake current at
 // `third_party/float-out-boy/src/conf/settings.xml:3973-3974`.
 vescpkg_rs::generated_custom_config_view! {
