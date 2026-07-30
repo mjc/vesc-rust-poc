@@ -179,7 +179,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     let mut changes = std::vec::Vec::new();
 
-    for tick in 1..=160 {
+    for tick in 1..=42 {
         let result = super::tick_float_out_boy_main_thread_with(
             &mut state,
             telemetry.telemetry(),
@@ -187,7 +187,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
             motor,
             AdcVoltage::new(Voltage::ZERO),
             AdcVoltage::new(Voltage::ZERO),
-            TimestampTicks::from_ticks(0),
+            TimestampTicks::from_ticks(tick * 100),
         );
         if let Some(level) = result.beeper_pin_level {
             changes.push((tick, level));
@@ -198,8 +198,13 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
         changes,
         [
             (1, DigitalOutputLevel::Low),
-            (80, DigitalOutputLevel::Low),
-            (160, DigitalOutputLevel::High),
+            (6, DigitalOutputLevel::Low),
+            (12, DigitalOutputLevel::High),
+            (18, DigitalOutputLevel::Low),
+            (24, DigitalOutputLevel::High),
+            (30, DigitalOutputLevel::Low),
+            (36, DigitalOutputLevel::High),
+            (42, DigitalOutputLevel::Low),
         ]
     );
 }

@@ -113,9 +113,9 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_float_out
         changes,
         [
             (1, FloatOutBoyBeeperLevel::Low),
-            (300, FloatOutBoyBeeperLevel::Low),
-            (600, FloatOutBoyBeeperLevel::High),
-            (900, FloatOutBoyBeeperLevel::Low),
+            (26, FloatOutBoyBeeperLevel::Low),
+            (52, FloatOutBoyBeeperLevel::High),
+            (78, FloatOutBoyBeeperLevel::Low),
         ]
     );
 }
@@ -151,11 +151,11 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
         changes,
         [
             (1, FloatOutBoyBeeperLevel::Low),
-            (300, FloatOutBoyBeeperLevel::Low),
-            (600, FloatOutBoyBeeperLevel::High),
-            (900, FloatOutBoyBeeperLevel::Low),
-            (1_200, FloatOutBoyBeeperLevel::High),
-            (1_500, FloatOutBoyBeeperLevel::Low),
+            (26, FloatOutBoyBeeperLevel::Low),
+            (52, FloatOutBoyBeeperLevel::High),
+            (78, FloatOutBoyBeeperLevel::Low),
+            (104, FloatOutBoyBeeperLevel::High),
+            (130, FloatOutBoyBeeperLevel::Low),
         ]
     );
 }
@@ -1292,7 +1292,7 @@ fn running_temperature_warning_uses_float_out_boy_margin_priority_and_long_alert
             base.status().ride_state().setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::None
         );
-        assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+        assert_eq!(first_beeper_high_tick(&mut state, 52), Some(52));
     }
 }
 
@@ -1845,7 +1845,7 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_float_out_b
         state.high_voltage_ticks.started(),
         TimestampTicks::from_ticks(0)
     );
-    assert_eq!(first_beeper_high_tick(&mut state, 160), Some(160));
+    assert_eq!(first_beeper_high_tick(&mut state, 12), Some(12));
 }
 
 #[test]
@@ -1886,7 +1886,7 @@ fn bms_connection_fault_uses_high_voltage_angle_and_error_pushback_like_float_ou
         base.status().beep_reason(),
         FloatOutBoyBeepReason::BmsConnection
     );
-    assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+    assert_eq!(first_beeper_high_tick(&mut state, 52), Some(52));
 }
 
 #[test]
@@ -1945,7 +1945,7 @@ fn bms_temperature_faults_use_low_voltage_angle_and_source_reason_order() {
             AngleDegrees::from_degrees(10.0),
         );
         assert_eq!(base.status().beep_reason(), expected_reason);
-        assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+        assert_eq!(first_beeper_high_tick(&mut state, 52), Some(52));
     }
 }
 
@@ -1986,7 +1986,7 @@ fn bms_cell_under_voltage_bypasses_pack_sag_checks_like_float_out_boy() {
         base.status().beep_reason(),
         FloatOutBoyBeepReason::CellLowVoltage
     );
-    assert_eq!(first_beeper_high_tick(&mut state, 160), Some(160));
+    assert_eq!(first_beeper_high_tick(&mut state, 12), Some(12));
 }
 
 #[test]
@@ -2046,7 +2046,7 @@ fn ready_bms_connection_alert_schedules_four_short_beeps_like_float_out_boy() {
     // following nine transitions exactly like Float Out Boy.
     assert_eq!(changes.len(), 10);
     assert_eq!(changes.first(), Some(&(1, FloatOutBoyBeeperLevel::Low)));
-    assert_eq!(changes.last(), Some(&(720, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(54, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -2115,7 +2115,7 @@ fn ready_idle_nag_waits_for_stable_voltage_and_beeps_every_minute_like_float_out
         state.all_data_payloads().base().status().beep_reason(),
         FloatOutBoyBeepReason::Idle,
     );
-    assert_eq!(first_beeper_high_tick(&mut state, 600), Some(600));
+    assert_eq!(first_beeper_high_tick(&mut state, 52), Some(52));
 }
 
 #[test]

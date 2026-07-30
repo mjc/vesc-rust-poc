@@ -345,6 +345,12 @@ impl FloatOutBoyPackageState {
         self.beeper.off(false);
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn tick_beeper_at(&mut self, now: TimestampTicks) -> Option<FloatOutBoyBeeperLevel> {
+        self.beeper.tick_at(now)
+    }
+
+    #[cfg(test)]
     pub(crate) fn tick_beeper(&mut self) -> Option<FloatOutBoyBeeperLevel> {
         self.beeper.tick()
     }
