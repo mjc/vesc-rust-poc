@@ -129,13 +129,13 @@ fn stale_bms_after_startup_timeout_reports_connection_only() {
 }
 
 #[test]
-fn stale_bms_during_startup_grace_does_not_report_connection() {
+fn stale_placeholder_during_startup_grace_suppresses_every_telemetry_fault() {
     let stale = FloatOutBoyBmsSample::new(
-        Voltage::from_volts(4.0),
-        Voltage::from_volts(4.1),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(1),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(40),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(50),
+        Voltage::ZERO,
+        Voltage::ZERO,
+        FloatOutBoyBmsTemperature::from_degrees_celsius(-100),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(100),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(100),
         VescSeconds::from_seconds(6.0),
     );
 
@@ -171,13 +171,13 @@ fn stale_bms_during_startup_grace_suppresses_telemetry_faults() {
 }
 
 #[test]
-fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
+fn placeholder_at_exact_message_timeout_is_still_evaluated_as_fresh() {
     let at_timeout = FloatOutBoyBmsSample::new(
-        Voltage::from_volts(4.0),
-        Voltage::from_volts(4.1),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(1),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(40),
-        FloatOutBoyBmsTemperature::from_degrees_celsius(50),
+        Voltage::ZERO,
+        Voltage::ZERO,
+        FloatOutBoyBmsTemperature::from_degrees_celsius(0),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(0),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(0),
         VescSeconds::from_seconds(5.0),
     );
 
@@ -188,7 +188,7 @@ fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
         FloatOutBoyBmsStartupGrace::Elapsed,
     );
 
-    assert_eq!(faults, FloatOutBoyBmsFaults::empty());
+    assert_eq!(faults, FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE);
 }
 
 #[test]
@@ -430,18 +430,10 @@ fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
     ));
 
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(10_000));
-    assert!(
-        !state
-            .bms_faults_for_test()
-            .contains(FloatOutBoyBmsFaults::CONNECTION)
-    );
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::empty());
 
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_000));
-    assert!(
-        !state
-            .bms_faults_for_test()
-            .contains(FloatOutBoyBmsFaults::CONNECTION)
-    );
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::empty());
 
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_001));
     assert_eq!(
