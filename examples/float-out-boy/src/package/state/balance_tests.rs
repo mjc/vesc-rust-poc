@@ -9,7 +9,7 @@ use crate::domain::{
     FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyWheelSlipState,
@@ -69,7 +69,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         base.status(),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -152,7 +152,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         base.status(),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -263,7 +263,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
         base.status(),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -339,7 +339,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
             base.status(),
             footpad,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
             base.motor(),
         );
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -408,7 +408,7 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         setpoints,
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -477,7 +477,7 @@ fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
         base.status(),
         base.footpad(),
         base.setpoints(),
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         FloatOutBoyAllDataMotorPayload::new(
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
@@ -583,7 +583,7 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
             < 0.0001
     );
     assert_f32_eq!(
-        running_base.booster_current().current().current().as_amps(),
+        running_base.booster_torque().torque().as_newton_meters(),
         0.0
     );
     assert!(

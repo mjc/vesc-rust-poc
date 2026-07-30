@@ -57,7 +57,7 @@ fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPaylo
         base.status(),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         motor,
     );
     FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
@@ -100,6 +100,28 @@ fn app_data_processes_legacy_get_rtdata_like_float_out_boy() {
     assert_f32_be(&bytes, 60, 4.0);
     assert_f32_be(&bytes, 64, 5.0);
     assert_f32_be(&bytes, 68, 0.0);
+}
+
+#[test]
+fn booster_telemetry_reports_newton_meters_separately_from_motor_current() {
+    let payloads = sample_all_data_payloads();
+    let base = payloads.base();
+    let remote = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0));
+
+    assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 4.0);
+    assert_f32_eq!(base.motor().motor_current().current().as_amps(), 5.0);
+    assert_f32_eq!(
+        realtime_value(
+            &payloads,
+            FloatOutBoyRealtimeDataItem::BoosterTorque,
+            remote,
+            0.0,
+            0.0,
+        ),
+        4.0,
+    );
+    let legacy = encode_float_out_boy_get_realtime_data_response(&payloads);
+    assert_f32_be(&legacy, 60, 4.0);
 }
 
 #[test]

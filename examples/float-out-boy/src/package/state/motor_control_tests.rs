@@ -8,7 +8,7 @@ use crate::domain::{
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
 };
@@ -145,7 +145,9 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
                 FloatOutBoyFootpadState::None,
             ),
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+            ),
             base.motor(),
         );
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(

@@ -6,7 +6,7 @@ use crate::domain::{
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyFootpadSample,
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterTorque,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
     FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyWheelSlipState,
 };
@@ -279,7 +279,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     // seeds only the board setpoint from balance pitch at
     // `third_party/float-out-boy/src/main.c:249-252`.
     assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 0.0);
     assert_eq!(
         state
             .motor_torque_constant
@@ -379,7 +379,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         base.status(),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -416,7 +416,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     // balance-current loop.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
     assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 0.0);
     let expected_engage_setpoint = AngleRadians::from_radians(0.05).as_degrees();
     assert_f32_eq!(
         base.setpoints().board().angle().as_degrees(),
@@ -475,7 +475,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         FloatOutBoyAllDataStatus::new(charging_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -617,7 +617,9 @@ fn running_runtime_fixture() -> (TimestampTicks, FirmwareTest, FloatOutBoyPackag
         base.status(),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(
+            crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+        ),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -645,7 +647,7 @@ fn ready_bms_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
         base.status(),
         FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, FloatOutBoyFootpadState::None),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -805,7 +807,7 @@ fn running_protective_pushback_fixture(
         status,
         base.footpad(),
         setpoints,
-        base.booster_current(),
+        base.booster_torque(),
         motor,
     );
     let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -1048,7 +1050,7 @@ fn set_protective_ride_state(
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     state.all_data_payloads =

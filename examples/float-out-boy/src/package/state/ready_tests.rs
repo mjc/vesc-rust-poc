@@ -31,7 +31,7 @@ fn ready_payloads(
         base.status(),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
@@ -56,7 +56,7 @@ fn ready_payloads_with_footpads(
         base.status(),
         footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
@@ -337,7 +337,7 @@ fn app_data_ready_flywheel_pressed_footpad_stops_flywheel_like_upstream_fix() {
             base.status(),
             pressed_footpad,
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -387,7 +387,7 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
         base.status(),
         single_footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -444,7 +444,7 @@ fn app_data_ready_single_footpad_default_config_does_not_engage_like_float_out_b
         base.status(),
         single_footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -498,7 +498,7 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
         base.status(),
         single_footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(

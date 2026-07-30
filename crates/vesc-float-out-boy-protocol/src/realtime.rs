@@ -10,7 +10,7 @@ use super::{
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
-    MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio, TimestampTicks,
+    MosfetTemperature, MotorCurrent, MotorTemperature, MotorTorque, SignedRatio, TimestampTicks,
 };
 use vescpkg_rs::protocol_buffer::flag_if;
 
@@ -110,7 +110,7 @@ realtime_data_items! {
         BalanceCurrent => "balance_current" => base.balance_current().current().current().as_amps(),
         AtrAccelDiff => "atr.accel_diff" => atr_accel_diff,
         AtrSpeedBoost => "atr.speed_boost" => atr_speed_boost,
-        BoosterCurrent => "booster.current" => base.booster_current().current().current().as_amps(),
+        BoosterTorque => "booster.torque" => base.booster_torque().torque().as_newton_meters(),
     }
     recorded {
         MotorErpm,
@@ -141,8 +141,8 @@ vescpkg_rs::typed_newtypes! {
     pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees) => new(angle), angle;
     /// Float Out Boy `balance_current` runtime realtime value.
     pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent) => new(current), current;
-    /// Float Out Boy `booster.current` runtime realtime value.
-    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent) => new(current), current;
+    /// Pinned Refloat cutoff `booster.torque` runtime realtime value.
+    pub struct FloatOutBoyRealtimeBoosterTorque(MotorTorque) => new(torque), torque;
 }
 
 vescpkg_rs::typed_field_groups! {
