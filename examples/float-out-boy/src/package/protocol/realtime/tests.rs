@@ -1,11 +1,13 @@
 use super::super::super::test_support::sample_all_data_payloads;
 use super::*;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
+    FLOAT_OUT_BOY_REALTIME_SELECTED_RESPONSE_CAPACITY, FloatOutBoyAllDataBasePayload,
+    FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeAtrTransitionBoost, FloatOutBoyRealtimeControlFrequency,
     FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeLiveValues, FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeLiveValues, FloatOutBoyRealtimeRemoteInput,
+    FloatOutBoyRealtimeSelectedRequest, FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, FirmwareFaultWireCode, SampleRate, SignedRatio, Speed,
@@ -25,6 +27,33 @@ fn live_values(
         FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
         FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
         FloatOutBoyRealtimeAtrTransitionBoost::from_factor(transition_boost),
+    )
+}
+
+fn selected_request(flags: u8, mask1: u32, mask2: u32) -> FloatOutBoyRealtimeSelectedRequest {
+    let mut payload = [0; 9];
+    payload[0] = flags;
+    payload[1..5].copy_from_slice(&mask1.to_be_bytes());
+    payload[5..].copy_from_slice(&mask2.to_be_bytes());
+    FloatOutBoyRealtimeSelectedRequest::parse(&payload).expect("selected request")
+}
+
+fn selected_header(payloads: &FloatOutBoyAllDataPayloads) -> FloatOutBoyRealtimeDataHeader {
+    let base = payloads.base();
+    FloatOutBoyRealtimeDataHeader::new(
+        TimestampTicks::from_ticks(0x0102_0304),
+        base.status().ride_state(),
+        base.footpad().state(),
+        base.status().beep_reason(),
+    )
+}
+
+fn selected_live_values() -> FloatOutBoyRealtimeLiveValues {
+    live_values(
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.5)),
+        0.004,
+        250.0,
+        1.0,
     )
 }
 
@@ -253,6 +282,137 @@ fn internal_realtime_encodes_typed_control_timing_and_atr_transition_boost() {
 }
 
 #[test]
+fn selected_realtime_echoes_unknown_bits_with_an_exact_empty_response() {
+    let payloads = sample_all_data_payloads();
+    let response = encode_float_out_boy_realtime_selected_response(
+        selected_request(0xfe, 1 << 2, 1 << 31),
+        &payloads,
+        selected_header(&payloads),
+        selected_live_values(),
+        None,
+    );
+
+    assert_eq!(
+        response.as_bytes(),
+        &[101, 33, 0xfe, 0, 0, 0, 4, 0x80, 0, 0, 0, 1, 2, 3, 4]
+    );
+}
+
+#[test]
+fn selected_realtime_float16_fields_follow_mask1_wire_order() {
+    let payloads = sample_all_data_payloads();
+    let header = selected_header(&payloads);
+    let response = encode_float_out_boy_realtime_selected_response(
+        selected_request(0, (1 << 0) | (1 << 1) | (1 << 6) | (1 << 14) | (1 << 30), 0),
+        &payloads,
+        header,
+        selected_live_values(),
+        None,
+    );
+    let bytes = response.as_bytes();
+
+    assert_eq!(bytes.len(), 26);
+    assert_eq!(bytes[15], header.extra_flags_compat());
+    assert_eq!(&bytes[16..20], &header.state_flags_compat().to_be_bytes());
+    assert!((decode_normal_float16([bytes[20], bytes[21]]) - 10.8).abs() < 0.01);
+    assert!((decode_normal_float16([bytes[22], bytes[23]]) - 0.72).abs() < 0.001);
+    assert!((decode_normal_float16([bytes[24], bytes[25]]) - 250.0).abs() < 0.1);
+}
+
+#[test]
+fn selected_realtime_float32_fields_keep_mask1_width_and_order() {
+    let payloads = sample_all_data_payloads();
+    let response = encode_float_out_boy_realtime_selected_response(
+        selected_request(1, (1 << 6) | (1 << 8) | (1 << 14), 0),
+        &payloads,
+        selected_header(&payloads),
+        selected_live_values(),
+        None,
+    );
+    let bytes = response.as_bytes();
+
+    assert_eq!(bytes.len(), 27);
+    assert_eq!(&bytes[15..19], &0x412c_cccc_u32.to_be_bytes());
+    assert_f32_auto_be(bytes, 19, 5.0);
+    assert_f32_auto_be(bytes, 23, 0.72);
+}
+
+#[test]
+fn selected_realtime_mask2_keeps_odometer_integer_and_numeric_order() {
+    let payloads = sample_all_data_payloads();
+    let response = encode_float_out_boy_realtime_selected_response(
+        selected_request(1, 0, 0x01ff),
+        &payloads,
+        selected_header(&payloads),
+        selected_live_values(),
+        None,
+    );
+    let bytes = response.as_bytes();
+
+    assert_eq!(bytes.len(), 51);
+    assert_eq!(&bytes[15..19], &123_456_u32.to_be_bytes());
+    for (offset, expected) in [
+        (19, 64.0),
+        (23, 82.4),
+        (27, 1.2),
+        (31, 3.2),
+        (35, 0.8),
+        (39, 170.0),
+        (43, 18.5),
+        (47, 2.0),
+    ] {
+        assert_f32_auto_be(bytes, offset, expected);
+    }
+}
+
+#[test]
+fn selected_realtime_gnss_keeps_float64_coordinates_and_converts_speed() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let gnss = firmware.gnss().snapshot().expect("GNSS snapshot");
+    let payloads = sample_all_data_payloads();
+    let mask = 0x0000_7e00;
+
+    for (flags, expected_len, scalar_width) in [(0, 41, 2), (1, 47, 4)] {
+        let response = encode_float_out_boy_realtime_selected_response(
+            selected_request(flags, 0, mask),
+            &payloads,
+            selected_header(&payloads),
+            selected_live_values(),
+            Some(gnss),
+        );
+        let bytes = response.as_bytes();
+
+        assert_eq!(bytes.len(), expected_len);
+        assert_eq!(&bytes[15..23], &40.0_f64.to_be_bytes());
+        assert_eq!(&bytes[23..31], &(-105.0_f64).to_be_bytes());
+        if scalar_width == 2 {
+            assert!((decode_normal_float16([bytes[33], bytes[34]]) - 12.6).abs() < 0.01);
+        } else {
+            assert_eq!(&bytes[35..39], &0x4149_9999_u32.to_be_bytes());
+        }
+        assert_eq!(&bytes[expected_len - 4..], &42_u32.to_be_bytes());
+    }
+}
+
+#[test]
+fn selected_realtime_all_current_float32_fields_fit_the_exact_capacity() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let payloads = sample_all_data_payloads();
+    let response = encode_float_out_boy_realtime_selected_response(
+        selected_request(1, 0x7fff_ffc3, 0x0000_7fff),
+        &payloads,
+        selected_header(&payloads),
+        selected_live_values(),
+        Some(firmware.gnss().snapshot().expect("GNSS snapshot")),
+    );
+
+    assert_eq!(
+        response.as_bytes().len(),
+        FLOAT_OUT_BOY_REALTIME_SELECTED_RESPONSE_CAPACITY
+    );
+}
+
+#[test]
 fn command_31_motor_speed_encodes_kilometres_per_hour_like_float_out_boy() {
     let baseline = encode_float_out_boy_realtime_data_response(
         &sample_payloads_with_speed(0.0),
@@ -312,5 +472,18 @@ fn assert_f32_be(bytes: &[u8], offset: usize, expected: f32) {
             bytes[offset + 3],
         ]),
         expected.to_bits(),
+    );
+}
+
+#[track_caller]
+fn assert_f32_auto_be(bytes: &[u8], offset: usize, expected: f32) {
+    assert_eq!(
+        u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]),
+        vescpkg_rs::protocol_buffer::float32_auto_bits(expected),
     );
 }

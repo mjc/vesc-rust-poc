@@ -15,6 +15,95 @@ use vescpkg_rs::prelude::{
 };
 use vescpkg_rs::protocol_buffer::flag_if;
 
+/// Numeric width selected by command 33 control bit zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatOutBoyRealtimePrecision {
+    /// Encode selected numeric fields with the 16-bit float codec.
+    Float16,
+    /// Encode selected numeric fields with the 32-bit float codec.
+    Float32,
+}
+
+vescpkg_rs::typed_newtypes! {
+    attributes { #[derive(Debug, Clone, Copy, PartialEq, Eq)] }
+    /// Opaque command 33 control byte.
+    pub struct FloatOutBoyRealtimeControlFlags(u8) => from_wire(wire_value), wire_value;
+    /// First command 33 selection mask.
+    pub struct FloatOutBoyRealtimeMask1(u32) => from_wire(wire_value), wire_value;
+    /// Second command 33 selection mask.
+    pub struct FloatOutBoyRealtimeMask2(u32) => from_wire(wire_value), wire_value;
+}
+
+impl FloatOutBoyRealtimeControlFlags {
+    /// Return the selected numeric precision.
+    #[must_use]
+    pub const fn precision(self) -> FloatOutBoyRealtimePrecision {
+        if self.wire_value() & 1 == 0 {
+            FloatOutBoyRealtimePrecision::Float16
+        } else {
+            FloatOutBoyRealtimePrecision::Float32
+        }
+    }
+}
+
+impl FloatOutBoyRealtimeMask1 {
+    pub(crate) const fn selects(self, bit: u32) -> bool {
+        self.wire_value() & bit != 0
+    }
+}
+
+impl FloatOutBoyRealtimeMask2 {
+    const GNSS_FIELDS: u32 = 0x0000_7e00;
+
+    pub(crate) const fn selects(self, bit: u32) -> bool {
+        self.wire_value() & bit != 0
+    }
+
+    /// Return whether any selected field needs a GNSS snapshot.
+    #[must_use]
+    pub const fn selects_gnss(self) -> bool {
+        self.wire_value() & Self::GNSS_FIELDS != 0
+    }
+}
+
+/// Parsed command 33 payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloatOutBoyRealtimeSelectedRequest {
+    control_flags: FloatOutBoyRealtimeControlFlags,
+    mask1: FloatOutBoyRealtimeMask1,
+    mask2: FloatOutBoyRealtimeMask2,
+}
+
+impl FloatOutBoyRealtimeSelectedRequest {
+    /// Parse the cutoff command 33 request shape.
+    ///
+    /// A partial second mask is ignored; all four bytes must be present.
+    #[must_use]
+    pub fn parse(payload: &[u8]) -> Option<Self> {
+        let [flags, a, b, c, d, ..] = payload else {
+            return None;
+        };
+        let mask2 = payload
+            .get(5..9)
+            .and_then(|bytes| <&[u8; 4]>::try_from(bytes).ok())
+            .map_or(0, |bytes| u32::from_be_bytes(*bytes));
+        Some(Self {
+            control_flags: FloatOutBoyRealtimeControlFlags::from_wire(*flags),
+            mask1: FloatOutBoyRealtimeMask1::from_wire(u32::from_be_bytes([*a, *b, *c, *d])),
+            mask2: FloatOutBoyRealtimeMask2::from_wire(mask2),
+        })
+    }
+
+    vescpkg_rs::const_field_getters! {
+        /// Return the opaque control byte.
+        pub fn control_flags -> FloatOutBoyRealtimeControlFlags = control_flags;
+        /// Return selection mask one.
+        pub fn mask1 -> FloatOutBoyRealtimeMask1 = mask1;
+        /// Return selection mask two.
+        pub fn mask2 -> FloatOutBoyRealtimeMask2 = mask2;
+    }
+}
+
 macro_rules! realtime_data_items {
     (
         project($payloads:ident, $live:ident;
@@ -315,5 +404,53 @@ impl FloatOutBoyRealtimeDataHeader {
             | u32::from(self.ride_state.setpoint_adjustment().id()) << 12
             | u32::from(self.ride_state.stop_condition().id()) << 8
             | u32::from(self.beep_reason.id())
+    }
+}
+
+#[cfg(test)]
+mod selected_request_tests {
+    use super::{FloatOutBoyRealtimePrecision, FloatOutBoyRealtimeSelectedRequest};
+
+    #[test]
+    fn rejects_truncated_required_header() {
+        for len in 0..5 {
+            assert!(FloatOutBoyRealtimeSelectedRequest::parse(&[0; 4][..len]).is_none());
+        }
+    }
+
+    #[test]
+    fn reads_required_fields_and_ignores_partial_second_mask() {
+        let request =
+            FloatOutBoyRealtimeSelectedRequest::parse(&[0x80, 1, 2, 3, 4, 0xaa]).expect("request");
+        assert_eq!(request.control_flags().wire_value(), 0x80);
+        assert_eq!(
+            request.control_flags().precision(),
+            FloatOutBoyRealtimePrecision::Float16
+        );
+        assert_eq!(request.mask1().wire_value(), 0x0102_0304);
+        assert_eq!(request.mask2().wire_value(), 0);
+    }
+
+    #[test]
+    fn reads_complete_second_mask_and_ignores_trailing_bytes() {
+        let request = FloatOutBoyRealtimeSelectedRequest::parse(&[
+            1, 0, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
+        ])
+        .expect("request");
+        assert_eq!(
+            request.control_flags().precision(),
+            FloatOutBoyRealtimePrecision::Float32
+        );
+        assert_eq!(request.mask2().wire_value(), 0xaabb_ccdd);
+    }
+
+    #[test]
+    fn detects_gnss_selection() {
+        let no_gnss = FloatOutBoyRealtimeSelectedRequest::parse(&[0, 0, 0, 0, 0, 0, 0, 1, 0])
+            .expect("request");
+        let gnss = FloatOutBoyRealtimeSelectedRequest::parse(&[0, 0, 0, 0, 0, 0, 0, 2, 0])
+            .expect("request");
+        assert!(!no_gnss.mask2().selects_gnss());
+        assert!(gnss.mask2().selects_gnss());
     }
 }

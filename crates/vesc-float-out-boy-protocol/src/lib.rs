@@ -40,6 +40,7 @@ mod packet;
 mod realtime;
 mod realtime_encoder;
 mod ride_state;
+mod selected_realtime;
 mod state;
 
 pub use self::all_data::{
@@ -69,18 +70,25 @@ pub use self::realtime::{
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAtrAccelerationDiff,
     FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeAtrTransitionBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
-    FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFlags,
+    FloatOutBoyRealtimeControlFrequency, FloatOutBoyRealtimeControlPeriod,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeLiveValues,
-    FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
+    FloatOutBoyRealtimeMask1, FloatOutBoyRealtimeMask2, FloatOutBoyRealtimeMotorCurrents,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimePrecision,
     FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, realtime_value,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeSelectedRequest,
+    FloatOutBoyRealtimeTail, realtime_value,
 };
 pub use self::realtime_encoder::{
     FloatOutBoyRealtimeDataResponse, encode_float_out_boy_get_realtime_data_response_with_remote,
     encode_float_out_boy_realtime_data_response_with_runtime,
 };
 pub use self::ride_state::FloatOutBoyRideState;
+pub use self::selected_realtime::{
+    FLOAT_OUT_BOY_REALTIME_SELECTED_RESPONSE_CAPACITY, FloatOutBoyRealtimeSelectedResponse,
+    encode_float_out_boy_realtime_selected_response,
+};
 pub use self::state::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyMode, FloatOutBoyRunState,

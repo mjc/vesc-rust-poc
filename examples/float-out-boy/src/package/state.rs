@@ -1056,6 +1056,7 @@ impl FloatOutBoyPackageState {
             || self.reply_to_metadata_packet(reply, bytes)
             || self.reply_to_legacy_realtime_data_packet(reply, bytes)
             || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
+            || self.reply_to_realtime_selected_packet(telemetry, now, reply, bytes)
     }
 
     #[cfg(test)]
