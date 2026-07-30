@@ -6,7 +6,9 @@
 use super::state::FloatOutBoyPackageState;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
-use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
+use vescpkg_rs::prelude::{
+    OdometerMeters, SYSTEM_TICK_RATE_HZ, SampleRate, ThreadPriority, TimestampTicks, VescSeconds,
+};
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
@@ -21,6 +23,42 @@ use test_support::{
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
 const FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ: u32 = 30;
 const FLOAT_OUT_BOY_AUX_LOOP_TIME_US: u32 = 1_000_000 / FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ;
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FloatOutBoyMainLoopTiming {
+    nominal_ticks: u32,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl FloatOutBoyMainLoopTiming {
+    fn from_sample_rate(sample_rate: SampleRate) -> Self {
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        let nominal_ticks =
+            crate::wire::saturating_trunc_f32_to_u32(tick_rate / sample_rate.as_hertz()).max(1);
+        Self { nominal_ticks }
+    }
+
+    fn nominal_sleep(self) -> Duration {
+        Self::ticks_to_duration(self.nominal_ticks)
+    }
+
+    fn sleep_after_work(self, elapsed: VescSeconds) -> Duration {
+        let elapsed = elapsed.as_seconds();
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        if !elapsed.is_finite() || elapsed < 0.0 {
+            return self.nominal_sleep();
+        }
+        // C map: Refloat rounds work time to system ticks with `lrintf`, then
+        // retains at least one sleep tick at `src/main.c` in `fa5d9f73`.
+        let work_ticks = crate::wire::saturating_trunc_f32_to_u32(elapsed * tick_rate + 0.5);
+        Self::ticks_to_duration(self.nominal_ticks.saturating_sub(work_ticks).max(1))
+    }
+
+    fn ticks_to_duration(ticks: u32) -> Duration {
+        Duration::from_micros(u64::from(ticks).saturating_mul(1_000_000) / SYSTEM_TICK_RATE_HZ)
+    }
+}
 
 use vescpkg_rs::prelude::AdcVoltage;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +135,7 @@ impl FloatOutBoyMainThreadTick {
         }
     }
 
+    #[cfg(test)]
     const fn sleep_us(self) -> u32 {
         self.sleep_us
     }
@@ -271,8 +310,21 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             let migration = ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
             let _ = ctx.with_state_mut(|state| state.finish_startup_configure(migration));
 
+            let timing = ctx
+                .with_state_mut(|state| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        state.configured_main_loop_sample_rate(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0))
+                });
+            let mut next_sleep = timing.nominal_sleep();
             while !ctx.firmware().threads().should_terminate() {
-                let system_time_ticks = ctx.firmware().clock().now();
+                let firmware = ctx.firmware();
+                firmware.threads().sleep_for(next_sleep);
+                let loop_timer = firmware.clock().timer_now();
+                let system_time_ticks = firmware.clock().now();
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
@@ -317,18 +369,16 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                         )
                     })
                 });
-                let sleep_us = tick.map_or(1, |tick| {
+                if let Some(tick) = tick {
                     if let Some(level) = tick.beeper_pin_level {
                         if let Ok(pin) = ctx.firmware().gpio().acquire_digital(DigitalPin::PPM) {
                             let _ = pin.set_mode(GpioMode::Output);
                             let _ = pin.write(level);
                         }
                     }
-                    tick.sleep_us()
-                });
-                ctx.firmware()
-                    .threads()
-                    .sleep_for(Duration::from_micros(u64::from(sleep_us)));
+                }
+                next_sleep =
+                    timing.sleep_after_work(ctx.firmware().clock().timer_elapsed_since(loop_timer));
             }
         }
 
