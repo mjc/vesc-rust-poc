@@ -13,15 +13,16 @@ use crate::domain::{
     FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
-use vescpkg_rs::ImuPitch;
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
+    AngleDegrees, AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit,
+    InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
     TemperatureLimitStart, TimestampTicks,
 };
-use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry, WrappingTimer};
+use vescpkg_rs::{
+    Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry, WrappingTimer,
+};
 
 mod alert_tracker;
 mod alerts;
@@ -424,7 +425,7 @@ impl FloatOutBoyPackageState {
         let startup = self.serialized_config.startup();
         self.motor_control.play_click(
             startup.click_current(),
-            self.frequency_trackers.main.filter_frequency(),
+            self.frequency_trackers.imu.filter_frequency(),
         );
     }
 
@@ -462,7 +463,76 @@ impl FloatOutBoyPackageState {
             .update(sample, Ratio::from_ratio_const(0.1), 0.02);
     }
 
-    #[cfg(target_arch = "arm")]
+    pub(crate) fn handle_imu_control_sample(
+        &mut self,
+        sample: ImuReadSample,
+        imu: &impl Imu,
+        motor: &impl MotorOutput,
+        now: TimestampTicks,
+    ) {
+        self.update_balance_filter(sample);
+
+        let payloads = self.all_data_payloads;
+        let base = payloads.base();
+        let ride_state = base.status().ride_state();
+        let (pitch, roll) = self.flywheel_attitude(
+            ride_state.mode(),
+            AngleDegrees::from(imu.pitch().angle()),
+            AngleDegrees::from(imu.roll().angle()),
+        );
+        let balance_pitch = if ride_state.mode() == FloatOutBoyMode::Flywheel {
+            FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from(pitch))
+        } else {
+            FloatOutBoyRealtimeBalancePitch::new(self.balance_filter.pitch())
+        };
+
+        if ride_state.run_state() == FloatOutBoyRunState::Running {
+            let angular_rate = sample.angular_rate();
+            let output = self.balance_loop.advance_balance_loop_elapsed(
+                self.runtime_balance_loop_config(),
+                LoopInput {
+                    setpoint: base.setpoints().board(),
+                    brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                    balance_pitch: balance_pitch.angle_degrees(),
+                    raw_pitch: pitch,
+                    roll: ImuRoll::new(AngleRadians::from(roll)),
+                    gyro_pitch: angular_rate.pitch(),
+                    gyro_yaw: angular_rate.yaw(),
+                    motor_erpm: base.motor().electrical_speed(),
+                    motor_current: base.motor().motor_current(),
+                    motor_current_max: self.motor_current_max,
+                    motor_current_min: self.motor_current_min,
+                    mode: ride_state.mode(),
+                    darkride: ride_state.darkride(),
+                    traction_control: self.ride_flags.traction_control,
+                },
+                sample.period().duration(),
+            );
+            self.balance_loop = output.state;
+            self.request_motor_current(output.requested_current);
+        }
+
+        let attitude = FloatOutBoyAllDataAttitude::new(
+            balance_pitch,
+            ImuRoll::new(AngleRadians::from(roll)),
+            ImuPitch::new(AngleRadians::from(pitch)),
+        );
+        let base = base
+            .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
+                self.balance_loop.balance_current,
+            ))
+            .with_attitude(attitude)
+            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
+                self.balance_loop.booster_current,
+            ));
+        self.all_data_payloads = payloads.with_base(base);
+
+        self.apply_motor_control(motor, ride_state.run_state(), now);
+        #[cfg(any(test, target_arch = "arm"))]
+        self.sample_data_recorder(now);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn initialize_frequency_tracking(
         &mut self,
         imu_frequency: vescpkg_rs::prelude::SampleRate,
@@ -796,7 +866,7 @@ impl FloatOutBoyPackageState {
             motor,
             &mut self.motor_control,
             system_time_ticks,
-            config.startup().sample_rate(),
+            self.frequency_trackers.imu.filter_frequency(),
         );
     }
 

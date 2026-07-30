@@ -4,6 +4,8 @@
 )]
 
 use super::BatteryVoltage;
+#[cfg(test)]
+use super::LoopInput;
 use super::limits::{
     MOVING_FAULT_ROLL, REMOTE_SETPOINT_FAULT_ANGLE, darkride, push_start, quick_stop, traction_loss,
 };
@@ -15,8 +17,8 @@ use super::{
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
-    FloatOutBoyWheelSlipState, Imu, LoopInput, MotorCurrent, RideModifierInput, Rpm,
-    TimestampTicks, float_out_boy_first_stop_event, float_out_boy_state_transition,
+    FloatOutBoyWheelSlipState, Imu, MotorCurrent, RideModifierInput, Rpm, TimestampTicks,
+    float_out_boy_first_stop_event, float_out_boy_state_transition,
 };
 use crate::bms::FloatOutBoyBmsFaults;
 use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
@@ -141,6 +143,7 @@ struct TransitionPhase {
     state_stop_fault: bool,
     ready_flywheel_stop: bool,
     balance_pitch: FloatOutBoyRealtimeBalancePitch,
+    #[cfg(test)]
     pitch_degrees: AngleDegrees,
     imu_pitch: ImuPitch,
     imu_roll: ImuRoll,
@@ -585,6 +588,7 @@ fn evaluate_transition_phase(
         state_stop_fault: transition.state_stopped,
         ready_flywheel_stop,
         balance_pitch,
+        #[cfg(test)]
         pitch_degrees,
         imu_pitch,
         imu_roll,
@@ -969,39 +973,44 @@ fn advance_running_control(
         }
     }
 
-    let gyro = imu.angular_rate();
-    let mut loop_state = state.balance_loop;
-    loop_state.balance_current = base.balance_current().current();
-    loop_state.booster_current = base.booster_current().current();
-    let balance_loop = loop_state.advance_balance_loop_elapsed(
-        state.runtime_balance_loop_config(),
-        LoopInput {
-            setpoint: base.setpoints().board(),
-            brake_tilt_setpoint: base.setpoints().brake_tilt(),
-            balance_pitch: phase.balance_pitch.angle_degrees(),
-            raw_pitch: phase.pitch_degrees,
-            roll: imu.roll(),
-            gyro_pitch: gyro.pitch(),
-            gyro_yaw: gyro.yaw(),
-            motor_erpm: base.motor().electrical_speed(),
-            motor_current: base.motor().motor_current(),
-            motor_current_max: state.motor_current_max,
-            motor_current_min: state.motor_current_min,
-            mode: phase.ride_state.mode(),
-            darkride: phase.ride_state.darkride(),
-            traction_control: state.ride_flags.traction_control,
-        },
-        elapsed,
-    );
-    state.balance_loop = balance_loop.state;
-    *base = base
-        .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
-            state.balance_loop.booster_current,
-        ))
-        .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
-            state.balance_loop.balance_current,
-        ));
-    state.request_motor_current(balance_loop.requested_current);
+    #[cfg(test)]
+    {
+        let gyro = imu.angular_rate();
+        let mut loop_state = state.balance_loop;
+        loop_state.balance_current = base.balance_current().current();
+        loop_state.booster_current = base.booster_current().current();
+        let balance_loop = loop_state.advance_balance_loop_elapsed(
+            state.runtime_balance_loop_config(),
+            LoopInput {
+                setpoint: base.setpoints().board(),
+                brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                balance_pitch: phase.balance_pitch.angle_degrees(),
+                raw_pitch: phase.pitch_degrees,
+                roll: imu.roll(),
+                gyro_pitch: gyro.pitch(),
+                gyro_yaw: gyro.yaw(),
+                motor_erpm: base.motor().electrical_speed(),
+                motor_current: base.motor().motor_current(),
+                motor_current_max: state.motor_current_max,
+                motor_current_min: state.motor_current_min,
+                mode: phase.ride_state.mode(),
+                darkride: phase.ride_state.darkride(),
+                traction_control: state.ride_flags.traction_control,
+            },
+            elapsed,
+        );
+        state.balance_loop = balance_loop.state;
+        *base = base
+            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
+                state.balance_loop.booster_current,
+            ))
+            .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
+                state.balance_loop.balance_current,
+            ));
+        state.request_motor_current(balance_loop.requested_current);
+    }
+    #[cfg(not(test))]
+    let _ = imu;
 }
 
 /// Float Out Boy runtime refresh of IMU-derived state and control-loop faults.
