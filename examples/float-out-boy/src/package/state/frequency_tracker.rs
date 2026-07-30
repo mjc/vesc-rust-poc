@@ -1,4 +1,5 @@
-use vescpkg_rs::prelude::{Frequency, Ratio, SampleRate, TimestampTicks, VescSeconds};
+use crate::ema::EmaAlpha;
+use vescpkg_rs::prelude::{Frequency, SampleRate, TimestampTicks, VescSeconds};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::timer_older_whole_seconds;
 
@@ -7,7 +8,7 @@ pub(super) struct FrequencyTracker {
     elapsed: VescSeconds,
     frequency: SampleRate,
     filter_frequency: SampleRate,
-    alpha: Ratio,
+    alpha: EmaAlpha,
     filter_last_update: TimestampTicks,
     first: bool,
     running: bool,
@@ -39,10 +40,7 @@ impl FrequencyTracker {
             elapsed: VescSeconds::from_seconds(0.0),
             frequency,
             filter_frequency: frequency,
-            alpha: super::motor_kinematics::refloat_ema_alpha(
-                Frequency::from_hertz(1.0),
-                frequency,
-            ),
+            alpha: EmaAlpha::from_sample_rate(Frequency::from_hertz(1.0), frequency),
             filter_last_update: now,
             first: true,
             running: false,
@@ -54,8 +52,7 @@ impl FrequencyTracker {
         self.elapsed = elapsed;
         let target = 1.0 / elapsed.as_seconds();
         self.frequency = SampleRate::from_hertz(
-            self.frequency.as_hertz()
-                + self.alpha.as_ratio() * (target - self.frequency.as_hertz()),
+            self.frequency.as_hertz() + self.alpha.factor() * (target - self.frequency.as_hertz()),
         );
     }
 
@@ -72,10 +69,8 @@ impl FrequencyTracker {
             && change > 0.03
         {
             self.filter_frequency = self.frequency;
-            self.alpha = super::motor_kinematics::refloat_ema_alpha(
-                Frequency::from_hertz(1.0),
-                self.filter_frequency,
-            );
+            self.alpha =
+                EmaAlpha::from_sample_rate(Frequency::from_hertz(1.0), self.filter_frequency);
             self.filter_last_update = now;
             self.first = false;
             self.recalculations = self.recalculations.saturating_add(1);

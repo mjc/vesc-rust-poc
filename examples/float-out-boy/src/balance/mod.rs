@@ -15,8 +15,3 @@ mod step;
 
 pub(crate) use filter::BalanceFilter;
 pub(crate) use loop_io::{LoopConfig, LoopInput, LoopState};
-
-fn ema_alpha(cutoff_hertz: f32, elapsed: vescpkg_rs::prelude::VescSeconds) -> f32 {
-    let omega = (2.0 * core::f32::consts::PI * cutoff_hertz * elapsed.as_seconds()).min(0.5);
-    omega - 0.5 * omega * omega
-}

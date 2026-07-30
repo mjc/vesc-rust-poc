@@ -1,4 +1,5 @@
-use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate, VescSeconds};
+use crate::ema::EmaAlpha;
+use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Rpm, SampleRate, VescSeconds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SmoothSetpointDirection {
@@ -46,29 +47,6 @@ impl SmoothSetpointMultiplier {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct FilterAlpha(Ratio);
-
-impl FilterAlpha {
-    fn from_time_constant(time_constant: VescSeconds, frequency: SampleRate) -> Self {
-        let omega = (1.0 / (time_constant.as_seconds() * frequency.as_hertz())).min(0.5);
-        Self(Ratio::clamped(omega - 0.5 * omega * omega))
-    }
-
-    const fn scaled(self, factor: f32) -> Self {
-        Self(Ratio::clamped(self.0.as_ratio() * factor))
-    }
-
-    const fn factor(self, multiplier: SmoothSetpointMultiplier) -> f32 {
-        self.0.as_ratio() * multiplier.factor()
-    }
-
-    const fn retained(self) -> f32 {
-        self.0.complement().as_ratio()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SmoothSetpointConfig {
     pub(super) time_constant: VescSeconds,
@@ -106,10 +84,10 @@ pub(super) struct SmoothSetpoint {
     off_speed_up: AngularVelocity,
     on_speed_down: AngularVelocity,
     off_speed_down: AngularVelocity,
-    target_alpha: FilterAlpha,
-    on_speed_alpha: FilterAlpha,
-    off_speed_alpha: FilterAlpha,
-    winddown_alpha: FilterAlpha,
+    target_alpha: EmaAlpha,
+    on_speed_alpha: EmaAlpha,
+    off_speed_alpha: EmaAlpha,
+    winddown_alpha: EmaAlpha,
     is_winddown: bool,
     filtered_target: AngleDegrees,
     step: AngleDegrees,
@@ -127,13 +105,13 @@ impl SmoothSetpoint {
         self.on_speed_down = config.on_speed_down;
         self.off_speed_down = config.off_speed_down;
         self.target_alpha =
-            FilterAlpha::from_time_constant(config.time_constant, frequency).scaled(2.146);
+            EmaAlpha::from_time_constant(config.time_constant, frequency).scaled(2.146);
         self.on_speed_alpha =
-            FilterAlpha::from_time_constant(config.on_speed_time_constant, frequency);
+            EmaAlpha::from_time_constant(config.on_speed_time_constant, frequency);
         self.off_speed_alpha =
-            FilterAlpha::from_time_constant(config.off_speed_time_constant, frequency);
+            EmaAlpha::from_time_constant(config.off_speed_time_constant, frequency);
         self.winddown_alpha =
-            FilterAlpha::from_time_constant(config.winddown_time_constant, frequency);
+            EmaAlpha::from_time_constant(config.winddown_time_constant, frequency);
     }
 
     pub(super) fn reset(&mut self) {
@@ -157,15 +135,16 @@ impl SmoothSetpoint {
         }
 
         self.filtered_target = self.filtered_target
-            + (target - self.filtered_target) * self.target_alpha.factor(multiplier);
-        let delta = (self.filtered_target - self.value) * self.target_alpha.factor(multiplier);
+            + (target - self.filtered_target) * (self.target_alpha.factor() * multiplier.factor());
+        let delta = (self.filtered_target - self.value)
+            * (self.target_alpha.factor() * multiplier.factor());
         if delta.abs() > self.step.abs() || !same_source_sign(delta, self.step) {
             let alpha = if same_source_sign(self.value, delta) {
                 self.on_speed_alpha
             } else {
                 self.off_speed_alpha
             };
-            self.step = self.step + (delta - self.step) * alpha.factor(multiplier);
+            self.step = self.step + (delta - self.step) * (alpha.factor() * multiplier.factor());
         } else {
             self.step = delta;
         }

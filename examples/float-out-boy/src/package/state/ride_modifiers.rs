@@ -7,6 +7,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
+use crate::ema::EmaAlpha;
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use core::ops::{Mul, Sub};
 use vescpkg_rs::prelude::{
@@ -274,10 +275,9 @@ impl YawMotion {
         }
         let limit = TURN_TILT_YAW_RATE_LIMIT.as_degrees_per_second();
         let limited = (change.as_degrees() / seconds).clamp(-limit, limit);
-        let alpha = super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, filter_rate);
+        let alpha = EmaAlpha::from_sample_rate(TURN_TILT_YAW_CUTOFF, filter_rate);
         self.rate = AngularVelocity::from_degrees_per_second(
-            self.rate.as_degrees_per_second() * (1.0 - alpha.as_ratio())
-                + limited * alpha.as_ratio(),
+            self.rate.as_degrees_per_second() * alpha.retained() + limited * alpha.factor(),
         );
         if self.rate.is_negative() != self.aggregate.is_negative() {
             self.aggregate = AngleDegrees::ZERO;
@@ -496,15 +496,11 @@ impl RideModifierState {
         } else {
             0.0
         };
-        let accept = super::motor_kinematics::refloat_ema_alpha(
-            Frequency::from_hertz(cutoff_hertz),
-            update_rate,
-        );
+        let accept = EmaAlpha::from_sample_rate(Frequency::from_hertz(cutoff_hertz), update_rate);
         let accel_diff = if accept.is_zero() {
             0.0
         } else {
-            self.atr.accel_diff.as_erpm_delta() * (1.0 - accept.as_ratio())
-                + new_diff * accept.as_ratio()
+            self.atr.accel_diff.as_erpm_delta() * accept.retained() + new_diff * accept.factor()
         };
         self.atr.accel_diff = FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(accel_diff);
         let mut strength = if forward == (accel_diff > 0.0) {
@@ -541,10 +537,9 @@ impl RideModifierState {
             -config.atr_angle_limit().as_degrees(),
             config.atr_angle_limit().as_degrees(),
         ));
-        let transition_alpha =
-            super::motor_kinematics::refloat_ema_alpha(Frequency::from_hertz(6.0), update_rate);
+        let transition_alpha = EmaAlpha::from_sample_rate(Frequency::from_hertz(6.0), update_rate);
         self.atr.transition_target = self.atr.transition_target
-            + (target - self.atr.transition_target) * transition_alpha.as_ratio();
+            + (target - self.atr.transition_target) * transition_alpha.factor();
         self.atr.transition_boost = atr_transition_multiplier(
             self.atr.angle.value(),
             self.atr.transition_target,

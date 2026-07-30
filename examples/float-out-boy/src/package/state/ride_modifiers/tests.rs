@@ -109,9 +109,8 @@ fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
 
     turn.aggregate(degrees(-179.95), nominal_elapsed(), nominal_rate());
 
-    let alpha =
-        super::super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, nominal_rate());
-    assert!((turn.yaw.rate.as_degrees_per_second() - 72.0 * alpha.as_ratio()).abs() < 0.000_1);
+    let alpha = crate::ema::EmaAlpha::from_sample_rate(TURN_TILT_YAW_CUTOFF, nominal_rate());
+    assert!((turn.yaw.rate.as_degrees_per_second() - 72.0 * alpha.factor()).abs() < 0.000_1);
 }
 
 #[test]
@@ -127,11 +126,8 @@ fn turn_tilt_filters_zero_yaw_change_instead_of_replaying_stale_motion() {
 
     turn.aggregate(degrees(10.0), nominal_elapsed(), nominal_rate());
 
-    let alpha =
-        super::super::motor_kinematics::refloat_ema_alpha(TURN_TILT_YAW_CUTOFF, nominal_rate());
-    assert!(
-        (turn.yaw.rate.as_degrees_per_second() - 72.0 * (1.0 - alpha.as_ratio())).abs() < 0.000_1
-    );
+    let alpha = crate::ema::EmaAlpha::from_sample_rate(TURN_TILT_YAW_CUTOFF, nominal_rate());
+    assert!((turn.yaw.rate.as_degrees_per_second() - 72.0 * alpha.retained()).abs() < 0.000_1);
 }
 
 #[test]

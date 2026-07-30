@@ -42,13 +42,13 @@ fn first_update_matches_refloat_second_order_filter() {
 
 #[test]
 fn time_constant_alpha_uses_refloat_half_omega_cap() {
-    let alpha = FilterAlpha::from_time_constant(
+    let alpha = EmaAlpha::from_time_constant(
         VescSeconds::from_seconds(0.000_1),
         SampleRate::from_hertz(500.0),
     );
 
-    assert!((alpha.0.as_ratio() - 0.375).abs() < f32::EPSILON);
-    assert!((alpha.scaled(2.146).0.as_ratio() - 0.804_75).abs() < f32::EPSILON);
+    assert!((alpha.factor() - 0.375).abs() < f32::EPSILON);
+    assert!((alpha.scaled(2.146).factor() - 0.804_75).abs() < f32::EPSILON);
 }
 
 #[test]

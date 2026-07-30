@@ -1,4 +1,5 @@
-use vescpkg_rs::prelude::{Frequency, Ratio, Rpm, SampleRate, VescSeconds};
+use crate::ema::EmaAlpha;
+use vescpkg_rs::prelude::{Frequency, Rpm, SampleRate, VescSeconds};
 
 // The package schema caps loop frequency at 4 kHz; Refloat's 8 Hz source
 // formula needs 221 samples there. One spare slot bounds package state.
@@ -12,17 +13,12 @@ fn window_as_f32(window: u8) -> f32 {
     f32::from(window)
 }
 
-pub(super) fn refloat_ema_alpha(cutoff: Frequency, update_rate: SampleRate) -> Ratio {
-    let omega = (core::f32::consts::TAU * cutoff.as_hertz() / update_rate.as_hertz()).min(0.5);
-    Ratio::clamped(omega - 0.5 * omega * omega)
-}
-
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
 pub(super) struct MotorKinematicsTracker {
     last_erpm: Rpm,
     smoothed_abs_erpm: Rpm,
-    absolute_speed_smoothing: Ratio,
+    absolute_speed_smoothing: EmaAlpha,
     average: Rpm,
     #[cfg(not(target_arch = "arm"))]
     history: [Rpm; MAX_WINDOW],
@@ -38,7 +34,7 @@ impl Default for MotorKinematicsTracker {
         let mut tracker = Self {
             last_erpm: Rpm::ZERO,
             smoothed_abs_erpm: Rpm::ZERO,
-            absolute_speed_smoothing: Ratio::from_ratio_const(0.0),
+            absolute_speed_smoothing: EmaAlpha::default(),
             average: Rpm::ZERO,
             #[cfg(not(target_arch = "arm"))]
             history: [Rpm::ZERO; MAX_WINDOW],
@@ -64,7 +60,7 @@ impl MotorKinematicsTracker {
     }
 
     pub(super) fn configure(&mut self, sample_rate: SampleRate) {
-        self.absolute_speed_smoothing = refloat_ema_alpha(ABS_ERPM_CUTOFF, sample_rate);
+        self.absolute_speed_smoothing = EmaAlpha::from_sample_rate(ABS_ERPM_CUTOFF, sample_rate);
         let normalized_cutoff = ACCELERATION_CUTOFF.as_hertz() / sample_rate.as_hertz();
         let window = u8::try_from(
             crate::wire::saturating_trunc_f32_to_u32(
@@ -87,7 +83,7 @@ impl MotorKinematicsTracker {
         let current_abs_erpm = motor_erpm.abs().as_revolutions_per_minute();
         self.smoothed_abs_erpm = Rpm::from_revolutions_per_minute(
             previous_abs_erpm
-                + self.absolute_speed_smoothing.as_ratio() * (current_abs_erpm - previous_abs_erpm),
+                + self.absolute_speed_smoothing.factor() * (current_abs_erpm - previous_abs_erpm),
         );
 
         // C map: `third_party/float-out-boy/src/motor_data.c:128-133` subtracts the previous ERPM,

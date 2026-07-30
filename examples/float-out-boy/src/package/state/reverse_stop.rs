@@ -1,7 +1,7 @@
+use crate::ema::EmaAlpha;
 use core::ops::{Div, Sub};
 use vescpkg_rs::prelude::{
-    AngleDegrees, Distance, Frequency, Ratio, Rpm, SampleRate, SignedTripDistance, TimestampTicks,
-    VescSeconds,
+    AngleDegrees, Distance, Frequency, Ratio, Rpm, SignedTripDistance, TimestampTicks, VescSeconds,
 };
 
 const REVERSE_STOP_DISTANCE: Distance = Distance::from_meters(0.25);
@@ -127,13 +127,10 @@ impl ReverseStop {
             self.current_distance = new_distance;
         }
         let target_progress = self.current_distance.div(self.target_distance);
-        let alpha = super::motor_kinematics::refloat_ema_alpha(
-            Frequency::from_hertz(1.0),
-            SampleRate::from_hertz(1.0 / elapsed.as_seconds()),
-        );
+        let alpha = EmaAlpha::from_elapsed(Frequency::from_hertz(1.0), elapsed);
         self.progress = Ratio::clamped(
             self.progress.as_ratio()
-                + alpha.as_ratio() * (target_progress - self.progress.as_ratio()),
+                + alpha.factor() * (target_progress - self.progress.as_ratio()),
         );
 
         if self.progress == COMPLETE {

@@ -89,7 +89,11 @@ fn base_elapsed() -> VescSeconds {
 }
 
 fn alpha(cutoff_hertz: f32) -> f32 {
-    super::super::ema_alpha(cutoff_hertz, base_elapsed())
+    crate::ema::EmaAlpha::from_elapsed(
+        vescpkg_rs::Frequency::from_hertz(cutoff_hertz),
+        base_elapsed(),
+    )
+    .factor()
 }
 
 #[test]

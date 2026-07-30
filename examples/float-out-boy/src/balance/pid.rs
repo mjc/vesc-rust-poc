@@ -1,6 +1,7 @@
 use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyRealtimeRuntimeSetpoint};
+use crate::ema::EmaAlpha;
 use vescpkg_rs::prelude::VescSeconds;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit,
@@ -214,17 +215,17 @@ impl ScalePair {
     }
 
     #[inline]
-    fn smoothed_angle_proportional(self, current: PidScale, alpha: f32) -> PidScale {
+    fn smoothed_angle_proportional(self, current: PidScale, alpha: EmaAlpha) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
         // previous one-pole filter for all PID scale coefficients.
-        current.lerp(self.angle_proportional, alpha)
+        current.lerp(self.angle_proportional, alpha.factor())
     }
 
     #[inline]
-    fn smoothed_rate_damping(self, current: PidScale, alpha: f32) -> PidScale {
+    fn smoothed_rate_damping(self, current: PidScale, alpha: EmaAlpha) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
         // filter for angle-P and rate-P scale coefficients.
-        current.lerp(self.rate_damping, alpha)
+        current.lerp(self.rate_damping, alpha.factor())
     }
 }
 
@@ -244,7 +245,7 @@ impl ScaleTargets {
     fn smoothed_into(self, state: LoopState, elapsed: VescSeconds) -> PidState {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
-        let alpha = super::ema_alpha(1.0, elapsed);
+        let alpha = EmaAlpha::from_elapsed(vescpkg_rs::Frequency::from_hertz(1.0), elapsed);
         PidState {
             kp_brake_scale: self
                 .brake

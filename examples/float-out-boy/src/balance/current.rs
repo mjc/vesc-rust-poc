@@ -2,9 +2,8 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{
-    Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, VescSeconds,
-};
+use crate::ema::EmaAlpha;
+use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, VescSeconds};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -12,30 +11,6 @@ const HANDTEST_CURRENT_LIMIT_AMPS: f32 = 7.0;
 const FLYWHEEL_CURRENT_LIMIT_AMPS: f32 = 40.0;
 const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
 const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct BalanceCurrentEmaAlpha(Ratio);
-
-impl BalanceCurrentEmaAlpha {
-    #[must_use]
-    #[inline]
-    fn from_elapsed(elapsed: VescSeconds) -> Self {
-        // C map: Refloat main at caff10a configures this 25 Hz filter in
-        // `src/main.c:168-175` and uses the bounded second-order approximation of
-        // `1 - e^-omega` from `src/filters/ema.c:24-30`.
-        Self(Ratio::clamped(super::ema_alpha(
-            BALANCE_CURRENT_FILTER_CUTOFF.as_hertz(),
-            elapsed,
-        )))
-    }
-
-    #[must_use]
-    #[inline]
-    fn update(self, previous: MotorCurrent, target: MotorCurrent) -> MotorCurrent {
-        previous + (target - previous) * self.0.as_ratio()
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -148,7 +123,8 @@ impl RequestedCurrent {
                 // C map: Refloat main at caff10a updates the EMA as
                 // `previous += alpha * (target - previous)` in
                 // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
-                BalanceCurrentEmaAlpha::from_elapsed(elapsed).update(previous, self.0)
+                let alpha = EmaAlpha::from_elapsed(BALANCE_CURRENT_FILTER_CUTOFF, elapsed);
+                previous + (self.0 - previous) * alpha.factor()
             }
         }
     }

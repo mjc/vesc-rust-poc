@@ -54,15 +54,15 @@ fn decodes_refloat_1_2_1_default_led_config() {
 }
 
 #[test]
-fn decodes_hardware_mode_from_refloat_byte_227() {
+fn decodes_hardware_mode_from_generated_byte_225() {
     let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    bytes[224] = FloatOutBoyLedColor::Fuchsia.id();
-    bytes[227] = FloatOutBoyLedMode::Both.id();
-    bytes[228] = FloatOutBoyLedPin::C9.id();
-    bytes[229] = FloatOutBoyLedPinConfig::NoPullup.id();
-    bytes[230] = FloatOutBoyLedStripOrder::Third.id();
-    bytes[232] = FloatOutBoyLedColorOrder::Wrgb.id();
-    bytes[233] = 1;
+    bytes[222] = FloatOutBoyLedColor::Fuchsia.id();
+    bytes[225] = FloatOutBoyLedMode::Both.id();
+    bytes[226] = FloatOutBoyLedPin::C9.id();
+    bytes[227] = FloatOutBoyLedPinConfig::NoPullup.id();
+    bytes[228] = FloatOutBoyLedStripOrder::Third.id();
+    bytes[230] = FloatOutBoyLedColorOrder::Wrgb.id();
+    bytes[231] = 1;
 
     let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
     let (hardware, _) = image.led_configs().expect("valid LED fields");
@@ -84,7 +84,7 @@ fn decodes_hardware_mode_from_refloat_byte_227() {
 
 #[test]
 fn serialized_image_rejects_out_of_range_refloat_led_enums() {
-    for offset in [177, 181, 184, 227, 228, 229, 230, 232] {
+    for offset in [175, 179, 182, 225, 226, 227, 228, 230] {
         let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
         bytes[offset] = u8::MAX;
 
@@ -97,7 +97,7 @@ fn serialized_image_rejects_out_of_range_refloat_led_enums() {
 
 #[test]
 fn led_validation_acceptance_matches_typed_decode_for_every_single_byte_mutation() {
-    for offset in 175..242 {
+    for offset in 173..240 {
         for value in u8::MIN..=u8::MAX {
             let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
             bytes[offset] = value;

@@ -95,6 +95,8 @@ mod config;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod domain;
 #[cfg(any(test, target_arch = "arm"))]
+mod ema;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod extensions;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod footpad;

@@ -399,7 +399,7 @@ impl FloatOutBoyPackageState {
         self.serialized_config.bms().enabled()
     }
 
-    pub(in crate::package) fn serialized_config(&self) -> &[u8; 276] {
+    pub(in crate::package) fn serialized_config(&self) -> &[u8; FLOAT_OUT_BOY_CONFIG_LEN] {
         // C map: `get_cfg(..., is_default=false)` serializes the current
         // `d->float_conf` image at `third_party/float-out-boy/src/main.c:2335-2356`.
         self.serialized_config.as_bytes()
@@ -413,8 +413,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
-        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz; legacy `hertz`
-        // bytes are retained only as storage-layout padding.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz.
         self.serialized_config.startup().loop_time_us()
     }
 

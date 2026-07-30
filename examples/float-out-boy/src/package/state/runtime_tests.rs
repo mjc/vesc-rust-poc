@@ -539,17 +539,17 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
             .abs()
             < 0.0001
     );
-    let alpha = super::motor_kinematics::refloat_ema_alpha(
+    let alpha = crate::ema::EmaAlpha::from_sample_rate(
         Frequency::from_hertz(1.0),
         SampleRate::from_hertz(500.0),
     );
     assert_f32_eq!(
         motor.battery_current().current().as_amps(),
-        4.0 * alpha.as_ratio()
+        4.0 * alpha.factor()
     );
     assert_f32_eq!(
         motor.duty_cycle().ratio().as_ratio(),
-        0.375 * alpha.as_ratio()
+        0.375 * alpha.factor()
     );
 }
 
@@ -999,7 +999,7 @@ fn tick_running_protective_pushback(
 
 fn enable_bms(state: &mut FloatOutBoyPackageState) {
     let mut config = default_float_out_boy_config_bytes();
-    config[265] = 1;
+    config[263] = 1;
     assert!(state.store_serialized_config(&config));
 }
 

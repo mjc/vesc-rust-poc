@@ -871,7 +871,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    config[225] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
     assert!(state.serialized_config.headlights_enabled());
 

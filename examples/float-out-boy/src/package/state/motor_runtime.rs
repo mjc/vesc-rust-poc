@@ -4,6 +4,7 @@ use crate::domain::{
     FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents,
 };
+use crate::ema::EmaAlpha;
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
@@ -108,7 +109,7 @@ pub(super) fn refresh(
     let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
-    let smoothing = super::motor_kinematics::refloat_ema_alpha(
+    let smoothing = EmaAlpha::from_sample_rate(
         MOTOR_DATA_EMA_CUTOFF,
         state.frequency_trackers.main.filter_frequency(),
     );
@@ -137,11 +138,11 @@ pub(super) fn refresh(
             filtered_current,
             BatteryCurrent::new(
                 previous_battery_current
-                    + (next_battery_current - previous_battery_current) * smoothing.as_ratio(),
+                    + (next_battery_current - previous_battery_current) * smoothing.factor(),
             ),
         ),
         DutyCycle::new(SignedRatio::clamped(
-            previous_duty_cycle + smoothing.as_ratio() * (raw_duty_cycle - previous_duty_cycle),
+            previous_duty_cycle + smoothing.factor() * (raw_duty_cycle - previous_duty_cycle),
         )),
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.

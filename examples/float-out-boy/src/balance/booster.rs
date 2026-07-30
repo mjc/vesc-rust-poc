@@ -1,6 +1,7 @@
 use super::loop_io::LoopConfig;
 use super::loop_io::LoopInput;
 use crate::domain::FloatOutBoyRealtimeRuntimeSetpoint;
+use crate::ema::EmaAlpha;
 use vescpkg_rs::Rpm;
 use vescpkg_rs::prelude::{AngleDegrees, Current, ElectricalSpeed, MotorCurrent};
 
@@ -139,7 +140,8 @@ impl Branch {
 
         // C map: `third_party/float-out-boy/src/booster.c:74-75` uses the same 1%
         // one-pole filter shape as PID scale smoothing.
-        previous + (target - previous) * super::ema_alpha(1.0, elapsed)
+        let alpha = EmaAlpha::from_elapsed(vescpkg_rs::Frequency::from_hertz(1.0), elapsed);
+        previous + (target - previous) * alpha.factor()
     }
 }
 

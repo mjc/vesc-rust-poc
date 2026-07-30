@@ -35,7 +35,7 @@ fn enabled_state() -> FloatOutBoyPackageState {
     let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
     // Generated Float Out Boy v1.2.1 order places `bms.enabled` after the final
     // haptic field and before the BMS thresholds at settings.xml:4076-4082.
-    config[265] = 1;
+    config[263] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
@@ -79,12 +79,12 @@ fn default_bms_thresholds_decode_like_float_out_boy_generated_config() {
 #[test]
 fn bms_thresholds_decode_exact_generated_offsets_and_signed_temperatures() {
     let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    bytes[266..268].copy_from_slice(&[0x0c, 0x1c]);
-    bytes[268..270].copy_from_slice(&[0x10, 0x68]);
-    bytes[270..272].copy_from_slice(&[0x00, 0x96]);
-    bytes[272] = 50;
-    bytes[273] = 0xf6;
-    bytes[274] = 70;
+    bytes[264..266].copy_from_slice(&[0x0c, 0x1c]);
+    bytes[266..268].copy_from_slice(&[0x10, 0x68]);
+    bytes[268..270].copy_from_slice(&[0x00, 0x96]);
+    bytes[270] = 50;
+    bytes[271] = 0xf6;
+    bytes[272] = 70;
     let config =
         FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid Float Out Boy config");
 
@@ -390,7 +390,7 @@ fn ext_bms_disable_and_reenable_preserve_the_last_sample_like_refloat() {
     );
     assert_eq!(state.bms_sample_for_test(), recorded);
 
-    config[265] = 1;
+    config[263] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
@@ -405,7 +405,7 @@ fn ext_bms_disable_and_reenable_preserve_the_last_sample_like_refloat() {
 fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    config[265] = 1;
+    config[263] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
