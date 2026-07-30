@@ -81,6 +81,17 @@ fn advance_loop(config: LoopConfig, input: LoopInput, state: LoopState) -> LoopO
     state.advance_balance_loop(config, input)
 }
 
+fn base_elapsed() -> VescSeconds {
+    base_config()
+        .hertz
+        .sample_period()
+        .expect("positive test rate")
+}
+
+fn alpha(cutoff_hertz: f32) -> f32 {
+    super::super::ema_alpha(cutoff_hertz, base_elapsed())
+}
+
 #[test]
 fn balance_loop_softstart_uses_measured_elapsed_time() {
     let state = LoopState {
@@ -101,6 +112,40 @@ fn balance_loop_softstart_uses_measured_elapsed_time() {
 }
 
 #[test]
+fn pid_integral_matches_over_equal_elapsed_time_at_different_cadences() {
+    let config = LoopConfig {
+        ki: IntegralCurrentGain::new(1.0),
+        ki_limit: motor_current_limit(Current::ZERO),
+        ..base_config()
+    };
+    let input = LoopInput {
+        setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+        ..base_input()
+    };
+    let mut fast = base_state();
+    let mut slow = base_state();
+
+    for _ in 0..100 {
+        fast = fast
+            .advance_balance_loop_elapsed(config, input, VescSeconds::from_seconds(0.01))
+            .state;
+    }
+    for _ in 0..50 {
+        slow = slow
+            .advance_balance_loop_elapsed(config, input, VescSeconds::from_seconds(0.02))
+            .state;
+    }
+
+    assert!(
+        (fast.pid.integral_current.current().as_amps()
+            - slow.pid.integral_current.current().as_amps())
+        .abs()
+            < 0.001
+    );
+    assert!((fast.pid.integral_current.current().as_amps() - 720.0).abs() < 0.001);
+}
+
+#[test]
 fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_float_out_boy_pid() {
     let config = LoopConfig {
         kp_brake: PidScale::new(2.0),
@@ -108,21 +153,25 @@ fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_float_out_boy_pid
         ..base_config()
     };
     let state = base_state();
+    let elapsed = base_elapsed();
 
     let coasting = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
         state.pid.integral_current,
+        elapsed,
     );
     let forward = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(1000.0)),
         state.pid.integral_current,
+        elapsed,
     );
     let reverse = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(-1000.0)),
         state.pid.integral_current,
+        elapsed,
     );
 
     assert_scale(coasting.pid.kp_brake_scale, PidScale::new(1.0));
@@ -130,15 +179,21 @@ fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_float_out_boy_pid
     assert_scale(coasting.pid.kp_accel_scale, PidScale::new(1.0));
     assert_scale(coasting.pid.kp2_accel_scale, PidScale::new(1.0));
 
-    assert_scale(forward.pid.kp_brake_scale, PidScale::new(1.01));
-    assert_scale(forward.pid.kp2_brake_scale, PidScale::new(1.02));
+    assert_scale(forward.pid.kp_brake_scale, PidScale::new(1.0 + alpha(1.0)));
+    assert_scale(
+        forward.pid.kp2_brake_scale,
+        PidScale::new(1.0 + 2.0 * alpha(1.0)),
+    );
     assert_scale(forward.pid.kp_accel_scale, PidScale::new(1.0));
     assert_scale(forward.pid.kp2_accel_scale, PidScale::new(1.0));
 
     assert_scale(reverse.pid.kp_brake_scale, PidScale::new(1.0));
     assert_scale(reverse.pid.kp2_brake_scale, PidScale::new(1.0));
-    assert_scale(reverse.pid.kp_accel_scale, PidScale::new(1.01));
-    assert_scale(reverse.pid.kp2_accel_scale, PidScale::new(1.02));
+    assert_scale(reverse.pid.kp_accel_scale, PidScale::new(1.0 + alpha(1.0)));
+    assert_scale(
+        reverse.pid.kp2_accel_scale,
+        PidScale::new(1.0 + 2.0 * alpha(1.0)),
+    );
 }
 
 #[test]
@@ -158,7 +213,7 @@ fn balance_loop_unit_persists_pid_integral_across_ticks_like_float_out_boy_pid()
 
     assert_current(
         second.state.pid.integral_current,
-        motor_current(Current::from_amps(2.0)),
+        motor_current(Current::from_amps(14.4)),
     );
 }
 
@@ -220,28 +275,28 @@ fn balance_loop_preserves_multisample_pid_trajectory() {
         actual.map(|sample| sample.map(f32::to_bits)),
         [
             [
-                1_008_139_520,
-                1_045_639_988,
-                1_065_420_325,
-                1_065_294_496,
+                1_056_857_588,
+                1_069_421_691,
+                1_065_761_627,
+                1_064_995_857,
                 1_065_353_216,
                 1_065_353_216,
             ],
             [
-                3_187_903_201,
+                995_960_576,
                 0,
-                1_065_419_654,
-                1_065_295_083,
-                1_065_420_325,
-                1_065_294_496,
+                1_065_736_772,
+                1_065_017_605,
+                1_065_761_627,
+                1_064_995_857,
             ],
             [
-                3_192_756_513,
-                1_035_993_088,
-                1_065_418_990,
-                1_065_295_664,
-                1_065_419_654,
-                1_065_295_083,
+                1_033_286_039,
+                1_059_900_620,
+                1_065_713_430,
+                1_065_038_030,
+                1_065_736_772,
+                1_065_017_605,
             ],
         ],
     );
@@ -269,15 +324,15 @@ fn balance_loop_unit_zero_ki_limit_keeps_integrating_like_float_out_boy_pid() {
 
     assert_current(
         first.state.pid.integral_current,
-        motor_current(Current::from_amps(2.0)),
+        motor_current(Current::from_amps(14.4)),
     );
     assert_current(
         second.state.pid.integral_current,
-        motor_current(Current::from_amps(4.0)),
+        motor_current(Current::from_amps(28.8)),
     );
     assert_current(
         reversed.state.pid.integral_current,
-        motor_current(Current::from_amps(1.0)),
+        motor_current(Current::from_amps(7.2)),
     );
 }
 
@@ -292,13 +347,13 @@ fn balance_loop_unit_limits_normal_current_like_float_out_boy_main_loop() {
             motor_current(Current::from_amps(1.0)),
             setpoint(AngleDegrees::from_degrees(10.0)),
             motor_current(Current::from_amps(3.0)),
-            motor_current(Current::from_amps(0.6)),
+            motor_current(Current::from_amps(3.0 * alpha(25.0))),
         ),
         (
             motor_current(Current::from_amps(-1.0)),
             setpoint(AngleDegrees::from_degrees(-10.0)),
             motor_current(Current::from_amps(2.0)),
-            motor_current(Current::from_amps(-0.4)),
+            motor_current(Current::from_amps(-2.0 * alpha(25.0))),
         ),
     ];
 
@@ -345,7 +400,7 @@ fn balance_loop_unit_treats_motor_current_min_as_magnitude_like_float_out_boy_ma
     // though VESC stores braking current as a negative config value.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(-0.4)),
+        motor_current(Current::from_amps(-2.0 * alpha(25.0))),
     );
 }
 
@@ -386,7 +441,7 @@ fn balance_loop_unit_positive_pitch_rate_commands_negative_damping_current() {
     // current at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(-4.0)),
+        motor_current(Current::from_amps(-20.0 * alpha(25.0))),
     );
 }
 
@@ -409,7 +464,7 @@ fn balance_loop_unit_negative_pitch_rate_commands_positive_damping_current() {
     // current at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(4.0)),
+        motor_current(Current::from_amps(20.0 * alpha(25.0))),
     );
 }
 
@@ -444,7 +499,7 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
     // `third_party/float-out-boy/src/main.c:924-930`.
     assert_current(
         output.state.booster_current,
-        motor_current(Current::from_amps(0.2)),
+        motor_current(Current::from_amps(20.0 * alpha(1.0))),
     );
     assert_current(
         output.state.balance_current,
@@ -589,7 +644,7 @@ fn balance_loop_preserves_multisample_booster_trajectory() {
 
     assert_eq!(
         actual,
-        [1_028_443_340, 1_047_423_964, 1_041_227_914, 3_190_080_251]
+        [1_050_397_660, 1_068_721_243, 1_061_469_061, 3_213_709_450]
     );
 }
 
@@ -646,7 +701,7 @@ fn balance_loop_unit_darkride_and_traction_control_match_float_out_boy_main_loop
     // at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         darkride_output.state.balance_current,
-        motor_current(Current::from_amps(6.0)),
+        motor_current(Current::from_amps(10.0 - 20.0 * alpha(25.0))),
     );
     assert_current(
         traction_output.state.balance_current,

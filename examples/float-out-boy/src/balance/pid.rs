@@ -56,7 +56,12 @@ impl LoopInput {
 impl LoopState {
     /// Update Float Out Boy's P/I/rate-P currents and scale state for one tick.
     #[inline]
-    pub(super) fn update_pid(self, config: LoopConfig, input: LoopInput) -> (Currents, Self) {
+    pub(super) fn update_pid(
+        self,
+        config: LoopConfig,
+        input: LoopInput,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) -> (Currents, Self) {
         // C map: `pid.c:37-73` computes currents from the old scales, then smooths
         // the direction-dependent scale targets for the next tick.
         let error = input.setpoint.angle() - input.balance_pitch;
@@ -75,7 +80,8 @@ impl LoopState {
         );
         let rate_damping = rate_damping.scaled_by(rate_scale);
 
-        let integral = self.pid.integral_current + error * config.ki;
+        let integral = self.pid.integral_current
+            + (error * config.ki).scaled_by(PidScale::new(720.0 * elapsed.as_seconds()));
         let integral = if config.ki_limit.current().is_positive() {
             config.ki_limit.clamp(integral)
         } else {
@@ -89,7 +95,7 @@ impl LoopState {
 
         (
             currents,
-            self.with_updated_pid_state(config, input.motor_erpm, integral),
+            self.with_updated_pid_state(config, input.motor_erpm, integral, elapsed),
         )
     }
 
@@ -100,7 +106,9 @@ impl LoopState {
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
         integral: MotorCurrent,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
     ) -> Self {
+        let alpha = super::ema_alpha(1.0, elapsed);
         let unity = PidScale::new(1.0);
         let erpm = motor_erpm.rpm();
         let ((brake_angle_target, brake_rate_target), (accel_angle_target, accel_rate_target)) =
@@ -114,10 +122,10 @@ impl LoopState {
         Self {
             pid: PidState {
                 integral_current: integral,
-                kp_brake_scale: self.pid.kp_brake_scale.lerp(brake_angle_target, 0.01),
-                kp2_brake_scale: self.pid.kp2_brake_scale.lerp(brake_rate_target, 0.01),
-                kp_accel_scale: self.pid.kp_accel_scale.lerp(accel_angle_target, 0.01),
-                kp2_accel_scale: self.pid.kp2_accel_scale.lerp(accel_rate_target, 0.01),
+                kp_brake_scale: self.pid.kp_brake_scale.lerp(brake_angle_target, alpha),
+                kp2_brake_scale: self.pid.kp2_brake_scale.lerp(brake_rate_target, alpha),
+                kp_accel_scale: self.pid.kp_accel_scale.lerp(accel_angle_target, alpha),
+                kp2_accel_scale: self.pid.kp2_accel_scale.lerp(accel_rate_target, alpha),
             },
             ..self
         }
