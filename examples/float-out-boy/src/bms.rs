@@ -112,19 +112,34 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FloatOutBoyBmsStartupGrace {
+    Active,
+    Elapsed,
+}
+
+impl FloatOutBoyBmsStartupGrace {
+    pub(crate) const fn from_elapsed(elapsed: bool) -> Self {
+        if elapsed { Self::Elapsed } else { Self::Active }
+    }
+}
+
 impl FloatOutBoyBmsFaults {
     pub(crate) fn evaluate(
         enabled: bool,
         sample: FloatOutBoyBmsSample,
         thresholds: FloatOutBoyBmsThresholds,
-        startup_timeout_elapsed: bool,
+        startup_grace: FloatOutBoyBmsStartupGrace,
     ) -> Self {
         if !enabled {
             return Self::empty();
         }
 
-        if sample.message_age() > VescSeconds::from_seconds(5.0) && startup_timeout_elapsed {
-            return Self::CONNECTION;
+        if sample.message_age() > VescSeconds::from_seconds(5.0) {
+            return match startup_grace {
+                FloatOutBoyBmsStartupGrace::Active => Self::empty(),
+                FloatOutBoyBmsStartupGrace::Elapsed => Self::CONNECTION,
+            };
         }
 
         let mut faults = Self::empty();
