@@ -518,3 +518,20 @@ fn advanced_foc_reports_absent_optional_slots() {
         Err(vescpkg_rs::AdvancedFocError::Unavailable)
     );
 }
+
+#[test]
+fn field_weakening_override_is_explicitly_unsafe_and_firmware_7_optional() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let advanced = firmware.advanced_foc();
+
+    assert_eq!(
+        unsafe { advanced.set_field_weakening_override(Current::from_amps(4.25)) },
+        Ok(())
+    );
+
+    firmware.set_field_weakening_override_available(false);
+    assert_eq!(
+        unsafe { advanced.set_field_weakening_override(Current::from_amps(4.25)) },
+        Err(vescpkg_rs::AdvancedFocError::Unavailable)
+    );
+}

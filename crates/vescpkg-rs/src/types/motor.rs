@@ -233,7 +233,7 @@ impl core::fmt::Display for AudioChannelError {
 
 impl core::error::Error for AudioChannelError {}
 
-/// Known active motor-fault identifiers from the pinned `mc_fault_code` ABI.
+/// Known active motor-fault identifiers from VESC firmware 7.00.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum FirmwareFaultId {
@@ -291,6 +291,18 @@ pub enum FirmwareFaultId {
     EncoderMagnetTooStrong,
     /// Phase filter fault.
     PhaseFilter,
+    /// General encoder fault.
+    EncoderFault,
+    /// Low-voltage output fault.
+    LowVoltageOutputFault,
+    /// Encoder slip detected.
+    EncoderSlip,
+    /// Motor speed exceeded its configured limit.
+    Overspeed,
+    /// Motor speed fell below its configured limit.
+    Underspeed,
+    /// Motor speed exceeded the absolute limit.
+    AbsoluteOverspeed,
 }
 
 impl FirmwareFaultId {
@@ -329,6 +341,12 @@ impl FirmwareFaultId {
             25 => Self::EncoderNoMagnet,
             26 => Self::EncoderMagnetTooStrong,
             27 => Self::PhaseFilter,
+            28 => Self::EncoderFault,
+            29 => Self::LowVoltageOutputFault,
+            30 => Self::EncoderSlip,
+            31 => Self::Overspeed,
+            32 => Self::Underspeed,
+            33 => Self::AbsoluteOverspeed,
             _ => return None,
         })
     }

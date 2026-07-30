@@ -195,6 +195,7 @@ static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
 static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_FW_OVERRIDE_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -449,6 +450,7 @@ fn reset_motor_state() {
     FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
     FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_FW_OVERRIDE_AVAILABLE.store(true, Ordering::Relaxed);
     UART_AVAILABLE.store(true, Ordering::Relaxed);
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
@@ -1359,6 +1361,10 @@ pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_foc_fw_override_available(available: bool) {
+    FOC_FW_OVERRIDE_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
 pub(crate) fn set_uart_available(available: bool) {
     UART_AVAILABLE.store(available, Ordering::Relaxed);
 }
@@ -1891,6 +1897,10 @@ pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
 
 pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
     FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_fw_override(_current: f32) -> bool {
+    FOC_FW_OVERRIDE_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {

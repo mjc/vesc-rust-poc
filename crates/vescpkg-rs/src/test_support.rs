@@ -401,6 +401,11 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_open_loop_available(available);
     }
 
+    /// Toggle whether the fake firmware exposes the firmware 7.00 field-weakening slot.
+    pub fn set_field_weakening_override_available(&self, available: bool) {
+        crate::test_ffi::set_foc_fw_override_available(available);
+    }
+
     /// Toggle whether the fake firmware exposes its optional UART slots.
     pub fn set_uart_available(&self, available: bool) {
         crate::test_ffi::set_uart_available(available);

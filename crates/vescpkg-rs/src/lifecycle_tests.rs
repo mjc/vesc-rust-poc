@@ -172,11 +172,19 @@ fn firmware_fault_maps_known_none_and_unknown_raw_values() {
         5
     );
     assert_eq!(FirmwareFault::from_raw_code(-1), FirmwareFault::Unknown);
-    for current_bldc_only_code in 28..=33 {
+    for (code, fault) in [
+        (28, FirmwareFaultId::EncoderFault),
+        (29, FirmwareFaultId::LowVoltageOutputFault),
+        (30, FirmwareFaultId::EncoderSlip),
+        (31, FirmwareFaultId::Overspeed),
+        (32, FirmwareFaultId::Underspeed),
+        (33, FirmwareFaultId::AbsoluteOverspeed),
+    ] {
         assert_eq!(
-            FirmwareFault::from_raw_code(current_bldc_only_code),
-            FirmwareFault::Unknown
+            FirmwareFault::from_raw_code(code),
+            FirmwareFault::Active(fault)
         );
+        assert_eq!(fault.wire_code().wire_code(), code as u8);
     }
     assert_eq!(FirmwareFault::from_raw_code(256), FirmwareFault::Unknown);
 }
