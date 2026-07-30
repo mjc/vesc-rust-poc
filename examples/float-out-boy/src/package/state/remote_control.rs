@@ -1,9 +1,11 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
+#[cfg(test)]
+use vescpkg_rs::prelude::SampleRate;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Ratio, Rpm, SampleRate,
-    TimestampTicks,
+    AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Ratio, Rpm,
+    TimestampTicks, VescSeconds,
 };
 use vescpkg_rs::{SmoothedAngleSlew, WrappingTimer};
 
@@ -133,6 +135,7 @@ impl RemoteControlState {
         self.input_tilt = SmoothedAngleSlew::default();
     }
 
+    #[cfg(test)]
     pub(super) fn update_input_tilt(
         &mut self,
         angle_limit: AngleDegrees,
@@ -145,17 +148,26 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/remote.c:30-34,70-94`.
         sample_rate
             .sample_period()
-            .map_or(self.input_tilt.setpoint(), |period| {
-                let step = AngleDegrees::from(speed * period);
-                let direction = if darkride { -1.0 } else { 1.0 };
-                let target = angle_limit * (self.input.ratio().as_ratio() * direction);
-                self.input_tilt.advance(
-                    target,
-                    step,
-                    Ratio::from_ratio_const(0.02),
-                    AngleDegrees::from_degrees(2.0),
-                )
+            .map_or(self.input_tilt.setpoint(), |elapsed| {
+                self.update_input_tilt_elapsed(angle_limit, speed, elapsed, darkride)
             })
+    }
+
+    pub(super) fn update_input_tilt_elapsed(
+        &mut self,
+        angle_limit: AngleDegrees,
+        speed: AngularVelocity,
+        elapsed: VescSeconds,
+        darkride: bool,
+    ) -> AngleDegrees {
+        let direction = if darkride { -1.0 } else { 1.0 };
+        let target = angle_limit * (self.input.ratio().as_ratio() * direction);
+        self.input_tilt.advance(
+            target,
+            vescpkg_rs::angle_step(speed, elapsed),
+            Ratio::from_ratio_const(0.02),
+            AngleDegrees::from_degrees(2.0),
+        )
     }
 
     pub(super) const fn input(self) -> crate::domain::FloatOutBoyRealtimeRemoteInput {

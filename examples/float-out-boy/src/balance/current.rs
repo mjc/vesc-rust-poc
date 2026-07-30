@@ -1,7 +1,7 @@
 use super::booster::Branch;
 use super::loop_io::LoopInput;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
-use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
+use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, VescSeconds};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -24,7 +24,7 @@ impl PitchBasedCurrent {
         booster: MotorCurrent,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        elapsed: VescSeconds,
     ) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
         // booster terms before soft-start and current limiting.
@@ -38,7 +38,7 @@ impl PitchBasedCurrent {
                 // soft-start current limit at 100 A/s.
                 softstart_pid_limit: softstart_pid_limit
                     + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
+                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed),
                     )),
             }
         } else {
@@ -47,6 +47,15 @@ impl PitchBasedCurrent {
                 softstart_pid_limit,
             }
         }
+    }
+}
+
+fn valid_elapsed_seconds(elapsed: VescSeconds) -> f32 {
+    let seconds = elapsed.as_seconds();
+    if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
     }
 }
 

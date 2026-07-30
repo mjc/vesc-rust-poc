@@ -16,6 +16,26 @@ fn input() -> RideModifierInput {
 }
 
 #[test]
+fn nose_angling_uses_measured_elapsed_time_after_a_delayed_iteration() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let mut input = input();
+    input.motor_erpm = Rpm::from_revolutions_per_minute(6_000.0);
+    let mut nominal = RideModifierState::default();
+    let mut delayed = RideModifierState::default();
+
+    let nominal = nominal
+        .advance_elapsed(&config, input, VescSeconds::from_seconds(0.002))
+        .board()
+        .angle();
+    let delayed = delayed
+        .advance_elapsed(&config, input, VescSeconds::from_seconds(0.004))
+        .board()
+        .angle();
+
+    assert_eq!(delayed, nominal * 2.0);
+}
+
+#[test]
 fn turn_tilt_uses_filtered_yaw_and_erpm_direction_like_float_out_boy() {
     let mut config = FloatOutBoyConfigImage::defaults();
     let mut editor = config.editor();
@@ -239,10 +259,10 @@ fn nose_angling_covers_source_thresholds_limits_directions_and_winddown() {
     state.update_nose(
         &config,
         Rpm::from_revolutions_per_minute(10_000.0),
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     assert!((state.nose.as_degrees() - 1.0).abs() < 0.000_001);
-    state.update_nose(&config, Rpm::ZERO, SampleRate::from_hertz(100.0));
+    state.update_nose(&config, Rpm::ZERO, VescSeconds::from_seconds(0.01));
     assert_eq!(state.nose, AngleDegrees::ZERO);
 }
 
@@ -300,7 +320,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         Current::from_amps(100.0),
         false,
         3_000.0,
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     let active = state.torque.setpoint;
     assert!(active.is_positive());
@@ -309,7 +329,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
         Current::ZERO,
         false,
         3_000.0,
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     assert!(state.torque.setpoint < active);
 }
@@ -344,7 +364,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             false,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     let accelerating_setpoint = state.atr.angle.setpoint;
@@ -364,7 +384,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             true,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.atr.angle.setpoint.is_negative());
@@ -383,7 +403,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             false,
             4_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.atr.angle.setpoint > before_recovery);
@@ -450,7 +470,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
             true,
             3_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     let sustained = state.brake.setpoint;
@@ -465,7 +485,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
             false,
             3_000.0,
             1.0,
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
     }
     assert!(state.brake.setpoint < sustained);
@@ -473,7 +493,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     state.update_turn(
         balance,
         Rpm::from_revolutions_per_minute(3_000.0),
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     let active_turn = state.turn.angle.setpoint;
     assert!(active_turn.is_positive());
@@ -481,7 +501,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     state.update_turn(
         balance,
         Rpm::from_revolutions_per_minute(3_000.0),
-        SampleRate::from_hertz(100.0),
+        VescSeconds::from_seconds(0.01),
     );
     assert!(state.turn.angle.setpoint < active_turn);
 }

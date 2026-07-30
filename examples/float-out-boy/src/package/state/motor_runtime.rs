@@ -7,7 +7,7 @@ use crate::domain::{
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, MotorCurrent,
-    SignedRatio,
+    SampleRate, SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
@@ -44,7 +44,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(
         state.serialized_config.motor_current_filter_frequency(),
-        state.serialized_config.startup().sample_rate(),
+        state.frequency_trackers.main.filter_frequency(),
         CURRENT_FILTER_Q,
     );
     let directional_current = telemetry.directional_motor_current();
@@ -87,4 +87,15 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
             .map(|current| MotorCurrent::new(current.current())),
     );
     state.all_data_payloads = payloads.with_base(base.with_motor(motor));
+}
+
+pub(super) fn reconfigure_current_filter(
+    state: &mut FloatOutBoyPackageState,
+    frequency: SampleRate,
+) {
+    state.motor_current_filter.configure(
+        state.serialized_config.motor_current_filter_frequency(),
+        frequency,
+        CURRENT_FILTER_Q,
+    );
 }

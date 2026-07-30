@@ -3,7 +3,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
-use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, Rpm, SampleRate};
+use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, Rpm, VescSeconds};
 use vescpkg_rs::{SmoothAngle, WrappedAngleMotion};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -41,7 +41,7 @@ fn atr_step(
     target: AngleDegrees,
     forward: bool,
     abs_erpm: f32,
-    sample_rate: SampleRate,
+    elapsed: VescSeconds,
     setpoint: AngleDegrees,
 ) -> AngleDegrees {
     let mut response = 1.0;
@@ -51,8 +51,8 @@ fn atr_step(
     if abs_erpm > 6_000.0 {
         response *= config.atr_response_boost().value();
     }
-    let on = vescpkg_rs::angle_step(config.atr_on_speed(), sample_rate);
-    let off = vescpkg_rs::angle_step(config.atr_off_speed(), sample_rate);
+    let on = vescpkg_rs::angle_step(config.atr_on_speed(), elapsed);
+    let off = vescpkg_rs::angle_step(config.atr_off_speed(), elapsed);
     let mut step = if forward {
         if setpoint.is_negative() {
             if setpoint < target {
@@ -232,16 +232,36 @@ impl RideModifierState {
         );
     }
 
+    #[cfg(test)]
     pub(super) fn advance(
         &mut self,
         config: &FloatOutBoyConfigImage,
         input: RideModifierInput,
     ) -> FloatOutBoyRealtimeRuntimeSetpoints {
-        self.advance_modifiers(config, input);
+        let elapsed = config
+            .startup()
+            .sample_rate()
+            .sample_period()
+            .unwrap_or(VescSeconds::ZERO);
+        self.advance_elapsed(config, input, elapsed)
+    }
+
+    pub(super) fn advance_elapsed(
+        &mut self,
+        config: &FloatOutBoyConfigImage,
+        input: RideModifierInput,
+        elapsed: VescSeconds,
+    ) -> FloatOutBoyRealtimeRuntimeSetpoints {
+        self.advance_modifiers(config, input, elapsed);
         self.runtime_setpoints(input)
     }
 
-    fn advance_modifiers(&mut self, config: &FloatOutBoyConfigImage, input: RideModifierInput) {
+    fn advance_modifiers(
+        &mut self,
+        config: &FloatOutBoyConfigImage,
+        input: RideModifierInput,
+        elapsed: VescSeconds,
+    ) {
         if input.darkride {
             return;
         }
@@ -251,21 +271,14 @@ impl RideModifierState {
         }
 
         let balance = config.balance();
-        let sample_rate = config.startup().sample_rate();
         let abs_erpm = input.motor_erpm.abs().as_revolutions_per_minute();
         let erpm_sign = input.motor_erpm.signum();
         let braking = input.motor_current.is_negative();
-        self.update_nose(config, input.motor_erpm, sample_rate);
-        self.update_turn(balance, input.motor_erpm, sample_rate);
-        self.update_torque(
-            balance,
-            input.filtered_current,
-            braking,
-            abs_erpm,
-            sample_rate,
-        );
-        self.update_atr(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
-        self.update_brake(balance, input, braking, abs_erpm, erpm_sign, sample_rate);
+        self.update_nose(config, input.motor_erpm, elapsed);
+        self.update_turn(balance, input.motor_erpm, elapsed);
+        self.update_torque(balance, input.filtered_current, braking, abs_erpm, elapsed);
+        self.update_atr(balance, input, braking, abs_erpm, erpm_sign, elapsed);
+        self.update_brake(balance, input, braking, abs_erpm, erpm_sign, elapsed);
     }
 
     fn wind_down_for_wheelslip(&mut self) {
@@ -298,13 +311,13 @@ impl RideModifierState {
         )
     }
 
-    fn update_nose(&mut self, config: &FloatOutBoyConfigImage, erpm: Rpm, sample_rate: SampleRate) {
+    fn update_nose(&mut self, config: &FloatOutBoyConfigImage, erpm: Rpm, elapsed: VescSeconds) {
         // C map: constant/variable nose target and rate limit mirror
         // `third_party/float-out-boy/src/main.c:746-758` and configuration at `:165-173`.
         self.nose = vescpkg_rs::slew_toward(
             self.nose,
             nose_target(config, erpm),
-            vescpkg_rs::angle_step(config.nose_angling_speed(), sample_rate),
+            vescpkg_rs::angle_step(config.nose_angling_speed(), elapsed),
         );
     }
 
@@ -314,13 +327,13 @@ impl RideModifierState {
         current: Current,
         braking: bool,
         abs_erpm: f32,
-        sample_rate: SampleRate,
+        elapsed: VescSeconds,
     ) {
         // C map: torque target and on/off ramp selection mirror
         // `third_party/float-out-boy/src/torque_tilt.c:44-82`.
         let target = torque_target(config, current, braking);
-        let on = vescpkg_rs::angle_step(config.torque_tilt_on_speed(), sample_rate);
-        let off = vescpkg_rs::angle_step(config.torque_tilt_off_speed(), sample_rate);
+        let on = vescpkg_rs::angle_step(config.torque_tilt_on_speed(), elapsed);
+        let off = vescpkg_rs::angle_step(config.torque_tilt_off_speed(), elapsed);
         let mut step = if self.torque.setpoint.as_degrees() * target.as_degrees() < 0.0 {
             on.max(off)
         } else if self.torque.setpoint.abs() > target.abs() {
@@ -341,7 +354,7 @@ impl RideModifierState {
         braking: bool,
         abs_erpm: f32,
         erpm_sign: f32,
-        sample_rate: SampleRate,
+        elapsed: VescSeconds,
     ) {
         // C map: expected/measured acceleration, speed boost, target filtering,
         // and ramp selection mirror `third_party/float-out-boy/src/atr.c:52-171`.
@@ -415,7 +428,7 @@ impl RideModifierState {
         );
         let target = AngleDegrees::from_degrees(filtered);
         let setpoint = self.atr.angle.setpoint;
-        let step = atr_step(config, target, forward, abs_erpm, sample_rate, setpoint);
+        let step = atr_step(config, target, forward, abs_erpm, elapsed, setpoint);
         self.atr.angle.advance(target, step, 0.05);
     }
 
@@ -426,7 +439,7 @@ impl RideModifierState {
         braking: bool,
         abs_erpm: f32,
         erpm_sign: f32,
-        sample_rate: SampleRate,
+        elapsed: VescSeconds,
     ) {
         // C map: braking target, downhill damping, and lingering ramp mirror
         // `third_party/float-out-boy/src/brake_tilt.c:42-91`.
@@ -455,8 +468,8 @@ impl RideModifierState {
                 target = balance_offset / (factor * downhill);
             }
         }
-        let on = vescpkg_rs::angle_step(config.atr_on_speed(), sample_rate);
-        let off = vescpkg_rs::angle_step(config.atr_off_speed(), sample_rate);
+        let on = vescpkg_rs::angle_step(config.atr_on_speed(), elapsed);
+        let off = vescpkg_rs::angle_step(config.atr_off_speed(), elapsed);
         let mut step = off / config.brake_tilt_lingering().value().max(1.0);
         if target.abs() > self.brake.setpoint.abs() {
             step = on * 1.5;
@@ -473,14 +486,14 @@ impl RideModifierState {
         &mut self,
         config: crate::config::FloatOutBoyBalanceConfig<'_>,
         erpm: Rpm,
-        sample_rate: SampleRate,
+        elapsed: VescSeconds,
     ) {
         // C map: turn target gates, boosts, direction, and ramp mirror
         // `third_party/float-out-boy/src/turn_tilt.c:74-130`.
         let target = turn_target(&self.turn, config, erpm);
         self.turn.angle.advance(
             target,
-            vescpkg_rs::angle_step(config.turn_tilt_speed(), sample_rate),
+            vescpkg_rs::angle_step(config.turn_tilt_speed(), elapsed),
             0.04,
         );
     }
