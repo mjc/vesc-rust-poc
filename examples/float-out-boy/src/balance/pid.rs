@@ -40,12 +40,14 @@ impl SetpointError {
         integral: MotorCurrent,
         ki: IntegralCurrentGain,
         limit: MotorCurrentLimit,
+        elapsed: VescSeconds,
     ) -> MotorCurrent {
         // C map: `third_party/float-out-boy/src/pid.c:40-46` integrates `p * ki`, then
         // clamps by a positive `ki_limit` while preserving sign. Zero is the
         // disabled-limit sentinel exposed at
         // `third_party/float-out-boy/src/conf/settings.xml:1679-1707`.
-        let next = integral + self.angle() * ki;
+        let next =
+            integral + (self.angle() * ki).scaled_by(PidScale::new(720.0 * elapsed.as_seconds()));
         if limit.current().is_positive() {
             limit.clamp(next)
         } else {
@@ -212,17 +214,17 @@ impl ScalePair {
     }
 
     #[inline]
-    fn smoothed_angle_proportional(self, current: PidScale) -> PidScale {
+    fn smoothed_angle_proportional(self, current: PidScale, alpha: f32) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
         // previous one-pole filter for all PID scale coefficients.
-        current.lerp(self.angle_proportional, 0.01)
+        current.lerp(self.angle_proportional, alpha)
     }
 
     #[inline]
-    fn smoothed_rate_damping(self, current: PidScale) -> PidScale {
+    fn smoothed_rate_damping(self, current: PidScale, alpha: f32) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
         // filter for angle-P and rate-P scale coefficients.
-        current.lerp(self.rate_damping, 0.01)
+        current.lerp(self.rate_damping, alpha)
     }
 }
 
@@ -239,18 +241,23 @@ impl ScaleTargets {
     };
 
     #[inline]
-    fn smoothed_into(self, state: LoopState) -> PidState {
+    fn smoothed_into(self, state: LoopState, elapsed: VescSeconds) -> PidState {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
+        let alpha = super::ema_alpha(1.0, elapsed);
         PidState {
             kp_brake_scale: self
                 .brake
-                .smoothed_angle_proportional(state.pid.kp_brake_scale),
-            kp2_brake_scale: self.brake.smoothed_rate_damping(state.pid.kp2_brake_scale),
+                .smoothed_angle_proportional(state.pid.kp_brake_scale, alpha),
+            kp2_brake_scale: self
+                .brake
+                .smoothed_rate_damping(state.pid.kp2_brake_scale, alpha),
             kp_accel_scale: self
                 .accel
-                .smoothed_angle_proportional(state.pid.kp_accel_scale),
-            kp2_accel_scale: self.accel.smoothed_rate_damping(state.pid.kp2_accel_scale),
+                .smoothed_angle_proportional(state.pid.kp_accel_scale, alpha),
+            kp2_accel_scale: self
+                .accel
+                .smoothed_rate_damping(state.pid.kp2_accel_scale, alpha),
             ..state.pid
         }
     }
@@ -392,7 +399,11 @@ impl Phase {
     }
 
     #[inline]
-    pub(super) fn update_state(self, state: LoopState) -> (Currents, LoopState) {
+    pub(super) fn update_state(
+        self,
+        state: LoopState,
+        elapsed: VescSeconds,
+    ) -> (Currents, LoopState) {
         // C map: `third_party/float-out-boy/src/pid.c:37-73` updates P/I/rate-P before
         // smoothing the accel/brake scale coefficients for the next tick.
         let config = self.config;
@@ -407,10 +418,15 @@ impl Phase {
                 state.pid.integral_current,
                 config.ki,
                 config.ki_limit,
+                elapsed,
             ),
         };
-        let state =
-            state.with_updated_pid_state(self.config, self.input.motor_erpm, currents.integral);
+        let state = state.with_updated_pid_state(
+            self.config,
+            self.input.motor_erpm,
+            currents.integral,
+            elapsed,
+        );
 
         (currents, state)
     }
@@ -437,13 +453,14 @@ impl LoopState {
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
         integral: MotorCurrent,
+        elapsed: VescSeconds,
     ) -> Self {
         Self {
             pid: PidState {
                 integral_current: integral,
                 ..ScaleDirection::from_motor_erpm(motor_erpm)
                     .targets(config)
-                    .smoothed_into(self)
+                    .smoothed_into(self, elapsed)
             },
             ..self
         }

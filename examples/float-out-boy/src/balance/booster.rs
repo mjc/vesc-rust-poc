@@ -133,12 +133,13 @@ impl Branch {
         motor_erpm: ElectricalSpeed,
         proportional: Proportional,
         previous: MotorCurrent,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
     ) -> MotorCurrent {
         let target = self.target_current(config, motor_erpm, proportional);
 
         // C map: `third_party/float-out-boy/src/booster.c:74-75` uses the same 1%
         // one-pole filter shape as PID scale smoothing.
-        target * 0.01 + previous * 0.99
+        previous + (target - previous) * super::ema_alpha(1.0, elapsed)
     }
 }
 
@@ -275,7 +276,11 @@ impl Phase {
     }
 
     #[inline]
-    pub(super) fn filtered_current(self, previous: MotorCurrent) -> MotorCurrent {
+    pub(super) fn filtered_current(
+        self,
+        previous: MotorCurrent,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
+    ) -> MotorCurrent {
         // C map: `third_party/float-out-boy/src/booster.c:74-75` filters the newly
         // computed booster current with the previous sample.
         Branch::from_motor_current(self.input.motor_current).filtered_current(
@@ -283,6 +288,7 @@ impl Phase {
             self.input.motor_erpm,
             self.input.booster_proportional(),
             previous,
+            elapsed,
         )
     }
 }
