@@ -468,7 +468,7 @@ fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(2.0)));
     edit_config(&mut state, |config| {
-        assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(100.0)));
+        assert!(config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(100.0)));
         assert!(config.set_startup_speed(AngularVelocity::from_degrees_per_second(50.0)));
     });
     (telemetry, state)
@@ -538,10 +538,9 @@ fn app_data_normal_algorithm_trace_matches_float_out_boy_loop_order() {
 
     assert!(tick_realtime_data(&mut state, &telemetry, 1));
     let running_base = state.all_data_payloads().base();
-    let expected_board_setpoint = 1.5;
-    let expected_smoothed_current = expected_smoothed_current(&state, 1.5 - 2.0);
-    // Upstream RUNNING centers with `startup_speed / hertz` at
-    // `third_party/float-out-boy/src/main.c:172`,
+    let expected_board_setpoint = 1.9;
+    let expected_smoothed_current = expected_smoothed_current(&state, 1.9 - 2.0);
+    // Refloat 7c72c6d3 fixes RUNNING centering at 500 Hz through
     // `third_party/float-out-boy/src/main.c:304-310`, and
     // `third_party/float-out-boy/src/main.c:869-875`;
     // then NORMAL PID and the regular motor-current limit run at
@@ -598,8 +597,8 @@ fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
     assert!(tick_realtime_data(&mut state, &telemetry, 0));
     assert!(tick_realtime_data(&mut state, &telemetry, 1));
     let base = state.all_data_payloads().base();
-    let expected_remote = 0.02 * 25.0 / 100.0;
-    let expected_board = 1.5 + expected_remote;
+    let expected_remote = 0.02 * 25.0 / 500.0;
+    let expected_board = 1.9 + expected_remote;
     let setpoint_error = expected_board - 2.0;
     let expected_current = expected_smoothed_current(&state, setpoint_error);
 

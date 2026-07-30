@@ -531,7 +531,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
     assert_f32_eq!(motor.vehicle_speed().speed().as_meters_per_second(), 5.5);
     assert_f32_eq!(motor.motor_current().current().as_amps(), 12.25);
     assert_f32_eq!(motor.directional_motor_current().current().as_amps(), -6.75,);
-    let normalized_frequency = 5.0 / 832.0;
+    let normalized_frequency = 5.0 / 500.0;
     let k = vescpkg_rs::tan(core::f32::consts::PI * normalized_frequency);
     let first_filtered_sample = -6.75 * k * k / (1.0 + k / 0.707 + k * k);
     assert!(
@@ -541,7 +541,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
     );
     let alpha = super::motor_kinematics::refloat_ema_alpha(
         Frequency::from_hertz(1.0),
-        SampleRate::from_hertz(832.0),
+        SampleRate::from_hertz(500.0),
     );
     assert_f32_eq!(
         motor.battery_current().current().as_amps(),

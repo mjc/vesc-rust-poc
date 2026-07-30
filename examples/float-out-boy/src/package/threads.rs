@@ -341,7 +341,9 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                     )
                 })
                 .unwrap_or_else(|| {
-                    FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0))
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
+                    )
                 });
             let mut next_sleep = timing.nominal_sleep();
             let mut loop_timer = ctx.firmware().clock().timer_now();
