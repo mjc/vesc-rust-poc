@@ -438,18 +438,37 @@ voltage_type!(AudioVoltage, "Audio/haptic voltage command.");
 
 /// Explicit motor-control thread selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct MotorSelection(u8);
+#[repr(i32)]
+pub enum MotorSelection {
+    /// Reuse the motor selected before this call.
+    LastUsed = 0,
+    /// Select motor-control thread one.
+    Motor1 = 1,
+    /// Select motor-control thread two.
+    Motor2 = 2,
+}
 
 impl MotorSelection {
-    /// Select a motor-control thread by its firmware index.
-    pub const fn new(index: u8) -> Self {
-        Self(index)
-    }
-
     /// Return the firmware motor-control thread index.
-    pub const fn index(self) -> u8 {
-        self.0
+    pub const fn index(self) -> i32 {
+        self as i32
+    }
+}
+
+/// A firmware motor-selection value outside the documented `0..=2` contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MotorSelectionError(pub i32);
+
+impl TryFrom<i32> for MotorSelection {
+    type Error = MotorSelectionError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::LastUsed),
+            1 => Ok(Self::Motor1),
+            2 => Ok(Self::Motor2),
+            value => Err(MotorSelectionError(value)),
+        }
     }
 }
 frequency_type!(AudioFrequency, "Audio/haptic frequency command.");

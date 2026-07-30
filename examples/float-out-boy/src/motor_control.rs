@@ -102,9 +102,8 @@ impl FloatOutBoyMotorControl {
             // `motor_control_apply` passes it to `mc_set_current` at
             // `third_party/float-out-boy/src/motor_control.c:93-99`.
             motor.keep_alive();
-            motor.set_current_off_delay(CURRENT_OFF_DELAY);
-            motor.set_current(command.requested_current());
-            true
+            motor.set_current_off_delay(CURRENT_OFF_DELAY).is_ok()
+                && motor.set_current(command.requested_current()).is_ok()
         })
     }
 
@@ -122,9 +121,11 @@ impl FloatOutBoyMotorControl {
             if !self.disabled {
                 // C map: disabled mode sets 0A once, then stops touching motor output at
                 // `third_party/float-out-boy/src/motor_control.c:53-60`.
-                motor.set_current(MotorCurrent::new(Current::from_amps(0.0)));
+                let applied = motor
+                    .set_current(MotorCurrent::new(Current::from_amps(0.0)))
+                    .is_ok();
                 self.disabled = true;
-                return true;
+                return applied;
             }
             return false;
         }
@@ -192,7 +193,9 @@ impl FloatOutBoyMotorControl {
             // `timer_older(time, brake_timer, 1)` passes at
             // `third_party/float-out-boy/src/motor_control.c:101-109`; `timer_older`
             // converts seconds at `third_party/float-out-boy/src/time.h:46-51`.
-            motor.set_current(MotorCurrent::new(Current::from_amps(0.0)));
+            return motor
+                .set_current(MotorCurrent::new(Current::from_amps(0.0)))
+                .is_ok();
         } else if self.parking_brake_active && abs_erpm < Rpm::from_revolutions_per_minute(2000.0) {
             // Upstream parking brake applies duty zero below 2000 ERPM at
             // `third_party/float-out-boy/src/motor_control.c:112-114`.
@@ -200,7 +203,9 @@ impl FloatOutBoyMotorControl {
         } else {
             // Upstream idle fallback applies configured brake current at
             // `third_party/float-out-boy/src/motor_control.c:115-117`.
-            motor.set_brake_current(BrakeCurrent::new(brake_current.current()));
+            return motor
+                .set_brake_current(BrakeCurrent::new(brake_current.current()))
+                .is_ok();
         }
         true
     }

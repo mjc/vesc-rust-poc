@@ -7,8 +7,8 @@ use vescpkg_rs::{
     BrakeCurrent, BrakeCurrentRelative, Charge, Current, CurrentOffDelay, CurrentRelative,
     DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy,
     EnergyCounterReset, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative,
-    InputCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome, MotorSelection,
-    MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
+    InputCurrent, MotorCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
+    MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
     PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
     TachometerReset, TachometerSteps, Temperature, TemperatureLimitStart, TotalMotorCurrent,
     VehicleSpeed, VescSeconds, WattHoursRemaining,
@@ -51,7 +51,8 @@ fn motor_exposes_typed_handbrake_commands() {
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     firmware
         .motor()
-        .set_handbrake(HandbrakeCurrent::new(Current::from_amps(2.0)));
+        .set_handbrake(HandbrakeCurrent::new(Current::from_amps(2.0)))
+        .unwrap();
     firmware
         .motor()
         .set_handbrake_relative(HandbrakeRelative::new(Ratio::from_ratio_const(0.25)));
@@ -64,7 +65,7 @@ fn motor_exposes_typed_handbrake_commands() {
 
     let telemetry = firmware.telemetry();
     assert!(firmware.motor().dc_calibration_done());
-    assert_eq!(firmware.motor().selected_motor().index(), 1);
+    assert_eq!(firmware.motor().selected_motor().unwrap().index(), 1);
     assert_eq!(
         telemetry
             .electrical_speed()
@@ -327,12 +328,17 @@ fn motor_exposes_typed_handbrake_commands() {
         .motor()
         .set_pid_speed(ElectricalSpeed::new(Rpm::from_revolutions_per_minute(
             1500.0,
-        )));
+        )))
+        .unwrap();
     firmware
         .motor()
-        .set_pid_position(PidPosition::new(AngleDegrees::from_degrees(90.0)));
-    firmware.motor().select_motor(MotorSelection::new(2));
-    assert_eq!(firmware.motor().selected_motor().index(), 2);
+        .set_pid_position(PidPosition::new(AngleDegrees::from_degrees(90.0)))
+        .unwrap();
+    firmware.motor().select_motor(MotorSelection::Motor2);
+    assert_eq!(
+        firmware.motor().selected_motor().unwrap(),
+        MotorSelection::Motor2
+    );
     firmware
         .motor()
         .set_duty_cycle_without_ramping(DutyCycle::new(SignedRatio::from_ratio_const(0.2)));
@@ -374,21 +380,72 @@ fn motor_release_outcomes_have_named_predicates() {
 }
 
 #[test]
+fn motor_selection_rejects_values_outside_the_firmware_contract() {
+    assert_eq!(MotorSelection::try_from(0), Ok(MotorSelection::LastUsed));
+    assert_eq!(MotorSelection::try_from(1), Ok(MotorSelection::Motor1));
+    assert_eq!(MotorSelection::try_from(2), Ok(MotorSelection::Motor2));
+    assert!(MotorSelection::try_from(3).is_err());
+    assert!(MotorSelection::try_from(-1).is_err());
+}
+
+#[test]
+fn motor_control_rejects_non_finite_commands_before_ffi() {
+    let firmware = vescpkg_rs::test_support::FirmwareTest::new();
+    let motor = firmware.motor();
+
+    assert_eq!(
+        motor.set_current(MotorCurrent::new(Current::from_amps(f32::NAN))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+    assert_eq!(
+        motor.set_current_off_delay(CurrentOffDelay::new(VescSeconds::from_seconds(
+            f32::INFINITY,
+        ))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+    assert_eq!(
+        motor.set_brake_current(BrakeCurrent::new(Current::from_amps(f32::NEG_INFINITY))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+    assert_eq!(
+        motor.set_handbrake(HandbrakeCurrent::new(Current::from_amps(f32::NAN))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+    assert_eq!(
+        motor.set_pid_speed(ElectricalSpeed::new(Rpm::from_revolutions_per_minute(
+            f32::INFINITY,
+        ))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+    assert_eq!(
+        motor.set_pid_position(PidPosition::new(AngleDegrees::from_degrees(f32::NAN))),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
+
+    assert_eq!(firmware.current_command_count(), 0);
+    assert_eq!(firmware.current_off_delay_count(), 0);
+    assert_eq!(firmware.brake_current_command_count(), 0);
+}
+
+#[test]
 fn motor_output_preserves_typed_command_forwarding() {
     let firmware = vescpkg_rs::test_support::FirmwareTest::new();
     firmware.motor().keep_alive();
     firmware
         .motor()
-        .set_current_off_delay(CurrentOffDelay::new(VescSeconds::from_seconds(0.05)));
+        .set_current_off_delay(CurrentOffDelay::new(VescSeconds::from_seconds(0.05)))
+        .unwrap();
     firmware
         .motor()
-        .set_current(vescpkg_rs::MotorCurrent::new(Current::from_amps(8.0)));
+        .set_current(vescpkg_rs::MotorCurrent::new(Current::from_amps(8.0)))
+        .unwrap();
     firmware
         .motor()
         .set_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(-0.25)));
     firmware
         .motor()
-        .set_brake_current(BrakeCurrent::new(Current::from_amps(3.0)));
+        .set_brake_current(BrakeCurrent::new(Current::from_amps(3.0)))
+        .unwrap();
 
     assert_eq!(firmware.keep_alive_count(), 1);
     assert_eq!(firmware.current_off_delay_count(), 1);

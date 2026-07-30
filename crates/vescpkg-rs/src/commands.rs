@@ -18,6 +18,8 @@ pub(crate) fn disable_callback_dispatch() {
 pub enum CommandError {
     /// The command processor slot is not available.
     Unavailable,
+    /// The command packet has no command byte.
+    EmptyPacket,
     /// The command packet exceeds the firmware payload limit.
     PacketTooLong,
     /// Another command reply callback already owns the firmware slot.
@@ -49,6 +51,9 @@ impl Commands {
         &self,
         packet: &mut [u8],
     ) -> Result<CommandReplyLease<H>, CommandError> {
+        if packet.is_empty() {
+            return Err(CommandError::EmptyPacket);
+        }
         if packet.len() > MAX_COMMAND_PACKET {
             return Err(CommandError::PacketTooLong);
         }
