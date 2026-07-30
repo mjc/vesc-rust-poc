@@ -41,8 +41,9 @@ impl LoopState {
         input: LoopInput,
         elapsed: VescSeconds,
     ) -> LoopOutput {
-        let (pid_currents, state) = self.update_pid(config, input);
-        let booster_current = input.filtered_booster_current(config, state.booster_current);
+        let (pid_currents, state) = self.update_pid(config, input, elapsed);
+        let booster_current =
+            input.filtered_booster_current(config, state.booster_current, elapsed);
         let pitch_based = super::current::PitchBasedCurrent::from_rate_and_booster(
             pid_currents.rate_damping,
             booster_current,
@@ -56,7 +57,7 @@ impl LoopState {
         )
         .clamped_to(input.current_limit())
         .adjusted_for_darkride(input.darkride)
-        .filtered_from(state.balance_current, input.traction_control);
+        .filtered_from(state.balance_current, input.traction_control, elapsed);
         let state = LoopState {
             balance_current,
             booster_current,

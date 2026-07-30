@@ -17,6 +17,15 @@ use crate::domain::{
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
+fn ema_alpha(cutoff_hertz: f32, sample_rate: SampleRate) -> f32 {
+    let omega = (2.0 * core::f32::consts::PI * cutoff_hertz / sample_rate.as_hertz()).min(0.5);
+    omega - 0.5 * omega * omega
+}
+
+fn configured_sample_rate(state: &FloatOutBoyPackageState) -> SampleRate {
+    state.serialized_config.startup().sample_rate()
+}
+
 #[test]
 fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
     let lifecycle = TimestampTicks::from_ticks(0);
@@ -82,7 +91,8 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
     // C refreshes `imu.balance_pitch` from `balance_filter_get_pitch` at
     // `third_party/float-out-boy/src/imu.c:35-41` before `pid_update` computes
     // `setpoint - imu->balance_pitch` at `third_party/float-out-boy/src/pid.c:40`.
-    assert!((telemetry.commanded_current().current().as_amps() + 10.0).abs() < 0.0001);
+    let expected = -50.0 * ema_alpha(25.0, configured_sample_rate(&state));
+    assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
     assert!(
         (state
             .all_data_payloads()
@@ -162,14 +172,17 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
             .balance_pitch()
             .angle_degrees()
             .as_degrees();
+    let sample_rate = configured_sample_rate(&state);
+    let integral_step = 720.0 / sample_rate.as_hertz();
+    let output_alpha = ema_alpha(25.0, sample_rate);
     let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
     assert!(
-        (first_integral - first_error * 0.1).abs() < 0.0001,
+        (first_integral - first_error * 0.1 * integral_step).abs() < 0.0001,
         "{first_integral} != {}",
-        first_error * 0.1
+        first_error * 0.1 * integral_step
     );
     let first_current = telemetry.commanded_current().current().as_amps();
-    assert!((first_current - first_integral * 0.2).abs() < 0.0001);
+    assert!((first_current - first_integral * output_alpha).abs() < 0.0001);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -194,12 +207,12 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
             .angle_degrees()
             .as_degrees();
     let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
-    let expected_integral = first_integral + second_error * 0.1;
+    let expected_integral = first_integral + second_error * 0.1 * integral_step;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,
         "{second_integral} != {expected_integral}"
     );
-    let expected_current = first_current * 0.8 + second_integral * 0.2;
+    let expected_current = first_current + (second_integral - first_current) * output_alpha;
     assert!((telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.0001);
 }
 
@@ -262,7 +275,8 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     // Float Out Boy default `ki_limit` is 30A (`settings.xml:1679-1707`);
     // `pid_update` clamps the I term at `third_party/float-out-boy/src/pid.c:40-46` before RUNNING
     // smooths it into `balance_current` at `third_party/float-out-boy/src/main.c:932-954`.
-    assert!((telemetry.commanded_current().current().as_amps() - 6.0).abs() < 0.0001);
+    let expected = 30.0 * ema_alpha(25.0, configured_sample_rate(&state));
+    assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
 }
 
 #[test]
@@ -278,9 +292,9 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
 
-    for (mode, expected_current) in [
-        (FloatOutBoyMode::HandTest, 1.4_f32),
-        (FloatOutBoyMode::Flywheel, 8.0_f32),
+    for (mode, current_limit) in [
+        (FloatOutBoyMode::HandTest, 7.0_f32),
+        (FloatOutBoyMode::Flywheel, 40.0_f32),
     ] {
         let payloads = sample_all_data_payloads_with_ride_state(FloatOutBoyRunState::Running, mode);
         let base = payloads.base();
@@ -328,6 +342,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
             ],
         ));
         assert!(state.apply_requested_motor_current(bindings));
+        let expected_current = current_limit * ema_alpha(25.0, configured_sample_rate(&state));
 
         // Upstream RUNNING clamps `new_current` to 7A for HANDTEST and
         // 40A for FLYWHEEL at `third_party/float-out-boy/src/main.c:932-942`, then smooths it into
@@ -494,7 +509,9 @@ fn tick_realtime_data(
 
 fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f32) -> f32 {
     let balance = state.balance_config_for_test();
-    let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick();
+    let sample_rate = configured_sample_rate(state);
+    let unclamped_i = setpoint_error * balance.ki().as_amps_per_degree_per_tick() * 720.0
+        / sample_rate.as_hertz();
     let ki_limit = balance.ki_limit().current().as_amps();
     let expected_i = if ki_limit > 0.0 && unclamped_i.abs() > ki_limit {
         ki_limit * unclamped_i.signum()
@@ -504,7 +521,7 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
     let current_limit = state.motor_current_max.current().as_amps();
     let new_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
         .clamp(-current_limit, current_limit);
-    new_current * 0.2
+    new_current * ema_alpha(25.0, sample_rate)
 }
 
 #[test]

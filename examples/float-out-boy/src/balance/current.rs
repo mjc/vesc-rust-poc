@@ -93,13 +93,14 @@ impl RequestedCurrent {
         self,
         previous: MotorCurrent,
         traction_control: bool,
+        elapsed: VescSeconds,
     ) -> MotorCurrent {
         if traction_control {
             Self::zero()
         } else {
-            // C map: `third_party/float-out-boy/src/main.c:949-954` filters RUNNING
-            // output current with 20% of the new request.
-            previous * 0.8 + self.0 * 0.2
+            // C map: Refloat filters RUNNING output current with a 25 Hz EMA.
+            let alpha = super::ema_alpha(25.0, elapsed);
+            previous + (self.0 - previous) * alpha
         }
     }
 }
