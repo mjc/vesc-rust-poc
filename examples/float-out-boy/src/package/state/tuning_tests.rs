@@ -404,6 +404,52 @@ fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
 }
 
 #[test]
+fn runtime_tune_zero_speed_fields_preserve_existing_atr_filter_limits() {
+    let firmware = FirmwareTest::new();
+
+    for optional_extended_speeds in [None, Some(0x03), Some(0x30)] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_atr_on_speed_limit(AngularVelocity::from_degrees_per_second(8.0))
+        );
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_atr_off_speed_limit(AngularVelocity::from_degrees_per_second(10.0))
+        );
+
+        let mut packet = RUNTIME_TUNE_PACKET[..14].to_vec();
+        packet[9] &= 0x0f;
+        if let Some(speeds) = optional_extended_speeds {
+            packet.extend_from_slice(&[0, 0, 0, 0, 0, 0, speeds]);
+        }
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+
+        let atr = state.serialized_config.balance().atr_filter();
+        assert_eq!(
+            atr.on_speed_limit(),
+            AngularVelocity::from_degrees_per_second(8.0),
+            "extended speeds {optional_extended_speeds:?}",
+        );
+        assert_eq!(
+            atr.off_speed_limit(),
+            AngularVelocity::from_degrees_per_second(10.0),
+            "extended speeds {optional_extended_speeds:?}",
+        );
+    }
+}
+
+#[test]
 fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
