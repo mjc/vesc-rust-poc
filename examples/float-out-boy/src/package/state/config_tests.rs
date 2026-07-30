@@ -1367,7 +1367,7 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
 }
 
 #[test]
-fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
+fn storing_internal_led_config_while_both_footpads_are_pressed_still_sets_up() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Ready,
@@ -1377,12 +1377,13 @@ fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
 
     assert!(state.store_serialized_config(&bytes));
-    assert!(state.internal_leds.is_none());
-    assert!(!state.internal_leds_operational());
+    state.apply_pending_internal_led_refresh();
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }
 
 #[test]
-fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
+fn startup_sets_up_internal_leds_after_the_physical_footpad_sample_even_when_both_are_pressed() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
@@ -1402,5 +1403,6 @@ fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
         state.all_data_payloads().base().footpad().state(),
         crate::FloatOutBoyFootpadState::Both,
     );
-    assert!(state.internal_leds.is_none());
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }
