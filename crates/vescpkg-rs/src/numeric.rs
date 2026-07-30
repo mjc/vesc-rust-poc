@@ -153,7 +153,7 @@ impl<const N: usize> MotorKinematics<N> {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct WrappedAngleMotion {
     last: AngleDegrees,
-    change: AngleDegrees,
+    rate: AngularVelocity,
     aggregate: AngleDegrees,
 }
 
@@ -163,23 +163,24 @@ impl WrappedAngleMotion {
     #[must_use]
     pub const fn from_parts(
         last: AngleDegrees,
-        change: AngleDegrees,
+        rate: AngularVelocity,
         aggregate: AngleDegrees,
     ) -> Self {
         Self {
             last,
-            change,
+            rate,
             aggregate,
         }
     }
 
-    /// Observe an angle, low-pass its wrapped delta, and aggregate sustained motion.
+    /// Observe an angle, low-pass its wrapped rate, and aggregate sustained motion.
     pub fn observe(
         &mut self,
         angle: AngleDegrees,
-        delta_limit: AngleDegrees,
+        elapsed: VescSeconds,
+        rate_limit: AngularVelocity,
         smoothing: Ratio,
-        aggregate_threshold: AngleDegrees,
+        aggregate_threshold: AngularVelocity,
     ) {
         let mut delta = angle - self.last;
         self.last = angle;
@@ -188,22 +189,28 @@ impl WrappedAngleMotion {
         } else if delta > AngleDegrees::from_degrees(180.0) {
             delta = delta - AngleDegrees::from_degrees(360.0);
         }
-        let limit = delta_limit.abs().as_degrees();
-        let limited = AngleDegrees::from_degrees(delta.as_degrees().clamp(-limit, limit));
-        self.change =
-            self.change * smoothing.complement().as_ratio() + limited * smoothing.as_ratio();
-        if self.change.is_negative() != self.aggregate.is_negative() {
+        let seconds = elapsed.as_seconds();
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return;
+        }
+        let limit = rate_limit.abs().as_degrees_per_second();
+        let limited = (delta.as_degrees() / seconds).clamp(-limit, limit);
+        self.rate = AngularVelocity::from_degrees_per_second(
+            self.rate.as_degrees_per_second() * smoothing.complement().as_ratio()
+                + limited * smoothing.as_ratio(),
+        );
+        if self.rate.is_negative() != self.aggregate.is_negative() {
             self.aggregate = AngleDegrees::ZERO;
         }
-        if self.change.abs() > aggregate_threshold {
-            self.aggregate = self.aggregate + self.change;
+        if self.rate.abs() > aggregate_threshold {
+            self.aggregate = self.aggregate + delta;
         }
     }
 
-    /// Return the filtered wrapped delta.
+    /// Return the filtered wrapped angular rate.
     #[must_use]
-    pub const fn change(&self) -> AngleDegrees {
-        self.change
+    pub const fn rate(&self) -> AngularVelocity {
+        self.rate
     }
 
     /// Return the same-direction accumulated delta.
@@ -215,7 +222,7 @@ impl WrappedAngleMotion {
     /// Clear filtered and aggregated motion while retaining the last angle.
     #[cfg(any(test, feature = "test-support"))]
     pub fn clear_motion(&mut self) {
-        self.change = AngleDegrees::ZERO;
+        self.rate = AngularVelocity::ZERO;
         self.aggregate = AngleDegrees::ZERO;
     }
 }
@@ -351,8 +358,8 @@ mod tests {
         angle_step, slew_toward,
     };
     #[cfg(feature = "math")]
-    use crate::Frequency;
-    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate, VescSeconds};
+    use crate::{Frequency, SampleRate};
+    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, VescSeconds};
 
     #[test]
     fn typed_angle_ramp_preserves_centering_and_per_sample_step() {
@@ -513,72 +520,85 @@ mod tests {
     #[test]
     fn wrapped_angle_motion_filters_boundary_crossings_and_aggregates_motion() {
         let mut motion = WrappedAngleMotion::default();
-        let limit = AngleDegrees::from_degrees(0.1);
+        let elapsed = VescSeconds::from_seconds(0.01);
+        let limit = AngularVelocity::from_degrees_per_second(10.0);
         let smoothing = Ratio::from_ratio_const(0.2);
-        let threshold = AngleDegrees::from_degrees(0.01);
+        let threshold = AngularVelocity::from_degrees_per_second(1.0);
 
         motion.observe(
             AngleDegrees::from_degrees(179.95),
+            elapsed,
             limit,
             smoothing,
             threshold,
         );
         motion.observe(
             AngleDegrees::from_degrees(-179.95),
+            elapsed,
             limit,
             smoothing,
             threshold,
         );
 
-        assert!(motion.change().is_positive());
+        assert!(motion.rate().is_positive());
         assert!(motion.aggregate().is_positive());
-        assert!(motion.change() <= limit);
+        assert!(motion.rate() <= limit);
     }
 
     #[test]
     fn wrapped_angle_motion_clears_aggregate_when_filtered_direction_reverses() {
         let mut motion = WrappedAngleMotion::default();
-        let limit = AngleDegrees::from_degrees(1.0);
+        let elapsed = VescSeconds::from_seconds(1.0);
+        let limit = AngularVelocity::from_degrees_per_second(1.0);
         let smoothing = Ratio::from_ratio_const(1.0);
-        let threshold = AngleDegrees::from_degrees(0.01);
+        let threshold = AngularVelocity::from_degrees_per_second(0.01);
 
-        motion.observe(AngleDegrees::from_degrees(1.0), limit, smoothing, threshold);
-        motion.observe(AngleDegrees::ZERO, limit, smoothing, threshold);
+        motion.observe(
+            AngleDegrees::from_degrees(1.0),
+            elapsed,
+            limit,
+            smoothing,
+            threshold,
+        );
+        motion.observe(AngleDegrees::ZERO, elapsed, limit, smoothing, threshold);
 
-        assert!(motion.change().is_negative());
-        assert_eq!(motion.aggregate(), motion.change());
+        assert!(motion.rate().is_negative());
+        assert_eq!(motion.aggregate(), AngleDegrees::from_degrees(-1.0));
     }
 
     #[test]
     fn wrapped_angle_motion_preserves_layout_wrap_and_zero_delta_filtering() {
         assert_eq!(core::mem::size_of::<WrappedAngleMotion>(), 12);
-        let limit = AngleDegrees::from_degrees(0.1);
+        let elapsed = VescSeconds::from_seconds(0.01);
+        let limit = AngularVelocity::from_degrees_per_second(10.0);
         let smoothing = Ratio::from_ratio_const(0.2);
-        let threshold = AngleDegrees::from_degrees(0.04);
+        let threshold = AngularVelocity::from_degrees_per_second(4.0);
         let mut wrapped = WrappedAngleMotion::from_parts(
             AngleDegrees::from_degrees(179.95),
-            AngleDegrees::ZERO,
+            AngularVelocity::ZERO,
             AngleDegrees::ZERO,
         );
         wrapped.observe(
             AngleDegrees::from_degrees(-179.95),
+            elapsed,
             limit,
             smoothing,
             threshold,
         );
-        assert!((wrapped.change().as_degrees() - 0.02).abs() < 0.000_01);
+        assert!((wrapped.rate().as_degrees_per_second() - 2.0).abs() < 0.000_1);
 
         let mut stationary = WrappedAngleMotion::from_parts(
             AngleDegrees::from_degrees(10.0),
-            AngleDegrees::from_degrees(0.1),
+            AngularVelocity::from_degrees_per_second(10.0),
             AngleDegrees::ZERO,
         );
         stationary.observe(
             AngleDegrees::from_degrees(10.0),
+            elapsed,
             limit,
             smoothing,
             threshold,
         );
-        assert!((stationary.change().as_degrees() - 0.08).abs() < 0.000_01);
+        assert!((stationary.rate().as_degrees_per_second() - 8.0).abs() < 0.000_01);
     }
 }

@@ -15,6 +15,14 @@ fn input() -> RideModifierInput {
     }
 }
 
+fn nominal_elapsed() -> VescSeconds {
+    VescSeconds::from_seconds(1.0 / LOOP_HERTZ_COMPAT)
+}
+
+fn nominal_rate() -> SampleRate {
+    SampleRate::from_hertz(LOOP_HERTZ_COMPAT)
+}
+
 #[test]
 fn nose_angling_uses_measured_elapsed_time_after_a_delayed_iteration() {
     let config = FloatOutBoyConfigImage::defaults();
@@ -48,14 +56,54 @@ fn turn_tilt_uses_filtered_yaw_and_erpm_direction_like_float_out_boy() {
     let mut state = RideModifierState::default();
     for tick in 1..100 {
         let tick = i16::try_from(tick).unwrap_or(i16::MAX);
-        state.aggregate_yaw(AngleDegrees::from_degrees(f32::from(tick) * 0.1));
+        state.aggregate_yaw(
+            AngleDegrees::from_degrees(f32::from(tick) * 0.1),
+            nominal_elapsed(),
+            nominal_rate(),
+        );
         state.advance(&config, input());
     }
-    state.aggregate_yaw(AngleDegrees::from_degrees(10.0));
+    state.aggregate_yaw(
+        AngleDegrees::from_degrees(10.0),
+        nominal_elapsed(),
+        nominal_rate(),
+    );
     let setpoints = state.advance(&config, input());
 
     assert!(setpoints.turn_tilt().angle().is_positive());
     assert_eq!(setpoints.board().angle(), setpoints.turn_tilt().angle());
+}
+
+#[test]
+fn turn_tilt_yaw_rate_matches_over_equal_time_at_different_cadences() {
+    let mut fast = RideModifierState::default();
+    let mut slow = RideModifierState::default();
+
+    for step in 1..=50_i16 {
+        fast.aggregate_yaw(
+            AngleDegrees::from_degrees(f32::from(step) * 0.1),
+            VescSeconds::from_seconds(0.002),
+            SampleRate::from_hertz(500.0),
+        );
+    }
+    for step in 1..=25_i16 {
+        slow.aggregate_yaw(
+            AngleDegrees::from_degrees(f32::from(step) * 0.2),
+            VescSeconds::from_seconds(0.004),
+            SampleRate::from_hertz(250.0),
+        );
+    }
+
+    assert!(
+        (fast.turn.yaw.rate().as_degrees_per_second()
+            - slow.turn.yaw.rate().as_degrees_per_second())
+        .abs()
+            < 0.01
+    );
+    assert!(
+        (fast.turn.yaw.aggregate() - slow.turn.yaw.aggregate()).abs()
+            < AngleDegrees::from_degrees(0.01)
+    );
 }
 
 #[test]
@@ -71,10 +119,18 @@ fn disabling_turn_tilt_winds_down_an_existing_setpoint() {
     let mut state = RideModifierState::default();
     for tick in 1..100 {
         let tick = i16::try_from(tick).unwrap_or(i16::MAX);
-        state.aggregate_yaw(AngleDegrees::from_degrees(f32::from(tick) * 0.1));
+        state.aggregate_yaw(
+            AngleDegrees::from_degrees(f32::from(tick) * 0.1),
+            nominal_elapsed(),
+            nominal_rate(),
+        );
         state.advance(&config, input());
     }
-    state.aggregate_yaw(AngleDegrees::from_degrees(10.0));
+    state.aggregate_yaw(
+        AngleDegrees::from_degrees(10.0),
+        nominal_elapsed(),
+        nominal_rate(),
+    );
     let active = state.advance(&config, input()).turn_tilt().angle();
     assert!(active.is_positive());
 
@@ -425,7 +481,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
         turn: TurnTiltState {
             yaw: WrappedAngleMotion::from_parts(
                 AngleDegrees::ZERO,
-                AngleDegrees::from_degrees(0.1),
+                AngularVelocity::from_degrees_per_second(72.0),
                 AngleDegrees::from_degrees(20.0),
             ),
             ..TurnTiltState::default()
