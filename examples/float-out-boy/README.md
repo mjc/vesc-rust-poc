@@ -20,6 +20,11 @@ The finished artifact is written below `target/vescpkg/Float-Out-Boy-0.1.0/`.
 
 The legacy realtime and all-data commands remain implemented for existing clients. New integrations should use the mask-selected realtime command; the package AppUI uses the internal realtime path and recorder protocol from the pinned cutoff.
 
+See the [app-data protocol](../../docs/float-out-boy-protocol.md) for client
+wire formats and the
+[architecture reference](../../docs/float-out-boy-architecture.md) for
+maintainer-facing control, timing, and persistence boundaries.
+
 ## Layout
 
 - `src/` contains the Rust package implementation and host-side tests.
