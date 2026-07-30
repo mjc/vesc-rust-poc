@@ -69,7 +69,7 @@ impl FloatOutBoyPackageState {
         let runtime = self
             .internal_leds
             .as_mut()
-            .and_then(RuntimeAllocation::runtime_mut);
+            .map(RuntimeAllocation::runtime_mut);
         if let Some(runtime) = runtime {
             runtime.renderer.start_confirmation(current_time);
         }
@@ -130,7 +130,7 @@ impl FloatOutBoyPackageState {
         let runtime = self
             .internal_leds
             .as_mut()
-            .and_then(RuntimeAllocation::runtime_mut);
+            .map(RuntimeAllocation::runtime_mut);
         if let Some(runtime) = runtime {
             runtime.config = config;
         }
@@ -150,11 +150,10 @@ impl FloatOutBoyPackageState {
             .as_mut()
             .is_none_or(|runtime| runtime.driver.destroy(teardown));
         #[cfg(target_arch = "arm")]
-        let destroyed = self.internal_leds.as_mut().is_none_or(|runtime| {
-            runtime
-                .runtime_mut()
-                .is_none_or(|runtime| runtime.driver.destroy(teardown))
-        });
+        let destroyed = self
+            .internal_leds
+            .as_mut()
+            .is_none_or(|runtime| runtime.runtime_mut().driver.destroy(teardown));
 
         if destroyed {
             #[cfg(test)]
@@ -173,10 +172,7 @@ impl FloatOutBoyPackageState {
         #[cfg(test)]
         let runtime = self.internal_leds.as_ref();
         #[cfg(target_arch = "arm")]
-        let runtime = self
-            .internal_leds
-            .as_ref()
-            .and_then(RuntimeAllocation::runtime);
+        let runtime = self.internal_leds.as_ref().map(RuntimeAllocation::runtime);
         runtime.is_some_and(|runtime| runtime.driver.is_operational())
     }
 
@@ -231,7 +227,7 @@ impl FloatOutBoyPackageState {
         let runtime = self
             .internal_leds
             .as_mut()
-            .and_then(RuntimeAllocation::runtime_mut);
+            .map(RuntimeAllocation::runtime_mut);
         if let Some(runtime) = runtime {
             if runtime.renderer.update(runtime.config, frame, current_time)
                 && runtime

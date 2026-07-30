@@ -29,6 +29,7 @@ pub(super) fn teardown(_pin: FloatOutBoyLedPin) -> bool {
 use core::{
     alloc::{GlobalAlloc, Layout},
     ffi::c_void,
+    mem::MaybeUninit,
     ptr::{self, NonNull},
 };
 
@@ -40,8 +41,12 @@ use crate::leds::{FloatOutBoyLedPin, FloatOutBoyLedPinConfig};
 #[cfg(target_arch = "arm")]
 #[derive(Debug, PartialEq)]
 pub(in crate::package::state) struct RuntimeAllocation {
-    address: usize,
+    pointer: NonNull<MaybeUninit<FloatOutBoyInternalLedRuntime>>,
 }
+
+// SAFETY: package state serializes access and this owner is the sole handle to its allocation.
+#[cfg(target_arch = "arm")]
+unsafe impl Send for RuntimeAllocation {}
 
 #[cfg(target_arch = "arm")]
 impl RuntimeAllocation {
@@ -50,96 +55,48 @@ impl RuntimeAllocation {
         // SAFETY: `layout` is valid and null reports allocation failure.
         let pointer = unsafe { vescpkg_rs::VescAllocator.alloc(layout) };
         let pointer = NonNull::new(pointer)?;
-        // SAFETY: the allocation has this runtime's exact size and alignment.
-        let bytes = unsafe { core::slice::from_raw_parts_mut(pointer.as_ptr(), layout.size()) };
-        // SAFETY: the allocation was requested with the runtime's size and alignment.
-        let (prefix, slots, suffix) = unsafe {
-            bytes.align_to_mut::<core::mem::MaybeUninit<FloatOutBoyInternalLedRuntime>>()
-        };
-        if !prefix.is_empty() || !suffix.is_empty() || slots.len() != 1 {
-            // SAFETY: nothing was initialized and `pointer` still has `layout`.
-            unsafe { vescpkg_rs::VescAllocator.dealloc(pointer.as_ptr(), layout) };
-            return None;
-        }
-        if slots.first_mut().is_none() {
-            // SAFETY: nothing was initialized and `pointer` still has `layout`.
-            unsafe { vescpkg_rs::VescAllocator.dealloc(pointer.as_ptr(), layout) };
-            return None;
-        }
         Some(Self {
-            address: pointer.as_ptr().addr(),
+            pointer: pointer.cast(),
         })
     }
 
-    pub(super) fn initialize(self, runtime: FloatOutBoyInternalLedRuntime) -> Self {
-        let pointer = ptr::without_provenance_mut::<u8>(self.address);
-        // SAFETY: this value owns one uninitialized allocation of the exact size.
-        let bytes = unsafe {
-            core::slice::from_raw_parts_mut(
-                pointer,
-                core::mem::size_of::<FloatOutBoyInternalLedRuntime>(),
-            )
-        };
-        // SAFETY: `allocate` validated this type's exact size and alignment.
-        let (_, slots, _) = unsafe {
-            bytes.align_to_mut::<core::mem::MaybeUninit<FloatOutBoyInternalLedRuntime>>()
-        };
-        if let Some(slot) = slots.first_mut() {
-            slot.write(runtime);
-        }
+    pub(super) fn initialize(mut self, runtime: FloatOutBoyInternalLedRuntime) -> Self {
+        // SAFETY: this owner has exclusive access to one correctly aligned uninitialized slot.
+        unsafe { self.pointer.as_mut().write(runtime) };
         self
     }
 
     pub(super) fn release_uninitialized(self) {
         let layout = Layout::new::<FloatOutBoyInternalLedRuntime>();
-        let pointer = ptr::without_provenance_mut::<u8>(self.address);
         // SAFETY: no runtime was written and this allocation used exactly `layout`.
-        unsafe { vescpkg_rs::VescAllocator.dealloc(pointer, layout) };
+        unsafe {
+            vescpkg_rs::VescAllocator.dealloc(self.pointer.cast::<u8>().as_ptr(), layout);
+        }
     }
 
-    pub(super) fn runtime_mut(&mut self) -> Option<&mut FloatOutBoyInternalLedRuntime> {
-        let pointer = ptr::without_provenance_mut::<u8>(self.address);
-        // SAFETY: this value exclusively owns one initialized runtime allocation.
-        let bytes = unsafe {
-            core::slice::from_raw_parts_mut(
-                pointer,
-                core::mem::size_of::<FloatOutBoyInternalLedRuntime>(),
-            )
-        };
-        // SAFETY: construction used this exact type's size and alignment.
-        let (prefix, runtime, suffix) =
-            unsafe { bytes.align_to_mut::<FloatOutBoyInternalLedRuntime>() };
-        (prefix.is_empty() && suffix.is_empty())
-            .then(|| runtime.first_mut())
-            .flatten()
+    pub(super) fn runtime_mut(&mut self) -> &mut FloatOutBoyInternalLedRuntime {
+        // SAFETY: this value exclusively owns the allocation.
+        let slot = unsafe { self.pointer.as_mut() };
+        // SAFETY: callers only receive an initialized `RuntimeAllocation`.
+        unsafe { slot.assume_init_mut() }
     }
 
-    pub(super) fn runtime(&self) -> Option<&FloatOutBoyInternalLedRuntime> {
-        let pointer = ptr::without_provenance::<u8>(self.address);
-        // SAFETY: this value owns one live initialized runtime allocation.
-        let bytes = unsafe {
-            core::slice::from_raw_parts(
-                pointer,
-                core::mem::size_of::<FloatOutBoyInternalLedRuntime>(),
-            )
-        };
-        // SAFETY: construction used this exact type's size and alignment.
-        let (prefix, runtime, suffix) =
-            unsafe { bytes.align_to::<FloatOutBoyInternalLedRuntime>() };
-        (prefix.is_empty() && suffix.is_empty())
-            .then(|| runtime.first())
-            .flatten()
+    pub(super) fn runtime(&self) -> &FloatOutBoyInternalLedRuntime {
+        // SAFETY: this value exclusively owns the allocation.
+        let slot = unsafe { self.pointer.as_ref() };
+        // SAFETY: callers only receive an initialized `RuntimeAllocation`.
+        unsafe { slot.assume_init_ref() }
     }
 
     pub(super) fn release(mut self) {
         let layout = Layout::new::<FloatOutBoyInternalLedRuntime>();
-        if let Some(runtime) = self.runtime_mut() {
-            // SAFETY: this consumes the sole owner of the initialized runtime.
-            unsafe { ptr::drop_in_place(runtime) };
-        }
-        let pointer = ptr::without_provenance_mut::<u8>(self.address);
+        let runtime = self.runtime_mut();
+        // SAFETY: this consumes the sole owner of the initialized runtime.
+        unsafe { ptr::drop_in_place(runtime) };
         // SAFETY: the runtime is no longer live and this allocation used `layout`.
-        unsafe { vescpkg_rs::VescAllocator.dealloc(pointer, layout) };
+        unsafe {
+            vescpkg_rs::VescAllocator.dealloc(self.pointer.cast::<u8>().as_ptr(), layout);
+        }
     }
 }
 
