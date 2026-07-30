@@ -208,14 +208,14 @@ fn main_thread_configure_leaves_normal_startup_beeper_free_for_ready_alert() {
 }
 
 #[test]
-fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloat() {
+fn accepted_config_replacement_uses_cutoff_firmware_mahony_defaults() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_eq!(
         state.firmware_imu_migration_for_test(),
         FirmwareImuMigration::Applied
@@ -253,7 +253,7 @@ fn repeated_configure_is_idempotent_after_legacy_firmware_imu_migration() {
     firmware.clear_settings_write_observations();
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 0);
     assert_eq!(
         state.firmware_imu_migration_for_test(),
@@ -276,7 +276,7 @@ fn package_reload_keeps_migrated_firmware_imu_settings_live_only() {
     );
     reloaded.configure_loaded_config_on_main_thread();
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 0);
     assert_eq!(
         reloaded.firmware_imu_migration_for_test(),
@@ -301,7 +301,7 @@ fn firmware_imu_migration_does_not_change_package_mahony_gains() {
         state.serialized_config.filter().mahony_kp_roll(),
         MahonyRollGain::new(1.4)
     );
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 3);
 }
 
@@ -342,7 +342,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         ),
         (
             [true, false, true],
-            [0.4, 0.25, 0.1],
+            [0.2, 0.25, 0.1],
             FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: true,
@@ -351,7 +351,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         ),
         (
             [true, true, false],
-            [0.4, 0.0, 0.8],
+            [0.2, 0.0, 0.8],
             FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: false,
