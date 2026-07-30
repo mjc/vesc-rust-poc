@@ -1,4 +1,8 @@
 //! Package-owned, no-allocation Mahony and Madgwick attitude estimation.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::{
     ImuAcceleration, ImuMagneticField, ImuOrientation, ImuQuaternion, ImuQuaternionW,
@@ -71,6 +75,11 @@ pub enum AhrsParameterError {
     Negative,
 }
 
+impl_error!(AhrsParameterError {
+    NonFinite => "AHRS parameter must be finite",
+    Negative => "AHRS parameter must not be negative",
+});
+
 fn validate_nonnegative(value: f32) -> Result<(), AhrsParameterError> {
     if !value.is_finite() {
         Err(AhrsParameterError::NonFinite)
@@ -98,6 +107,7 @@ impl Default for Ahrs {
 
 impl Ahrs {
     /// Construct a Mahony estimator with conservative default gains.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             quaternion: [1.0, 0.0, 0.0, 0.0],
@@ -137,6 +147,7 @@ impl Ahrs {
     }
 
     /// Return the current normalized attitude quaternion.
+    #[must_use]
     pub fn orientation(&self) -> ImuOrientation {
         orientation_from_quaternion(self.quaternion)
     }
@@ -235,6 +246,7 @@ impl Default for Madgwick {
 
 impl Madgwick {
     /// Construct an estimator with the conventional beta gain of `0.1`.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             quaternion: [1.0, 0.0, 0.0, 0.0],
@@ -262,6 +274,7 @@ impl Madgwick {
     }
 
     /// Return the current normalized attitude quaternion.
+    #[must_use]
     pub fn orientation(&self) -> ImuOrientation {
         orientation_from_quaternion(self.quaternion)
     }

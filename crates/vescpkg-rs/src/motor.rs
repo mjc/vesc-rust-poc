@@ -1,4 +1,8 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 #[cfg(not(test))]
 use core::ffi::CStr;
@@ -37,6 +41,10 @@ pub enum MotorCommandError {
     /// A floating-point command value is NaN or infinite.
     NonFinite,
 }
+
+impl_error!(MotorCommandError {
+    NonFinite => "motor command must be finite",
+});
 
 #[cfg_attr(test, allow(dead_code))]
 fn ensure_finite(value: f32) -> Result<(), MotorCommandError> {
@@ -888,7 +896,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
 
     fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
         let mut watt_hours_remaining = 0.0;
-        let level = unsafe { crate::ffi::mc_get_battery_level(&mut watt_hours_remaining) };
+        let level = unsafe { crate::ffi::mc_get_battery_level(&raw mut watt_hours_remaining) };
         BatteryLevelSnapshot::new(
             BatteryLevel::from_fraction(level),
             crate::WattHoursRemaining::new(Energy::from_watt_hours(watt_hours_remaining)),

@@ -1,4 +1,8 @@
 //! IMU helpers built on firmware IMU table slots.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::types::ImuQuaternion;
 use crate::types::{
@@ -221,7 +225,7 @@ impl FirmwareAhrs {
         // SAFETY: ATTITUDE_INFO is a C struct containing only scalar fields; zero is a valid
         // temporary representation before the firmware initializer fills it.
         let mut attitude = unsafe { core::mem::zeroed::<AttitudeInfo>() };
-        unsafe { crate::ffi::ahrs_init_attitude_info(&mut attitude) };
+        unsafe { crate::ffi::ahrs_init_attitude_info(&raw mut attitude) };
         let mut state = Self {
             attitude,
             parameters,
@@ -251,7 +255,7 @@ impl FirmwareAhrs {
 
     /// Reset the owned firmware AHRS state to its firmware defaults.
     pub fn reset(&mut self) -> FirmwareAhrsSnapshot {
-        unsafe { crate::ffi::ahrs_init_attitude_info(&mut self.attitude) };
+        unsafe { crate::ffi::ahrs_init_attitude_info(&raw mut self.attitude) };
         self.apply_parameters();
         self.snapshot()
     }
@@ -268,8 +272,8 @@ impl FirmwareAhrs {
             crate::ffi::ahrs_update_initial_orientation(
                 acceleration.as_ptr(),
                 magnetic.as_ptr(),
-                &mut self.attitude,
-            )
+                &raw mut self.attitude,
+            );
         };
         self.attitude.initialUpdateDone = 1;
         Ok(self.snapshot())
@@ -286,8 +290,8 @@ impl FirmwareAhrs {
                 gyro.as_ptr(),
                 acceleration.as_ptr(),
                 period,
-                &mut self.attitude,
-            )
+                &raw mut self.attitude,
+            );
         };
         Ok(self.snapshot())
     }
@@ -303,8 +307,8 @@ impl FirmwareAhrs {
                 gyro.as_ptr(),
                 acceleration.as_ptr(),
                 period,
-                &mut self.attitude,
-            )
+                &raw mut self.attitude,
+            );
         };
         Ok(self.snapshot())
     }
@@ -314,13 +318,13 @@ impl FirmwareAhrs {
     pub fn attitude(&self) -> ImuAttitude {
         ImuAttitude::new(
             ImuRoll::new(AngleRadians::from_radians(unsafe {
-                crate::ffi::ahrs_get_roll(&self.attitude)
+                crate::ffi::ahrs_get_roll(&raw const self.attitude)
             })),
             ImuPitch::new(AngleRadians::from_radians(unsafe {
-                crate::ffi::ahrs_get_pitch(&self.attitude)
+                crate::ffi::ahrs_get_pitch(&raw const self.attitude)
             })),
             ImuYaw::new(AngleRadians::from_radians(unsafe {
-                crate::ffi::ahrs_get_yaw(&self.attitude)
+                crate::ffi::ahrs_get_yaw(&raw const self.attitude)
             })),
         )
     }
@@ -637,7 +641,7 @@ impl<B: ImuBindings + ?Sized> ImuBindings for &B {
     }
 
     fn set_yaw(&self, yaw: ImuYaw) {
-        (**self).set_yaw(yaw)
+        (**self).set_yaw(yaw);
     }
 
     fn derotated_angular_rate(&self) -> ImuAngularRate {
@@ -1148,7 +1152,7 @@ impl<B: ImuBindings> Imu for ImuApi<B> {
     }
 
     fn set_yaw(&self, yaw: ImuYaw) {
-        self.set_yaw(yaw)
+        self.set_yaw(yaw);
     }
 
     fn derotated_angular_rate(&self) -> ImuAngularRate {

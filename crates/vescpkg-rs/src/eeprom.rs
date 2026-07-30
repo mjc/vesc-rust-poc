@@ -1,4 +1,8 @@
 //! Typed access to the package custom-EEPROM range.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 /// Word address passed to the firmware custom-EEPROM interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

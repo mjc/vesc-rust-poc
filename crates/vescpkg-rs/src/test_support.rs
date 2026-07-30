@@ -26,11 +26,13 @@ pub fn with_firmware_effects<R>(
 }
 
 /// Invoke a stateful app-data handler through its real phased callback context.
+#[must_use]
 pub fn invoke_stateful_app_data_handler<T: crate::AppDataHandler>(packet: &[u8]) -> bool {
     crate::firmware::invoke_stateful_app_data_handler::<T>(packet)
 }
 
 /// Invoke a stateful custom-config handler through its real phased callback context.
+#[must_use]
 pub fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
 where
     T: crate::StatefulCustomConfigCallback<LEN>,
@@ -202,7 +204,7 @@ impl FirmwareTest {
         crate::test_ffi::set_nvm_supported(supported);
     }
 
-    /// Make the fake LispBM evaluator reject every process message.
+    /// Make the fake `LispBM` evaluator reject every process message.
     pub fn fail_lisp_messages(&self) {
         crate::test_ffi::fail_lisp_messages(true);
     }
@@ -603,6 +605,7 @@ impl FirmwareTest {
     }
 
     /// Configure a malformed raw battery-cell count for rejection-path tests.
+    #[must_use]
     pub fn with_raw_battery_cell_count(self, count: i32) -> Self {
         crate::test_ffi::set_raw_battery_cell_count(count);
         self

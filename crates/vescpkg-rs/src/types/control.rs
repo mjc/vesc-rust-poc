@@ -65,7 +65,7 @@ impl PidScale {
     }
 
     /// Move this scale toward a target by a dimensionless fraction.
-    #[inline(always)]
+    #[must_use]
     pub const fn lerp(self, target: Self, amount: f32) -> Self {
         Self(self.0 + (target.0 - self.0) * amount)
     }
@@ -73,7 +73,7 @@ impl PidScale {
 
 impl MotorCurrent {
     /// Apply a dimensionless control-gain scale without erasing the current type.
-    #[inline(always)]
+    #[must_use]
     pub const fn scaled_by(self, scale: PidScale) -> Self {
         Self::new(self.current().scaled_by(scale.0))
     }
@@ -134,7 +134,7 @@ impl RateCurrentGain {
     }
 
     /// Apply a dimensionless control-gain scale.
-    #[inline(always)]
+    #[must_use]
     pub const fn scaled_by(self, scale: PidScale) -> Self {
         Self(self.0 * scale.0)
     }

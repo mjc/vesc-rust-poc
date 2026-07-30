@@ -13,6 +13,7 @@ pub enum TachometerReset {
 
 impl TachometerReset {
     /// Return the ABI reset flag for this semantic choice.
+    #[must_use]
     pub const fn resets(self) -> bool {
         matches!(self, Self::Reset)
     }
@@ -29,6 +30,7 @@ pub enum EnergyCounterReset {
 
 impl EnergyCounterReset {
     /// Return the ABI reset flag for this semantic choice.
+    #[must_use]
     pub const fn resets(self) -> bool {
         matches!(self, Self::Reset)
     }
@@ -45,6 +47,7 @@ pub enum PidPositionOffsetPersistence {
 
 impl PidPositionOffsetPersistence {
     /// Return the ABI persistence flag for this semantic choice.
+    #[must_use]
     pub const fn stores(self) -> bool {
         matches!(self, Self::Persistent)
     }

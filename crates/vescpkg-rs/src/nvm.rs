@@ -67,6 +67,13 @@ pub enum NvmError {
     FirmwareFailure,
 }
 
+impl_error!(NvmError {
+    Unsupported => "firmware NVM is unavailable",
+    InvalidRange => "NVM range cannot be represented safely",
+    OutOfBounds => "NVM access exceeds the configured capacity",
+    FirmwareFailure => "firmware rejected the NVM operation",
+});
+
 /// Firmware-backed byte-addressed NVM capability.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Nvm {
