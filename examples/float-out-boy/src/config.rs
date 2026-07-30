@@ -281,7 +281,6 @@ impl FloatOutBoyConfigImage {
         metadata => FloatOutBoyMetadataConfig;
     }
 
-    #[cfg(test)]
     pub(crate) const fn remote(&self) -> FloatOutBoyRemoteConfig<'_> {
         FloatOutBoyRemoteConfig(self)
     }
@@ -828,7 +827,6 @@ impl FloatOutBoyBalanceConfig<'_> {
 
 // The pinned cutoff serializes remote move fields immediately before startup
 // tolerances.
-#[cfg(test)]
 vescpkg_rs::generated_custom_config_view! {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub(crate) struct FloatOutBoyRemoteConfig<'a>(&'a FloatOutBoyConfigImage);

@@ -36,8 +36,6 @@ vesc_protocol::wire_enum! {
     ConfigRestore = 5,
     /// Runtime startup/config change.
     TuneOther = 6,
-    /// Idle motor movement.
-    RcMove = 7,
     /// Booster settings.
     Booster = 8,
     /// Print verbose info.
@@ -52,6 +50,8 @@ vesc_protocol::wire_enum! {
     HandTest = 13,
     /// Tilt tuning command.
     TuneTilt = 14,
+    /// Unified remote input and idle movement command.
+    Remote = 15,
     /// Lights-control command.
     LightsControl = 20,
     /// Flywheel toggle command.
