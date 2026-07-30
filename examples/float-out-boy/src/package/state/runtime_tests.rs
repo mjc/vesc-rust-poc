@@ -648,65 +648,59 @@ fn ready_bms_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
     (telemetry, state)
 }
 
-fn running_reverse_stop_fixture(
-    reverse_total_erpm: Rpm,
-    board_setpoint: AngleDegrees,
-    motor_erpm: Rpm,
-) -> (TimestampTicks, FirmwareTest, FloatOutBoyPackageState) {
-    let now = TimestampTicks::from_ticks(0);
-    let telemetry = FirmwareTest::new().with_runtime_motor(
-        ElectricalSpeed::new(motor_erpm),
-        VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        TotalMotorCurrent::new(Current::from_amps(0.0)),
-        InputCurrent::new(Current::from_amps(0.0)),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-    );
+#[test]
+fn running_enters_reverse_stop_from_reverse_distance_like_refloat() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let telemetry = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-500.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        )
+        .with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.03)));
     telemetry.set_imu_ready(true);
-    let payloads = sample_all_data_payloads_with_ride_state(
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Running,
         FloatOutBoyMode::Normal,
-    );
-    let base = payloads.base();
-    let ride_state = base
-        .status()
-        .ride_state()
-        .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::ReverseStop);
-    let setpoints = FloatOutBoyRealtimeRuntimeSetpoints::new(
-        FloatOutBoyRealtimeRuntimeSetpoint::new(board_setpoint),
-        base.setpoints().atr(),
-        base.setpoints().brake_tilt(),
-        base.setpoints().torque_tilt(),
-        base.setpoints().turn_tilt(),
-        base.setpoints().remote(),
-    );
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
-        base.footpad(),
-        setpoints,
-        base.booster_current(),
-        base.motor(),
-    );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
-        base,
-        payloads.mode2(),
-        payloads.mode3(),
-        payloads.mode4(),
     ));
-    state.reverse_total_erpm = reverse_total_erpm;
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
 
-    (now, telemetry, state)
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    // Refloat starts reverse-stop after more than two approximate motor steps
+    // of reverse travel.
+    assert_eq!(
+        state
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        FloatOutBoySetpointAdjustment::ReverseStop,
+    );
 }
 
 #[test]
-fn running_enters_reverse_stop_from_reverse_motor_speed_like_float_out_boy() {
+fn reverse_erpm_without_distance_does_not_enter_refloat_reverse_stop() {
     let app_data = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new().with_runtime_motor(
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-201.0)),
-        VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-        TotalMotorCurrent::new(Current::from_amps(0.0)),
-        InputCurrent::new(Current::from_amps(0.0)),
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-1_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
     telemetry.set_imu_ready(true);
@@ -729,113 +723,6 @@ fn running_enters_reverse_stop_from_reverse_motor_speed_like_float_out_boy() {
         ],
     ));
 
-    // C map: reverse-stop entry precedes every protective pushback branch at
-    // `third_party/float-out-boy/src/main.c:538-552`.
-    assert_eq!(
-        state
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::ReverseStop,
-    );
-}
-
-#[test]
-fn running_reverse_stop_carries_only_error_pushbacks_into_erpm_like_float_out_boy() {
-    let cases = [
-        (
-            FloatOutBoySetpointAdjustment::PushbackHighVoltage,
-            Rpm::from_revolutions_per_minute(80_000.0),
-        ),
-        (
-            FloatOutBoySetpointAdjustment::PushbackLowVoltage,
-            Rpm::from_revolutions_per_minute(80_000.0),
-        ),
-        (
-            FloatOutBoySetpointAdjustment::PushbackTemperature,
-            Rpm::from_revolutions_per_minute(80_000.0),
-        ),
-        (FloatOutBoySetpointAdjustment::PushbackDuty, Rpm::ZERO),
-    ];
-
-    for (adjustment, expected_total_erpm) in cases {
-        let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
-            SignedRatio::from_ratio_const(0.10),
-            Rpm::from_revolutions_per_minute(-201.0),
-            adjustment,
-            InputVoltage::new(Voltage::from_volts(72.0)),
-        );
-        edit_config(&mut state, |config| {
-            assert!(config.set_reversestop_enabled(true));
-        });
-
-        tick_running_protective_pushback(&mut state, &telemetry, app_data);
-
-        // Float Out Boy carries only SAT values at or above `SAT_PB_HIGH_VOLTAGE`
-        // into reverse-stop at `third_party/float-out-boy/src/main.c:538-550`.
-        assert_eq!(state.reverse_total_erpm, expected_total_erpm);
-        assert_eq!(
-            state
-                .all_data_payloads()
-                .base()
-                .status()
-                .ride_state()
-                .setpoint_adjustment(),
-            FloatOutBoySetpointAdjustment::ReverseStop,
-        );
-    }
-}
-
-#[test]
-fn running_reverse_stop_grows_target_past_erpm_tolerance_like_float_out_boy() {
-    let (app_data, telemetry, mut state) = running_reverse_stop_fixture(
-        Rpm::from_revolutions_per_minute(-20_000.0),
-        AngleDegrees::ZERO,
-        Rpm::from_revolutions_per_minute(-1_000.0),
-    );
-
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        app_data,
-        telemetry.telemetry(),
-        telemetry.imu(),
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
-
-    // C accumulates ERPM and applies `(abs(total) - 20000) * 0.00008`
-    // at `third_party/float-out-boy/src/main.c:522-529`.
-    assert_eq!(
-        state.all_data_payloads().base().setpoints().board().angle(),
-        AngleDegrees::from_degrees(0.08),
-    );
-}
-
-#[test]
-fn running_reverse_stop_exits_below_half_tolerance_while_moving_forward_like_float_out_boy() {
-    let (app_data, telemetry, mut state) = running_reverse_stop_fixture(
-        Rpm::from_revolutions_per_minute(-10_001.0),
-        AngleDegrees::from_degrees(0.25),
-        Rpm::from_revolutions_per_minute(2.0),
-    );
-
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        app_data,
-        telemetry.telemetry(),
-        telemetry.imu(),
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
-
-    // C clears Reverse Stop, the accumulator, and target together at
-    // `third_party/float-out-boy/src/main.c:530-536`.
     assert_eq!(
         state
             .all_data_payloads()
@@ -844,51 +731,6 @@ fn running_reverse_stop_exits_below_half_tolerance_while_moving_forward_like_flo
             .ride_state()
             .setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::None,
-    );
-    assert_eq!(state.reverse_total_erpm, Rpm::ZERO);
-    assert_eq!(
-        state.all_data_payloads().base().setpoints().board().angle(),
-        AngleDegrees::ZERO,
-    );
-}
-
-#[test]
-fn running_reverse_stop_stays_active_at_half_tolerance_while_reversing_like_float_out_boy() {
-    let (app_data, telemetry, mut state) = running_reverse_stop_fixture(
-        Rpm::from_revolutions_per_minute(-9_999.0),
-        AngleDegrees::from_degrees(0.25),
-        Rpm::from_revolutions_per_minute(-1.0),
-    );
-
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        app_data,
-        telemetry.telemetry(),
-        telemetry.imu(),
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
-
-    // C requires both half tolerance and nonnegative instantaneous ERPM at
-    // `third_party/float-out-boy/src/main.c:530-536`.
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::ReverseStop,
-    );
-    assert_eq!(
-        state.reverse_total_erpm,
-        Rpm::from_revolutions_per_minute(-10_000.0),
-    );
-    assert_eq!(
-        state.all_data_payloads().base().setpoints().board().angle(),
-        AngleDegrees::from_degrees(0.25),
     );
 }
 
@@ -1675,6 +1517,8 @@ fn reverse_stop_entry_precedes_wheelslip_detection_like_float_out_boy() {
         FloatOutBoySetpointAdjustment::None,
         InputVoltage::new(Voltage::from_volts(72.0)),
     );
+    let telemetry =
+        telemetry.with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.03)));
     edit_config(&mut state, |config| {
         assert!(config.set_reversestop_enabled(true));
     });
@@ -2190,10 +2034,6 @@ fn running_low_voltage_refreshes_high_voltage_timer_before_every_selection_branc
             InputVoltage::new(Voltage::from_volts(72.0)),
         );
         set_protective_ride_state(&mut state, mode, adjustment, wheelslip);
-        if matches!(adjustment, FloatOutBoySetpointAdjustment::ReverseStop) {
-            state.reverse_ticks.restart(now);
-        }
-
         tick_running_protective_pushback(&mut state, &telemetry, now);
 
         // Float Out Boy refreshes this timer before every setpoint-adjustment branch

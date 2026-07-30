@@ -9,20 +9,6 @@ fn float_out_boy_limits_keep_source_backed_typed_values() {
     assert_eq!(quick_stop::PITCH, AngleDegrees::from_degrees(14.0));
 
     assert_eq!(
-        reverse_stop::TOTAL_ERPM,
-        Rpm::from_revolutions_per_minute(200_000.0)
-    );
-    assert_eq!(reverse_stop::PITCH, AngleDegrees::from_degrees(18.0));
-    assert_eq!(
-        reverse_stop::TIMER_FAST_PITCH,
-        AngleDegrees::from_degrees(10.0)
-    );
-    assert_eq!(
-        reverse_stop::TIMER_SLOW_PITCH,
-        AngleDegrees::from_degrees(5.0)
-    );
-
-    assert_eq!(
         REMOTE_SETPOINT_FAULT_ANGLE,
         AngleDegrees::from_degrees(30.0)
     );
