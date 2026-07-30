@@ -125,7 +125,7 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
     };
 
     update_active_config(state, |config| {
-        write_fields!(config;
+        let updated = write_fields!(config;
             B::KP_FIELD => pid_low.scaled(1.0, 15.0, AngleCurrentGain::new),
             B::KP2_FIELD => pid_high.divided(10.0, 0.0, RateCurrentGain::new),
             B::KI_FIELD => tune_integral_gain(integral_low),
@@ -141,14 +141,18 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
             B::ATR_STRENGTH_DOWN_FIELD => tune_atr_strength(atr_down),
             B::ATR_SPEED_BOOST_FIELD => atr_speed_amount.scaled_ratio(speed_boost_numerator, 100.0, 0.0, PidScale::new),
             B::ATR_ANGLE_LIMIT_FIELD => tune_angle_from(atr_angle, AngleDegrees::from_degrees(5.0)),
-            B::ATR_FILTER_ON_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
-            B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
             B::ATR_TRANSITION_BOOST_FIELD => transition_boost.divided(5.0, 1.0, PidScale::new),
             B::ATR_AMPS_ACCEL_RATIO_FIELD => accel_ratio.scaled(1.0, 5.0, PidScale::new),
             B::ATR_AMPS_DECEL_RATIO_FIELD => decel_ratio.scaled(1.0, 5.0, PidScale::new),
             B::BRAKE_TILT_STRENGTH_FIELD => brake_strength.scaled(1.0, 0.0, PidScale::new),
             B::BRAKE_TILT_LINGERING_FIELD => brake_lingering.scaled(1.0, 0.0, PidScale::new),
-        )
+        );
+        let speeds_updated = atr_speeds.as_u8() == 0
+            || write_fields!(config;
+                B::ATR_FILTER_ON_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
+                B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
+            );
+        updated && speeds_updated
     })
 }
 
