@@ -395,9 +395,11 @@ fn evaluate_transition_phase(
     let pitch_degrees = AngleDegrees::from(pitch);
     let pitch_abs = pitch_degrees.abs();
     let roll_abs = AngleDegrees::from(imu_roll.angle()).abs();
-    state
-        .ride_modifiers
-        .aggregate_yaw(AngleDegrees::from(imu.yaw().angle()));
+    state.ride_modifiers.aggregate_yaw(
+        AngleDegrees::from(imu.yaw().angle()),
+        elapsed,
+        state.frequency_trackers.main.filter_frequency(),
+    );
     let (next_ride_state, darkride_alert) =
         refresh_darkride_state(state, ride_state, run_state, roll_abs, system_time_ticks);
     ride_state = next_ride_state;

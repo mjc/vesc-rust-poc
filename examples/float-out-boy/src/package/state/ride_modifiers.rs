@@ -4,11 +4,15 @@ use crate::domain::{
     FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, Current, Frequency, MotorCurrent, Rpm, SampleRate, VescSeconds,
+    AngleDegrees, AngularVelocity, Current, Frequency, MotorCurrent, Rpm, SampleRate, VescSeconds,
 };
 use vescpkg_rs::{SmoothAngle, WrappedAngleMotion};
 
 const LOOP_HERTZ_COMPAT: f32 = 720.0;
+const TURN_TILT_YAW_CUTOFF: Frequency = Frequency::from_hertz(25.0);
+const TURN_TILT_YAW_RATE_LIMIT: AngularVelocity = AngularVelocity::from_degrees_per_second(72.0);
+const TURN_TILT_YAW_RATE_THRESHOLD: AngularVelocity =
+    AngularVelocity::from_degrees_per_second(30.0);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct AtrState {
@@ -154,12 +158,12 @@ fn turn_target(
     let abs_erpm = erpm.abs().as_revolutions_per_minute();
     let mut target = if config.turn_tilt_strength().value() == 0.0
         || state.yaw.aggregate().abs() < config.turn_tilt_start_angle()
-        || state.yaw.change().abs() < AngleDegrees::from_degrees(0.04)
+        || state.yaw.rate().abs() < TURN_TILT_YAW_RATE_THRESHOLD
     {
         0.0
     } else {
-        let mut target =
-            state.yaw.change().abs().as_degrees() * config.turn_tilt_strength().value();
+        let mut target = state.yaw.rate().abs().as_degrees_per_second() / LOOP_HERTZ_COMPAT
+            * config.turn_tilt_strength().value();
         let boost = if abs_erpm
             < config
                 .turn_tilt_erpm_boost_end()
@@ -224,15 +228,21 @@ impl RideModifierState {
         *self = Self::default();
     }
 
-    pub(super) fn aggregate_yaw(&mut self, yaw: AngleDegrees) {
+    pub(super) fn aggregate_yaw(
+        &mut self,
+        yaw: AngleDegrees,
+        elapsed: VescSeconds,
+        filter_rate: SampleRate,
+    ) {
         // C map: yaw filtering and aggregation run before the state switch at
         // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
         // `third_party/float-out-boy/src/main.c:800`.
         self.turn.yaw.observe(
             yaw,
-            AngleDegrees::from_degrees(0.10),
-            vescpkg_rs::Ratio::from_ratio_const(0.2),
-            AngleDegrees::from_degrees(0.04),
+            elapsed,
+            TURN_TILT_YAW_RATE_LIMIT,
+            vescpkg_rs::Ratio::clamped(vescpkg_rs::ema_alpha(TURN_TILT_YAW_CUTOFF, filter_rate)),
+            TURN_TILT_YAW_RATE_THRESHOLD,
         );
     }
 
