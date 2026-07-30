@@ -318,6 +318,47 @@ fn light_control_payload_is_forwarded_once_by_poll_and_device_info_echoes_name()
 }
 
 #[test]
+fn lcm_name_reserves_its_final_storage_byte_for_a_terminator() {
+    let firmware = FirmwareTest::new();
+    let mut state = external_state();
+    let mut poll = vec![101, 24];
+    poll.extend(b'A'..=b'T');
+
+    dispatch(&mut state, &firmware, &poll);
+
+    let response = dispatch(&mut state, &firmware, &[101, 27]);
+    assert_eq!(&response[..2], &[101, 27]);
+    assert_eq!(&response[2..21], &(b'A'..=b'S').collect::<Vec<_>>());
+    assert_eq!(response[21], 0);
+}
+
+#[test]
+fn lcm_light_control_clamps_all_brightness_channels_to_percent() {
+    let firmware = FirmwareTest::new();
+    let mut state = external_state();
+
+    dispatch(&mut state, &firmware, &[101, 26, 101, 200, u8::MAX]);
+
+    assert_eq!(
+        dispatch(&mut state, &firmware, &[101, 25]),
+        [101, 25, 3, 100, 100, 100, 0, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn valid_lcm_light_control_without_extra_bytes_clears_pending_payload() {
+    let firmware = FirmwareTest::new();
+    let mut state = external_state();
+
+    dispatch(&mut state, &firmware, &[101, 26, 10, 20, 30, 0xaa, 0x55]);
+    dispatch(&mut state, &firmware, &[101, 26, 40, 50, 60]);
+
+    let response = dispatch(&mut state, &firmware, &[101, 24]);
+    assert_eq!(response.len(), 14);
+    assert_eq!(&response[11..14], &[40, 50, 60]);
+}
+
+#[test]
 fn light_control_relay_is_safely_capped_at_refloats_64_byte_storage() {
     let firmware = FirmwareTest::new();
     let mut state = external_state();
@@ -369,7 +410,7 @@ fn shorter_lcm_name_replaces_the_previous_name_without_a_stale_suffix() {
 }
 
 #[test]
-fn lcm_name_stops_at_nul_and_at_refloats_twenty_byte_limit() {
+fn lcm_name_stops_at_nul_and_reserves_a_terminator_at_refloats_twenty_byte_limit() {
     let firmware = FirmwareTest::new();
     let mut state = external_state();
 
@@ -383,7 +424,8 @@ fn lcm_name_stops_at_nul_and_at_refloats_twenty_byte_limit() {
     poll.extend(1_u8..=MAX_LCM_NAME_LENGTH as u8 + 1);
     dispatch(&mut state, &firmware, &poll);
     let mut expected = vec![101, 27];
-    expected.extend(1_u8..=MAX_LCM_NAME_LENGTH as u8);
+    expected.extend(1_u8..MAX_LCM_NAME_LENGTH as u8);
+    expected.push(0);
     assert_eq!(dispatch(&mut state, &firmware, &[101, 27]), expected);
 }
 
