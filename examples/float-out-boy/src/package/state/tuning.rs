@@ -5,7 +5,7 @@ use super::{
 use crate::config::{
     FloatOutBoyBalanceConfig as B, FloatOutBoyConfigEditor, FloatOutBoyConfigImage as C,
     FloatOutBoyFaultConfig as F, FloatOutBoyFilterConfig as H, FloatOutBoyMotorControlConfig as M,
-    FloatOutBoyStartupConfig as S,
+    FloatOutBoyParkingBrakeMode, FloatOutBoyStartupConfig as S,
 };
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, IntegralCurrentGain,
@@ -14,6 +14,19 @@ use vescpkg_rs::prelude::{
 
 fn tune_angle_from(value: WireByte, base: AngleDegrees) -> AngleDegrees {
     base + AngleDegrees::from_degrees(f32::from(value.as_u8()))
+}
+
+fn tune_variable_tilt_maximum(value: u8) -> AngleDegrees {
+    if value > 100 {
+        WireByte::new(value.saturating_sub(100)).scaled_ratio(
+            -1.0,
+            10.0,
+            0.0,
+            AngleDegrees::from_degrees,
+        )
+    } else {
+        WireByte::new(value).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees)
+    }
 }
 
 fn tune_booster_current(value: WireByte) -> MotorCurrent {
@@ -339,7 +352,7 @@ pub(super) fn handle_other_tune_packet(
                 C::TILTBACK_CONSTANT_ANGLE_FIELD => WireByte::new(*tilt_constant).scaled(0.5, -50.0, AngleDegrees::from_degrees),
                 C::TILTBACK_CONSTANT_ERPM_FIELD => WireByte::new(*constant_erpm).scaled(100.0, 0.0, electrical_speed),
                 C::TILTBACK_VARIABLE_RATE_FIELD => WireByte::new(*variable_rate).scaled_ratio(1.0, 100.0, 0.0, PidScale::new),
-                C::TILTBACK_VARIABLE_MAX_FIELD => WireByte::new(*variable_max).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
+                C::TILTBACK_VARIABLE_MAX_FIELD => tune_variable_tilt_maximum(*variable_max),
                 C::TILTBACK_VARIABLE_ERPM_FIELD => WireByte::new(*variable_erpm).scaled(100.0, 0.0, electrical_speed),
             );
             if *nose_speed != 0 {
@@ -366,6 +379,19 @@ pub(super) fn handle_other_tune_packet(
                     );
                 }
             }
+        }
+        if let Some(flags) = optional_input.get(2).copied() {
+            let flags_updated = write_fields!(config;
+                F::MOVING_FAULT_DISABLED_FIELD => flags & 0x01 != 0,
+                C::FOOT_BEEP_ENABLED_FIELD => flags & 0x02 != 0,
+            );
+            let parking_updated = M::PARKING_BRAKE_MODE_FIELD
+                .write(
+                    config,
+                    FloatOutBoyParkingBrakeMode::from((flags >> 2) & 0x03),
+                )
+                .is_some();
+            updated = updated && flags_updated && parking_updated;
         }
         updated
     });
