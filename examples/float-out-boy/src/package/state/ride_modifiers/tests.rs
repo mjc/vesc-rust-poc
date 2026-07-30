@@ -161,29 +161,22 @@ fn brake_tilt_uses_balance_offset_while_regenerating_like_float_out_boy() {
 fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_out_boy() {
     let mut state = RideModifierState {
         nose: AngleDegrees::from_degrees(1.0),
-        atr: AtrState {
-            angle: SmoothAngle {
-                target: AngleDegrees::from_degrees(4.0),
-                setpoint: AngleDegrees::from_degrees(4.0),
-                ..SmoothAngle::default()
-            },
-            ..AtrState::default()
-        },
-        brake: SmoothAngle {
-            target: AngleDegrees::from_degrees(5.0),
-            setpoint: AngleDegrees::from_degrees(5.0),
-            ..SmoothAngle::default()
-        },
-        torque: SmoothAngle {
-            setpoint: AngleDegrees::from_degrees(3.0),
-            ..SmoothAngle::default()
-        },
         ..RideModifierState::default()
     };
     state
         .turn
         .angle
         .set_value_for_test(AngleDegrees::from_degrees(2.0));
+    state
+        .atr
+        .angle
+        .set_value_for_test(AngleDegrees::from_degrees(4.0));
+    state
+        .brake
+        .set_value_for_test(AngleDegrees::from_degrees(5.0));
+    state
+        .torque
+        .set_value_for_test(AngleDegrees::from_degrees(3.0));
     let config = FloatOutBoyConfigImage::defaults();
 
     let setpoints = state.advance(
@@ -201,24 +194,19 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
     );
     assert_eq!(
         setpoints.torque_tilt().angle(),
-        AngleDegrees::from_degrees(3.0 * 0.995)
+        AngleDegrees::from_degrees(3.0 * (1.0 - 0.009_95))
     );
     assert_eq!(
         setpoints.atr().angle(),
-        AngleDegrees::from_degrees(4.0 * 0.995)
+        AngleDegrees::from_degrees(4.0 * (1.0 - 0.009_95))
     );
     assert_eq!(
         setpoints.brake_tilt().angle(),
-        AngleDegrees::from_degrees(5.0 * 0.995)
+        AngleDegrees::from_degrees(5.0 * (1.0 - 0.009_95))
     );
-    assert_eq!(
-        state.atr.angle.target,
-        AngleDegrees::from_degrees(4.0 * 0.99)
-    );
-    assert_eq!(state.brake.target, AngleDegrees::from_degrees(5.0 * 0.99));
     assert_eq!(
         setpoints.board().angle(),
-        AngleDegrees::from_degrees(1.0 + 2.0 * (1.0 - 0.009_95) + (4.0 + 5.0) * 0.995),
+        AngleDegrees::from_degrees(1.0 + 2.0 * (1.0 - 0.009_95) + (4.0 + 5.0) * (1.0 - 0.009_95)),
     );
 }
 
@@ -226,16 +214,15 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
 fn darkride_keeps_remote_tilt_but_suppresses_ride_modifiers_like_float_out_boy() {
     let mut state = RideModifierState {
         nose: AngleDegrees::from_degrees(1.0),
-        torque: SmoothAngle {
-            setpoint: AngleDegrees::from_degrees(3.0),
-            ..SmoothAngle::default()
-        },
         ..RideModifierState::default()
     };
     state
         .turn
         .angle
         .set_value_for_test(AngleDegrees::from_degrees(2.0));
+    state
+        .torque
+        .set_value_for_test(AngleDegrees::from_degrees(3.0));
     let retained = state;
     let config = FloatOutBoyConfigImage::defaults();
     let setpoints = state.advance(
@@ -273,6 +260,49 @@ fn source_sign_treats_both_zero_encodings_as_nonnegative() {
     assert!(same_source_sign(positive_zero, positive));
     assert!(same_source_sign(negative_zero, positive));
     assert_eq!(combine_torque_offsets(negative_zero, positive), positive,);
+}
+
+#[test]
+fn atr_transition_boost_scales_only_opposite_sign_transitions() {
+    let configured = PidScale::new(2.0);
+    let factor = |setpoint, target| {
+        atr_transition_multiplier(
+            AngleDegrees::from_degrees(setpoint),
+            AngleDegrees::from_degrees(target),
+            configured,
+        )
+        .factor()
+    };
+
+    assert!((factor(-2.0, 0.5) - 2.0).abs() < f32::EPSILON);
+    assert!((factor(-1.0, 0.5) - 1.5).abs() < f32::EPSILON);
+    assert!((factor(2.0, 0.5) - 1.0).abs() < f32::EPSILON);
+    assert!((factor(-0.5, 0.5) - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn low_speed_high_current_uses_torque_direction_like_refloat() {
+    assert_eq!(
+        current_domain_direction(
+            Rpm::from_revolutions_per_minute(-250.0),
+            Current::from_amps(30.0),
+        ),
+        SmoothSetpointDirection::Forward
+    );
+    assert_eq!(
+        current_domain_direction(
+            Rpm::from_revolutions_per_minute(-251.0),
+            Current::from_amps(30.0),
+        ),
+        SmoothSetpointDirection::Reverse
+    );
+    assert_eq!(
+        current_domain_direction(
+            Rpm::from_revolutions_per_minute(-250.0),
+            Current::from_amps(29.9),
+        ),
+        SmoothSetpointDirection::Reverse
+    );
 }
 
 #[test]
@@ -366,23 +396,28 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
     }
 
     let mut state = RideModifierState::default();
+    let motor = ModifierMotorState {
+        erpm: Rpm::from_revolutions_per_minute(3_000.0),
+        direction: SmoothSetpointDirection::Forward,
+        braking: false,
+    };
     state.update_torque(
         balance,
         Current::from_amps(100.0),
-        false,
-        3_000.0,
+        motor,
         VescSeconds::from_seconds(0.01),
     );
-    let active = state.torque.setpoint;
+    let active = state.torque.value();
     assert!(active.is_positive());
-    state.update_torque(
-        balance,
-        Current::ZERO,
-        false,
-        3_000.0,
-        VescSeconds::from_seconds(0.01),
-    );
-    assert!(state.torque.setpoint < active);
+    for _ in 0..100 {
+        state.update_torque(
+            balance,
+            Current::ZERO,
+            motor,
+            VescSeconds::from_seconds(0.01),
+        );
+    }
+    assert!(state.torque.value() < active);
 }
 
 #[test]
@@ -412,13 +447,11 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
         state.update_atr(
             balance,
             accelerating,
-            false,
-            4_000.0,
-            1.0,
+            ModifierMotorState::from_input(accelerating),
             VescSeconds::from_seconds(0.01),
         );
     }
-    let accelerating_setpoint = state.atr.angle.setpoint;
+    let accelerating_setpoint = state.atr.angle.value();
     assert!(accelerating_setpoint.is_positive());
     assert!(accelerating_setpoint <= AngleDegrees::from_degrees(3.0));
     assert!((state.atr.speed_boost - 1.0 / 7.0).abs() < 0.000_001);
@@ -432,32 +465,29 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
         state.update_atr(
             balance,
             braking,
-            true,
-            4_000.0,
-            1.0,
+            ModifierMotorState::from_input(braking),
             VescSeconds::from_seconds(0.01),
         );
     }
-    assert!(state.atr.angle.setpoint.is_negative());
-    assert!(state.atr.angle.setpoint >= AngleDegrees::from_degrees(-3.0));
+    assert!(state.atr.angle.value().is_negative());
+    assert!(state.atr.angle.value() >= AngleDegrees::from_degrees(-3.0));
     assert!(state.atr.speed_boost.abs() < f32::EPSILON);
 
-    let before_recovery = state.atr.angle.setpoint;
+    let before_recovery = state.atr.angle.value();
     for _ in 0..1_000 {
+        let recovery = RideModifierInput {
+            filtered_current: Current::from_amps(8.0),
+            motor_current: MotorCurrent::new(Current::from_amps(8.0)),
+            ..accelerating
+        };
         state.update_atr(
             balance,
-            RideModifierInput {
-                filtered_current: Current::from_amps(8.0),
-                motor_current: MotorCurrent::new(Current::from_amps(8.0)),
-                ..accelerating
-            },
-            false,
-            4_000.0,
-            1.0,
+            recovery,
+            ModifierMotorState::from_input(recovery),
             VescSeconds::from_seconds(0.01),
         );
     }
-    assert!(state.atr.angle.setpoint > before_recovery);
+    assert!(state.atr.angle.value() > before_recovery);
 }
 
 #[test]
@@ -518,32 +548,29 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
         state.update_brake(
             balance,
             braking,
-            true,
-            3_000.0,
-            1.0,
+            ModifierMotorState::from_input(braking),
             VescSeconds::from_seconds(0.01),
         );
     }
-    let sustained = state.brake.setpoint;
+    let sustained = state.brake.value();
     assert!(sustained.is_positive());
     for _ in 0..100 {
+        let coasting = RideModifierInput {
+            motor_current: MotorCurrent::new(Current::ZERO),
+            ..braking
+        };
         state.update_brake(
             balance,
-            RideModifierInput {
-                motor_current: MotorCurrent::new(Current::ZERO),
-                ..braking
-            },
-            false,
-            3_000.0,
-            1.0,
+            coasting,
+            ModifierMotorState::from_input(coasting),
             VescSeconds::from_seconds(0.01),
         );
     }
-    assert!(state.brake.setpoint < sustained);
+    assert!(state.brake.value() < sustained);
 
     state.update_turn(
         balance,
-        Rpm::from_revolutions_per_minute(3_000.0),
+        ModifierMotorState::from_input(input()),
         VescSeconds::from_seconds(0.01),
     );
     let active_turn = state.turn.angle.value();
@@ -552,7 +579,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     for _ in 0..100 {
         state.update_turn(
             balance,
-            Rpm::from_revolutions_per_minute(3_000.0),
+            ModifierMotorState::from_input(input()),
             VescSeconds::from_seconds(0.01),
         );
     }
