@@ -8,6 +8,8 @@ use super::{booster::Branch, loop_io::PidState, pid::PitchRate};
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
 };
+#[cfg(test)]
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 
 #[cfg(test)]
 use vescpkg_rs::prelude::{
@@ -41,26 +43,28 @@ impl LoopState {
         input: LoopInput,
         elapsed: VescSeconds,
     ) -> LoopOutput {
-        let (pid_currents, state) = self.update_pid(config, input, elapsed);
-        let booster_current =
-            input.filtered_booster_current(config, state.booster_current, elapsed);
+        let (pid_torques, state) = self.update_pid(config, input, elapsed);
+        let booster_torque = input.filtered_booster_torque(config, state.booster_torque, elapsed);
         let pitch_based = super::current::PitchBasedCurrent::from_rate_and_booster(
-            pid_currents.rate_damping,
-            booster_current,
+            pid_torques.rate_damping,
+            booster_torque,
+            input.motor_torque_constant,
             state.softstart_pid_limit,
             input.motor_current_max,
             elapsed,
         );
 
         let balance_current = super::current::RequestedCurrent(
-            pid_currents.angle_proportional + pid_currents.integral + pitch_based.current,
+            input.motor_torque_constant.motor_current_from_torque(
+                pid_torques.angle_proportional.plus(pid_torques.integral),
+            ) + pitch_based.current,
         )
         .clamped_to(input.current_limit())
         .adjusted_for_darkride(input.darkride)
         .filtered_from(state.balance_current, input.traction_control, elapsed);
         let state = LoopState {
             balance_current,
-            booster_current,
+            booster_torque,
             softstart_pid_limit: pitch_based.softstart_pid_limit,
             ..state
         };

@@ -14,6 +14,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -24,6 +25,17 @@ fn ema_alpha(cutoff_hertz: f32, sample_rate: SampleRate) -> f32 {
 
 fn configured_sample_rate(state: &FloatOutBoyPackageState) -> SampleRate {
     state.serialized_config.startup().sample_rate()
+}
+
+fn integral_current_amps(state: &FloatOutBoyPackageState) -> f32 {
+    MotorTorqueConstant::REFLOAT_COMPAT
+        .current_from_torque(state.balance_loop.pid.integral_torque)
+        .as_amps()
+}
+
+fn torque_output_scale(state: &FloatOutBoyPackageState) -> f32 {
+    MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
+        / state.motor_torque_constant.newton_meters_per_amp()
 }
 
 #[test]
@@ -91,7 +103,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
     // C refreshes `imu.balance_pitch` from `balance_filter_get_pitch` at
     // `third_party/float-out-boy/src/imu.c:35-41` before `pid_update` computes
     // `setpoint - imu->balance_pitch` at `third_party/float-out-boy/src/pid.c:40`.
-    let expected = -50.0 * ema_alpha(25.0, configured_sample_rate(&state));
+    let expected = expected_smoothed_current(&state, -5.0);
     assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
     assert!(
         (state
@@ -175,14 +187,17 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     let sample_rate = configured_sample_rate(&state);
     let integral_step = 720.0 / sample_rate.as_hertz();
     let output_alpha = ema_alpha(25.0, sample_rate);
-    let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
+    let first_integral = integral_current_amps(&state);
     assert!(
         (first_integral - first_error * 0.1 * integral_step).abs() < 0.0001,
         "{first_integral} != {}",
         first_error * 0.1 * integral_step
     );
     let first_current = telemetry.commanded_current().current().as_amps();
-    assert!((first_current - first_integral * output_alpha).abs() < 0.0001);
+    assert_f32_eq!(
+        first_current,
+        first_integral * torque_output_scale(&state) * output_alpha
+    );
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -206,13 +221,14 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
             .balance_pitch()
             .angle_degrees()
             .as_degrees();
-    let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
+    let second_integral = integral_current_amps(&state);
     let expected_integral = first_integral + second_error * 0.1 * integral_step;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,
         "{second_integral} != {expected_integral}"
     );
-    let expected_current = first_current + (second_integral - first_current) * output_alpha;
+    let second_output_current = second_integral * torque_output_scale(&state);
+    let expected_current = first_current + (second_output_current - first_current) * output_alpha;
     assert!((telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.0001);
 }
 
@@ -275,7 +291,9 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     // Float Out Boy default `ki_limit` is 30A (`settings.xml:1679-1707`);
     // `pid_update` clamps the I term at `third_party/float-out-boy/src/pid.c:40-46` before RUNNING
     // smooths it into `balance_current` at `third_party/float-out-boy/src/main.c:932-954`.
-    let expected = 30.0 * ema_alpha(25.0, configured_sample_rate(&state));
+    let expected = (30.0 * torque_output_scale(&state))
+        .min(state.motor_current_max.current().as_amps())
+        * ema_alpha(25.0, configured_sample_rate(&state));
     assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
 }
 
@@ -519,8 +537,9 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
         unclamped_i
     };
     let current_limit = state.motor_current_max.current().as_amps();
-    let new_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
-        .clamp(-current_limit, current_limit);
+    let new_current = ((setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
+        * torque_output_scale(state))
+    .clamp(-current_limit, current_limit);
     new_current * ema_alpha(25.0, sample_rate)
 }
 

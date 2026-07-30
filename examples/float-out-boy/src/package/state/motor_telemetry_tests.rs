@@ -8,6 +8,7 @@ use crate::domain::{
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
@@ -301,6 +302,28 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert_eq!(
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed
+    );
+    assert_f32_eq!(state.motor_torque_constant.newton_meters_per_amp(), 0.042);
+}
+
+#[test]
+fn old_firmware_flux_uses_refloat_compatibility_torque_after_config_refresh() {
+    let firmware = FirmwareTest::new();
+    firmware.with_effects(|effects| {
+        FirmwareSettings
+            .set_foc_motor_flux_linkage(
+                effects,
+                FocMotorFluxLinkage::new(FluxLinkage::from_webers(0.001)),
+            )
+            .unwrap();
+    });
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    state.refresh_motor_config_runtime_state(firmware.telemetry());
+
+    assert_eq!(
+        state.motor_torque_constant,
+        MotorTorqueConstant::REFLOAT_COMPAT
     );
 }
 

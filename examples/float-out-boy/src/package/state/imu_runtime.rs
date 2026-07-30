@@ -979,7 +979,9 @@ fn advance_running_control(
         let gyro = imu.angular_rate();
         let mut loop_state = state.balance_loop;
         loop_state.balance_current = base.balance_current().current();
-        loop_state.booster_current = base.booster_current().current();
+        loop_state.booster_torque = state
+            .motor_torque_constant
+            .torque_from_motor_current(base.booster_current().current());
         let balance_loop = loop_state.advance_balance_loop_elapsed(
             state.runtime_balance_loop_config(),
             LoopInput {
@@ -997,13 +999,16 @@ fn advance_running_control(
                 mode: phase.ride_state.mode(),
                 darkride: phase.ride_state.darkride(),
                 traction_control: state.ride_flags.traction_control,
+                motor_torque_constant: state.motor_torque_constant,
             },
             elapsed,
         );
         state.balance_loop = balance_loop.state;
         *base = base
             .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
-                state.balance_loop.booster_current,
+                state
+                    .motor_torque_constant
+                    .motor_current_from_torque(state.balance_loop.booster_torque),
             ))
             .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
                 state.balance_loop.balance_current,
