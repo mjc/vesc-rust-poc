@@ -122,7 +122,7 @@ fn prepare_float_out_boy_main_thread_tick(
     // `third_party/float-out-boy/src/main.c:772-1080`.
     // C calls `beeper_update` before its state switch at
     // `third_party/float-out-boy/src/main.c:776-824`.
-    let alert_level = state.tick_beeper();
+    let alert_level = state.tick_beeper_at(system_time_ticks);
     let restore_flywheel_config = state.refresh_main_loop_runtime_state(
         telemetry,
         imu,

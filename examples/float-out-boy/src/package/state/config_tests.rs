@@ -165,7 +165,7 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
         .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)),);
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)),);
 }
 
 #[test]
@@ -487,9 +487,9 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -749,9 +749,9 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -1117,21 +1117,21 @@ fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_ref
             false,
             FloatOutBoyRunState::Ready,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
         (
             false,
             true,
             FloatOutBoyRunState::Disabled,
             7,
-            (560, FloatOutBoyBeeperLevel::Low),
+            (42, FloatOutBoyBeeperLevel::Low),
         ),
         (
             true,
             true,
             FloatOutBoyRunState::Disabled,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
     ] {
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
@@ -1203,7 +1203,7 @@ fn failed_config_write_still_applies_valid_custom_config_like_refloat() {
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]

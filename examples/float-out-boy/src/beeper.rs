@@ -1,6 +1,7 @@
 //! Float Out Boy external-beeper sequencing.
 
 pub(crate) use vescpkg_rs::DigitalOutputLevel as FloatOutBoyBeeperLevel;
+use vescpkg_rs::{SYSTEM_TICK_RATE_HZ, TimestampTicks};
 
 /// Source-defined alert sequences used by Float Out Boy's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,11 +23,12 @@ impl FloatOutBoyBeeperCount {
     pub(crate) const SEVEN: Self = Self(7);
 }
 
-const SHORT_BEEP_PERIOD: u16 = 80;
-const LONG_BEEP_PERIOD: u16 = 300;
+// Refloat main uses 0.05 and 0.25 seconds after `0274273c`.
+const SHORT_BEEP_PERIOD: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ / 20);
+const LONG_BEEP_PERIOD: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ / 4);
 
 impl FloatOutBoyBeeperAlert {
-    const fn sequence(self) -> (u8, u16) {
+    const fn sequence(self) -> (u8, u32) {
         match self {
             Self::Short(count) => (
                 count.0.saturating_mul(2).saturating_add(1),
@@ -45,8 +47,9 @@ impl FloatOutBoyBeeperAlert {
 pub(crate) struct FloatOutBoyBeeper {
     enabled: bool,
     transitions: u8,
-    period: u16,
-    countdown: u16,
+    period: u32,
+    timer: TimestampTicks,
+    now: TimestampTicks,
     pending_level: Option<FloatOutBoyBeeperLevel>,
 }
 
@@ -62,7 +65,8 @@ impl FloatOutBoyBeeper {
             enabled,
             transitions: 0,
             period: SHORT_BEEP_PERIOD,
-            countdown: 0,
+            timer: TimestampTicks::from_ticks(0),
+            now: TimestampTicks::from_ticks(0),
             pending_level: None,
         }
     }
@@ -73,7 +77,7 @@ impl FloatOutBoyBeeper {
         }
 
         (self.transitions, self.period) = alert.sequence();
-        self.countdown = self.period;
+        self.timer = self.now;
     }
 
     pub(crate) fn set_enabled(&mut self, enabled: bool) {
@@ -102,21 +106,30 @@ impl FloatOutBoyBeeper {
         self.pending_level.take()
     }
 
-    pub(crate) fn tick(&mut self) -> Option<FloatOutBoyBeeperLevel> {
-        if self.enabled && self.transitions != 0 {
-            self.countdown = self.countdown.saturating_sub(1);
-            if self.countdown == 0 {
-                self.countdown = self.period;
-                self.transitions = self.transitions.saturating_sub(1);
-                self.pending_level = Some(if self.transitions & 1 == 1 {
-                    FloatOutBoyBeeperLevel::High
-                } else {
-                    FloatOutBoyBeeperLevel::Low
-                });
-            }
+    pub(crate) fn tick_at(&mut self, now: TimestampTicks) -> Option<FloatOutBoyBeeperLevel> {
+        self.now = now;
+        if self.enabled
+            && self.transitions != 0
+            && now.wrapping_duration_since(self.timer).as_ticks() > self.period
+        {
+            self.timer = now;
+            self.transitions = self.transitions.saturating_sub(1);
+            self.pending_level = Some(if self.transitions & 1 == 1 {
+                FloatOutBoyBeeperLevel::High
+            } else {
+                FloatOutBoyBeeperLevel::Low
+            });
         }
 
         self.take_level()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tick(&mut self) -> Option<FloatOutBoyBeeperLevel> {
+        let loop_ticks = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ / 100);
+        self.tick_at(TimestampTicks::from_ticks(
+            self.now.as_ticks().wrapping_add(loop_ticks),
+        ))
     }
 }
 
