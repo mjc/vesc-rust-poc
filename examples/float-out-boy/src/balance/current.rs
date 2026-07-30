@@ -1,6 +1,7 @@
 use super::booster::Branch;
 use super::loop_io::LoopInput;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, VescSeconds};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
@@ -20,15 +21,16 @@ impl PitchBasedCurrent {
     /// `third_party/float-out-boy/src/main.c:924-930`.
     #[inline]
     pub(super) fn from_rate_and_booster(
-        rate_p: MotorCurrent,
-        booster: MotorCurrent,
+        rate_p: MotorTorque,
+        booster: MotorTorque,
+        torque_constant: MotorTorqueConstant,
         softstart_pid_limit: MotorCurrent,
         motor_current_max: MotorCurrentLimit,
         elapsed: VescSeconds,
     ) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
         // booster terms before soft-start and current limiting.
-        let demand = rate_p + booster;
+        let demand = torque_constant.motor_current_from_torque(rate_p.plus(booster));
         if softstart_pid_limit.current() < motor_current_max.current() {
             Self {
                 // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only

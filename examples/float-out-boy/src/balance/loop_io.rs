@@ -1,9 +1,10 @@
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
 };
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use vescpkg_rs::prelude::{
-    AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, ImuRoll,
-    IntegralCurrentGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
+    AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, IntegralCurrentGain,
+    MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
 };
 
 /// Config inputs consumed by one Float Out Boy RUNNING balance-current step.
@@ -50,6 +51,7 @@ pub(crate) struct LoopInput {
     pub(crate) mode: FloatOutBoyMode,
     pub(crate) darkride: FloatOutBoyDarkRideState,
     pub(crate) traction_control: bool,
+    pub(crate) motor_torque_constant: MotorTorqueConstant,
 }
 
 /// Mutable PID state for one Float Out Boy balance-current step.
@@ -58,7 +60,7 @@ pub(crate) struct LoopInput {
 /// them at `third_party/float-out-boy/src/pid.c:31-73`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PidState {
-    pub(crate) integral_current: MotorCurrent,
+    pub(crate) integral_torque: MotorTorque,
     pub(crate) kp_brake_scale: PidScale,
     pub(crate) kp2_brake_scale: PidScale,
     pub(crate) kp_accel_scale: PidScale,
@@ -75,7 +77,7 @@ impl PidState {
 impl Default for PidState {
     fn default() -> Self {
         Self {
-            integral_current: MotorCurrent::new(Current::ZERO),
+            integral_torque: MotorTorque::ZERO,
             kp_brake_scale: PidScale::new(1.0),
             kp2_brake_scale: PidScale::new(1.0),
             kp_accel_scale: PidScale::new(1.0),
@@ -92,7 +94,7 @@ impl Default for PidState {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct LoopState {
     pub(crate) balance_current: MotorCurrent,
-    pub(crate) booster_current: MotorCurrent,
+    pub(crate) booster_torque: MotorTorque,
     pub(crate) pid: PidState,
     pub(crate) softstart_pid_limit: MotorCurrent,
 }

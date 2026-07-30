@@ -508,6 +508,7 @@ impl FloatOutBoyPackageState {
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
                     traction_control: self.ride_flags.traction_control,
+                    motor_torque_constant: self.motor_torque_constant,
                 },
                 sample.period().duration(),
             );
@@ -526,7 +527,8 @@ impl FloatOutBoyPackageState {
             ))
             .with_attitude(attitude)
             .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
-                self.balance_loop.booster_current,
+                self.motor_torque_constant
+                    .motor_current_from_torque(self.balance_loop.booster_torque),
             ));
         self.all_data_payloads = payloads.with_base(base);
 

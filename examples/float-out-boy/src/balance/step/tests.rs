@@ -57,13 +57,14 @@ fn base_input() -> LoopInput {
         mode: FloatOutBoyMode::Normal,
         darkride: FloatOutBoyDarkRideState::Upright,
         traction_control: false,
+        motor_torque_constant: MotorTorqueConstant::REFLOAT_COMPAT,
     }
 }
 
 fn base_state() -> LoopState {
     LoopState {
         balance_current: motor_current(Current::from_amps(0.0)),
-        booster_current: motor_current(Current::from_amps(0.0)),
+        booster_torque: MotorTorque::ZERO,
         pid: PidState::source_startup(),
         softstart_pid_limit: motor_current(Current::from_amps(100.0)),
     }
@@ -71,6 +72,22 @@ fn base_state() -> LoopState {
 
 fn assert_current(actual: MotorCurrent, expected: MotorCurrent) {
     assert!((actual.current().as_amps() - expected.current().as_amps()).abs() < 0.0001);
+}
+
+fn low_torque_constant() -> MotorTorqueConstant {
+    MotorTorqueConstant::from_firmware_config(
+        vescpkg_rs::prelude::FocMotorFluxLinkage::new(
+            vescpkg_rs::prelude::FluxLinkage::from_webers(0.004),
+        ),
+        vescpkg_rs::prelude::MotorPoleCount::try_new(14).ok(),
+    )
+}
+
+fn assert_compat_torque(actual: MotorTorque, expected: MotorCurrent) {
+    assert_current(
+        MotorTorqueConstant::REFLOAT_COMPAT.motor_current_from_torque(actual),
+        expected,
+    );
 }
 
 fn assert_scale(actual: PidScale, expected: PidScale) {
@@ -136,13 +153,13 @@ fn pid_integral_matches_over_equal_elapsed_time_at_different_cadences() {
             .state;
     }
 
-    assert!(
-        (fast.pid.integral_current.current().as_amps()
-            - slow.pid.integral_current.current().as_amps())
-        .abs()
-            < 0.001
-    );
-    assert!((fast.pid.integral_current.current().as_amps() - 720.0).abs() < 0.001);
+    let integral_amps = |state: LoopState| {
+        MotorTorqueConstant::REFLOAT_COMPAT
+            .current_from_torque(state.pid.integral_torque)
+            .as_amps()
+    };
+    assert!((integral_amps(fast) - integral_amps(slow)).abs() < 0.001);
+    assert!((integral_amps(fast) - 720.0).abs() < 0.001);
 }
 
 #[test]
@@ -158,19 +175,19 @@ fn balance_loop_unit_updates_pid_scales_by_erpm_direction_like_float_out_boy_pid
     let coasting = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
-        state.pid.integral_current,
+        state.pid.integral_torque,
         elapsed,
     );
     let forward = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(1000.0)),
-        state.pid.integral_current,
+        state.pid.integral_torque,
         elapsed,
     );
     let reverse = state.with_updated_pid_state(
         config,
         electrical_speed(Rpm::from_revolutions_per_minute(-1000.0)),
-        state.pid.integral_current,
+        state.pid.integral_torque,
         elapsed,
     );
 
@@ -211,9 +228,99 @@ fn balance_loop_unit_persists_pid_integral_across_ticks_like_float_out_boy_pid()
     let first = advance_loop(config, input, base_state());
     let second = advance_loop(config, input, first.state);
 
-    assert_current(
-        second.state.pid.integral_current,
+    assert_compat_torque(
+        second.state.pid.integral_torque,
         motor_current(Current::from_amps(14.4)),
+    );
+}
+
+#[test]
+fn pid_torque_converts_to_current_with_the_firmware_motor_constant() {
+    let config = LoopConfig {
+        kp: AngleCurrentGain::new(1.0),
+        ..base_config()
+    };
+    let compatibility = advance_loop(
+        config,
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            ..base_input()
+        },
+        base_state(),
+    );
+    let configured = advance_loop(
+        config,
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            motor_torque_constant: low_torque_constant(),
+            ..base_input()
+        },
+        base_state(),
+    );
+
+    let compatibility_amps = compatibility.requested_current.current().as_amps();
+    let configured_amps = configured.requested_current.current().as_amps();
+    assert_f32_eq!(compatibility_amps, alpha(25.0));
+    assert_f32_eq!(
+        configured_amps / compatibility_amps,
+        MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
+            / low_torque_constant().newton_meters_per_amp()
+    );
+}
+
+#[test]
+fn pid_integral_stays_in_torque_when_the_output_motor_constant_changes() {
+    let config = LoopConfig {
+        ki: IntegralCurrentGain::new(1.0),
+        ..base_config()
+    };
+    let compatibility = advance_loop(
+        config,
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            ..base_input()
+        },
+        base_state(),
+    );
+    let configured = advance_loop(
+        config,
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            motor_torque_constant: low_torque_constant(),
+            ..base_input()
+        },
+        base_state(),
+    );
+
+    assert_eq!(
+        compatibility.state.pid.integral_torque,
+        configured.state.pid.integral_torque
+    );
+    assert!(
+        configured.requested_current.current().as_amps()
+            > compatibility.requested_current.current().as_amps()
+    );
+}
+
+#[test]
+fn firmware_current_limit_still_clamps_after_torque_conversion() {
+    let output = advance_loop(
+        LoopConfig {
+            kp: AngleCurrentGain::new(100.0),
+            ..base_config()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
+            motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+            motor_torque_constant: low_torque_constant(),
+            ..base_input()
+        },
+        base_state(),
+    );
+
+    assert_current(
+        output.requested_current,
+        motor_current(Current::from_amps(3.0 * alpha(25.0))),
     );
 }
 
@@ -263,7 +370,9 @@ fn balance_loop_preserves_multisample_pid_trajectory() {
         state = output.state;
         [
             output.requested_current.current().as_amps(),
-            state.pid.integral_current.current().as_amps(),
+            MotorTorqueConstant::REFLOAT_COMPAT
+                .current_from_torque(state.pid.integral_torque)
+                .as_amps(),
             state.pid.kp_brake_scale.value(),
             state.pid.kp2_brake_scale.value(),
             state.pid.kp_accel_scale.value(),
@@ -291,7 +400,7 @@ fn balance_loop_preserves_multisample_pid_trajectory() {
                 1_064_995_857,
             ],
             [
-                1_033_286_039,
+                1_033_286_027,
                 1_059_900_620,
                 1_065_713_430,
                 1_065_038_030,
@@ -322,16 +431,16 @@ fn balance_loop_unit_zero_ki_limit_keeps_integrating_like_float_out_boy_pid() {
     let second = advance_loop(config, positive, first.state);
     let reversed = advance_loop(config, negative, second.state);
 
-    assert_current(
-        first.state.pid.integral_current,
+    assert_compat_torque(
+        first.state.pid.integral_torque,
         motor_current(Current::from_amps(14.4)),
     );
-    assert_current(
-        second.state.pid.integral_current,
+    assert_compat_torque(
+        second.state.pid.integral_torque,
         motor_current(Current::from_amps(28.8)),
     );
-    assert_current(
-        reversed.state.pid.integral_current,
+    assert_compat_torque(
+        reversed.state.pid.integral_torque,
         motor_current(Current::from_amps(7.2)),
     );
 }
@@ -497,8 +606,8 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
     // `third_party/float-out-boy/src/booster.c:63-75`; RUNNING soft-start clamps
     // pitch-based current and increments the limit at
     // `third_party/float-out-boy/src/main.c:924-930`.
-    assert_current(
-        output.state.booster_current,
+    assert_compat_torque(
+        output.state.booster_torque,
         motor_current(Current::from_amps(20.0 * alpha(1.0))),
     );
     assert_current(
@@ -535,8 +644,8 @@ fn balance_loop_unit_booster_proportional_subtracts_raw_pitch_like_float_out_boy
 
     // Upstream subtracts brake tilt and raw pitch from booster proportional before
     // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-    assert_current(
-        output.state.booster_current,
+    assert_compat_torque(
+        output.state.booster_torque,
         motor_current(Current::from_amps(0.0)),
     );
 }
@@ -567,8 +676,8 @@ fn balance_loop_unit_booster_subtracts_brake_tilt_like_float_out_boy_main_loop()
 
     // Upstream subtracts brake tilt from booster proportional before
     // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-    assert_current(
-        output.state.booster_current,
+    assert_compat_torque(
+        output.state.booster_torque,
         motor_current(Current::from_amps(0.0)),
     );
     assert_current(
@@ -586,17 +695,17 @@ fn booster_profile_deadbands_ramps_and_saturates_like_float_out_boy_booster() {
         ..base_config()
     };
     let target = |angle| {
-        Branch::Accel.target_current(
+        Branch::Accel.target_torque(
             config,
             electrical_speed(Rpm::ZERO),
             AngleDegrees::from_degrees(angle),
         )
     };
 
-    assert_current(target(0.5), motor_current(Current::from_amps(0.0)));
-    assert_current(target(2.0), motor_current(Current::from_amps(10.0)));
-    assert_current(target(-2.0), motor_current(Current::from_amps(-10.0)));
-    assert_current(target(4.0), motor_current(Current::from_amps(20.0)));
+    assert_compat_torque(target(0.5), motor_current(Current::from_amps(0.0)));
+    assert_compat_torque(target(2.0), motor_current(Current::from_amps(10.0)));
+    assert_compat_torque(target(-2.0), motor_current(Current::from_amps(-10.0)));
+    assert_compat_torque(target(4.0), motor_current(Current::from_amps(20.0)));
 }
 
 #[test]
@@ -639,12 +748,15 @@ fn balance_loop_preserves_multisample_booster_trajectory() {
     let actual = inputs.map(|input| {
         let output = advance_loop(config, input, state);
         state = output.state;
-        state.booster_current.current().as_amps().to_bits()
+        MotorTorqueConstant::REFLOAT_COMPAT
+            .current_from_torque(state.booster_torque)
+            .as_amps()
+            .to_bits()
     });
 
     assert_eq!(
         actual,
-        [1_050_397_660, 1_068_721_243, 1_061_469_061, 3_213_709_450]
+        [1_050_397_660, 1_068_721_242, 1_061_469_059, 3_213_709_451]
     );
 }
 
