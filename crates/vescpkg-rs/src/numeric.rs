@@ -1,8 +1,8 @@
 use core::ops::{Add, Sub};
 
+use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, VescSeconds};
 #[cfg(feature = "math")]
-use crate::Frequency;
-use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
+use crate::{Frequency, SampleRate};
 
 /// Cursor for replacing the oldest value in a small fixed-size ring.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -232,14 +232,14 @@ where
     }
 }
 
-/// Convert an angular velocity into one typed control-loop step.
+/// Convert an angular velocity and measured elapsed time into one typed control-loop step.
 #[must_use]
-pub fn angle_step(speed: AngularVelocity, sample_rate: SampleRate) -> AngleDegrees {
-    sample_rate
-        .sample_period()
-        .map_or(AngleDegrees::ZERO, |period| {
-            AngleDegrees::from(speed * period)
-        })
+pub fn angle_step(speed: AngularVelocity, elapsed: VescSeconds) -> AngleDegrees {
+    if elapsed.as_seconds().is_finite() && elapsed.is_positive() {
+        AngleDegrees::from(speed * elapsed)
+    } else {
+        AngleDegrees::ZERO
+    }
 }
 
 /// Fixed-state smoothed, rate-limited angle output.
@@ -335,13 +335,13 @@ mod tests {
     };
     #[cfg(feature = "math")]
     use crate::Frequency;
-    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
+    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate, VescSeconds};
 
     #[test]
     fn typed_angle_ramp_preserves_centering_and_per_sample_step() {
         let step = angle_step(
             AngularVelocity::from_degrees_per_second(30.0),
-            SampleRate::from_hertz(100.0),
+            VescSeconds::from_seconds(0.01),
         );
         let mut state = SmoothAngle::default();
 

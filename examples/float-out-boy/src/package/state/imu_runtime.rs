@@ -150,7 +150,6 @@ struct TransitionPhase {
     traction_loss_detected: bool,
     darkride_active: bool,
     motor_acceleration: Rpm,
-    startup_centering_step: AngleDegrees,
 }
 
 impl TransitionPhase {
@@ -505,7 +504,6 @@ fn evaluate_transition_phase(
         && roll_abs < push_start::ANGLE
         && !(faults.reversestop_enabled() && motor_erpm.is_negative());
     let state_engage = ready_engage || ready_darkride || ready_push_start;
-    let startup_centering_step = startup.centering_step();
     let stop_event = fault_evaluation.stop_event;
     let reverse_stop_entry_pending = !ride_state
         .setpoint_adjustment()
@@ -593,7 +591,6 @@ fn evaluate_transition_phase(
         traction_loss_detected,
         darkride_active,
         motor_acceleration,
-        startup_centering_step,
     }
 }
 
@@ -695,6 +692,7 @@ fn apply_protective_setpoint(
     signals: &ProtectionSignals,
     system_time_ticks: TimestampTicks,
     board_setpoint: &mut AngleDegrees,
+    elapsed: VescSeconds,
 ) {
     let duty = base.motor().duty_cycle().ratio().as_ratio();
     if duty > state.runtime_duty_pushback_threshold().as_ratio() {
@@ -704,7 +702,7 @@ fn apply_protective_setpoint(
         *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             directional_angle(state.runtime_duty_pushback_angle(), phase.motor_erpm),
-            state.runtime_duty_pushback_step(),
+            state.runtime_duty_pushback_step_elapsed(elapsed),
         );
         return;
     }
@@ -813,8 +811,11 @@ fn apply_protective_setpoint(
         } else {
             -state.runtime_duty_pushback_angle()
         };
-        *board_setpoint =
-            vescpkg_rs::slew_toward(*board_setpoint, target, state.runtime_duty_pushback_step());
+        *board_setpoint = vescpkg_rs::slew_toward(
+            *board_setpoint,
+            target,
+            state.runtime_duty_pushback_step_elapsed(elapsed),
+        );
         return;
     }
     if phase.ride_state.setpoint_adjustment().is_pushback() {
@@ -824,7 +825,7 @@ fn apply_protective_setpoint(
         *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             AngleDegrees::ZERO,
-            state.runtime_tiltback_return_step(),
+            state.runtime_tiltback_return_step_elapsed(elapsed),
         );
     }
 }
@@ -839,6 +840,7 @@ fn advance_running_control(
     base: &mut FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
     phase: &mut TransitionPhase,
+    elapsed: VescSeconds,
 ) {
     let signals = protection_signals(state, base);
     if signals.battery_voltage < signals.high_voltage_threshold && !signals.bms_cell_over_voltage {
@@ -900,11 +902,14 @@ fn advance_running_control(
     ) {
         if board_setpoint.is_zero() {
             phase.set_adjustment(FloatOutBoySetpointAdjustment::None);
-        } else if board_setpoint.abs() < phase.startup_centering_step {
-            board_setpoint = AngleDegrees::ZERO;
         } else {
-            board_setpoint =
-                board_setpoint - phase.startup_centering_step * board_setpoint.signum();
+            let step =
+                vescpkg_rs::angle_step(state.serialized_config.startup().startup_speed(), elapsed);
+            if board_setpoint.abs() < step {
+                board_setpoint = AngleDegrees::ZERO;
+            } else {
+                board_setpoint = board_setpoint - step * board_setpoint.signum();
+            }
         }
     }
 
@@ -940,19 +945,20 @@ fn advance_running_control(
             &signals,
             system_time_ticks,
             &mut board_setpoint,
+            elapsed,
         );
     }
     if phase.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected && above_duty_limit {
         board_setpoint = AngleDegrees::ZERO;
     }
     state.runtime_board_setpoint = board_setpoint;
-    let remote_setpoint = state.remote_control.update_input_tilt(
+    let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
         state.serialized_config.input_tilt_angle_limit(),
         state.serialized_config.input_tilt_speed(),
-        state.serialized_config.startup().sample_rate(),
+        elapsed,
         phase.darkride_active,
     );
-    let setpoints = state.ride_modifiers.advance(
+    let setpoints = state.ride_modifiers.advance_elapsed(
         &state.serialized_config,
         RideModifierInput {
             base_setpoint: board_setpoint,
@@ -965,6 +971,7 @@ fn advance_running_control(
             darkride: phase.darkride_active,
             wheelslip: phase.ride_state.wheelslip(),
         },
+        elapsed,
     );
     *base = base.with_setpoints(setpoints);
     if phase.ride_state.mode() != FloatOutBoyMode::Flywheel {
@@ -986,7 +993,7 @@ fn advance_running_control(
     let mut loop_state = state.balance_loop;
     loop_state.balance_current = base.balance_current().current();
     loop_state.booster_current = base.booster_current().current();
-    let balance_loop = loop_state.advance_balance_loop(
+    let balance_loop = loop_state.advance_balance_loop_elapsed(
         state.runtime_balance_loop_config(),
         LoopInput {
             setpoint: base.setpoints().board(),
@@ -1004,6 +1011,7 @@ fn advance_running_control(
             darkride: phase.ride_state.darkride(),
             traction_control: state.ride_flags.traction_control,
         },
+        elapsed,
     );
     state.balance_loop = balance_loop.state;
     *base = base
@@ -1026,6 +1034,7 @@ pub(super) fn refresh(
     state: &mut FloatOutBoyPackageState,
     imu: &impl Imu,
     system_time_ticks: TimestampTicks,
+    elapsed: VescSeconds,
 ) -> bool {
     let payloads = state.all_data_payloads;
     let mut base = payloads.base();
@@ -1061,7 +1070,14 @@ pub(super) fn refresh(
         && !phase.state_engage
         && !phase.state_stop_fault
     {
-        advance_running_control(state, imu, &mut base, system_time_ticks, &mut phase);
+        advance_running_control(
+            state,
+            imu,
+            &mut base,
+            system_time_ticks,
+            &mut phase,
+            elapsed,
+        );
     } else if phase.run_state == FloatOutBoyRunState::Ready
         && !phase.state_stop_fault
         && let Some(current) = state.remote_control.request_ready_current(

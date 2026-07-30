@@ -684,14 +684,6 @@ impl FloatOutBoyStartupConfig<'_> {
     pub(crate) fn loop_time_us(self) -> u32 {
         crate::wire::saturating_trunc_f32_to_u32(1_000_000.0 / self.sample_rate().as_hertz())
     }
-
-    pub(crate) fn centering_step(self) -> AngleDegrees {
-        self.sample_rate()
-            .sample_period()
-            .map_or(AngleDegrees::from_degrees(0.0), |period| {
-                AngleDegrees::from(self.startup_speed() * period)
-            })
-    }
 }
 
 // Upstream serializes balance tuning fields in
