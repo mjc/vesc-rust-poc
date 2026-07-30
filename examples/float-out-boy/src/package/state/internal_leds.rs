@@ -108,9 +108,6 @@ impl FloatOutBoyPackageState {
         if matches!(
             hardware.mode,
             crate::lcm::FloatOutBoyLedMode::Internal | crate::lcm::FloatOutBoyLedMode::Both
-        ) && !matches!(
-            self.all_data_payloads.base().footpad().state(),
-            crate::FloatOutBoyFootpadState::Both
         ) {
             self.configure_internal_leds(hardware, config);
         }
