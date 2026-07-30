@@ -1112,7 +1112,6 @@ fn advance_running_control(
     state.runtime_board_setpoint = control.board_setpoint;
     let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
         state.serialized_config.input_tilt_angle_limit(),
-        state.serialized_config.input_tilt_speed(),
         elapsed,
         phase.control.darkride_active,
     );
@@ -1123,7 +1122,9 @@ fn advance_running_control(
             remote_setpoint,
             balance_pitch: phase.balance_pitch.angle_degrees(),
             motor_erpm: phase.motor_erpm,
-            filtered_current: base.motor().filtered_motor_current().current().current(),
+            filtered_torque: state
+                .motor_torque_constant
+                .torque_from_current(base.motor().filtered_motor_current().current().current()),
             motor_current: base.motor().motor_current(),
             acceleration: phase.motor_acceleration,
             darkride: phase.control.darkride_active,

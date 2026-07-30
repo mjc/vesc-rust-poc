@@ -195,7 +195,6 @@ impl FloatOutBoyConfigImage {
         TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
         NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
         INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
-        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
         HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => high_voltage_pushback_angle -> AngleDegrees, offset: 51, scale: 100.0;
         HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => high_voltage_threshold -> Voltage, offset: 55, scale: 100.0;
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
@@ -215,6 +214,9 @@ impl FloatOutBoyConfigImage {
         // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 227, map: WireByte::as_u8;
     }
+    // Retain the legacy byte slot for image compatibility. Current Refloat
+    // removed `inputtilt_speed` and configures remote tilt at 100 degrees/second.
+    const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 82, scale: 100.0);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
@@ -840,7 +842,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         TURN_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => turn_tilt_angle_limit -> AngleDegrees, offset: 132, scale: 100.0;
         TURN_TILT_START_ANGLE_FIELD: CustomConfigAngleField => turn_tilt_start_angle -> AngleDegrees, offset: 134, scale: 100.0;
         TURN_TILT_START_ERPM_FIELD: CustomConfigElectricalSpeedField => turn_tilt_start_erpm -> ElectricalSpeed, offset: 136;
-        TURN_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => turn_tilt_speed -> AngularVelocity, offset: 138, scale: 100.0;
         ATR_STRENGTH_UP_FIELD: CustomConfigPidScaleField => atr_strength_up -> PidScale, offset: 145, scale: 1000.0;
         ATR_STRENGTH_DOWN_FIELD: CustomConfigPidScaleField => atr_strength_down -> PidScale, offset: 147, scale: 1000.0;
         ATR_THRESHOLD_UP_FIELD: CustomConfigAngleField => atr_threshold_up -> AngleDegrees, offset: 149, scale: 100.0;
@@ -849,7 +850,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         ATR_ANGLE_LIMIT_FIELD: CustomConfigAngleField => atr_angle_limit -> AngleDegrees, offset: 155, scale: 100.0;
         ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField => atr_on_speed -> AngularVelocity, offset: 157, scale: 100.0;
         ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => atr_off_speed -> AngularVelocity, offset: 159, scale: 100.0;
-        ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField => atr_response_boost -> PidScale, offset: 161, scale: 1000.0;
         ATR_TRANSITION_BOOST_FIELD: CustomConfigPidScaleField => atr_transition_boost -> PidScale, offset: 163, scale: 1000.0;
         ATR_AMPS_ACCEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_accel_ratio -> PidScale, offset: 167, scale: 100.0;
         ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
@@ -859,6 +859,7 @@ impl FloatOutBoyBalanceConfig<'_> {
         TURN_TILT_ERPM_BOOST_END_FIELD: CustomConfigElectricalSpeedField => turn_tilt_erpm_boost_end -> Rpm, offset: 142, map: ElectricalSpeed::rpm;
         TURN_TILT_YAW_AGGREGATE_FIELD: CustomConfigWireByteField => turn_tilt_yaw_aggregate -> AngleDegrees, offset: 144, map: |value: WireByte| AngleDegrees::from_degrees(f32::from(value.as_u8()));
     }
+    const ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 161, scale: 1000.0);
 
     pub(crate) fn turn_tilt_erpm_boost(self) -> u16 {
         u16::from_be_bytes([self.0.as_bytes()[140], self.0.as_bytes()[141]])

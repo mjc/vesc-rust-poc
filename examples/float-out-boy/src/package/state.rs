@@ -13,6 +13,7 @@ use crate::domain::{
     FloatOutBoyStopCondition, FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
+use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::expire_timer_whole_seconds as float_out_boy_expire_timer;
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
@@ -62,6 +63,7 @@ mod reverse_stop_tests;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
+mod smooth_setpoint;
 #[cfg(test)]
 mod test_support;
 mod transition;
@@ -189,6 +191,7 @@ pub struct FloatOutBoyPackageState {
     motor_distance: SignedTripDistance,
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
+    motor_torque_constant: MotorTorqueConstant,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
