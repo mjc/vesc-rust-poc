@@ -3,28 +3,29 @@
 //! These types own the protocol-shaped command IDs and all-data request
 //! parsing, while `domain.rs` keeps the semantic payload types and wire helpers.
 //!
-//! Source anchors for the compatibility surface below are Float Out Boy `v1.2.1`
-//! (`0ef6e99d8701`):
-//! - `third_party/float-out-boy/src/main.c:1241-1262` defines the core app-data command IDs.
+//! Source anchors for the compatibility surface below are the pinned Refloat
+//! cutoff (`17b94a374f01`):
+//! - `third_party/float-out-boy/src/main.c:1249-1274` defines the core app-data command IDs.
 //! - `third_party/float-out-boy/src/lcm.h:27-33` and `third_party/float-out-boy/src/charging.h:25`
 //!   define LCM/charging command IDs.
-//! - `third_party/float-out-boy/src/main.c:2210-2215` defines `COMMAND_GET_ALLDATA`.
-//! - `third_party/float-out-boy/src/main.c:1313-1399` defines the all-data response layout.
+//! - `third_party/float-out-boy/src/main.c:2459-2463` dispatches `COMMAND_GET_ALLDATA`.
+//! - `third_party/float-out-boy/src/main.c:1321-1407` defines the all-data response layout.
 
 /// Float Out Boy app-data package ID; upstream writes literal `101` in
-/// `third_party/float-out-boy/src/main.c:1271`, `1318`, `1881`, and `1909`.
+/// `third_party/float-out-boy/src/main.c:1279`, `1326`, `1915`, and `1960`.
 pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: u8 = 101;
 
 vesc_protocol::wire_enum! {
     /// Float Out Boy app-data command IDs.
     ///
-    /// Float Out Boy `v1.2.1` defines the core IDs in `third_party/float-out-boy/src/main.c:1241-1262`,
-    /// LCM IDs in `third_party/float-out-boy/src/lcm.h:27-33`, and charging state in
-    /// `third_party/float-out-boy/src/charging.h:25`.
+    /// The pinned Refloat cutoff defines the core IDs in
+    /// `third_party/float-out-boy/src/main.c`, LCM IDs in
+    /// `third_party/float-out-boy/src/lcm.h`, and charging state in
+    /// `third_party/float-out-boy/src/charging.h`.
     pub enum FloatOutBoyAppDataCommand {
     /// Version/package info.
     Info = 0,
-    /// Realtime data request.
+    /// Legacy realtime data request retained for existing clients.
     GetRealtimeData = 1,
     /// Runtime tune without EEPROM write.
     RuntimeTune = 2,
@@ -40,7 +41,7 @@ vesc_protocol::wire_enum! {
     Booster = 8,
     /// Print verbose info.
     PrintInfo = 9,
-    /// Compact all-data response request.
+    /// Legacy compact all-data request retained for existing clients.
     GetAllData = 10,
     /// Testing/tuning experiment command.
     Experiment = 11,

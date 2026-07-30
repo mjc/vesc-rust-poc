@@ -16,6 +16,10 @@ $ cargo run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 
 The finished artifact is written below `target/vescpkg/Float-Out-Boy-0.1.0/`.
 
+## Protocol compatibility
+
+The legacy realtime and all-data commands remain implemented for existing clients. New integrations should use the mask-selected realtime command; the package AppUI uses the internal realtime path and recorder protocol from the pinned cutoff.
+
 ## Layout
 
 - `src/` contains the Rust package implementation and host-side tests.
@@ -29,3 +33,4 @@ Refloat is authored by Lukáš Hrázký and builds on the original Float package
 - [Refloat source](https://github.com/lukash/refloat)
 - [Refloat releases](https://github.com/lukash/refloat/releases)
 - [Refloat 1.2 release notes](https://pev.dev/t/refloat-version-1-2/2795)
+- [Refloat 1.3 release notes](https://pev.dev/t/refloat-version-1-3/2995)
