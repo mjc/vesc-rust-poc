@@ -42,6 +42,8 @@ extern crate std;
 
 /// Fixed-shape VESC app-data request parsing.
 pub mod app_data;
+/// Restrained FOC-audio smoke-test wire helpers.
+pub mod audio_smoke;
 /// BLE loopback wire-format helpers and response handling.
 pub mod ble_loopback;
 /// VESC firmware buffer-compatible primitive encoders.

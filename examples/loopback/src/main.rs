@@ -41,6 +41,8 @@ fn main() {}
 
 mod app_data;
 #[cfg(any(test, target_arch = "arm"))]
+pub mod audio;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod config;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod custom_data;

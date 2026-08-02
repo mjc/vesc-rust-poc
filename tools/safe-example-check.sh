@@ -19,6 +19,6 @@ for example in "${examples[@]}"; do
   fi
 done
 
-for module in config custom_data display sync threads; do
+for module in audio config custom_data display sync threads; do
   rg -q "^pub mod ${module};$" examples/loopback/src/main.rs
 done
