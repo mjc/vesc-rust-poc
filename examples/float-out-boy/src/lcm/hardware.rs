@@ -24,14 +24,22 @@ pub enum FloatOutBoyLedStripRole {
     Rear,
 }
 
+impl FloatOutBoyLedStripRole {
+    const fn index(self) -> usize {
+        match self {
+            Self::Status => 0,
+            Self::Front => 1,
+            Self::Rear => 2,
+        }
+    }
+}
+
 /// A validated source-compatible ordering of the internal strips.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyInternalLedLayout {
     roles: [FloatOutBoyLedStripRole; 3],
     role_count: usize,
-    status_offset: Option<usize>,
-    front_offset: Option<usize>,
-    rear_offset: Option<usize>,
+    offsets: [Option<usize>; 3],
     pixel_count: usize,
 }
 
@@ -44,12 +52,8 @@ impl FloatOutBoyInternalLedLayout {
 
     /// Return one role's offset in the shared physical pixel sequence.
     #[must_use]
-    pub const fn offset(self, role: FloatOutBoyLedStripRole) -> Option<usize> {
-        match role {
-            FloatOutBoyLedStripRole::Status => self.status_offset,
-            FloatOutBoyLedStripRole::Front => self.front_offset,
-            FloatOutBoyLedStripRole::Rear => self.rear_offset,
-        }
+    pub fn offset(self, role: FloatOutBoyLedStripRole) -> Option<usize> {
+        self.offsets.get(role.index()).copied().flatten()
     }
 
     const_field_getters! {
@@ -67,11 +71,7 @@ pub enum FloatOutBoyInternalLedLayoutError {
 
 impl core::fmt::Display for FloatOutBoyInternalLedLayoutError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::FrontAndRearCountExceedsMaximum => {
-                formatter.write_str("front and rear LED count exceeds 60")
-            }
-        }
+        formatter.write_str("front and rear LED count exceeds 60")
     }
 }
 
@@ -188,55 +188,44 @@ impl FloatOutBoyHardwareLedsConfig {
         let mut layout = FloatOutBoyInternalLedLayout {
             roles: [FloatOutBoyLedStripRole::Status; 3],
             role_count: 0,
-            status_offset: None,
-            front_offset: None,
-            rear_offset: None,
+            offsets: [None; 3],
             pixel_count: 0,
         };
+        let strips = [
+            (FloatOutBoyLedStripRole::Status, self.status),
+            (FloatOutBoyLedStripRole::Front, self.front),
+            (FloatOutBoyLedStripRole::Rear, self.rear),
+        ];
+        let mut front_rear_count = 0_usize;
 
         for order in [
             FloatOutBoyLedStripOrder::First,
             FloatOutBoyLedStripOrder::Second,
             FloatOutBoyLedStripOrder::Third,
         ] {
-            let selected = if self.status.order() == order && self.status.count() > 0 {
-                Some((FloatOutBoyLedStripRole::Status, self.status.count()))
-            } else if self.front.order() == order && self.front.count() > 0 {
-                Some((FloatOutBoyLedStripRole::Front, self.front.count()))
-            } else if self.rear.order() == order && self.rear.count() > 0 {
-                Some((FloatOutBoyLedStripRole::Rear, self.rear.count()))
-            } else {
-                None
-            };
-            let Some((role, count)) = selected else {
+            let Some((role, strip)) = strips
+                .into_iter()
+                .find(|(_, strip)| strip.order() == order && strip.count() > 0)
+            else {
                 continue;
             };
             let Some(slot) = layout.roles.get_mut(layout.role_count) else {
                 continue;
             };
             *slot = role;
-            match role {
-                FloatOutBoyLedStripRole::Status => {
-                    layout.status_offset = Some(layout.pixel_count);
-                }
-                FloatOutBoyLedStripRole::Front => {
-                    layout.front_offset = Some(layout.pixel_count);
-                }
-                FloatOutBoyLedStripRole::Rear => {
-                    layout.rear_offset = Some(layout.pixel_count);
-                }
+            let Some(offset) = layout.offsets.get_mut(role.index()) else {
+                continue;
+            };
+            *offset = Some(layout.pixel_count);
+            let count = usize::from(strip.count());
+            if !matches!(role, FloatOutBoyLedStripRole::Status) {
+                front_rear_count = front_rear_count.saturating_add(count);
             }
             layout.role_count = layout.role_count.saturating_add(1);
-            layout.pixel_count = layout.pixel_count.saturating_add(usize::from(count));
+            layout.pixel_count = layout.pixel_count.saturating_add(count);
         }
 
-        let front_count = layout
-            .front_offset
-            .map_or(0, |_| usize::from(self.front.count()));
-        let rear_count = layout
-            .rear_offset
-            .map_or(0, |_| usize::from(self.rear.count()));
-        if front_count.saturating_add(rear_count) > 60 {
+        if front_rear_count > 60 {
             return Err(FloatOutBoyInternalLedLayoutError::FrontAndRearCountExceedsMaximum);
         }
 
@@ -244,30 +233,11 @@ impl FloatOutBoyHardwareLedsConfig {
     }
 }
 
-/// Float Out Boy hardware configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyHardwareConfig {
-    leds: FloatOutBoyHardwareLedsConfig,
-}
-
-impl FloatOutBoyHardwareConfig {
-    /// Build a typed Float Out Boy hardware config.
-    #[must_use]
-    pub const fn new(leds: FloatOutBoyHardwareLedsConfig) -> Self {
-        Self { leds }
-    }
-
-    const_field_getters! {
-        /// Return the hardware LED configuration.
-        pub fn leds -> FloatOutBoyHardwareLedsConfig = leds;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        FloatOutBoyHardwareConfig, FloatOutBoyHardwareLedsConfig,
-        FloatOutBoyInternalLedLayoutError, FloatOutBoyLedMode, FloatOutBoyLedStripRole,
+        FloatOutBoyHardwareLedsConfig, FloatOutBoyInternalLedLayoutError, FloatOutBoyLedMode,
+        FloatOutBoyLedStripRole,
     };
     use crate::leds::{
         FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
@@ -348,23 +318,22 @@ mod tests {
             .with_status_strip(status_strip)
             .with_front_strip(front_strip)
             .with_rear_strip(rear_strip);
-        let hardware = FloatOutBoyHardwareConfig::new(hardware_leds);
 
-        assert_eq!(hardware.leds().mode(), FloatOutBoyLedMode::Both);
-        assert_eq!(hardware.leds().pin(), FloatOutBoyLedPin::C9);
+        assert_eq!(hardware_leds.mode(), FloatOutBoyLedMode::Both);
+        assert_eq!(hardware_leds.pin(), FloatOutBoyLedPin::C9);
         assert_eq!(
-            hardware.leds().pin_config(),
+            hardware_leds.pin_config(),
             FloatOutBoyLedPinConfig::NoPullup
         );
         assert_eq!(
-            hardware.leds().status_strip().color_order(),
+            hardware_leds.status_strip().color_order(),
             FloatOutBoyLedColorOrder::Grbw
         );
         assert_eq!(
-            hardware.leds().front_strip().color_order(),
+            hardware_leds.front_strip().color_order(),
             FloatOutBoyLedColorOrder::Rgb
         );
-        assert!(hardware.leds().rear_strip().is_reversed());
+        assert!(hardware_leds.rear_strip().is_reversed());
     }
 
     #[test]
