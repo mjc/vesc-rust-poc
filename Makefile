@@ -62,6 +62,8 @@ arm-noalloc-check:
 arm-clippy:
 	$(CARGO) clippy -p vescpkg-rs-sys --target $(ARM_TARGET) --no-default-features -- $(CLIPPY_PEDANTIC_FLAGS)
 	$(CARGO) clippy -p vesc-example-loopback --bin vesc-example-loopback --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy -p vesc-example-alloc-smoke --bin vesc-example-alloc-smoke --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
+	$(CARGO) clippy -p vesc-example-control-loop-smoke --bin vesc-example-control-loop-smoke --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 	$(CARGO) clippy -p vesc-example-float-out-boy --bin vesc-example-float-out-boy --release --target $(ARM_TARGET) -- $(CLIPPY_PEDANTIC_FLAGS)
 
 arm-math-check:
