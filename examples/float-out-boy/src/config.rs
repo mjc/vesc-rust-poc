@@ -81,7 +81,6 @@ fn generated_field<T: Default>(value: Option<T>) -> T {
     value.unwrap_or_default()
 }
 
-#[allow(unused_macros)]
 macro_rules! generated_config_fields {
     ($(
         $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
@@ -118,7 +117,6 @@ macro_rules! generated_image_config_fields {
     )*};
 }
 
-#[allow(unused_macros)]
 macro_rules! generated_config_flags {
     ($(
         $field:ident => $getter:ident, offset: $offset:expr;
@@ -977,14 +975,17 @@ pub(crate) struct FloatOutBoyMetadataConfig<'a>(&'a FloatOutBoyConfigImage);
 impl FloatOutBoyMetadataConfig<'_> {
     // Upstream defines `disabled` in `third_party/float-out-boy/src/conf/settings.xml:3890-3902`;
     // its `<ser>disabled</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4064`.
-    const DISABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 243);
     // Upstream defines `meta.is_default` in `third_party/float-out-boy/src/conf/settings.xml:3903-3914`;
     // its `<ser>meta.is_default</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4083`.
-    const IS_DEFAULT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 275);
-
-    pub(crate) fn disabled(self) -> bool {
-        self.0.flag(Self::DISABLED_FIELD)
+    generated_config_flags! {
+        DISABLED_FIELD => disabled, offset: 243;
     }
+
+    const IS_DEFAULT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+        CustomConfigFlagField,
+        len: FLOAT_OUT_BOY_CONFIG_LEN,
+        offset: 275
+    );
 
     #[cfg(test)]
     pub(crate) fn is_default(self) -> bool {
@@ -1082,16 +1083,14 @@ impl FloatOutBoyMotorControlConfig<'_> {
         len: FLOAT_OUT_BOY_CONFIG_LEN,
         offset: 101
     );
-    const BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 102, scale: 100.0);
+    generated_config_fields! {
+        BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_current -> MotorCurrent, offset: 102, scale: 100.0;
+    }
 
     pub(crate) fn parking_brake_mode(self) -> FloatOutBoyParkingBrakeMode {
         Self::PARKING_BRAKE_MODE_FIELD
             .read(self.0)
             .unwrap_or(FloatOutBoyParkingBrakeMode::Always)
-    }
-
-    pub(crate) fn brake_current(self) -> MotorCurrent {
-        generated_field(Self::BRAKE_CURRENT_FIELD.read(self.0))
     }
 }
 
@@ -1102,15 +1101,9 @@ pub(crate) struct FloatOutBoyFilterConfig<'a>(&'a FloatOutBoyConfigImage);
 impl FloatOutBoyFilterConfig<'_> {
     // Upstream serializes Mahony pitch/roll KP after `ki` at
     // `third_party/float-out-boy/src/conf/settings.xml:3916-3921`; both use scale 10000.
-    const MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigMahonyPitchGainField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 10, scale: 10000.0);
-    const MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField = vescpkg_rs::generated_custom_config_field!(CustomConfigMahonyRollGainField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 12, scale: 10000.0);
-
-    pub(crate) fn mahony_kp(self) -> MahonyPitchGain {
-        generated_field(Self::MAHONY_KP_FIELD.read(self.0))
-    }
-
-    pub(crate) fn mahony_kp_roll(self) -> MahonyRollGain {
-        generated_field(Self::MAHONY_KP_ROLL_FIELD.read(self.0))
+    generated_config_fields! {
+        MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField => mahony_kp -> MahonyPitchGain, offset: 10, scale: 10000.0;
+        MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField => mahony_kp_roll -> MahonyRollGain, offset: 12, scale: 10000.0;
     }
 }
 
@@ -1121,19 +1114,22 @@ pub(crate) struct FloatOutBoyFaultConfig<'a>(&'a FloatOutBoyConfigImage);
 impl FloatOutBoyFaultConfig<'_> {
     // Upstream serializes fault angles, ADC thresholds, delays, ERPM gates,
     // and feature flags at `third_party/float-out-boy/src/conf/settings.xml:3925-3939`.
-    const PITCH_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 20, scale: 10.0);
-    const ROLL_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 22, scale: 10.0);
+    generated_config_fields! {
+        PITCH_FIELD: CustomConfigAngleField => pitch_angle -> AngleDegrees, offset: 20, scale: 10.0;
+        ROLL_FIELD: CustomConfigAngleField => roll_angle -> AngleDegrees, offset: 22, scale: 10.0;
+        ADC_HALF_ERPM_FIELD: CustomConfigElectricalSpeedField => adc_half_erpm -> ElectricalSpeed, offset: 37;
+    }
     #[cfg(any(test, target_arch = "arm"))]
-    const ADC1_FIELD: CustomConfigVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 24);
-    #[cfg(any(test, target_arch = "arm"))]
-    const ADC2_FIELD: CustomConfigVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 26);
+    generated_config_fields! {
+        ADC1_FIELD: CustomConfigVoltageField => adc1_voltage -> vescpkg_rs::Voltage, offset: 24;
+        ADC2_FIELD: CustomConfigVoltageField => adc2_voltage -> vescpkg_rs::Voltage, offset: 26;
+    }
     const DELAY_PITCH_OFFSET: usize = 29;
     const DELAY_ROLL_OFFSET: usize = 31;
     const DELAY_PITCH_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DELAY_PITCH_OFFSET);
     const DELAY_ROLL_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DELAY_ROLL_OFFSET);
     const DELAY_SWITCH_HALF_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 33);
     const DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField = vescpkg_rs::generated_custom_config_field!(CustomConfigDurationField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 35);
-    const ADC_HALF_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 37);
     const DUAL_SWITCH_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 39);
     const MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 40);
     const QUICKSTOP_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 41);
@@ -1144,26 +1140,12 @@ impl FloatOutBoyFaultConfig<'_> {
         generated_field(field.read(self.0))
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn adc1_voltage(self) -> vescpkg_rs::Voltage {
-        generated_field(Self::ADC1_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn adc2_voltage(self) -> vescpkg_rs::Voltage {
-        generated_field(Self::ADC2_FIELD.read(self.0))
-    }
-
     pub(crate) fn quickstop_enabled(self) -> bool {
         self.0.flag(Self::QUICKSTOP_FIELD)
     }
 
     pub(crate) fn dual_switch(self) -> bool {
         self.0.flag(Self::DUAL_SWITCH_FIELD)
-    }
-
-    pub(crate) fn adc_half_erpm(self) -> ElectricalSpeed {
-        generated_field(Self::ADC_HALF_ERPM_FIELD.read(self.0))
     }
 
     pub(crate) fn switch_half_delay(self) -> VescSeconds {
@@ -1178,16 +1160,8 @@ impl FloatOutBoyFaultConfig<'_> {
         self.0.flag(Self::MOVING_FAULT_DISABLED_FIELD)
     }
 
-    pub(crate) fn roll_angle(self) -> AngleDegrees {
-        generated_field(Self::ROLL_FIELD.read(self.0))
-    }
-
     pub(crate) fn roll_delay(self) -> VescSeconds {
         self.delay_at(Self::DELAY_ROLL_FIELD)
-    }
-
-    pub(crate) fn pitch_angle(self) -> AngleDegrees {
-        generated_field(Self::PITCH_FIELD.read(self.0))
     }
 
     pub(crate) fn pitch_delay(self) -> VescSeconds {
