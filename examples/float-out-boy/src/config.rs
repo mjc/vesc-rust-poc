@@ -107,7 +107,9 @@ mod led_config_tests {
         },
     };
 
-    use super::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
+    use super::{
+        FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage, FloatOutBoyLedConfigDecoder,
+    };
 
     #[test]
     fn decodes_refloat_1_2_1_default_led_config() {
@@ -192,6 +194,24 @@ mod led_config_tests {
                 FloatOutBoyConfigImage::from_serialized(&bytes).is_none(),
                 "offset {offset}"
             );
+        }
+    }
+
+    #[test]
+    fn led_validation_acceptance_matches_typed_decode_for_every_single_byte_mutation() {
+        for offset in 175..242 {
+            for value in u8::MIN..=u8::MAX {
+                let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
+                bytes[offset] = value;
+
+                assert_eq!(
+                    FloatOutBoyLedConfigDecoder::new(&bytes)
+                        .validate()
+                        .is_some(),
+                    FloatOutBoyLedConfigDecoder::new(&bytes).decode().is_some(),
+                    "different acceptance at offset {offset} for value {value}"
+                );
+            }
         }
     }
 }
@@ -629,8 +649,8 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     fn decode(mut self) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
         let on = self.boolean()?;
         let headlights_on = self.boolean()?;
-        let headlights_transition = self.transition()?;
-        let direction_transition = self.transition()?;
+        let headlights_transition = self.enum_value()?;
+        let direction_transition = self.enum_value()?;
         let lights_off_when_lifted = self.boolean()?;
         let status_on_front_when_lifted = self.boolean()?;
         let front = self.bar()?;
@@ -644,9 +664,9 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         let red_bar_percentage = self.ratio(10_000.0)?;
         let idle_timeout = self.u16()?;
         let status_idle = self.bar()?;
-        let mode = self.mode()?;
-        let pin = self.pin()?;
-        let pin_config = self.pin_config()?;
+        let mode = self.enum_value()?;
+        let pin = self.enum_value()?;
+        let pin_config = self.enum_value()?;
         let status_strip = self.strip()?;
         let front_strip = self.strip()?;
         let rear_strip = self.strip()?;
@@ -696,8 +716,8 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     fn validate(mut self) -> Option<()> {
         self.boolean()?;
         self.boolean()?;
-        self.transition()?;
-        self.transition()?;
+        self.enum_value::<FloatOutBoyLedTransition>()?;
+        self.enum_value::<FloatOutBoyLedTransition>()?;
         self.boolean()?;
         self.boolean()?;
         for _ in 0..4 {
@@ -710,9 +730,9 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         self.ratio(10_000.0)?;
         self.u16()?;
         self.validate_bar()?;
-        self.mode()?;
-        self.pin()?;
-        self.pin_config()?;
+        self.enum_value::<FloatOutBoyLedMode>()?;
+        self.enum_value::<FloatOutBoyLedPin>()?;
+        self.enum_value::<FloatOutBoyLedPinConfig>()?;
         for _ in 0..3 {
             self.validate_strip()?;
         }
@@ -720,18 +740,18 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     }
 
     fn validate_bar(&mut self) -> Option<()> {
-        self.animation_mode()?;
+        self.enum_value::<FloatOutBoyLedAnimationMode>()?;
         self.ratio(10_000.0)?;
-        self.color()?;
-        self.color()?;
+        self.enum_value::<FloatOutBoyLedColor>()?;
+        self.enum_value::<FloatOutBoyLedColor>()?;
         self.u16()?;
         Some(())
     }
 
     fn validate_strip(&mut self) -> Option<()> {
-        self.strip_order()?;
+        self.enum_value::<FloatOutBoyLedStripOrder>()?;
         self.byte()?;
-        self.color_order()?;
+        self.enum_value::<FloatOutBoyLedColorOrder>()?;
         self.boolean()?;
         Some(())
     }
@@ -758,11 +778,11 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     }
 
     fn bar(&mut self) -> Option<FloatOutBoyLedBarConfig> {
-        let animation_mode = self.animation_mode()?;
+        let animation_mode = self.enum_value()?;
         Some(FloatOutBoyLedBarConfig::new(
             self.ratio(10_000.0)?,
-            self.color()?,
-            self.color()?,
+            self.enum_value()?,
+            self.enum_value()?,
             animation_mode,
             FloatOutBoyLedAnimationSpeed::from_units(f32::from(self.u16()?) / 1_000.0),
         ))
@@ -770,7 +790,7 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
 
     fn strip(&mut self) -> Option<FloatOutBoyLedStripConfig> {
         let strip =
-            FloatOutBoyLedStripConfig::new(self.strip_order()?, self.byte()?, self.color_order()?);
+            FloatOutBoyLedStripConfig::new(self.enum_value()?, self.byte()?, self.enum_value()?);
         if self.boolean()? {
             Some(strip.with_reverse(true))
         } else {
@@ -778,110 +798,8 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         }
     }
 
-    fn enum_value<T: Copy>(&mut self, values: &[T]) -> Option<T> {
-        values.get(usize::from(self.byte()?)).copied()
-    }
-
-    fn transition(&mut self) -> Option<FloatOutBoyLedTransition> {
-        self.enum_value(&[
-            FloatOutBoyLedTransition::Fade,
-            FloatOutBoyLedTransition::FadeOutIn,
-            FloatOutBoyLedTransition::Cipher,
-            FloatOutBoyLedTransition::MonoCipher,
-        ])
-    }
-
-    fn animation_mode(&mut self) -> Option<FloatOutBoyLedAnimationMode> {
-        self.enum_value(&[
-            FloatOutBoyLedAnimationMode::Solid,
-            FloatOutBoyLedAnimationMode::Fade,
-            FloatOutBoyLedAnimationMode::Pulse,
-            FloatOutBoyLedAnimationMode::Strobe,
-            FloatOutBoyLedAnimationMode::KnightRider,
-            FloatOutBoyLedAnimationMode::Felony,
-            FloatOutBoyLedAnimationMode::RainbowCycle,
-            FloatOutBoyLedAnimationMode::RainbowFade,
-            FloatOutBoyLedAnimationMode::RainbowRoll,
-        ])
-    }
-
-    fn color(&mut self) -> Option<FloatOutBoyLedColor> {
-        self.enum_value(&[
-            FloatOutBoyLedColor::Black,
-            FloatOutBoyLedColor::WhiteFull,
-            FloatOutBoyLedColor::WhiteRgb,
-            FloatOutBoyLedColor::WhiteSingle,
-            FloatOutBoyLedColor::Red,
-            FloatOutBoyLedColor::Ferrari,
-            FloatOutBoyLedColor::Flame,
-            FloatOutBoyLedColor::Coral,
-            FloatOutBoyLedColor::Sunset,
-            FloatOutBoyLedColor::Sunrise,
-            FloatOutBoyLedColor::Gold,
-            FloatOutBoyLedColor::Orange,
-            FloatOutBoyLedColor::Yellow,
-            FloatOutBoyLedColor::Banana,
-            FloatOutBoyLedColor::Lime,
-            FloatOutBoyLedColor::Acid,
-            FloatOutBoyLedColor::Sage,
-            FloatOutBoyLedColor::Green,
-            FloatOutBoyLedColor::Mint,
-            FloatOutBoyLedColor::Tiffany,
-            FloatOutBoyLedColor::Cyan,
-            FloatOutBoyLedColor::Steel,
-            FloatOutBoyLedColor::Sky,
-            FloatOutBoyLedColor::Azure,
-            FloatOutBoyLedColor::Sapphire,
-            FloatOutBoyLedColor::Blue,
-            FloatOutBoyLedColor::Violet,
-            FloatOutBoyLedColor::Amethyst,
-            FloatOutBoyLedColor::Magenta,
-            FloatOutBoyLedColor::Pink,
-            FloatOutBoyLedColor::Fuchsia,
-            FloatOutBoyLedColor::Lavender,
-        ])
-    }
-
-    fn mode(&mut self) -> Option<FloatOutBoyLedMode> {
-        self.enum_value(&[
-            FloatOutBoyLedMode::Off,
-            FloatOutBoyLedMode::Internal,
-            FloatOutBoyLedMode::External,
-            FloatOutBoyLedMode::Both,
-        ])
-    }
-
-    fn pin(&mut self) -> Option<FloatOutBoyLedPin> {
-        self.enum_value(&[
-            FloatOutBoyLedPin::B6,
-            FloatOutBoyLedPin::B7,
-            FloatOutBoyLedPin::C9,
-        ])
-    }
-
-    fn pin_config(&mut self) -> Option<FloatOutBoyLedPinConfig> {
-        self.enum_value(&[
-            FloatOutBoyLedPinConfig::PullupTo5v,
-            FloatOutBoyLedPinConfig::NoPullup,
-        ])
-    }
-
-    fn strip_order(&mut self) -> Option<FloatOutBoyLedStripOrder> {
-        self.enum_value(&[
-            FloatOutBoyLedStripOrder::None,
-            FloatOutBoyLedStripOrder::First,
-            FloatOutBoyLedStripOrder::Second,
-            FloatOutBoyLedStripOrder::Third,
-        ])
-    }
-
-    fn color_order(&mut self) -> Option<FloatOutBoyLedColorOrder> {
-        self.enum_value(&[
-            FloatOutBoyLedColorOrder::Grb,
-            FloatOutBoyLedColorOrder::Grbw,
-            FloatOutBoyLedColorOrder::Rgb,
-            FloatOutBoyLedColorOrder::Wrgb,
-        ])
+    fn enum_value<T: TryFrom<u8>>(&mut self) -> Option<T> {
+        T::try_from(self.byte()?).ok()
     }
 }
 
