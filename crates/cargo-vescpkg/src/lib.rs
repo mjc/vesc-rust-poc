@@ -551,6 +551,7 @@ mod tests {
         let reference = include_str!("../../../docs/cargo-vescpkg-command.md");
         for command in [
             "build",
+            "audio-beep",
             "loopback",
             "custom-app-data",
             "custom-config",
