@@ -46,45 +46,57 @@ impl Ssd1306Frame {
 
     /// Set one pixel when it lies within the 128×64 display bounds.
     pub fn set_pixel(&mut self, x: i16, y: i16) {
-        usize::try_from(x)
-            .ok()
-            .zip(usize::try_from(y).ok())
-            .filter(|&(x, y)| x < SSD1306_WIDTH && y < SSD1306_HEIGHT)
-            .map(|(x, y)| {
-                let byte = 1 + x + (y / 8) * SSD1306_WIDTH;
-                self.bytes[byte] |= 1 << (y % 8);
-            });
+        let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+            return;
+        };
+        if x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT {
+            return;
+        }
+        let byte = 1_usize
+            .saturating_add(x)
+            .saturating_add((y / 8).saturating_mul(SSD1306_WIDTH));
+        let Some(shift) = u32::try_from(y % 8).ok() else {
+            return;
+        };
+        let Some(mask) = 1_u8.checked_shl(shift) else {
+            return;
+        };
+        if let Some(slot) = self.bytes.get_mut(byte) {
+            *slot |= mask;
+        }
     }
 
     /// Draw a clipped line using the same integer algorithm as the official example.
     pub fn draw_line(&mut self, start: (i16, i16), end: (i16, i16)) {
         let (mut x0, mut y0) = (i32::from(start.0), i32::from(start.1));
         let (x1, y1) = (i32::from(end.0), i32::from(end.1));
-        let dx = (x1 - x0).abs();
+        let dx = x1.saturating_sub(x0).saturating_abs();
         let sx = if x0 < x1 { 1 } else { -1 };
-        let dy = -(y1 - y0).abs();
+        let dy = y1.saturating_sub(y0).saturating_abs().saturating_neg();
         let sy = if y0 < y1 { 1 } else { -1 };
-        let mut error = dx + dy;
+        let mut error = dx.saturating_add(dy);
 
         loop {
-            self.set_pixel(x0 as i16, y0 as i16);
+            if let (Ok(x), Ok(y)) = (i16::try_from(x0), i16::try_from(y0)) {
+                self.set_pixel(x, y);
+            }
             if x0 == x1 && y0 == y1 {
                 break;
             }
-            let doubled = error * 2;
+            let doubled = error.saturating_mul(2);
             if doubled >= dy {
                 if x0 == x1 {
                     break;
                 }
-                error += dy;
-                x0 += sx;
+                error = error.saturating_add(dy);
+                x0 = x0.saturating_add(sx);
             }
             if doubled <= dx {
                 if y0 == y1 {
                     break;
                 }
-                error += dx;
-                y0 += sy;
+                error = error.saturating_add(dx);
+                y0 = y0.saturating_add(sy);
             }
         }
     }
@@ -100,6 +112,11 @@ pub struct DisplayBus<'a> {
 ///
 /// The example deliberately uses named VESC pins rather than raw enum values;
 /// a product package should choose pins that match its board wiring.
+///
+/// # Errors
+///
+/// Returns the firmware GPIO error when either pin cannot be acquired or
+/// configured.
 pub fn open_display_bus(gpio: &Gpio) -> Result<DisplayBus<'_>, GpioError> {
     let data = gpio.acquire_digital(DigitalPin::HW_1)?;
     let clock = gpio.acquire_digital(DigitalPin::HW_2)?;
@@ -110,12 +127,20 @@ pub fn open_display_bus(gpio: &Gpio) -> Result<DisplayBus<'_>, GpioError> {
 
 impl DisplayBus<'_> {
     /// Release the bus lines to their idle-high state.
+    ///
+    /// # Errors
+    ///
+    /// Returns the firmware GPIO error when either level cannot be written.
     pub fn idle(&self) -> Result<(), GpioError> {
         self.data.write(DigitalOutputLevel::High)?;
         self.clock.write(DigitalOutputLevel::High)
     }
 
     /// Emit one clock pulse for a display command byte.
+    ///
+    /// # Errors
+    ///
+    /// Returns the firmware GPIO error when either clock level cannot be written.
     pub fn pulse_clock(&self) -> Result<(), GpioError> {
         self.clock.write(DigitalOutputLevel::Low)?;
         self.clock.write(DigitalOutputLevel::High)
