@@ -23,12 +23,17 @@ impl vescpkg_rs::StatelessFirmwareThread for LoopbackWorker {
 }
 
 /// Start the official-example-shaped worker and retain it in package state.
+///
+/// # Errors
+///
+/// Returns an error when the working area is invalid or the firmware cannot
+/// spawn and retain the worker.
 #[cfg(all(not(test), target_arch = "arm"))]
 pub fn register(
     start: &mut vescpkg_rs::PackageStart<'_>,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     let stack = ThreadWorkingAreaSize::try_from_bytes(1_024)
-        .expect("official thread example stack satisfies ChibiOS alignment");
+        .map_err(|_| vescpkg_rs::PackageStartError::ThreadSpawnFailed)?;
     start.spawn_threads(
         [vescpkg_rs::ThreadSpec::<crate::LoopbackState>::stateless::<
             LoopbackWorker,

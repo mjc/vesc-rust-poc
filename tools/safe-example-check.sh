@@ -18,3 +18,7 @@ for example in "${examples[@]}"; do
     exit 1
   fi
 done
+
+for module in config custom_data display sync threads; do
+  rg -q "^pub mod ${module};$" examples/loopback/src/main.rs
+done
