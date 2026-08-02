@@ -74,6 +74,18 @@ macro_rules! assert_f32_ne {
     }};
 }
 
+macro_rules! const_field_getters {
+    ($( $(#[$attribute:meta])* $visibility:vis fn $name:ident -> $output:ty = $field:ident; )+) => {
+        $(
+            $(#[$attribute])*
+            #[must_use]
+            $visibility const fn $name(self) -> $output {
+                self.$field
+            }
+        )+
+    };
+}
+
 #[cfg(not(target_arch = "arm"))]
 fn main() {}
 

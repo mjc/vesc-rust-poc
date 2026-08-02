@@ -52,10 +52,9 @@ impl FloatOutBoyInternalLedLayout {
         }
     }
 
-    /// Return the complete physical pixel count.
-    #[must_use]
-    pub const fn pixel_count(self) -> usize {
-        self.pixel_count
+    const_field_getters! {
+        /// Return the complete physical pixel count.
+        pub fn pixel_count -> usize = pixel_count;
     }
 }
 
@@ -150,40 +149,19 @@ impl FloatOutBoyHardwareLedsConfig {
         self
     }
 
-    /// Return the configured LED mode.
-    #[must_use]
-    pub const fn mode(self) -> FloatOutBoyLedMode {
-        self.mode
-    }
-
-    /// Return the configured LED output pin.
-    #[must_use]
-    pub const fn pin(self) -> FloatOutBoyLedPin {
-        self.pin
-    }
-
-    /// Return the configured LED pin mode.
-    #[must_use]
-    pub const fn pin_config(self) -> FloatOutBoyLedPinConfig {
-        self.pin_config
-    }
-
-    /// Return the configured status LED strip.
-    #[must_use]
-    pub const fn status_strip(self) -> FloatOutBoyLedStripConfig {
-        self.status
-    }
-
-    /// Return the configured front LED strip.
-    #[must_use]
-    pub const fn front_strip(self) -> FloatOutBoyLedStripConfig {
-        self.front
-    }
-
-    /// Return the configured rear LED strip.
-    #[must_use]
-    pub const fn rear_strip(self) -> FloatOutBoyLedStripConfig {
-        self.rear
+    const_field_getters! {
+        /// Return the configured LED mode.
+        pub fn mode -> FloatOutBoyLedMode = mode;
+        /// Return the configured LED output pin.
+        pub fn pin -> FloatOutBoyLedPin = pin;
+        /// Return the configured LED pin mode.
+        pub fn pin_config -> FloatOutBoyLedPinConfig = pin_config;
+        /// Return the configured status LED strip.
+        pub fn status_strip -> FloatOutBoyLedStripConfig = status;
+        /// Return the configured front LED strip.
+        pub fn front_strip -> FloatOutBoyLedStripConfig = front;
+        /// Return the configured rear LED strip.
+        pub fn rear_strip -> FloatOutBoyLedStripConfig = rear;
     }
 
     /// Return whether internal/status LEDs are enabled.
@@ -279,10 +257,9 @@ impl FloatOutBoyHardwareConfig {
         Self { leds }
     }
 
-    /// Return the hardware LED configuration.
-    #[must_use]
-    pub const fn leds(self) -> FloatOutBoyHardwareLedsConfig {
-        self.leds
+    const_field_getters! {
+        /// Return the hardware LED configuration.
+        pub fn leds -> FloatOutBoyHardwareLedsConfig = leds;
     }
 }
 
