@@ -81,6 +81,73 @@ fn generated_field<T: Default>(value: Option<T>) -> T {
     value.unwrap_or_default()
 }
 
+#[allow(unused_macros)]
+macro_rules! generated_config_fields {
+    ($(
+        $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+        offset: $offset:expr $(, scale: $scale:expr)?;
+    )*) => {$(
+        const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
+            $field_type,
+            len: FLOAT_OUT_BOY_CONFIG_LEN,
+            offset: $offset
+            $(, scale: $scale)?
+        );
+
+        pub(crate) fn $getter(self) -> $value_type {
+            generated_field(Self::$field.read(self.0))
+        }
+    )*};
+}
+
+macro_rules! generated_image_config_fields {
+    ($(
+        $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+        offset: $offset:expr $(, scale: $scale:expr)?;
+    )*) => {$(
+        const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
+            $field_type,
+            len: FLOAT_OUT_BOY_CONFIG_LEN,
+            offset: $offset
+            $(, scale: $scale)?
+        );
+
+        pub(crate) fn $getter(&self) -> $value_type {
+            generated_field(Self::$field.read(self))
+        }
+    )*};
+}
+
+#[allow(unused_macros)]
+macro_rules! generated_config_flags {
+    ($(
+        $field:ident => $getter:ident, offset: $offset:expr;
+    )*) => {$(
+        const $field: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
+            CustomConfigFlagField,
+            len: FLOAT_OUT_BOY_CONFIG_LEN,
+            offset: $offset
+        );
+
+        pub(crate) fn $getter(self) -> bool {
+            self.0.flag(Self::$field)
+        }
+    )*};
+}
+
+#[allow(unused_macros)]
+macro_rules! generated_config_setters {
+    ($(
+        $(#[$attribute:meta])*
+        $setter:ident($argument:ident: $value_type:ty) => $config:ident::$field:ident;
+    )*) => {$(
+        $(#[$attribute])*
+        pub(crate) fn $setter(&mut self, $argument: $value_type) -> bool {
+            $config::$field.write(self, $argument).is_some()
+        }
+    )*};
+}
+
 #[cfg(test)]
 mod generated_field_tests {
     use vescpkg_rs::{Current, MotorCurrent};
@@ -229,36 +296,38 @@ impl core::ops::Deref for FloatOutBoyConfigImage {
 }
 
 impl FloatOutBoyConfigImage {
-    const ATR_FILTER_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 165, scale: 100.0);
-    const DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 44, scale: 100.0);
-    const DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 46, scale: 100.0);
-    const DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 48, scale: 1000.0);
-    const DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 50);
-    const FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 28);
-    const TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 64, scale: 100.0);
-    const PERSISTENT_FATAL_ERROR_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 66);
-    const TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 67, scale: 1000.0);
-    const TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 69);
-    const TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 71, scale: 1000.0);
-    const TILTBACK_VARIABLE_MAX_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 73, scale: 100.0);
-    const TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField = vescpkg_rs::generated_custom_config_field!(CustomConfigElectricalSpeedField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 75);
-    const NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 77, scale: 100.0);
+    generated_image_config_fields! {
+        ATR_FILTER_FIELD: CustomConfigFrequencyField => motor_current_filter_frequency -> vescpkg_rs::Frequency, offset: 165, scale: 100.0;
+        DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => duty_pushback_angle -> AngleDegrees, offset: 44, scale: 100.0;
+        DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField => duty_pushback_speed -> AngularVelocity, offset: 46, scale: 100.0;
+        DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField => duty_pushback_threshold -> Ratio, offset: 48, scale: 1000.0;
+        DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField => duty_beep_enabled -> bool, offset: 50;
+        FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField => foot_beep_enabled -> bool, offset: 28;
+        TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField => tiltback_return_speed -> AngularVelocity, offset: 64, scale: 100.0;
+        PERSISTENT_FATAL_ERROR_FIELD: CustomConfigFlagField => persistent_fatal_error -> bool, offset: 66;
+        TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField => tiltback_constant -> AngleDegrees, offset: 67, scale: 1000.0;
+        TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_constant_erpm -> ElectricalSpeed, offset: 69;
+        TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField => tiltback_variable -> PidScale, offset: 71, scale: 1000.0;
+        TILTBACK_VARIABLE_MAX_FIELD: CustomConfigAngleField => tiltback_variable_max -> AngleDegrees, offset: 73, scale: 100.0;
+        TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
+        NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
+        INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
+        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
+        HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => high_voltage_pushback_angle -> AngleDegrees, offset: 51, scale: 100.0;
+        HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => high_voltage_threshold -> Voltage, offset: 55, scale: 100.0;
+        LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
+        LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => low_voltage_threshold -> Voltage, offset: 61, scale: 100.0;
+        BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
+    }
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
-    const INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 80, scale: 100.0);
-    const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 82, scale: 100.0);
     #[cfg(any(test, target_arch = "arm"))]
     const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 84);
     #[cfg(any(test, target_arch = "arm"))]
     const INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 85, scale: 10000.0);
-    const HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 51, scale: 100.0);
-    const HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 55, scale: 100.0);
-    const LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 57, scale: 100.0);
-    const LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 61, scale: 100.0);
     const SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 63);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
-    const BEEPER_ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 242);
 
     // Generated `hardware.leds.mode` follows the 52-byte `leds` block beginning
     // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
@@ -431,54 +500,6 @@ impl FloatOutBoyConfigImage {
         }
     }
 
-    pub(crate) fn motor_current_filter_frequency(&self) -> vescpkg_rs::Frequency {
-        generated_field(Self::ATR_FILTER_FIELD.read(self))
-    }
-
-    pub(crate) fn duty_pushback_angle(&self) -> AngleDegrees {
-        generated_field(Self::DUTY_PUSHBACK_ANGLE_FIELD.read(self))
-    }
-
-    pub(crate) fn duty_pushback_threshold(&self) -> Ratio {
-        generated_field(Self::DUTY_PUSHBACK_THRESHOLD_FIELD.read(self))
-    }
-
-    pub(crate) fn duty_beep_enabled(&self) -> bool {
-        generated_field(Self::DUTY_BEEP_ENABLED_FIELD.read(self))
-    }
-
-    pub(crate) fn foot_beep_enabled(&self) -> bool {
-        generated_field(Self::FOOT_BEEP_ENABLED_FIELD.read(self))
-    }
-
-    pub(crate) fn duty_pushback_speed(&self) -> AngularVelocity {
-        generated_field(Self::DUTY_PUSHBACK_SPEED_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_return_speed(&self) -> AngularVelocity {
-        generated_field(Self::TILTBACK_RETURN_SPEED_FIELD.read(self))
-    }
-
-    pub(crate) fn persistent_fatal_error(&self) -> bool {
-        self.flag(Self::PERSISTENT_FATAL_ERROR_FIELD)
-    }
-
-    pub(crate) fn high_voltage_pushback_angle(&self) -> AngleDegrees {
-        generated_field(Self::HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
-    }
-
-    pub(crate) fn high_voltage_threshold(&self) -> Voltage {
-        generated_field(Self::HIGH_VOLTAGE_THRESHOLD_FIELD.read(self))
-    }
-
-    pub(crate) fn low_voltage_pushback_angle(&self) -> AngleDegrees {
-        generated_field(Self::LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD.read(self))
-    }
-
-    pub(crate) fn low_voltage_threshold(&self) -> Voltage {
-        generated_field(Self::LOW_VOLTAGE_THRESHOLD_FIELD.read(self))
-    }
-
     pub(crate) fn speed_pushback_threshold(&self) -> Speed {
         generated_field(Self::SPEED_PUSHBACK_THRESHOLD_FIELD.read(self)).scaled(
             1.0,
@@ -492,14 +513,6 @@ impl FloatOutBoyConfigImage {
         generated_field(Self::INPUT_TILT_REMOTE_TYPE_FIELD.read(self)).as_u8()
     }
 
-    pub(crate) fn input_tilt_angle_limit(&self) -> AngleDegrees {
-        generated_field(Self::INPUT_TILT_ANGLE_LIMIT_FIELD.read(self))
-    }
-
-    pub(crate) fn input_tilt_speed(&self) -> AngularVelocity {
-        generated_field(Self::INPUT_TILT_SPEED_FIELD.read(self))
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_inverted(&self) -> bool {
         self.flag(Self::INPUT_TILT_INVERT_FIELD)
@@ -508,34 +521,6 @@ impl FloatOutBoyConfigImage {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_deadband(&self) -> Ratio {
         generated_field(Self::INPUT_TILT_DEADBAND_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_constant(&self) -> AngleDegrees {
-        generated_field(Self::TILTBACK_CONSTANT_ANGLE_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_constant_erpm(&self) -> ElectricalSpeed {
-        generated_field(Self::TILTBACK_CONSTANT_ERPM_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_variable(&self) -> PidScale {
-        generated_field(Self::TILTBACK_VARIABLE_RATE_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_variable_max(&self) -> AngleDegrees {
-        generated_field(Self::TILTBACK_VARIABLE_MAX_FIELD.read(self))
-    }
-
-    pub(crate) fn tiltback_variable_erpm(&self) -> ElectricalSpeed {
-        generated_field(Self::TILTBACK_VARIABLE_ERPM_FIELD.read(self))
-    }
-
-    pub(crate) fn nose_angling_speed(&self) -> AngularVelocity {
-        generated_field(Self::NOSE_ANGLING_SPEED_FIELD.read(self))
-    }
-
-    pub(crate) fn beeper_enabled(&self) -> bool {
-        self.flag(Self::BEEPER_ENABLED_FIELD)
     }
 
     pub(crate) fn editor(&mut self) -> FloatOutBoyConfigEditor<'_> {
