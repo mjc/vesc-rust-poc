@@ -13,18 +13,25 @@
 )]
 
 use super::FloatOutBoyPackageState;
-use super::float_out_boy_command_payload;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
 };
-use crate::wire::{degrees, push_float32_auto, push_u8, push_u16};
+use crate::wire::{degrees, push_bytes, push_float32_auto, push_u8, push_u16};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::FirmwareFault;
 
 const MAX_LCM_NAME_LENGTH: usize = 20;
 const MAX_LCM_PAYLOAD_LENGTH: usize = 64;
 const POLL_RESPONSE_CAPACITY: usize = 2 + 3 + 6 + 3 + MAX_LCM_PAYLOAD_LENGTH;
+
+fn nul_terminated_prefix(bytes: &[u8]) -> &[u8] {
+    let len = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .map_or(bytes.len(), |index| index.saturating_add(1));
+    &bytes[..len]
+}
 
 fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
     if !config.is_enabled() {
@@ -104,17 +111,9 @@ impl LcmState {
         }
 
         self.name.fill(0);
-        for (index, byte) in payload
-            .iter()
-            .copied()
-            .take(MAX_LCM_NAME_LENGTH)
-            .enumerate()
-        {
-            self.name[index] = byte;
-            if byte == 0 {
-                break;
-            }
-        }
+        let payload = nul_terminated_prefix(payload);
+        let len = payload.len().min(MAX_LCM_NAME_LENGTH);
+        self.name[..len].copy_from_slice(&payload[..len]);
     }
 
     fn light_control(&mut self, payload: &[u8]) {
@@ -135,9 +134,7 @@ impl LcmState {
         payloads: crate::domain::FloatOutBoyAllDataPayloads,
         telemetry: &impl MotorTelemetry,
     ) -> LcmPacket<POLL_RESPONSE_CAPACITY> {
-        let mut packet = LcmPacket::new();
-        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
-        packet.push(FloatOutBoyAppDataCommand::LcmPoll.id());
+        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmPoll);
 
         if !self.enabled() {
             return packet;
@@ -173,17 +170,13 @@ impl LcmState {
         packet.push(self.brightness);
         packet.push(self.brightness_idle);
         packet.push(self.status_brightness);
-        for byte in self.payload.iter().copied().take(self.payload_size) {
-            packet.push(byte);
-        }
+        packet.extend(&self.payload[..self.payload_size]);
         self.payload_size = 0;
         packet
     }
 
     fn light_info_response(self) -> LcmPacket<12> {
-        let mut packet = LcmPacket::new();
-        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
-        packet.push(FloatOutBoyAppDataCommand::LcmLightInfo.id());
+        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmLightInfo);
         if self.enabled() {
             packet.push(3);
             packet.push(self.brightness);
@@ -199,24 +192,15 @@ impl LcmState {
     }
 
     fn device_info_response(self) -> LcmPacket<22> {
-        let mut packet = LcmPacket::new();
-        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
-        packet.push(FloatOutBoyAppDataCommand::LcmDeviceInfo.id());
+        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmDeviceInfo);
         if self.enabled() {
-            for byte in self.name.iter().copied() {
-                packet.push(byte);
-                if byte == 0 {
-                    break;
-                }
-            }
+            packet.extend(nul_terminated_prefix(&self.name));
         }
         packet
     }
 
     fn battery_response(self, telemetry: &impl MotorTelemetry) -> LcmPacket<6> {
-        let mut packet = LcmPacket::new();
-        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
-        packet.push(FloatOutBoyAppDataCommand::LcmGetBattery.id());
+        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmGetBattery);
         if self.enabled() {
             packet.push_float32_auto(telemetry.battery_level().as_fraction());
         }
@@ -231,23 +215,24 @@ struct LcmPacket<const N: usize> {
 }
 
 impl<const N: usize> LcmPacket<N> {
-    const fn new() -> Self {
-        Self {
-            bytes: [0; N],
-            len: 0,
-        }
+    const fn new(command: FloatOutBoyAppDataCommand) -> Self {
+        let mut bytes = [0; N];
+        bytes[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
+        bytes[1] = command.id();
+        Self { bytes, len: 2 }
     }
 
     fn push(&mut self, byte: u8) {
         push_u8(&mut self.bytes, &mut self.len, byte);
     }
 
+    fn extend(&mut self, bytes: &[u8]) {
+        push_bytes(&mut self.bytes, &mut self.len, bytes);
+    }
+
     fn push_scaled_i16(&mut self, value: f32, scale: f32) {
-        push_u16(
-            &mut self.bytes,
-            &mut self.len,
-            (value * scale) as i16 as u16,
-        );
+        let value = (value * scale) as i16 as u16;
+        push_u16(&mut self.bytes, &mut self.len, value);
     }
 
     fn push_float32_auto(&mut self, value: f32) {
@@ -273,54 +258,52 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        if let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmPoll)
-        {
-            self.lcm.poll_request(payload);
-            let packet = self.lcm.poll_response(self.all_data_payloads, telemetry);
-            return reply(packet.bytes());
+        use FloatOutBoyAppDataCommand as Command;
+
+        let [package_id, command_id, payload @ ..] = bytes else {
+            return false;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+            return false;
         }
-        if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmLightInfo).is_some() {
-            let packet = self.lcm.light_info_response();
-            return reply(packet.bytes());
-        }
-        if let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmLightControl)
-        {
-            self.lcm.light_control(payload);
-            return true;
-        }
-        if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmDeviceInfo).is_some()
-        {
-            let packet = self.lcm.device_info_response();
-            return reply(packet.bytes());
-        }
-        if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LcmGetBattery).is_some()
-        {
-            let packet = self.lcm.battery_response(telemetry);
-            return reply(packet.bytes());
-        }
-        if let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::LightsControl)
-        {
-            if payload.len() >= 5 {
-                let mask = payload[3];
-                if mask != 0 {
-                    let value = payload[4];
-                    self.set_led_runtime_overrides(
-                        (mask & 1 != 0).then_some(value & 1 != 0),
-                        (mask & 2 != 0).then_some(value & 2 != 0),
-                    );
-                }
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command_id) else {
+            return false;
+        };
+
+        match command {
+            Command::LcmPoll => {
+                self.lcm.poll_request(payload);
+                reply(
+                    self.lcm
+                        .poll_response(self.all_data_payloads, telemetry)
+                        .bytes(),
+                )
             }
-            let status = self.led_runtime_status();
-            return reply(&[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                FloatOutBoyAppDataCommand::LightsControl.id(),
-                u8::from(status.enabled()) | (u8::from(status.headlights_enabled()) << 1),
-            ]);
+            Command::LcmLightInfo => reply(self.lcm.light_info_response().bytes()),
+            Command::LcmLightControl => {
+                self.lcm.light_control(payload);
+                true
+            }
+            Command::LcmDeviceInfo => reply(self.lcm.device_info_response().bytes()),
+            Command::LcmGetBattery => reply(self.lcm.battery_response(telemetry).bytes()),
+            Command::LightsControl => {
+                if let [_, _, _, mask, value, ..] = payload {
+                    if *mask != 0 {
+                        self.set_led_runtime_overrides(
+                            (mask & 1 != 0).then_some(value & 1 != 0),
+                            (mask & 2 != 0).then_some(value & 2 != 0),
+                        );
+                    }
+                }
+                let status = self.led_runtime_status();
+                reply(&[
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FloatOutBoyAppDataCommand::LightsControl.id(),
+                    u8::from(status.enabled()) | (u8::from(status.headlights_enabled()) << 1),
+                ])
+            }
+            _ => false,
         }
-        false
     }
 
     #[cfg(test)]
@@ -358,6 +341,44 @@ mod tests {
             packet,
         ));
         response
+    }
+
+    #[test]
+    fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
+        let firmware = FirmwareTest::new();
+
+        for command_id in 0..=u8::MAX {
+            let mut state = external_state();
+            let mut replies = 0;
+            let handled = state.handle_lcm_packet(
+                firmware.telemetry(),
+                &mut |_| {
+                    replies += 1;
+                    true
+                },
+                &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command_id],
+            );
+            let command = FloatOutBoyAppDataCommand::try_from_id(command_id);
+            let expected = matches!(
+                command,
+                Ok(FloatOutBoyAppDataCommand::LightsControl
+                    | FloatOutBoyAppDataCommand::LcmPoll
+                    | FloatOutBoyAppDataCommand::LcmLightInfo
+                    | FloatOutBoyAppDataCommand::LcmLightControl
+                    | FloatOutBoyAppDataCommand::LcmDeviceInfo
+                    | FloatOutBoyAppDataCommand::LcmGetBattery)
+            );
+            let expected_replies =
+                usize::from(expected && command != Ok(FloatOutBoyAppDataCommand::LcmLightControl));
+
+            assert_eq!(handled, expected, "command {command_id}");
+            assert_eq!(replies, expected_replies, "command {command_id}");
+        }
+
+        for packet in [&[][..], &[101][..], &[100, 24][..]] {
+            let mut state = external_state();
+            assert!(!state.handle_lcm_packet(firmware.telemetry(), &mut |_| true, packet));
+        }
     }
 
     #[test]
@@ -661,6 +682,25 @@ mod tests {
             dispatch(&mut state, &firmware, &[101, 27]),
             [101, 27, b'N', 0]
         );
+    }
+
+    #[test]
+    fn lcm_name_stops_at_nul_and_at_refloats_twenty_byte_limit() {
+        let firmware = FirmwareTest::new();
+        let mut state = external_state();
+
+        dispatch(&mut state, &firmware, &[101, 24, b'A', 0, b'B']);
+        assert_eq!(
+            dispatch(&mut state, &firmware, &[101, 27]),
+            [101, 27, b'A', 0]
+        );
+
+        let mut poll = vec![101, 24];
+        poll.extend(1_u8..=MAX_LCM_NAME_LENGTH as u8 + 1);
+        dispatch(&mut state, &firmware, &poll);
+        let mut expected = vec![101, 27];
+        expected.extend(1_u8..=MAX_LCM_NAME_LENGTH as u8);
+        assert_eq!(dispatch(&mut state, &firmware, &[101, 27]), expected);
     }
 
     #[test]

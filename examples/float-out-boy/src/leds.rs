@@ -9,51 +9,6 @@ pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
     Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
 };
 
-macro_rules! wire_enum {
-    (
-        $(#[$enum_attribute:meta])*
-        $visibility:vis enum $name:ident {
-            $(
-                $(#[$variant_attribute:meta])*
-                $variant:ident = $id:literal,
-            )+
-        }
-    ) => {
-        $(#[$enum_attribute])*
-        #[repr(u8)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        $visibility enum $name {
-            $(
-                $(#[$variant_attribute])*
-                $variant = $id,
-            )+
-        }
-
-        impl $name {
-            /// Return the Float Out Boy `v1.2.1` wire ID.
-            #[must_use]
-            #[expect(
-                clippy::as_conversions,
-                reason = "the repr(u8) discriminant is the firmware wire value"
-            )]
-            pub const fn id(self) -> u8 {
-                self as u8
-            }
-        }
-
-        impl TryFrom<u8> for $name {
-            type Error = u8;
-
-            fn try_from(value: u8) -> Result<Self, Self::Error> {
-                match value {
-                    $($id => Ok(Self::$variant),)+
-                    _ => Err(value),
-                }
-            }
-        }
-    };
-}
-
 wire_enum! {
 /// Float Out Boy LED color channel order.
 pub enum FloatOutBoyLedColorOrder {
@@ -256,31 +211,16 @@ impl FloatOutBoyLedPixel {
     }
 
     fn blend(first: Self, second: Self, blend: f32) -> Self {
-        if blend <= 0.0 {
-            return first;
+        if blend.is_nan() {
+            return Self::default();
         }
-        if blend >= 1.0 {
-            return second;
-        }
-        let first_weight = 1.0 - blend;
-        let channels = core::array::from_fn(|index| {
-            let first = first.channels.get(index).copied().unwrap_or_default();
-            let second = second.channels.get(index).copied().unwrap_or_default();
-            crate::wire::saturating_trunc_f32_to_u8(
-                f32::from(first) * first_weight + f32::from(second) * blend,
-            )
-        });
-        Self { channels }
+        first.scaled_and_blended(second, Ratio::from_ratio_const(1.0), Ratio::clamped(blend))
     }
 }
 
 fn refloat_led_gamma(channel: u8) -> u8 {
     let channel = u16::from(channel);
-    channel
-        .checked_mul(channel)
-        .and_then(|square| square.checked_add(channel))
-        .and_then(|value| u8::try_from(value / 256).ok())
-        .unwrap_or_default()
+    u8::try_from(channel.saturating_mul(channel.saturating_add(1)) / 256).unwrap_or_default()
 }
 
 wire_enum! {
@@ -691,6 +631,16 @@ enum FloatOutBoyHeadlightsState {
     TransitioningOff,
 }
 
+impl FloatOutBoyHeadlightsState {
+    const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    const fn is_transitioning(self) -> bool {
+        matches!(self, Self::TransitioningOn | Self::TransitioningOff)
+    }
+}
+
 /// Inputs copied into one pure 30 Hz LED state update.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedUpdate {
@@ -744,10 +694,6 @@ impl FloatOutBoyLedDynamics {
     }
 
     /// Advance the pure renderer decisions by one source-rate 30 Hz tick.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the ordered Refloat state update stays contiguous for source comparison"
-    )]
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
@@ -783,57 +729,34 @@ impl FloatOutBoyLedDynamics {
             self.board_is_upright = false;
         }
 
+        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
         if run_state != self.run_state {
-            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled) {
+            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled)
+                || matches!(run_state, crate::FloatOutBoyRunState::Disabled)
+            {
                 self.on_off_fade = 0.0;
             }
-            if matches!(run_state, crate::FloatOutBoyRunState::Running)
-                && !matches!(
-                    self.headlights_state,
-                    FloatOutBoyHeadlightsState::TransitioningOn
-                        | FloatOutBoyHeadlightsState::TransitioningOff
-                )
-            {
+            if running && !self.headlights_state.is_transitioning() {
                 self.direction_forward = pitch_degrees >= 0.0;
                 self.direction_split = if self.direction_forward { 1.0 } else { -1.0 };
-            } else if matches!(run_state, crate::FloatOutBoyRunState::Disabled) {
-                self.on_off_fade = 0.0;
             }
         }
         self.run_state = run_state;
 
-        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
-        let (left, right) = if config.status().shows_sensors_while_running() || !running {
-            (
-                (!running
-                    && matches!(
-                        footpad,
-                        crate::FloatOutBoyFootpadState::Left | crate::FloatOutBoyFootpadState::Both
-                    ))
-                    || matches!(footpad, crate::FloatOutBoyFootpadState::Left),
-                (!running
-                    && matches!(
-                        footpad,
-                        crate::FloatOutBoyFootpadState::Right
-                            | crate::FloatOutBoyFootpadState::Both
-                    ))
-                    || matches!(footpad, crate::FloatOutBoyFootpadState::Right),
-            )
-        } else {
-            (false, false)
-        };
+        let show_sensors = config.status().shows_sensors_while_running() || !running;
+        let both = !running && matches!(footpad, crate::FloatOutBoyFootpadState::Both);
+        let left =
+            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
+        let right =
+            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
         self.left_sensor = rate_limit(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
         self.right_sensor = rate_limit(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
 
         let headlights_should = matches!(run_state, crate::FloatOutBoyRunState::Running)
             && !matches!(mode, crate::FloatOutBoyMode::Flywheel)
             && config.are_headlights_on();
-        let headlights_on = matches!(self.headlights_state, FloatOutBoyHeadlightsState::On);
-        let transitioning = matches!(
-            self.headlights_state,
-            FloatOutBoyHeadlightsState::TransitioningOn
-                | FloatOutBoyHeadlightsState::TransitioningOff
-        );
+        let headlights_on = self.headlights_state.is_on();
+        let transitioning = self.headlights_state.is_transitioning();
         let was_headlights_transitioning = transitioning;
         if headlights_should != headlights_on && !transitioning {
             self.headlights_split = -1.0;
@@ -867,11 +790,7 @@ impl FloatOutBoyLedDynamics {
 
         if matches!(run_state, crate::FloatOutBoyRunState::Running)
             && !was_headlights_transitioning
-            && !matches!(
-                self.headlights_state,
-                FloatOutBoyHeadlightsState::TransitioningOn
-                    | FloatOutBoyHeadlightsState::TransitioningOff
-            )
+            && !self.headlights_state.is_transitioning()
         {
             let distance_change = if darkride {
                 self.split_distance - distance
@@ -914,12 +833,8 @@ impl FloatOutBoyLedDynamics {
     pub const fn headlights(self) -> (f32, bool, bool) {
         (
             self.headlights_split,
-            matches!(self.headlights_state, FloatOutBoyHeadlightsState::On),
-            matches!(
-                self.headlights_state,
-                FloatOutBoyHeadlightsState::TransitioningOn
-                    | FloatOutBoyHeadlightsState::TransitioningOff
-            ),
+            self.headlights_state.is_on(),
+            self.headlights_state.is_transitioning(),
         )
     }
 
@@ -965,19 +880,6 @@ impl FloatOutBoyLedFrameUpdate {
     #[must_use]
     pub const fn new(ride: FloatOutBoyLedUpdate, status: FloatOutBoyLedStatusUpdate) -> Self {
         Self { ride, status }
-    }
-
-    /// Build a frame input when only ride behavior is under test.
-    #[must_use]
-    pub const fn ride_only(ride: FloatOutBoyLedUpdate) -> Self {
-        Self::new(
-            ride,
-            FloatOutBoyLedStatusUpdate {
-                battery_level: 0.0,
-                duty_cycle: 0.0,
-                moving: true,
-            },
-        )
     }
 }
 
@@ -1464,22 +1366,10 @@ pub enum FloatOutBoyStatusProgress {
 
 /// Shared brightness and blend inputs for one LED overlay.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyLedOverlay {
+struct FloatOutBoyLedOverlay {
     strip_brightness: Ratio,
     on_off_fade: Ratio,
     blend: Ratio,
-}
-
-impl FloatOutBoyLedOverlay {
-    /// Build checked overlay inputs.
-    #[must_use]
-    pub const fn new(strip_brightness: Ratio, on_off_fade: Ratio, blend: Ratio) -> Self {
-        Self {
-            strip_brightness,
-            on_off_fade,
-            blend,
-        }
-    }
 }
 
 impl FloatOutBoyLedStripFrame {
@@ -1519,15 +1409,8 @@ impl FloatOutBoyLedStripFrame {
         self.pixels.get(logical_index).copied()
     }
 
-    /// Render a solid bar with Refloat's brightness and blend ordering.
-    pub fn render_solid(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, blend: Ratio) {
-        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
-        let target = FloatOutBoyLedPixel::from_named(bar.primary_color());
-        self.render_target(target, brightness, blend);
-    }
-
     /// Paint Refloat's left/right footpad indicator over this strip.
-    pub fn render_footpads(
+    fn render_footpads(
         &mut self,
         left: Ratio,
         right: Ratio,
@@ -1604,7 +1487,11 @@ impl FloatOutBoyLedStripFrame {
             }
         }
 
-        let overlay = |amount| FloatOutBoyLedOverlay::new(brightness, fade, amount);
+        let overlay = |amount| FloatOutBoyLedOverlay {
+            strip_brightness: brightness,
+            on_off_fade: fade,
+            blend: amount,
+        };
         if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() < 1.0 {
             self.render_status_progress(
                 battery,
@@ -1634,7 +1521,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     /// Paint Refloat's battery or duty progress display over this strip.
-    pub fn render_status_progress(
+    fn render_status_progress(
         &mut self,
         value: f32,
         kind: FloatOutBoyStatusProgress,
@@ -1767,31 +1654,25 @@ impl FloatOutBoyLedStripFrame {
     /// Render one currently implemented Refloat bar animation.
     pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let time = time * bar.animation_speed().as_units();
-        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Felony) {
-            self.render_felony(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(
-            bar.animation_mode(),
-            FloatOutBoyLedAnimationMode::RainbowCycle
-                | FloatOutBoyLedAnimationMode::RainbowFade
-                | FloatOutBoyLedAnimationMode::RainbowRoll
-        ) {
-            self.render_rainbow(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Pulse) {
-            self.render_pulse(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(
-            bar.animation_mode(),
-            FloatOutBoyLedAnimationMode::KnightRider
-        ) {
-            self.render_knight_rider(bar, on_off_fade, time);
-            return;
-        }
         let target = match bar.animation_mode() {
+            FloatOutBoyLedAnimationMode::Felony => {
+                self.render_felony(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::RainbowCycle
+            | FloatOutBoyLedAnimationMode::RainbowFade
+            | FloatOutBoyLedAnimationMode::RainbowRoll => {
+                self.render_rainbow(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::Pulse => {
+                self.render_pulse(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::KnightRider => {
+                self.render_knight_rider(bar, on_off_fade, time);
+                return;
+            }
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color())
             }
@@ -1808,12 +1689,6 @@ impl FloatOutBoyLedStripFrame {
                 };
                 FloatOutBoyLedPixel::from_named(color)
             }
-            FloatOutBoyLedAnimationMode::Pulse
-            | FloatOutBoyLedAnimationMode::KnightRider
-            | FloatOutBoyLedAnimationMode::Felony
-            | FloatOutBoyLedAnimationMode::RainbowCycle
-            | FloatOutBoyLedAnimationMode::RainbowFade
-            | FloatOutBoyLedAnimationMode::RainbowRoll => return,
         };
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
@@ -2275,6 +2150,17 @@ mod renderer_tests {
         super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled()
     }
 
+    fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedFrameUpdate {
+        super::FloatOutBoyLedFrameUpdate::new(
+            ride,
+            super::FloatOutBoyLedStatusUpdate {
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
+            },
+        )
+    }
+
     #[test]
     fn named_led_colors_match_refloat_1_2_1_rgba_channels() {
         let cases = [
@@ -2470,6 +2356,40 @@ mod renderer_tests {
     }
 
     #[test]
+    fn pixel_blend_matches_refloat_channel_math_for_every_byte_pair() {
+        for first in 0_u8..=u8::MAX {
+            for second in 0_u8..=u8::MAX {
+                for blend in [f32::NAN, -1.0, 0.0, 0.1, 0.5, 0.999, 1.0, 2.0] {
+                    let expected = if blend <= 0.0 {
+                        first
+                    } else if blend >= 1.0 {
+                        second
+                    } else {
+                        crate::wire::saturating_trunc_f32_to_u8(
+                            f32::from(first) * (1.0 - blend) + f32::from(second) * blend,
+                        )
+                    };
+
+                    assert_eq!(
+                        FloatOutBoyLedPixel::blend(
+                            FloatOutBoyLedPixel {
+                                channels: [first; 4],
+                            },
+                            FloatOutBoyLedPixel {
+                                channels: [second; 4],
+                            },
+                            blend,
+                        )
+                        .channels(),
+                        [expected; 4],
+                        "first={first}, second={second}, blend={blend}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn strip_frame_maps_logical_pixels_to_checked_physical_order() {
         let config = super::FloatOutBoyLedStripConfig::new(
             super::FloatOutBoyLedStripOrder::First,
@@ -2512,9 +2432,9 @@ mod renderer_tests {
             super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
         );
 
-        frame.render_solid(
-            bar,
-            Ratio::from_ratio_const(0.5),
+        frame.render_target(
+            FloatOutBoyLedPixel::from_named(bar.primary_color()),
+            Ratio::clamped(bar.brightness().as_ratio() * 0.5),
             Ratio::from_ratio_const(0.5),
         );
 
@@ -2822,11 +2742,7 @@ mod renderer_tests {
 
         for (transition, progress, seed, expected) in cases {
             let mut frame = super::FloatOutBoyLedStripFrame::new(config);
-            frame.render_solid(
-                from,
-                Ratio::from_ratio_const(1.0),
-                Ratio::from_ratio_const(1.0),
-            );
+            frame.render_bar(from, Ratio::from_ratio_const(1.0), 0.0);
             frame.render_transition(
                 transition,
                 progress,
@@ -2863,11 +2779,11 @@ mod renderer_tests {
                     .unwrap_or_default()
             })
         };
-        let overlay = super::FloatOutBoyLedOverlay::new(
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(1.0),
-        );
+        let overlay = super::FloatOutBoyLedOverlay {
+            strip_brightness: Ratio::from_ratio_const(1.0),
+            on_off_fade: Ratio::from_ratio_const(1.0),
+            blend: Ratio::from_ratio_const(1.0),
+        };
 
         let mut footpads = super::FloatOutBoyLedStripFrame::new(config);
         footpads.render_footpads(
@@ -3078,7 +2994,7 @@ mod renderer_tests {
         .with_front_strip(strip)
         .with_rear_strip(strip);
         let input = |run_state, distance| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,
@@ -3509,11 +3425,7 @@ mod renderer_tests {
             crate::lcm::FloatOutBoyLedMode::Internal,
         );
         let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, off, 0.0);
-        assert!(!renderer.update(
-            off,
-            super::FloatOutBoyLedFrameUpdate::ride_only(running),
-            2.0,
-        ));
+        assert!(!renderer.update(off, ride_only(running), 2.0,));
     }
 
     #[test]
@@ -3529,7 +3441,7 @@ mod renderer_tests {
         )
         .with_front_strip(strip);
         let frame = |run_state| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,
@@ -3573,7 +3485,7 @@ mod renderer_tests {
             crate::lcm::FloatOutBoyLedMode::Internal,
         );
         let frame = |run_state| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,
