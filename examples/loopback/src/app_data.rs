@@ -16,6 +16,21 @@ impl AppDataHandler for LoopbackAppData {
         reply: &mut AppDataReply<'_>,
     ) {
         let firmware = Firmware::new();
+        let mut audio_response = [0_u8; vesc_protocol::audio_smoke::BEEP_RESPONSE_BYTES];
+        match crate::audio::handle_audio_smoke_command(
+            firmware.audio(),
+            packet.as_bytes(),
+            &mut audio_response,
+        ) {
+            Ok(Some(response_len)) => {
+                let _ = audio_response
+                    .get(..response_len)
+                    .is_some_and(|bytes| reply.write(bytes).is_ok());
+                return;
+            }
+            Ok(None) => {}
+            Err(_) => return,
+        }
         let now_ms = u64::from(firmware.clock().now().as_ticks()) / 10;
         if let Ok((bytes, response_len)) = handle_loopback_frame(packet.as_bytes(), now_ms) {
             let _ = bytes
