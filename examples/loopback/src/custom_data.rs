@@ -11,6 +11,7 @@ pub struct CustomDataCommState {
 
 impl CustomDataCommState {
     /// Construct an empty custom-data state.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             message_count: 0,
@@ -40,11 +41,13 @@ impl CustomDataCommState {
     }
 
     /// Return the number of accepted messages.
+    #[must_use]
     pub const fn message_count(self) -> i32 {
         self.message_count
     }
 
     /// Return the last accepted value.
+    #[must_use]
     pub const fn last_value(self) -> f32 {
         self.last_value
     }
