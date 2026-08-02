@@ -9,7 +9,7 @@ package library and package entrypoint into the final ELF.
 its binary payload into the BLE loopback `.vescpkg` artifact.
 
 The package also includes usage-shaped public-API examples: a port of VESC's
-official `examples/extension` `ext-test` callback plus a typed diagnostic
+official `c_libs/examples/extension` `ext-test` callback plus a typed diagnostic
 extension in `src/extensions.rs`, app-data transport in `src/app_data.rs`, an
 official-shape custom application-data codec in `src/custom_data.rs`, an
 explicit signature-checked custom-EEPROM probe image in `src/config.rs`, scoped
