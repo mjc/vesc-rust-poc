@@ -1,4 +1,6 @@
-//! Usage-shaped port of VESC's `custom_data_comm` wire state.
+//! Usage-shaped port of VESC's official
+//! [`custom_data_comm`](https://github.com/vedderb/vesc_pkg/blob/ddf1e162d5b7d01d848263af317cc7f8f14c0d14/c_libs/examples/custom_data_comm/code.c)
+//! wire state.
 
 use vesc_protocol::buffer::{append_float32_auto, append_i32, read_float32_auto};
 

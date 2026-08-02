@@ -1,4 +1,8 @@
 //! POC-specific `LispBM` extensions for the BLE loopback package.
+//!
+//! `OfficialExtTest` ports VESC's official
+//! [`c_libs/examples/extension`](https://github.com/vedderb/vesc_pkg/blob/ddf1e162d5b7d01d848263af317cc7f8f14c0d14/c_libs/examples/extension/code.c)
+//! callback through the typed SDK surface.
 
 use vescpkg_rs::{ExtensionDescriptor, ExtensionName, LbmExtension, LispArgs, LispValue};
 
@@ -23,7 +27,7 @@ impl LbmExtension for RustProbeDiag {
     }
 }
 
-/// Port of the official `examples/extension` `LispBM` callback.
+/// Port of the official `c_libs/examples/extension` `LispBM` callback.
 struct OfficialExtTest;
 
 impl LbmExtension for OfficialExtTest {

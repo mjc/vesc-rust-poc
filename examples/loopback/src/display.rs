@@ -1,4 +1,8 @@
 //! Usage-shaped GPIO wiring for a small display-style bus.
+//!
+//! The framebuffer and line rasterizer follow VESC's official
+//! [`c_libs/examples/ssd1306`](https://github.com/vedderb/vesc_pkg/blob/ddf1e162d5b7d01d848263af317cc7f8f14c0d14/c_libs/examples/ssd1306/code.c)
+//! example; the leased GPIO bus demonstrates the safe package-side ownership shape.
 
 use vescpkg_rs::{DigitalGpioLease, DigitalOutputLevel, DigitalPin, Gpio, GpioError, GpioMode};
 
@@ -11,8 +15,8 @@ pub const SSD1306_FRAME_BYTES: usize = 1 + (SSD1306_WIDTH * SSD1306_HEIGHT / 8);
 
 /// A bounded, allocation-free SSD1306 framebuffer.
 ///
-/// The layout matches the vendored VESC `examples/ssd1306` port: byte zero is
-/// the command prefix and the remaining bytes are page-organized display data.
+/// The layout matches the official VESC SSD1306 example: byte zero is the
+/// command prefix and the remaining bytes are page-organized display data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ssd1306Frame {
     bytes: [u8; SSD1306_FRAME_BYTES],
