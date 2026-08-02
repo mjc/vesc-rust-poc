@@ -30,6 +30,8 @@ The classification names the most important controller-side boundary:
   controller state;
 - **package-mutating** installs, replaces, or erases controller package data;
 - **firmware-config-mutating** changes live or stored firmware configuration;
+- **physical-output** asks the installed package to produce a bounded physical
+  effect without changing stored configuration;
 - **package-specific** sends a protocol understood only by a particular
   installed package. Its payload determines whether it reads or mutates.
 
@@ -38,6 +40,7 @@ This table is checked against the live Clap subcommand list by a unit test.
 | Command | Classification | What it does |
 | --- | --- | --- |
 | `build` | read-only on the controller; host output only | Build, link, validate, and assemble one Cargo package below `target/vescpkg/` |
+| `audio-beep` | physical-output, package-specific | Ask the installed loopback package for one fixed, short FOC-audio beep and validate its typed response |
 | `loopback` | read-only, package-specific | Probe the installed loopback package and validate its response sequence |
 | `custom-app-data` | package-specific | Send decimal payload bytes to the installed package and wait for app-data |
 | `custom-config` | read-only | Fetch custom-config index 0 as raw bytes |
