@@ -135,7 +135,6 @@ macro_rules! generated_config_flags {
     )*};
 }
 
-#[allow(unused_macros)]
 macro_rules! generated_config_setters {
     ($(
         $(#[$attribute:meta])*
@@ -836,29 +835,13 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_hertz(&mut self, sample_rate: SampleRate) -> bool {
-        FloatOutBoyStartupConfig::HERTZ_FIELD
-            .write(self, sample_rate)
-            .is_some()
-    }
+    generated_config_setters! { set_hertz(sample_rate: SampleRate) => FloatOutBoyStartupConfig::HERTZ_FIELD; }
 
-    pub(crate) fn set_startup_pitch_tolerance(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyStartupConfig::PITCH_TOLERANCE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_startup_pitch_tolerance(angle: AngleDegrees) => FloatOutBoyStartupConfig::PITCH_TOLERANCE_FIELD; }
 
-    pub(crate) fn set_startup_roll_tolerance(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyStartupConfig::ROLL_TOLERANCE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_startup_roll_tolerance(angle: AngleDegrees) => FloatOutBoyStartupConfig::ROLL_TOLERANCE_FIELD; }
 
-    pub(crate) fn set_startup_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyStartupConfig::SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_startup_speed(speed: AngularVelocity) => FloatOutBoyStartupConfig::SPEED_FIELD; }
 
     pub(crate) fn set_pushstart_enabled(&mut self, enabled: bool) -> bool {
         self.set_flag(FloatOutBoyStartupConfig::PUSHSTART_FIELD, enabled)
@@ -881,43 +864,17 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_remote_throttle_current_max(&mut self, current: MotorCurrent) -> bool {
-        FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD
-            .write(self, current)
-            .is_some()
-    }
+    generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
 
     #[cfg(test)]
-    pub(crate) fn set_remote_throttle_grace_period(&mut self, duration: VescSeconds) -> bool {
-        FloatOutBoyRemoteThrottleConfig::GRACE_PERIOD_FIELD
-            .write(self, duration)
-            .is_some()
-    }
+    generated_config_setters! { set_remote_throttle_grace_period(duration: VescSeconds) => FloatOutBoyRemoteThrottleConfig::GRACE_PERIOD_FIELD; }
 
-    pub(crate) fn set_kp(&mut self, kp: AngleCurrentGain) -> bool {
-        FloatOutBoyBalanceConfig::KP_FIELD.write(self, kp).is_some()
-    }
-
-    pub(crate) fn set_kp2(&mut self, kp2: RateCurrentGain) -> bool {
-        FloatOutBoyBalanceConfig::KP2_FIELD
-            .write(self, kp2)
-            .is_some()
-    }
-
-    pub(crate) fn set_ki(&mut self, ki: IntegralCurrentGain) -> bool {
-        FloatOutBoyBalanceConfig::KI_FIELD.write(self, ki).is_some()
-    }
-
-    pub(crate) fn set_kp_brake(&mut self, scale: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::KP_BRAKE_FIELD
-            .write(self, scale)
-            .is_some()
-    }
-
-    pub(crate) fn set_kp2_brake(&mut self, scale: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::KP2_BRAKE_FIELD
-            .write(self, scale)
-            .is_some()
+    generated_config_setters! {
+        set_kp(kp: AngleCurrentGain) => FloatOutBoyBalanceConfig::KP_FIELD;
+        set_kp2(kp2: RateCurrentGain) => FloatOutBoyBalanceConfig::KP2_FIELD;
+        set_ki(ki: IntegralCurrentGain) => FloatOutBoyBalanceConfig::KI_FIELD;
+        set_kp_brake(scale: PidScale) => FloatOutBoyBalanceConfig::KP_BRAKE_FIELD;
+        set_kp2_brake(scale: PidScale) => FloatOutBoyBalanceConfig::KP2_BRAKE_FIELD;
     }
 
     pub(crate) fn set_ki_limit(&mut self, current: MotorCurrent) -> bool {
@@ -929,116 +886,48 @@ impl FloatOutBoyConfigEditor<'_> {
             .is_some()
     }
 
-    pub(crate) fn set_mahony_kp(&mut self, gain: MahonyPitchGain) -> bool {
-        FloatOutBoyFilterConfig::MAHONY_KP_FIELD
-            .write(self, gain)
-            .is_some()
-    }
+    generated_config_setters! { set_mahony_kp(gain: MahonyPitchGain) => FloatOutBoyFilterConfig::MAHONY_KP_FIELD; }
 
     pub(crate) fn set_duty_beep_enabled(&mut self, enabled: bool) -> bool {
         self.set_flag(FloatOutBoyConfigImage::DUTY_BEEP_ENABLED_FIELD, enabled)
     }
 
-    pub(crate) fn set_duty_pushback_angle(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyConfigImage::DUTY_PUSHBACK_ANGLE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_duty_pushback_angle(angle: AngleDegrees) => FloatOutBoyConfigImage::DUTY_PUSHBACK_ANGLE_FIELD; }
 
-    pub(crate) fn set_duty_pushback_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyConfigImage::DUTY_PUSHBACK_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_duty_pushback_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::DUTY_PUSHBACK_SPEED_FIELD; }
 
-    pub(crate) fn set_duty_pushback_threshold(&mut self, threshold: Ratio) -> bool {
-        FloatOutBoyConfigImage::DUTY_PUSHBACK_THRESHOLD_FIELD
-            .write(self, threshold)
-            .is_some()
-    }
+    generated_config_setters! { set_duty_pushback_threshold(threshold: Ratio) => FloatOutBoyConfigImage::DUTY_PUSHBACK_THRESHOLD_FIELD; }
 
-    pub(crate) fn set_tiltback_return_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_RETURN_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_return_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::TILTBACK_RETURN_SPEED_FIELD; }
 
     #[cfg(test)]
-    pub(crate) fn set_speed_pushback_threshold(&mut self, speed: vescpkg_rs::WireByte) -> bool {
-        FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_speed_pushback_threshold(speed: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD; }
 
     pub(crate) fn set_dirty_landings_enabled(&mut self, enabled: bool) -> bool {
         self.set_flag(FloatOutBoyStartupConfig::DIRTY_LANDINGS_FIELD, enabled)
     }
 
-    pub(crate) fn set_startup_click_current(&mut self, current: vescpkg_rs::WireByte) -> bool {
-        FloatOutBoyStartupConfig::CLICK_CURRENT_FIELD
-            .write(self, current)
-            .is_some()
-    }
+    generated_config_setters! { set_startup_click_current(current: vescpkg_rs::WireByte) => FloatOutBoyStartupConfig::CLICK_CURRENT_FIELD; }
 
-    pub(crate) fn set_brake_current(&mut self, current: MotorCurrent) -> bool {
-        FloatOutBoyMotorControlConfig::BRAKE_CURRENT_FIELD
-            .write(self, current)
-            .is_some()
-    }
+    generated_config_setters! { set_brake_current(current: MotorCurrent) => FloatOutBoyMotorControlConfig::BRAKE_CURRENT_FIELD; }
 
-    pub(crate) fn set_tiltback_constant(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_CONSTANT_ANGLE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_constant(angle: AngleDegrees) => FloatOutBoyConfigImage::TILTBACK_CONSTANT_ANGLE_FIELD; }
 
-    pub(crate) fn set_tiltback_constant_erpm(&mut self, erpm: ElectricalSpeed) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_CONSTANT_ERPM_FIELD
-            .write(self, erpm)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_constant_erpm(erpm: ElectricalSpeed) => FloatOutBoyConfigImage::TILTBACK_CONSTANT_ERPM_FIELD; }
 
-    pub(crate) fn set_tiltback_variable(&mut self, rate: PidScale) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_VARIABLE_RATE_FIELD
-            .write(self, rate)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_variable(rate: PidScale) => FloatOutBoyConfigImage::TILTBACK_VARIABLE_RATE_FIELD; }
 
-    pub(crate) fn set_tiltback_variable_max(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_VARIABLE_MAX_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_variable_max(angle: AngleDegrees) => FloatOutBoyConfigImage::TILTBACK_VARIABLE_MAX_FIELD; }
 
-    pub(crate) fn set_tiltback_variable_erpm(&mut self, erpm: ElectricalSpeed) -> bool {
-        FloatOutBoyConfigImage::TILTBACK_VARIABLE_ERPM_FIELD
-            .write(self, erpm)
-            .is_some()
-    }
+    generated_config_setters! { set_tiltback_variable_erpm(erpm: ElectricalSpeed) => FloatOutBoyConfigImage::TILTBACK_VARIABLE_ERPM_FIELD; }
 
-    pub(crate) fn set_nose_angling_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyConfigImage::NOSE_ANGLING_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_nose_angling_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::NOSE_ANGLING_SPEED_FIELD; }
 
-    pub(crate) fn set_input_tilt_remote_type(&mut self, remote: vescpkg_rs::WireByte) -> bool {
-        FloatOutBoyConfigImage::INPUT_TILT_REMOTE_TYPE_FIELD
-            .write(self, remote)
-            .is_some()
-    }
+    generated_config_setters! { set_input_tilt_remote_type(remote: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::INPUT_TILT_REMOTE_TYPE_FIELD; }
 
-    pub(crate) fn set_input_tilt_angle_limit(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyConfigImage::INPUT_TILT_ANGLE_LIMIT_FIELD
-            .write(self, angle)
-            .is_some()
-    }
+    generated_config_setters! { set_input_tilt_angle_limit(angle: AngleDegrees) => FloatOutBoyConfigImage::INPUT_TILT_ANGLE_LIMIT_FIELD; }
 
-    pub(crate) fn set_input_tilt_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyConfigImage::INPUT_TILT_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
+    generated_config_setters! { set_input_tilt_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::INPUT_TILT_SPEED_FIELD; }
 
     #[cfg(test)]
     pub(crate) fn set_input_tilt_inverted(&mut self, inverted: bool) -> bool {
@@ -1046,184 +935,38 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_input_tilt_deadband(&mut self, deadband: Ratio) -> bool {
-        FloatOutBoyConfigImage::INPUT_TILT_DEADBAND_FIELD
-            .write(self, deadband)
-            .is_some()
-    }
+    generated_config_setters! { set_input_tilt_deadband(deadband: Ratio) => FloatOutBoyConfigImage::INPUT_TILT_DEADBAND_FIELD; }
 
-    pub(crate) fn set_booster_angle(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::BOOSTER_ANGLE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_booster_ramp(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::BOOSTER_RAMP_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_booster_current(&mut self, current: MotorCurrent) -> bool {
-        FloatOutBoyBalanceConfig::BOOSTER_CURRENT_FIELD
-            .write(self, current)
-            .is_some()
-    }
-
-    pub(crate) fn set_brake_booster_angle(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::BRAKE_BOOSTER_ANGLE_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_brake_booster_ramp(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::BRAKE_BOOSTER_RAMP_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_brake_booster_current(&mut self, current: MotorCurrent) -> bool {
-        FloatOutBoyBalanceConfig::BRAKE_BOOSTER_CURRENT_FIELD
-            .write(self, current)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_start_current(&mut self, current: MotorCurrent) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_START_CURRENT_FIELD
-            .write(self, current)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_angle_limit(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_ANGLE_LIMIT_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_on_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_ON_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_off_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_OFF_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_strength(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_STRENGTH_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_torque_tilt_regen_strength(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::TORQUE_TILT_REGEN_STRENGTH_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_turn_tilt_strength(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::TURN_TILT_STRENGTH_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_turn_tilt_angle_limit(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::TURN_TILT_ANGLE_LIMIT_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_turn_tilt_start_erpm(&mut self, speed: ElectricalSpeed) -> bool {
-        FloatOutBoyBalanceConfig::TURN_TILT_START_ERPM_FIELD
-            .write(self, speed)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_strength_up(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_STRENGTH_UP_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_strength_down(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_STRENGTH_DOWN_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_threshold_up(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::ATR_THRESHOLD_UP_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_threshold_down(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::ATR_THRESHOLD_DOWN_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_speed_boost(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_SPEED_BOOST_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_angle_limit(&mut self, angle: AngleDegrees) -> bool {
-        FloatOutBoyBalanceConfig::ATR_ANGLE_LIMIT_FIELD
-            .write(self, angle)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_on_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyBalanceConfig::ATR_ON_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_off_speed(&mut self, speed: AngularVelocity) -> bool {
-        FloatOutBoyBalanceConfig::ATR_OFF_SPEED_FIELD
-            .write(self, speed)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_response_boost(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_RESPONSE_BOOST_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_transition_boost(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_TRANSITION_BOOST_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_amps_accel_ratio(&mut self, ratio: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_AMPS_ACCEL_RATIO_FIELD
-            .write(self, ratio)
-            .is_some()
-    }
-
-    pub(crate) fn set_atr_amps_decel_ratio(&mut self, ratio: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::ATR_AMPS_DECEL_RATIO_FIELD
-            .write(self, ratio)
-            .is_some()
-    }
-
-    pub(crate) fn set_brake_tilt_strength(&mut self, strength: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::BRAKE_TILT_STRENGTH_FIELD
-            .write(self, strength)
-            .is_some()
-    }
-
-    pub(crate) fn set_brake_tilt_lingering(&mut self, lingering: PidScale) -> bool {
-        FloatOutBoyBalanceConfig::BRAKE_TILT_LINGERING_FIELD
-            .write(self, lingering)
-            .is_some()
+    generated_config_setters! {
+        set_booster_angle(angle: AngleDegrees) => FloatOutBoyBalanceConfig::BOOSTER_ANGLE_FIELD;
+        set_booster_ramp(angle: AngleDegrees) => FloatOutBoyBalanceConfig::BOOSTER_RAMP_FIELD;
+        set_booster_current(current: MotorCurrent) => FloatOutBoyBalanceConfig::BOOSTER_CURRENT_FIELD;
+        set_brake_booster_angle(angle: AngleDegrees) => FloatOutBoyBalanceConfig::BRAKE_BOOSTER_ANGLE_FIELD;
+        set_brake_booster_ramp(angle: AngleDegrees) => FloatOutBoyBalanceConfig::BRAKE_BOOSTER_RAMP_FIELD;
+        set_brake_booster_current(current: MotorCurrent) => FloatOutBoyBalanceConfig::BRAKE_BOOSTER_CURRENT_FIELD;
+        set_torque_tilt_start_current(current: MotorCurrent) => FloatOutBoyBalanceConfig::TORQUE_TILT_START_CURRENT_FIELD;
+        set_torque_tilt_angle_limit(angle: AngleDegrees) => FloatOutBoyBalanceConfig::TORQUE_TILT_ANGLE_LIMIT_FIELD;
+        set_torque_tilt_on_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::TORQUE_TILT_ON_SPEED_FIELD;
+        set_torque_tilt_off_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::TORQUE_TILT_OFF_SPEED_FIELD;
+        set_torque_tilt_strength(strength: PidScale) => FloatOutBoyBalanceConfig::TORQUE_TILT_STRENGTH_FIELD;
+        set_torque_tilt_regen_strength(strength: PidScale) => FloatOutBoyBalanceConfig::TORQUE_TILT_REGEN_STRENGTH_FIELD;
+        set_turn_tilt_strength(strength: PidScale) => FloatOutBoyBalanceConfig::TURN_TILT_STRENGTH_FIELD;
+        set_turn_tilt_angle_limit(angle: AngleDegrees) => FloatOutBoyBalanceConfig::TURN_TILT_ANGLE_LIMIT_FIELD;
+        set_turn_tilt_start_erpm(speed: ElectricalSpeed) => FloatOutBoyBalanceConfig::TURN_TILT_START_ERPM_FIELD;
+        set_atr_strength_up(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_STRENGTH_UP_FIELD;
+        set_atr_strength_down(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_STRENGTH_DOWN_FIELD;
+        set_atr_threshold_up(angle: AngleDegrees) => FloatOutBoyBalanceConfig::ATR_THRESHOLD_UP_FIELD;
+        set_atr_threshold_down(angle: AngleDegrees) => FloatOutBoyBalanceConfig::ATR_THRESHOLD_DOWN_FIELD;
+        set_atr_speed_boost(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_SPEED_BOOST_FIELD;
+        set_atr_angle_limit(angle: AngleDegrees) => FloatOutBoyBalanceConfig::ATR_ANGLE_LIMIT_FIELD;
+        set_atr_on_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::ATR_ON_SPEED_FIELD;
+        set_atr_off_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::ATR_OFF_SPEED_FIELD;
+        set_atr_response_boost(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_RESPONSE_BOOST_FIELD;
+        set_atr_transition_boost(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_TRANSITION_BOOST_FIELD;
+        set_atr_amps_accel_ratio(ratio: PidScale) => FloatOutBoyBalanceConfig::ATR_AMPS_ACCEL_RATIO_FIELD;
+        set_atr_amps_decel_ratio(ratio: PidScale) => FloatOutBoyBalanceConfig::ATR_AMPS_DECEL_RATIO_FIELD;
+        set_brake_tilt_strength(strength: PidScale) => FloatOutBoyBalanceConfig::BRAKE_TILT_STRENGTH_FIELD;
+        set_brake_tilt_lingering(lingering: PidScale) => FloatOutBoyBalanceConfig::BRAKE_TILT_LINGERING_FIELD;
     }
 }
 
