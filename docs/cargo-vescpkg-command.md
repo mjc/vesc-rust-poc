@@ -98,6 +98,22 @@ each sample, validates the package/command prefix, and writes host elapsed
 milliseconds plus the complete response bytes. It does not decode away unknown
 future fields.
 
+## Restrained audio probe
+
+With the loopback package installed, `audio-beep` requests one 440 Hz,
+50-millisecond FOC-audio beep at 0.5 V and requires the package to return a
+typed `Played` result:
+
+```console
+$ cargo run -p cargo-vescpkg -- audio-beep --device "VESC BLE UART"
+```
+
+> **Warning:** This is physical motor output even though it does not issue a
+> torque command. Restrain the controller, keep the wheel clear, and use the
+> command only for the focused hardware check. The command does not install a
+> package; install the loopback package first and restore the prior package
+> afterward.
+
 ## Package-specific app-data
 
 `custom-app-data` accepts one or more decimal bytes. Include the package ID and
