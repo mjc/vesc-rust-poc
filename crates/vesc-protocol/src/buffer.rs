@@ -80,11 +80,74 @@ pub fn float32_auto_bits(value: f32) -> u32 {
     value.to_bits()
 }
 
+/// Convert a float using Rust's truncating, saturating unsigned semantics
+/// without linking the comparatively large Cortex-M float-cast runtime helper.
+#[must_use]
+pub fn saturating_trunc_f32_to_u32(value: f32) -> u32 {
+    if value.is_nan() || value <= 0.0 {
+        return 0;
+    }
+    if value >= 4_294_967_296.0 {
+        return u32::MAX;
+    }
+
+    let bits = value.to_bits();
+    let [exponent_bits, ..] = ((bits >> 23) & 0xff).to_le_bytes();
+    let exponent = i32::from(exponent_bits).saturating_sub(127);
+    if exponent < 0 {
+        return 0;
+    }
+
+    let significand = (bits & 0x007f_ffff) | 0x0080_0000;
+    let shift = exponent.abs_diff(23);
+    if exponent >= 23 {
+        significand << shift
+    } else {
+        significand >> shift
+    }
+}
+
+/// Convert a float to a saturating, truncating byte without a runtime helper.
+#[must_use]
+pub fn saturating_trunc_f32_to_u8(value: f32) -> u8 {
+    let value = saturating_trunc_f32_to_u32(value);
+    if value > u32::from(u8::MAX) {
+        return u8::MAX;
+    }
+    let [value, ..] = value.to_le_bytes();
+    value
+}
+
+/// Convert a float to a saturating, truncating signed 16-bit integer without a
+/// runtime helper.
+#[must_use]
+pub fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
+    if value.is_nan() {
+        return 0;
+    }
+    if value >= 32_768.0 {
+        return i16::MAX;
+    }
+    if value <= -32_768.0 {
+        return i16::MIN;
+    }
+
+    let magnitude = saturating_trunc_f32_to_u32(value.abs());
+    let [low, high, ..] = magnitude.to_le_bytes();
+    let magnitude = i16::from_le_bytes([low, high]);
+    if value.is_sign_negative() {
+        magnitude.saturating_neg()
+    } else {
+        magnitude
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto, read_i32,
-        read_u32,
+        read_u32, saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8,
+        saturating_trunc_f32_to_u32,
     };
 
     #[test]
@@ -158,5 +221,16 @@ mod tests {
         let mut read_index = 0;
         assert_eq!(read_float32_auto(&bytes, &mut read_index), Some(-12.5));
         assert_eq!(read_index, 4);
+    }
+
+    #[test]
+    fn float_to_integer_helpers_cover_nan_infinity_fraction_and_bounds() {
+        assert_eq!(saturating_trunc_f32_to_u32(f32::NAN), 0);
+        assert_eq!(saturating_trunc_f32_to_u32(-1.0), 0);
+        assert_eq!(saturating_trunc_f32_to_u32(42.9), 42);
+        assert_eq!(saturating_trunc_f32_to_u32(f32::INFINITY), u32::MAX);
+        assert_eq!(saturating_trunc_f32_to_u8(255.9), u8::MAX);
+        assert_eq!(saturating_trunc_f32_to_i16(-42.9), -42);
+        assert_eq!(saturating_trunc_f32_to_i16(f32::NEG_INFINITY), i16::MIN);
     }
 }

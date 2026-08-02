@@ -19,7 +19,7 @@ pub(super) struct FloatOutBoyInternalLedDriver {
     #[cfg(not(target_arch = "arm"))]
     pulses: [u16; MAX_PULSES],
     #[cfg(target_arch = "arm")]
-    pulses: Option<super::hardware::PulseAllocation>,
+    pulses: Option<vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer>,
     pulse_count: usize,
     initialized: bool,
     operational: bool,
@@ -143,7 +143,7 @@ impl FloatOutBoyInternalLedDriver {
 
     #[cfg(target_arch = "arm")]
     fn prepare_pulses(&mut self, pulse_count: usize) -> bool {
-        self.pulses = super::hardware::PulseAllocation::new(pulse_count);
+        self.pulses = vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer::new(pulse_count);
         self.pulses.is_some()
     }
 
