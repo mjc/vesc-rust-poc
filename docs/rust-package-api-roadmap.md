@@ -8,12 +8,9 @@ official VESC project or endorsed Rust package API.
 
 ## Current workspace shape
 
-- `crates/vescpkg-rs-sys` — raw firmware ABI (`no_std`, unsafe table calls)
-- `crates/vescpkg-rs` — target-side SDK linked into native packages
-- `examples/loopback` — BLE loopback reference package ELF
-- `crates/cargo-vescpkg` — `cargo vescpkg` host command surface for `.vescpkg`
-  format/build/install
-- `crates/vesc-protocol` — shared wire protocol types
+The authoritative crate and example inventory lives in the
+[workspace layout](workspace-layout.md). This roadmap records migration
+principles rather than duplicating that changing inventory.
 
 ## Validation
 
@@ -21,11 +18,12 @@ official VESC project or endorsed Rust package API.
 - `make check-full` — strict host checks, target checks, package
   ELF build, and `.vescpkg` emission
 
-## Deferred:
+## Deferred
 
 Hardware-in-the-loop validation is intentionally out of the default CI path.
-Symbol resolution, and semantic instruction audits against device-proven fixtures;
-`cargo vescpkg` exercises install/loopback against real hardware manually.
+The default gates cover symbol resolution and semantic instruction audits
+against device-proven fixtures. `cargo vescpkg` device commands provide the
+manual hardware path.
 
 The feature-gated, ignored sketch lives in
 `crates/cargo-vescpkg/tests/hil_loopback.rs` and is filtered by the `hil`
