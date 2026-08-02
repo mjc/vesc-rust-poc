@@ -2,6 +2,9 @@
 //!
 //! This is intentionally a small usage-shaped example: the package owns its
 //! custom-EEPROM address and performs persistence only when its caller asks.
+//! It adapts the signature-checked storage shape from VESC's official
+//! [`c_libs/examples/config`](https://github.com/vedderb/vesc_pkg/blob/ddf1e162d5b7d01d848263af317cc7f8f14c0d14/c_libs/examples/config/code.c)
+//! example without carrying its generated application-specific schema into the SDK.
 
 use vescpkg_rs::{CustomConfigImage, CustomEeprom, CustomEepromAddress, Firmware, FirmwareEffects};
 
