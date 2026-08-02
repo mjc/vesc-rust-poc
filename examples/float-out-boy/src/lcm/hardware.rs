@@ -52,10 +52,9 @@ impl FloatOutBoyInternalLedLayout {
         }
     }
 
-    /// Return the complete physical pixel count.
-    #[must_use]
-    pub const fn pixel_count(self) -> usize {
-        self.pixel_count
+    const_field_getters! {
+        /// Return the complete physical pixel count.
+        pub fn pixel_count -> usize = pixel_count;
     }
 }
 
@@ -150,40 +149,19 @@ impl FloatOutBoyHardwareLedsConfig {
         self
     }
 
-    /// Return the configured LED mode.
-    #[must_use]
-    pub const fn mode(self) -> FloatOutBoyLedMode {
-        self.mode
-    }
-
-    /// Return the configured LED output pin.
-    #[must_use]
-    pub const fn pin(self) -> FloatOutBoyLedPin {
-        self.pin
-    }
-
-    /// Return the configured LED pin mode.
-    #[must_use]
-    pub const fn pin_config(self) -> FloatOutBoyLedPinConfig {
-        self.pin_config
-    }
-
-    /// Return the configured status LED strip.
-    #[must_use]
-    pub const fn status_strip(self) -> FloatOutBoyLedStripConfig {
-        self.status
-    }
-
-    /// Return the configured front LED strip.
-    #[must_use]
-    pub const fn front_strip(self) -> FloatOutBoyLedStripConfig {
-        self.front
-    }
-
-    /// Return the configured rear LED strip.
-    #[must_use]
-    pub const fn rear_strip(self) -> FloatOutBoyLedStripConfig {
-        self.rear
+    const_field_getters! {
+        /// Return the configured LED mode.
+        pub fn mode -> FloatOutBoyLedMode = mode;
+        /// Return the configured LED output pin.
+        pub fn pin -> FloatOutBoyLedPin = pin;
+        /// Return the configured LED pin mode.
+        pub fn pin_config -> FloatOutBoyLedPinConfig = pin_config;
+        /// Return the configured status LED strip.
+        pub fn status_strip -> FloatOutBoyLedStripConfig = status;
+        /// Return the configured front LED strip.
+        pub fn front_strip -> FloatOutBoyLedStripConfig = front;
+        /// Return the configured rear LED strip.
+        pub fn rear_strip -> FloatOutBoyLedStripConfig = rear;
     }
 
     /// Return whether internal/status LEDs are enabled.
@@ -279,10 +257,9 @@ impl FloatOutBoyHardwareConfig {
         Self { leds }
     }
 
-    /// Return the hardware LED configuration.
-    #[must_use]
-    pub const fn leds(self) -> FloatOutBoyHardwareLedsConfig {
-        self.leds
+    const_field_getters! {
+        /// Return the hardware LED configuration.
+        pub fn leds -> FloatOutBoyHardwareLedsConfig = leds;
     }
 }
 
@@ -425,6 +402,79 @@ mod tests {
         assert_eq!(layout.offset(FloatOutBoyLedStripRole::Rear), Some(2));
         assert_eq!(layout.offset(FloatOutBoyLedStripRole::Front), None);
         assert_eq!(layout.pixel_count(), 5);
+    }
+
+    #[test]
+    fn internal_layout_matches_refloat_priority_for_every_order_assignment() {
+        let orders = [
+            FloatOutBoyLedStripOrder::None,
+            FloatOutBoyLedStripOrder::First,
+            FloatOutBoyLedStripOrder::Second,
+            FloatOutBoyLedStripOrder::Third,
+        ];
+
+        for status_order in orders {
+            for front_order in orders {
+                for rear_order in orders {
+                    let config = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+                        .with_status_strip(FloatOutBoyLedStripConfig::new(
+                            status_order,
+                            2,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ))
+                        .with_front_strip(FloatOutBoyLedStripConfig::new(
+                            front_order,
+                            3,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ))
+                        .with_rear_strip(FloatOutBoyLedStripConfig::new(
+                            rear_order,
+                            5,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ));
+                    let layout = config.internal_layout().expect("small layout is valid");
+                    let candidates = [
+                        (FloatOutBoyLedStripRole::Status, status_order, 2_usize),
+                        (FloatOutBoyLedStripRole::Front, front_order, 3_usize),
+                        (FloatOutBoyLedStripRole::Rear, rear_order, 5_usize),
+                    ];
+                    let mut expected_roles = std::vec::Vec::new();
+                    let mut expected_offsets = [None; 3];
+                    let mut expected_count = 0;
+
+                    for order in [
+                        FloatOutBoyLedStripOrder::First,
+                        FloatOutBoyLedStripOrder::Second,
+                        FloatOutBoyLedStripOrder::Third,
+                    ] {
+                        if let Some((role, _, count)) = candidates
+                            .iter()
+                            .find(|(_, candidate, _)| *candidate == order)
+                        {
+                            expected_roles.push(*role);
+                            let index = match role {
+                                FloatOutBoyLedStripRole::Status => 0,
+                                FloatOutBoyLedStripRole::Front => 1,
+                                FloatOutBoyLedStripRole::Rear => 2,
+                            };
+                            expected_offsets[index] = Some(expected_count);
+                            expected_count += count;
+                        }
+                    }
+
+                    assert_eq!(layout.roles(), expected_roles);
+                    assert_eq!(
+                        [
+                            layout.offset(FloatOutBoyLedStripRole::Status),
+                            layout.offset(FloatOutBoyLedStripRole::Front),
+                            layout.offset(FloatOutBoyLedStripRole::Rear),
+                        ],
+                        expected_offsets
+                    );
+                    assert_eq!(layout.pixel_count(), expected_count);
+                }
+            }
+        }
     }
 
     #[test]

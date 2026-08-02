@@ -233,10 +233,9 @@ impl FloatOutBoyLedPixel {
         Self { channels }
     }
 
-    /// Return the pixel as red, green, blue, white channel values.
-    #[must_use]
-    pub const fn channels(self) -> [u8; 4] {
-        self.channels
+    const_field_getters! {
+        /// Return the pixel as red, green, blue, white channel values.
+        pub fn channels -> [u8; 4] = channels;
     }
 
     /// Gamma-correct and reorder this pixel for one physical strip.
@@ -415,34 +414,17 @@ impl FloatOutBoyLedBarConfig {
         }
     }
 
-    /// Return the configured brightness.
-    #[must_use]
-    pub const fn brightness(self) -> Ratio {
-        self.brightness
-    }
-
-    /// Return the primary LED color.
-    #[must_use]
-    pub const fn primary_color(self) -> FloatOutBoyLedColor {
-        self.primary_color
-    }
-
-    /// Return the secondary LED color.
-    #[must_use]
-    pub const fn secondary_color(self) -> FloatOutBoyLedColor {
-        self.secondary_color
-    }
-
-    /// Return the animation mode.
-    #[must_use]
-    pub const fn animation_mode(self) -> FloatOutBoyLedAnimationMode {
-        self.animation_mode
-    }
-
-    /// Return the animation speed.
-    #[must_use]
-    pub const fn animation_speed(self) -> FloatOutBoyLedAnimationSpeed {
-        self.animation_speed
+    const_field_getters! {
+        /// Return the configured brightness.
+        pub fn brightness -> Ratio = brightness;
+        /// Return the primary LED color.
+        pub fn primary_color -> FloatOutBoyLedColor = primary_color;
+        /// Return the secondary LED color.
+        pub fn secondary_color -> FloatOutBoyLedColor = secondary_color;
+        /// Return the animation mode.
+        pub fn animation_mode -> FloatOutBoyLedAnimationMode = animation_mode;
+        /// Return the animation speed.
+        pub fn animation_speed -> FloatOutBoyLedAnimationSpeed = animation_speed;
     }
 }
 
@@ -503,40 +485,19 @@ impl FloatOutBoyStatusBarConfig {
         self
     }
 
-    /// Return the idle timeout.
-    #[must_use]
-    pub const fn idle_timeout(self) -> FloatOutBoyStatusBarIdleTimeout {
-        self.idle_timeout
-    }
-
-    /// Return the duty threshold for switching status display.
-    #[must_use]
-    pub const fn duty_threshold(self) -> Ratio {
-        self.duty_threshold
-    }
-
-    /// Return the red-bar percentage threshold.
-    #[must_use]
-    pub const fn red_bar_percentage(self) -> Ratio {
-        self.red_bar_percentage
-    }
-
-    /// Return whether sensors are shown while running.
-    #[must_use]
-    pub const fn shows_sensors_while_running(self) -> bool {
-        self.show_sensors_while_running
-    }
-
-    /// Return status brightness when headlights are on.
-    #[must_use]
-    pub const fn brightness_headlights_on(self) -> Ratio {
-        self.brightness_headlights_on
-    }
-
-    /// Return status brightness when headlights are off.
-    #[must_use]
-    pub const fn brightness_headlights_off(self) -> Ratio {
-        self.brightness_headlights_off
+    const_field_getters! {
+        /// Return the idle timeout.
+        pub fn idle_timeout -> FloatOutBoyStatusBarIdleTimeout = idle_timeout;
+        /// Return the duty threshold for switching status display.
+        pub fn duty_threshold -> Ratio = duty_threshold;
+        /// Return the red-bar percentage threshold.
+        pub fn red_bar_percentage -> Ratio = red_bar_percentage;
+        /// Return whether sensors are shown while running.
+        pub fn shows_sensors_while_running -> bool = show_sensors_while_running;
+        /// Return status brightness when headlights are on.
+        pub fn brightness_headlights_on -> Ratio = brightness_headlights_on;
+        /// Return status brightness when headlights are off.
+        pub fn brightness_headlights_off -> Ratio = brightness_headlights_off;
     }
 }
 
@@ -577,14 +538,9 @@ impl FloatOutBoyLedRuntimeStatus {
         }
     }
 
-    #[must_use]
-    pub(crate) const fn enabled(self) -> bool {
-        self.enabled
-    }
-
-    #[must_use]
-    pub(crate) const fn headlights_enabled(self) -> bool {
-        self.headlights_enabled
+    const_field_getters! {
+        pub(crate) fn enabled -> bool = enabled;
+        pub(crate) fn headlights_enabled -> bool = headlights_enabled;
     }
 
     #[must_use]
@@ -669,28 +625,15 @@ impl FloatOutBoyLedsConfig {
         self
     }
 
-    /// Return whether LEDs are enabled.
-    #[must_use]
-    pub const fn is_enabled(self) -> bool {
-        self.on
-    }
-
-    /// Return whether headlights are on.
-    #[must_use]
-    pub const fn are_headlights_on(self) -> bool {
-        self.headlights_on
-    }
-
-    /// Return the headlights transition.
-    #[must_use]
-    pub const fn headlights_transition(self) -> FloatOutBoyLedTransition {
-        self.headlights_transition
-    }
-
-    /// Return the direction transition.
-    #[must_use]
-    pub const fn direction_transition(self) -> FloatOutBoyLedTransition {
-        self.direction_transition
+    const_field_getters! {
+        /// Return whether LEDs are enabled.
+        pub fn is_enabled -> bool = on;
+        /// Return whether headlights are on.
+        pub fn are_headlights_on -> bool = headlights_on;
+        /// Return the headlights transition.
+        pub fn headlights_transition -> FloatOutBoyLedTransition = headlights_transition;
+        /// Return the direction transition.
+        pub fn direction_transition -> FloatOutBoyLedTransition = direction_transition;
     }
 
     /// Return whether lights are turned off while lifted.
@@ -705,40 +648,19 @@ impl FloatOutBoyLedsConfig {
         self.lifted.status_on_front
     }
 
-    /// Return the headlights LED bar config.
-    #[must_use]
-    pub const fn headlights(self) -> FloatOutBoyLedBarConfig {
-        self.headlights
-    }
-
-    /// Return the taillights LED bar config.
-    #[must_use]
-    pub const fn taillights(self) -> FloatOutBoyLedBarConfig {
-        self.taillights
-    }
-
-    /// Return the front LED bar config.
-    #[must_use]
-    pub const fn front(self) -> FloatOutBoyLedBarConfig {
-        self.front
-    }
-
-    /// Return the rear LED bar config.
-    #[must_use]
-    pub const fn rear(self) -> FloatOutBoyLedBarConfig {
-        self.rear
-    }
-
-    /// Return the status-bar config.
-    #[must_use]
-    pub const fn status(self) -> FloatOutBoyStatusBarConfig {
-        self.status
-    }
-
-    /// Return the idle status LED bar config.
-    #[must_use]
-    pub const fn status_idle(self) -> FloatOutBoyLedBarConfig {
-        self.status_idle
+    const_field_getters! {
+        /// Return the headlights LED bar config.
+        pub fn headlights -> FloatOutBoyLedBarConfig = headlights;
+        /// Return the taillights LED bar config.
+        pub fn taillights -> FloatOutBoyLedBarConfig = taillights;
+        /// Return the front LED bar config.
+        pub fn front -> FloatOutBoyLedBarConfig = front;
+        /// Return the rear LED bar config.
+        pub fn rear -> FloatOutBoyLedBarConfig = rear;
+        /// Return the status-bar config.
+        pub fn status -> FloatOutBoyStatusBarConfig = status;
+        /// Return the idle status LED bar config.
+        pub fn status_idle -> FloatOutBoyLedBarConfig = status_idle;
     }
 }
 
@@ -800,28 +722,15 @@ impl FloatOutBoyLedStripConfig {
         self
     }
 
-    /// Return the physical strip order.
-    #[must_use]
-    pub const fn order(self) -> FloatOutBoyLedStripOrder {
-        self.order
-    }
-
-    /// Return the configured LED count.
-    #[must_use]
-    pub const fn count(self) -> u8 {
-        self.count
-    }
-
-    /// Return the configured color channel order.
-    #[must_use]
-    pub const fn color_order(self) -> FloatOutBoyLedColorOrder {
-        self.color_order
-    }
-
-    /// Return whether LED indexing is reversed.
-    #[must_use]
-    pub const fn is_reversed(self) -> bool {
-        self.reverse
+    const_field_getters! {
+        /// Return the physical strip order.
+        pub fn order -> FloatOutBoyLedStripOrder = order;
+        /// Return the configured LED count.
+        pub fn count -> u8 = count;
+        /// Return the configured color channel order.
+        pub fn color_order -> FloatOutBoyLedColorOrder = color_order;
+        /// Return whether LED indexing is reversed.
+        pub fn is_reversed -> bool = reverse;
     }
 }
 
@@ -1052,10 +961,9 @@ impl FloatOutBoyLedDynamics {
         )
     }
 
-    /// Return whether the lifted-board hysteresis is on its upright side.
-    #[must_use]
-    pub const fn is_board_upright(self) -> bool {
-        self.board_is_upright
+    const_field_getters! {
+        /// Return whether the lifted-board hysteresis is on its upright side.
+        pub fn is_board_upright -> bool = board_is_upright;
     }
 
     /// Return the current headlight transition split and settled state.
@@ -2463,6 +2371,104 @@ mod renderer_tests {
 
         for (color, channels) in cases {
             assert_eq!(FloatOutBoyLedPixel::from_named(color).channels(), channels);
+        }
+    }
+
+    #[test]
+    fn led_config_enum_ids_match_refloat_1_2_1_settings() {
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPin::B6.id(),
+                super::FloatOutBoyLedPin::B7.id(),
+                super::FloatOutBoyLedPin::C9.id(),
+            ],
+            [0, 1, 2]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPinConfig::PullupTo5v.id(),
+                super::FloatOutBoyLedPinConfig::NoPullup.id(),
+            ],
+            [0, 1]
+        );
+        assert_eq!(
+            [
+                FloatOutBoyLedColorOrder::Grb.id(),
+                FloatOutBoyLedColorOrder::Grbw.id(),
+                FloatOutBoyLedColorOrder::Rgb.id(),
+                FloatOutBoyLedColorOrder::Wrgb.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedAnimationMode::Solid.id(),
+                super::FloatOutBoyLedAnimationMode::Fade.id(),
+                super::FloatOutBoyLedAnimationMode::Pulse.id(),
+                super::FloatOutBoyLedAnimationMode::Strobe.id(),
+                super::FloatOutBoyLedAnimationMode::KnightRider.id(),
+                super::FloatOutBoyLedAnimationMode::Felony.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowCycle.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowFade.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowRoll.id(),
+            ],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedTransition::Fade.id(),
+                super::FloatOutBoyLedTransition::FadeOutIn.id(),
+                super::FloatOutBoyLedTransition::Cipher.id(),
+                super::FloatOutBoyLedTransition::MonoCipher.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedStripOrder::None.id(),
+                super::FloatOutBoyLedStripOrder::First.id(),
+                super::FloatOutBoyLedStripOrder::Second.id(),
+                super::FloatOutBoyLedStripOrder::Third.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+
+        let colors = [
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::WhiteFull,
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::WhiteSingle,
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Ferrari,
+            FloatOutBoyLedColor::Flame,
+            FloatOutBoyLedColor::Coral,
+            FloatOutBoyLedColor::Sunset,
+            FloatOutBoyLedColor::Sunrise,
+            FloatOutBoyLedColor::Gold,
+            FloatOutBoyLedColor::Orange,
+            FloatOutBoyLedColor::Yellow,
+            FloatOutBoyLedColor::Banana,
+            FloatOutBoyLedColor::Lime,
+            FloatOutBoyLedColor::Acid,
+            FloatOutBoyLedColor::Sage,
+            FloatOutBoyLedColor::Green,
+            FloatOutBoyLedColor::Mint,
+            FloatOutBoyLedColor::Tiffany,
+            FloatOutBoyLedColor::Cyan,
+            FloatOutBoyLedColor::Steel,
+            FloatOutBoyLedColor::Sky,
+            FloatOutBoyLedColor::Azure,
+            FloatOutBoyLedColor::Sapphire,
+            FloatOutBoyLedColor::Blue,
+            FloatOutBoyLedColor::Violet,
+            FloatOutBoyLedColor::Amethyst,
+            FloatOutBoyLedColor::Magenta,
+            FloatOutBoyLedColor::Pink,
+            FloatOutBoyLedColor::Fuchsia,
+            FloatOutBoyLedColor::Lavender,
+        ];
+        for (expected, color) in (0_u8..).zip(colors) {
+            assert_eq!(color.id(), expected, "wrong ID for {color:?}");
         }
     }
 

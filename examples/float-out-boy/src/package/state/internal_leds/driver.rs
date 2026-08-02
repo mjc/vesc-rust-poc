@@ -287,7 +287,7 @@ mod tests {
     };
     use vescpkg_rs::Ratio;
 
-    use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO};
+    use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO, encode_byte};
 
     fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
         FloatOutBoyLedBarConfig::new(
@@ -357,6 +357,35 @@ mod tests {
         assert_eq!(driver.pulses()[..64], [WS2812_ZERO; 64]);
         assert_eq!(driver.pulses()[64], WS2812_RESET);
         assert!(driver.is_operational());
+    }
+
+    #[test]
+    fn every_byte_maps_to_exact_ws2812_pulses() {
+        let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
+
+        for byte in 0_u8..=u8::MAX {
+            let mut pulses = [WS2812_RESET; 8];
+            let mut index = 0;
+            assert!(encode_byte(&mut pulses, &mut index, byte));
+            assert_eq!(index, 8);
+            assert_eq!(
+                pulses,
+                masks.map(|mask| {
+                    if byte & mask == 0 {
+                        WS2812_ZERO
+                    } else {
+                        WS2812_ONE
+                    }
+                }),
+                "wrong pulses for byte {byte:#04x}"
+            );
+        }
+
+        let mut short = [WS2812_RESET; 7];
+        let mut index = 0;
+        assert!(!encode_byte(&mut short, &mut index, u8::MAX));
+        assert_eq!(index, short.len());
+        assert_eq!(short, [WS2812_ONE; 7]);
     }
 
     #[test]
