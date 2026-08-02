@@ -361,6 +361,25 @@ mod tests {
     }
 
     #[test]
+    fn every_lcm_response_starts_with_the_refloat_package_and_command_ids() {
+        let state = LcmState::new(2, false);
+        assert_eq!(
+            &state.light_info_response().bytes()[..2],
+            [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::LcmLightInfo.id(),
+            ]
+        );
+        assert_eq!(
+            &state.device_info_response().bytes()[..2],
+            [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::LcmDeviceInfo.id(),
+            ]
+        );
+    }
+
+    #[test]
     fn light_info_and_lights_control_match_refloat_wire_contract() {
         let firmware = FirmwareTest::new();
         let mut state = external_state();

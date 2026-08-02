@@ -2467,6 +2467,104 @@ mod renderer_tests {
     }
 
     #[test]
+    fn led_config_enum_ids_match_refloat_1_2_1_settings() {
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPin::B6.id(),
+                super::FloatOutBoyLedPin::B7.id(),
+                super::FloatOutBoyLedPin::C9.id(),
+            ],
+            [0, 1, 2]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPinConfig::PullupTo5v.id(),
+                super::FloatOutBoyLedPinConfig::NoPullup.id(),
+            ],
+            [0, 1]
+        );
+        assert_eq!(
+            [
+                FloatOutBoyLedColorOrder::Grb.id(),
+                FloatOutBoyLedColorOrder::Grbw.id(),
+                FloatOutBoyLedColorOrder::Rgb.id(),
+                FloatOutBoyLedColorOrder::Wrgb.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedAnimationMode::Solid.id(),
+                super::FloatOutBoyLedAnimationMode::Fade.id(),
+                super::FloatOutBoyLedAnimationMode::Pulse.id(),
+                super::FloatOutBoyLedAnimationMode::Strobe.id(),
+                super::FloatOutBoyLedAnimationMode::KnightRider.id(),
+                super::FloatOutBoyLedAnimationMode::Felony.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowCycle.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowFade.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowRoll.id(),
+            ],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedTransition::Fade.id(),
+                super::FloatOutBoyLedTransition::FadeOutIn.id(),
+                super::FloatOutBoyLedTransition::Cipher.id(),
+                super::FloatOutBoyLedTransition::MonoCipher.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedStripOrder::None.id(),
+                super::FloatOutBoyLedStripOrder::First.id(),
+                super::FloatOutBoyLedStripOrder::Second.id(),
+                super::FloatOutBoyLedStripOrder::Third.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+
+        let colors = [
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::WhiteFull,
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::WhiteSingle,
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Ferrari,
+            FloatOutBoyLedColor::Flame,
+            FloatOutBoyLedColor::Coral,
+            FloatOutBoyLedColor::Sunset,
+            FloatOutBoyLedColor::Sunrise,
+            FloatOutBoyLedColor::Gold,
+            FloatOutBoyLedColor::Orange,
+            FloatOutBoyLedColor::Yellow,
+            FloatOutBoyLedColor::Banana,
+            FloatOutBoyLedColor::Lime,
+            FloatOutBoyLedColor::Acid,
+            FloatOutBoyLedColor::Sage,
+            FloatOutBoyLedColor::Green,
+            FloatOutBoyLedColor::Mint,
+            FloatOutBoyLedColor::Tiffany,
+            FloatOutBoyLedColor::Cyan,
+            FloatOutBoyLedColor::Steel,
+            FloatOutBoyLedColor::Sky,
+            FloatOutBoyLedColor::Azure,
+            FloatOutBoyLedColor::Sapphire,
+            FloatOutBoyLedColor::Blue,
+            FloatOutBoyLedColor::Violet,
+            FloatOutBoyLedColor::Amethyst,
+            FloatOutBoyLedColor::Magenta,
+            FloatOutBoyLedColor::Pink,
+            FloatOutBoyLedColor::Fuchsia,
+            FloatOutBoyLedColor::Lavender,
+        ];
+        for (expected, color) in (0_u8..).zip(colors) {
+            assert_eq!(color.id(), expected, "wrong ID for {color:?}");
+        }
+    }
+
+    #[test]
     fn physical_channels_apply_refloat_gamma_and_color_order() {
         let pixel = FloatOutBoyLedPixel {
             channels: [16, 64, 128, 255],
