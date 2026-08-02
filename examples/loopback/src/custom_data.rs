@@ -73,7 +73,7 @@ mod tests {
 
         assert!(state.receive(&incoming));
         assert_eq!(state.message_count(), 1);
-        assert_eq!(state.last_value(), 1.25);
+        assert_eq!(state.last_value().to_bits(), 1.25_f32.to_bits());
 
         let mut response = [0; 8];
         assert_eq!(state.encode_response(&mut response), Some(8));
