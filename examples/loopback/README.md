@@ -20,6 +20,9 @@ mapping is recorded in the module documentation and the upstream source is not
 vendored. The EEPROM helper only writes when its caller asks and never reaches
 into `vescpkg-rs-sys`.
 
+`src/threads.rs` ports the official thread example through the SDK-owned
+thread lifecycle and stops its sleeping worker during package teardown.
+
 The package also exposes one fixed audio-smoke command through `src/audio.rs`.
 After installing this example on a physically restrained controller, run:
 
