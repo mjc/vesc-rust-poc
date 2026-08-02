@@ -87,11 +87,7 @@ impl FloatOutBoyInternalLedDriver {
         if !self.operational {
             return false;
         }
-        if !quiesce(self.hardware.pin()) {
-            self.operational = false;
-            return false;
-        }
-        if !self.encode(renderer) {
+        if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
             self.operational = false;
             return false;
         }
@@ -123,7 +119,7 @@ impl FloatOutBoyInternalLedDriver {
         }
         let layout = self.hardware.internal_layout().ok()?;
         let bits = layout.roles().iter().try_fold(0_usize, |bits, role| {
-            let strip = self.strip(*role);
+            let strip = strip_for(self.hardware, *role);
             (usize::from(strip.count()) <= MAX_STRIP_PIXELS)
                 .then_some(strip)
                 .and_then(|strip| {
@@ -177,14 +173,6 @@ impl FloatOutBoyInternalLedDriver {
     #[cfg(target_arch = "arm")]
     fn pulse_slice(&self, pulse_count: usize) -> Option<&[u16]> {
         self.pulses.as_ref()?.as_slice(pulse_count)
-    }
-
-    const fn strip(&self, role: FloatOutBoyLedStripRole) -> FloatOutBoyLedStripConfig {
-        match role {
-            FloatOutBoyLedStripRole::Status => self.hardware.status_strip(),
-            FloatOutBoyLedStripRole::Front => self.hardware.front_strip(),
-            FloatOutBoyLedStripRole::Rear => self.hardware.rear_strip(),
-        }
     }
 
     fn encode(&mut self, renderer: &FloatOutBoyLedRenderer) -> bool {
@@ -246,9 +234,7 @@ fn frame_for(
 
 fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
     for bit in (0..8).rev() {
-        let Some(mask) = 1_u8.checked_shl(bit) else {
-            return false;
-        };
+        let mask = 1_u8.wrapping_shl(bit);
         let Some(pulse) = pulses.get_mut(*index) else {
             return false;
         };
