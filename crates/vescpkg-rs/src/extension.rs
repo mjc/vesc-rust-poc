@@ -879,6 +879,8 @@ pub struct ExtensionDescriptor {
 
 impl ExtensionDescriptor {
     pub(crate) fn from_handler(name: ExtensionName, handler: ExtensionHandler) -> Self {
+        #[cfg(not(any(test, feature = "test-support", target_arch = "arm")))]
+        let _ = handler;
         Self {
             name,
             #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
@@ -894,6 +896,7 @@ impl ExtensionDescriptor {
     }
 
     /// Build a descriptor for a runtime-state-backed typed extension callback.
+    #[must_use]
     pub fn stateful<T: StatefulLbmExtension>(name: ExtensionName) -> Self {
         Self {
             name,

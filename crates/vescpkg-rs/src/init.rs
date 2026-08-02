@@ -1,7 +1,6 @@
 //! Native VESC package loader helpers shared across package payloads.
 
 use crate::ffi;
-#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 use crate::runtime::CallbackRecorder;
 use core::any::TypeId;
 
@@ -66,7 +65,7 @@ unsafe fn quiesce_package_callbacks_and_threads<T: crate::PackageRuntimeState>(
     crate::gpio::reset_leases();
     #[cfg(target_arch = "arm")]
     unsafe {
-        crate::runtime::reset_firmware_runtime_gpio_leases(state)
+        crate::runtime::reset_firmware_runtime_gpio_leases(state);
     };
     #[cfg(any(feature = "test-support", target_arch = "arm"))]
     crate::runtime::disable_callback_dispatch();
@@ -200,7 +199,6 @@ impl core::error::Error for PackageStartError {}
 pub struct PackageStart<'info> {
     info: *mut crate::LoaderInfo,
     state_type: Option<TypeId>,
-    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     callback_recorder: Option<CallbackRecorder>,
     extension_image_pinned: bool,
     #[cfg(target_arch = "arm")]
@@ -294,7 +292,6 @@ impl<'info> PackageStart<'info> {
         Self {
             info: core::ptr::from_mut(info).cast(),
             state_type: None,
-            #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
             callback_recorder: None,
             extension_image_pinned: false,
             #[cfg(target_arch = "arm")]
