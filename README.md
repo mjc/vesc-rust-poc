@@ -75,5 +75,6 @@ $ make check-full
 More detail is available in the documentation for the
 [workspace layout](docs/workspace-layout.md),
 [package build flow](docs/package-flow.md),
+[package UI and assets](docs/package-ui.md),
 [`cargo vescpkg` command](docs/cargo-vescpkg-command.md), and
 [SDK capabilities](docs/sdk-compatibility.md).

@@ -18,6 +18,9 @@ compiled native payload. Metadata may set the display name and fullscreen-QML
 policy; if `package/pkgdesc.qml` declares the same policy, the values must
 agree.
 
+The [package UI and asset authoring reference](package-ui.md) documents the
+QML, LispBM, description, descriptor, and default-generation contracts.
+
 ## Build pipeline
 
 ```console
