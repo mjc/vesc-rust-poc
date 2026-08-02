@@ -1185,19 +1185,17 @@ impl FloatOutBoyStartupConfig<'_> {
     // Upstream defines `hertz` at `third_party/float-out-boy/src/conf/settings.xml:223-246`,
     // then serializes startup tolerances/speed/flags at
     // `third_party/float-out-boy/src/conf/settings.xml:3966-3972`.
-    const HERTZ_FIELD: CustomConfigSampleRateField = vescpkg_rs::generated_custom_config_field!(CustomConfigSampleRateField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 18);
+    generated_config_fields! {
+        HERTZ_FIELD: CustomConfigSampleRateField => sample_rate -> SampleRate, offset: 18;
+        PITCH_TOLERANCE_FIELD: CustomConfigAngleField => pitch_tolerance -> AngleDegrees, offset: 91, scale: 100.0;
+        ROLL_TOLERANCE_FIELD: CustomConfigAngleField => roll_tolerance -> AngleDegrees, offset: 93, scale: 100.0;
+        SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
+    }
     const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
     const SIMPLESTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 98);
     const PUSHSTART_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 99);
     const DIRTY_LANDINGS_OFFSET: usize = 100;
     const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
-    const PITCH_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 91, scale: 100.0);
-    const ROLL_TOLERANCE_FIELD: CustomConfigAngleField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 93, scale: 100.0);
-    const SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 95, scale: 100.0);
-
-    pub(crate) fn sample_rate(self) -> SampleRate {
-        generated_field(Self::HERTZ_FIELD.read(self.0))
-    }
 
     #[expect(clippy::inline_always, reason = "keeps the linked ARM image compact")]
     #[inline(always)]
@@ -1214,24 +1212,12 @@ impl FloatOutBoyStartupConfig<'_> {
         self.0.flag(Self::SIMPLESTART_FIELD)
     }
 
-    pub(crate) fn pitch_tolerance(self) -> AngleDegrees {
-        generated_field(Self::PITCH_TOLERANCE_FIELD.read(self.0))
-    }
-
-    pub(crate) fn roll_tolerance(self) -> AngleDegrees {
-        generated_field(Self::ROLL_TOLERANCE_FIELD.read(self.0))
-    }
-
     pub(crate) fn pushstart_enabled(self) -> bool {
         self.0.flag(Self::PUSHSTART_FIELD)
     }
 
     pub(crate) const fn dirty_landings_enabled(self) -> bool {
         self.0.as_bytes()[Self::DIRTY_LANDINGS_OFFSET] != 0
-    }
-
-    pub(crate) fn startup_speed(self) -> AngularVelocity {
-        generated_field(Self::SPEED_FIELD.read(self.0))
     }
 
     pub(crate) fn centering_step(self) -> AngleDegrees {
