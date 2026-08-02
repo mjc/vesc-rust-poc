@@ -428,6 +428,79 @@ mod tests {
     }
 
     #[test]
+    fn internal_layout_matches_refloat_priority_for_every_order_assignment() {
+        let orders = [
+            FloatOutBoyLedStripOrder::None,
+            FloatOutBoyLedStripOrder::First,
+            FloatOutBoyLedStripOrder::Second,
+            FloatOutBoyLedStripOrder::Third,
+        ];
+
+        for status_order in orders {
+            for front_order in orders {
+                for rear_order in orders {
+                    let config = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+                        .with_status_strip(FloatOutBoyLedStripConfig::new(
+                            status_order,
+                            2,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ))
+                        .with_front_strip(FloatOutBoyLedStripConfig::new(
+                            front_order,
+                            3,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ))
+                        .with_rear_strip(FloatOutBoyLedStripConfig::new(
+                            rear_order,
+                            5,
+                            FloatOutBoyLedColorOrder::Grb,
+                        ));
+                    let layout = config.internal_layout().expect("small layout is valid");
+                    let candidates = [
+                        (FloatOutBoyLedStripRole::Status, status_order, 2_usize),
+                        (FloatOutBoyLedStripRole::Front, front_order, 3_usize),
+                        (FloatOutBoyLedStripRole::Rear, rear_order, 5_usize),
+                    ];
+                    let mut expected_roles = std::vec::Vec::new();
+                    let mut expected_offsets = [None; 3];
+                    let mut expected_count = 0;
+
+                    for order in [
+                        FloatOutBoyLedStripOrder::First,
+                        FloatOutBoyLedStripOrder::Second,
+                        FloatOutBoyLedStripOrder::Third,
+                    ] {
+                        if let Some((role, _, count)) = candidates
+                            .iter()
+                            .find(|(_, candidate, _)| *candidate == order)
+                        {
+                            expected_roles.push(*role);
+                            let index = match role {
+                                FloatOutBoyLedStripRole::Status => 0,
+                                FloatOutBoyLedStripRole::Front => 1,
+                                FloatOutBoyLedStripRole::Rear => 2,
+                            };
+                            expected_offsets[index] = Some(expected_count);
+                            expected_count += count;
+                        }
+                    }
+
+                    assert_eq!(layout.roles(), expected_roles);
+                    assert_eq!(
+                        [
+                            layout.offset(FloatOutBoyLedStripRole::Status),
+                            layout.offset(FloatOutBoyLedStripRole::Front),
+                            layout.offset(FloatOutBoyLedStripRole::Rear),
+                        ],
+                        expected_offsets
+                    );
+                    assert_eq!(layout.pixel_count(), expected_count);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn internal_layout_rejects_only_selected_front_rear_overflow() {
         let disabled = FloatOutBoyLedStripConfig::new(
             FloatOutBoyLedStripOrder::None,
