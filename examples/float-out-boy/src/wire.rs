@@ -4,6 +4,10 @@
 
 use vescpkg_rs::prelude::{AngleDegrees, AngleRadians};
 
+pub(crate) use vescpkg_rs::protocol_buffer::{
+    saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
+};
+
 pub(crate) fn push_u8(buffer: &mut [u8], ind: &mut usize, value: u8) {
     // C map: upstream packet writers increment a byte index and stop storing
     // once the buffer is full; Rust keeps that no-panics boundary behavior.
@@ -48,70 +52,13 @@ pub(crate) fn degrees(angle: AngleRadians) -> f32 {
     AngleDegrees::from(angle).as_degrees()
 }
 
-pub(crate) fn saturating_trunc_f32_to_u32(value: f32) -> u32 {
-    if value.is_nan() || value <= 0.0 {
-        return 0;
-    }
-
-    // 2^32 is exactly representable as f32, whereas u32::MAX rounds up to it.
-    // Testing this boundary first also handles positive infinity.
-    if value >= 4_294_967_296.0 {
-        return u32::MAX;
-    }
-
-    let bits = value.to_bits();
-    let [exponent_bits, ..] = ((bits >> 23) & 0xff).to_le_bytes();
-    let exponent = i32::from(exponent_bits).saturating_sub(127);
-    if exponent < 0 {
-        return 0;
-    }
-
-    let significand = (bits & 0x007f_ffff) | 0x0080_0000;
-    let shift = exponent.abs_diff(23);
-    // The range checks above limit `exponent` to 0..=31, so both shifts are
-    // within the 24-bit significand and cannot overflow or panic.
-    if exponent >= 23 {
-        significand << shift
-    } else {
-        significand >> shift
-    }
-}
-
-pub(crate) fn saturating_trunc_f32_to_u8(value: f32) -> u8 {
-    let value = saturating_trunc_f32_to_u32(value);
-    if value > u32::from(u8::MAX) {
-        return u8::MAX;
-    }
-    let [value, ..] = value.to_le_bytes();
-    value
-}
-
-pub(crate) fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
-    if value.is_nan() {
-        return 0;
-    }
-    if value >= 32_768.0 {
-        return i16::MAX;
-    }
-    if value <= -32_768.0 {
-        return i16::MIN;
-    }
-
-    let magnitude = saturating_trunc_f32_to_u32(value.abs());
-    let [low, high, ..] = magnitude.to_le_bytes();
-    let magnitude = i16::from_le_bytes([low, high]);
-    if value.is_sign_negative() {
-        magnitude.saturating_neg()
-    } else {
-        magnitude
-    }
-}
-
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "a narrowing integer cast specifies the required low-32-bit timestamp wrapping"
+)]
 pub(crate) const fn truncating_u64_to_u32(value: u64) -> u32 {
-    // VESC timestamps wrap at 32 bits. Selecting the low bytes states that
-    // wire behavior directly and cannot panic if a wider counter is supplied.
-    let [byte0, byte1, byte2, byte3, ..] = value.to_le_bytes();
-    u32::from_le_bytes([byte0, byte1, byte2, byte3])
+    value as u32
 }
 
 #[cfg(test)]
@@ -152,6 +99,41 @@ mod tests {
         assert_eq!(saturating_trunc_f32_to_i16(42.9), 42);
         assert_eq!(saturating_trunc_f32_to_i16(f32::INFINITY), i16::MAX);
         assert_eq!(saturating_trunc_f32_to_i16(f32::MAX), i16::MAX);
+    }
+
+    #[test]
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the characterization oracle is Rust's specified float-to-integer cast"
+    )]
+    fn wire_float_conversions_match_rust_casts_across_the_bit_space_and_boundaries() {
+        for bits in (u32::MIN..=u32::MAX).step_by(65_537) {
+            let value = f32::from_bits(bits);
+            assert_eq!(saturating_trunc_f32_to_u32(value), value as u32);
+            assert_eq!(saturating_trunc_f32_to_u8(value), value as u8);
+            assert_eq!(saturating_trunc_f32_to_i16(value), value as i16);
+        }
+
+        for value in [
+            f32::NEG_INFINITY,
+            -32_768.0,
+            -0.999_999_94,
+            -0.0,
+            f32::from_bits(1),
+            0.999_999_94,
+            255.999_98,
+            32_767.998,
+            4_294_967_040.0,
+            4_294_967_296.0,
+            f32::INFINITY,
+            f32::NAN,
+        ] {
+            assert_eq!(saturating_trunc_f32_to_u32(value), value as u32);
+            assert_eq!(saturating_trunc_f32_to_u8(value), value as u8);
+            assert_eq!(saturating_trunc_f32_to_i16(value), value as i16);
+        }
     }
 
     #[test]

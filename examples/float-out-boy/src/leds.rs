@@ -5,55 +5,57 @@
 
 use vescpkg_rs::prelude::Ratio;
 
-/// Float Out Boy hardware LED output pin.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyLedPin {
-    /// STM32 pin B6.
-    B6 = 0,
-    /// STM32 pin B7.
-    B7 = 1,
-    /// STM32 pin C9.
-    C9 = 2,
+pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
+    Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
+};
+
+macro_rules! wire_enum {
+    (
+        $(#[$enum_attribute:meta])*
+        $visibility:vis enum $name:ident {
+            $(
+                $(#[$variant_attribute:meta])*
+                $variant:ident = $id:literal,
+            )+
+        }
+    ) => {
+        $(#[$enum_attribute])*
+        #[repr(u8)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        $visibility enum $name {
+            $(
+                $(#[$variant_attribute])*
+                $variant = $id,
+            )+
+        }
+
+        impl $name {
+            /// Return the Float Out Boy `v1.2.1` wire ID.
+            #[must_use]
+            #[expect(
+                clippy::as_conversions,
+                reason = "the repr(u8) discriminant is the firmware wire value"
+            )]
+            pub const fn id(self) -> u8 {
+                self as u8
+            }
+        }
+
+        impl TryFrom<u8> for $name {
+            type Error = u8;
+
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                match value {
+                    $($id => Ok(Self::$variant),)+
+                    _ => Err(value),
+                }
+            }
+        }
+    };
 }
 
-impl FloatOutBoyLedPin {
-    /// Return the Float Out Boy `v1.2.1` LED pin ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
-}
-
-/// Float Out Boy hardware LED pin pull-up configuration.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyLedPinConfig {
-    /// Enable the 5V pull-up.
-    PullupTo5v = 0,
-    /// Leave the LED pin without pull-up.
-    NoPullup = 1,
-}
-
-impl FloatOutBoyLedPinConfig {
-    /// Return the Float Out Boy `v1.2.1` LED pin config ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
-}
-
+wire_enum! {
 /// Float Out Boy LED color channel order.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedColorOrder {
     /// Green, red, blue.
     Grb = 0,
@@ -64,22 +66,13 @@ pub enum FloatOutBoyLedColorOrder {
     /// White, red, green, blue.
     Wrgb = 3,
 }
-
-impl FloatOutBoyLedColorOrder {
-    /// Return the Float Out Boy `v1.2.1` LED color order ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
+wire_enum! {
 /// Float Out Boy named LED color.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// C map: these IDs follow the `enumNames` order for LED color config fields at
+/// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
 pub enum FloatOutBoyLedColor {
     /// Black/off.
     Black = 0,
@@ -146,20 +139,6 @@ pub enum FloatOutBoyLedColor {
     /// Lavender.
     Lavender = 31,
 }
-
-impl FloatOutBoyLedColor {
-    /// Return the Float Out Boy `v1.2.1` LED color ID.
-    ///
-    /// C map: these IDs follow the `enumNames` order for LED color config fields at
-    /// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// One renderer pixel in red, green, blue, white channel order.
@@ -304,9 +283,8 @@ fn refloat_led_gamma(channel: u8) -> u8 {
         .unwrap_or_default()
 }
 
+wire_enum! {
 /// Float Out Boy LED animation mode.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedAnimationMode {
     /// Solid color.
     Solid = 0,
@@ -327,22 +305,10 @@ pub enum FloatOutBoyLedAnimationMode {
     /// Roll rainbow colors.
     RainbowRoll = 8,
 }
-
-impl FloatOutBoyLedAnimationMode {
-    /// Return the Float Out Boy `v1.2.1` LED animation mode ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
+wire_enum! {
 /// Float Out Boy LED transition mode.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedTransition {
     /// Fade directly to the target bar.
     Fade = 0,
@@ -353,17 +319,6 @@ pub enum FloatOutBoyLedTransition {
     /// Monochrome cipher transition.
     MonoCipher = 3,
 }
-
-impl FloatOutBoyLedTransition {
-    /// Return the Float Out Boy `v1.2.1` LED transition ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// Float Out Boy LED animation speed scalar.
@@ -664,9 +619,8 @@ impl FloatOutBoyLedsConfig {
     }
 }
 
+wire_enum! {
 /// Float Out Boy physical LED strip order.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedStripOrder {
     /// No strip is assigned.
     None = 0,
@@ -677,17 +631,6 @@ pub enum FloatOutBoyLedStripOrder {
     /// Third LED strip.
     Third = 3,
 }
-
-impl FloatOutBoyLedStripOrder {
-    /// Return the Float Out Boy `v1.2.1` LED strip order ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// Float Out Boy LED strip configuration.
