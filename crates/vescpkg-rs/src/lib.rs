@@ -11,6 +11,23 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::float_cmp,
+        reason = "characterization tests intentionally compare exact firmware values and cast fixed-size fixtures"
+    )
+)]
+#![cfg_attr(
+    all(not(test), not(feature = "test-support"), not(target_arch = "arm")),
+    allow(
+        dead_code,
+        clippy::unused_self,
+        reason = "host builds type-check the firmware SDK without executing its ARM-only lifecycle"
+    )
+)]
 
 #[cfg(target_arch = "arm")]
 #[panic_handler]
