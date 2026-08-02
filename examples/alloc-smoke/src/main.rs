@@ -108,13 +108,17 @@ fn alloc_smoke_loopback(
     now_ms: u64,
 ) -> Result<([u8; MAX_LOOPBACK_FRAME_BYTES], usize), LoopbackError> {
     let (response, response_len) = handle_loopback_frame(packet, now_ms)?;
+    let response = response
+        .get(..response_len)
+        .ok_or(LoopbackError::BufferTooShort {
+            len: response.len(),
+            required: response_len,
+        })?;
     let mut candidates = Vec::with_capacity(ALLOC_SMOKE_CANDIDATES);
     for _ in 0..ALLOC_SMOKE_CANDIDATES {
-        candidates.push(response[..response_len].to_vec());
+        candidates.push(response.to_vec());
     }
 
-    let rotation = response_len % candidates.len();
-    candidates.rotate_left(rotation);
     let selected = candidates.first().map(Vec::as_slice).unwrap_or_default();
     let mut output = [0_u8; MAX_LOOPBACK_FRAME_BYTES];
     for (destination, source) in output.iter_mut().zip(selected) {
