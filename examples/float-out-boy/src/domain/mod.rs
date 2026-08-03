@@ -12,7 +12,6 @@
 
 mod all_data;
 mod app_data;
-mod motor_command;
 mod realtime;
 mod ride_state;
 mod state;
@@ -28,7 +27,6 @@ pub use self::app_data::{
     FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand, FloatOutBoyAppDataCommandError,
     FloatOutBoyAppDataPackageId,
 };
-pub use self::motor_command::FloatOutBoyMotorCommand;
 pub use self::realtime::{
     FLOAT_OUT_BOY_REALTIME_DATA_ITEMS, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAtrAccelerationDiff,
