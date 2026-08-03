@@ -86,6 +86,62 @@ macro_rules! const_field_getters {
     };
 }
 
+macro_rules! typed_fields {
+    (
+        $(#[$type_attribute:meta])*
+        $visibility:vis struct $name:ident {
+            $( $field:ident: $field_type:ty => $getter:ident, )+
+        }
+    ) => {
+        $(#[$type_attribute])*
+        $visibility struct $name {
+            $( $field: $field_type, )+
+        }
+
+        impl $name {
+            /// Build the typed field group.
+            #[must_use]
+            pub const fn new($( $field: $field_type, )+) -> Self {
+                Self { $( $field, )+ }
+            }
+
+            const_field_getters! {
+                $(
+                    #[doc = concat!("Return the `", stringify!($field), "` field.")]
+                    pub fn $getter -> $field_type = $field;
+                )+
+            }
+        }
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! typed_newtype {
+    (
+        $(#[$type_attribute:meta])*
+        $visibility:vis struct $name:ident($inner:ty);
+        $constructor:ident($value:ident);
+        $getter:ident;
+    ) => {
+        $(#[$type_attribute])*
+        $visibility struct $name($inner);
+
+        impl $name {
+            /// Build the typed value.
+            #[must_use]
+            pub const fn $constructor($value: $inner) -> Self {
+                Self($value)
+            }
+
+            /// Return the wrapped value.
+            #[must_use]
+            pub const fn $getter(self) -> $inner {
+                self.0
+            }
+        }
+    };
+}
+
 macro_rules! wire_enum {
     (
         $(#[$enum_attribute:meta])*
