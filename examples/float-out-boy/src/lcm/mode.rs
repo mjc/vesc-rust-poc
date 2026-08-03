@@ -2,7 +2,7 @@
 //!
 //! C map: `third_party/float-out-boy/src/conf/datatypes.h:36-60`.
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy hardware LED mode.
 pub enum FloatOutBoyLedMode {
     /// LEDs are disabled.

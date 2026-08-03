@@ -9,7 +9,7 @@ pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
     Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
 };
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy LED color channel order.
 pub enum FloatOutBoyLedColorOrder {
     /// Green, red, blue.
@@ -23,7 +23,7 @@ pub enum FloatOutBoyLedColorOrder {
 }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy named LED color.
 ///
 /// C map: these IDs follow the `enumNames` order for LED color config fields at
@@ -218,7 +218,7 @@ fn refloat_led_gamma(channel: u8) -> u8 {
     u8::try_from(channel.saturating_mul(channel.saturating_add(1)) / 256).unwrap_or_default()
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy LED animation mode.
 pub enum FloatOutBoyLedAnimationMode {
     /// Solid color.
@@ -242,7 +242,7 @@ pub enum FloatOutBoyLedAnimationMode {
 }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy LED transition mode.
 pub enum FloatOutBoyLedTransition {
     /// Fade directly to the target bar.
@@ -315,7 +315,7 @@ pub(crate) struct FloatOutBoyLedRuntimeStatus {
     pub(crate) headlights_enabled: bool,
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
 /// Float Out Boy physical LED strip order.
 pub enum FloatOutBoyLedStripOrder {
     /// No strip is assigned.
@@ -540,7 +540,7 @@ impl FloatOutBoyLedDynamics {
         )
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return whether the lifted-board hysteresis is on its upright side.
         pub fn is_board_upright -> bool = board_is_upright;
     }

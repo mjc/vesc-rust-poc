@@ -96,6 +96,7 @@ mod audio;
 mod bindings;
 mod capabilities;
 mod data_recorder;
+mod declaration_macros;
 mod eeprom;
 mod encoder;
 mod extension;

@@ -33,7 +33,7 @@ pub(super) fn float_out_boy_append_all_data_mode2<const N: usize>(
             .as_degrees_celsius(),
         2.0,
     ));
-    packet.push(mode2.battery_temperature().as_measured().map_or(0, |temp| {
+    packet.push(mode2.battery_temperature().map_or(0, |temp| {
         float_out_boy_nonnegative_scaled_u8(temp.as_degrees_celsius(), 2.0)
     }));
 }

@@ -7,12 +7,12 @@ use super::FloatOutBoyPackageState;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyFocIdCurrent, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
-    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState,
-    FloatOutBoySetpointAdjustment, FloatOutBoyWheelSlipState,
+    FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
+    FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
+    FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
@@ -458,7 +458,7 @@ fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
                 BatteryCurrent::new(Current::from_amps(0.0)),
             ),
             DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-            FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(0.0))),
+            Some(MotorCurrent::new(Current::from_amps(0.0))),
         ),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
