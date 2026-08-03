@@ -34,18 +34,18 @@ fn nul_terminated_prefix(bytes: &[u8]) -> &[u8] {
 }
 
 fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
-    if !config.is_enabled() {
+    if !config.on {
         return [0; 3];
     }
 
-    let front = config.front().brightness();
-    let (active, status) = if config.are_headlights_on() {
+    let front = config.front.brightness;
+    let (active, status) = if config.headlights_on {
         (
-            config.headlights().brightness(),
-            config.status().brightness_headlights_on(),
+            config.headlights.brightness,
+            config.status.brightness_headlights_on,
         )
     } else {
-        (front, config.status().brightness_headlights_off())
+        (front, config.status.brightness_headlights_off)
     };
     [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0) as u8)
 }
@@ -98,7 +98,7 @@ impl LcmState {
             self.brightness_idle,
             self.status_brightness,
         ] = configured_brightness(config);
-        self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
+        self.lights_off_when_lifted = config.lifted.lights_off;
     }
 
     const fn enabled(self) -> bool {
@@ -299,7 +299,7 @@ impl FloatOutBoyPackageState {
                 reply(&[
                     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                     FloatOutBoyAppDataCommand::LightsControl.id(),
-                    u8::from(status.enabled()) | (u8::from(status.headlights_enabled()) << 1),
+                    u8::from(status.enabled) | (u8::from(status.headlights_enabled) << 1),
                 ])
             }
             _ => false,
