@@ -16,7 +16,7 @@ ifdef DEVICE_ADDRESS
 DEVICE_FLAGS += --address $(DEVICE_ADDRESS)
 endif
 
-.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke safe-example-check arm-clippy arm-noalloc-check arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test alloc-math-test doc-test doc-all package package-only package-examples deploy clean status
+.PHONY: check check-full pre-commit fmt clippy clippy-pedantic vescpkg-rs-sys-target-check thumb-dispatch-smoke safe-example-check arm-clippy arm-noalloc-check arm-math-check arm-alloc-check arm-alloc-math-check arm-gates test math-test alloc-math-test doc-test doc-all fob-production-loc package package-only package-examples deploy clean status
 
 # --- verification -----------------------------------------------------------
 #
@@ -95,6 +95,9 @@ doc-test:
 
 doc-all:
 	$(CARGO) doc --workspace --all-features --no-deps
+
+fob-production-loc:
+	./tools/fob-production-tokei.sh
 
 # --- packaging & device -----------------------------------------------------
 
