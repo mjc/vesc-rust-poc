@@ -64,10 +64,10 @@ impl FloatOutBoyInternalLedDriver {
         };
         data.fill(WS2812_ZERO);
         *reset = WS2812_RESET;
-        self.operational = setup(hardware.pin(), hardware.pin_config(), pulses);
+        self.operational = setup(hardware.pin, hardware.pin_config, pulses);
         self.initialized = self.operational;
         if !self.operational {
-            rollback(self.hardware.pin());
+            rollback(self.hardware.pin);
             self.pulse_count = 0;
             self.release_pulses();
         }
@@ -87,7 +87,7 @@ impl FloatOutBoyInternalLedDriver {
         if !self.operational {
             return false;
         }
-        if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
+        if !quiesce(self.hardware.pin) || !self.encode(renderer) {
             self.operational = false;
             return false;
         }
@@ -95,7 +95,7 @@ impl FloatOutBoyInternalLedDriver {
             self.operational = false;
             return false;
         };
-        self.operational = restart(self.hardware.pin(), pulses);
+        self.operational = restart(self.hardware.pin, pulses);
         self.operational
     }
 
@@ -104,7 +104,7 @@ impl FloatOutBoyInternalLedDriver {
             return true;
         }
         self.operational = false;
-        if !teardown(self.hardware.pin()) {
+        if !teardown(self.hardware.pin) {
             return false;
         }
         self.initialized = false;
@@ -114,18 +114,20 @@ impl FloatOutBoyInternalLedDriver {
     }
 
     fn required_pulse_count(&self) -> Option<usize> {
-        if !self.hardware.uses_internal_leds() {
+        if !matches!(
+            self.hardware.mode,
+            crate::lcm::FloatOutBoyLedMode::Internal | crate::lcm::FloatOutBoyLedMode::Both
+        ) {
             return None;
         }
         let layout = self.hardware.internal_layout().ok()?;
         let bits = layout.roles().iter().try_fold(0_usize, |bits, role| {
             let strip = strip_for(self.hardware, *role);
-            (usize::from(strip.count()) <= MAX_STRIP_PIXELS)
+            (usize::from(strip.count) <= MAX_STRIP_PIXELS)
                 .then_some(strip)
                 .and_then(|strip| {
                     bits.checked_add(
-                        usize::from(strip.count())
-                            .checked_mul(bits_per_pixel(strip.color_order()))?,
+                        usize::from(strip.count).checked_mul(bits_per_pixel(strip.color_order))?,
                     )
                 })
         })?;
@@ -190,11 +192,11 @@ impl FloatOutBoyInternalLedDriver {
         for role in layout.roles() {
             let strip = strip_for(hardware, *role);
             let frame = frame_for(renderer, *role);
-            for pixel_index in 0..usize::from(strip.count()) {
+            for pixel_index in 0..usize::from(strip.count) {
                 let Some(pixel) = frame.physical_pixel(pixel_index) else {
                     return false;
                 };
-                for channel in pixel.physical_channels(strip.color_order()).as_slice() {
+                for channel in pixel.physical_channels(strip.color_order).as_slice() {
                     if !encode_byte(pulses, &mut pulse_index, *channel) {
                         return false;
                     }
@@ -215,9 +217,9 @@ const fn strip_for(
     role: FloatOutBoyLedStripRole,
 ) -> FloatOutBoyLedStripConfig {
     match role {
-        FloatOutBoyLedStripRole::Status => hardware.status_strip(),
-        FloatOutBoyLedStripRole::Front => hardware.front_strip(),
-        FloatOutBoyLedStripRole::Rear => hardware.rear_strip(),
+        FloatOutBoyLedStripRole::Status => hardware.status,
+        FloatOutBoyLedStripRole::Front => hardware.front,
+        FloatOutBoyLedStripRole::Rear => hardware.rear,
     }
 }
 
@@ -226,9 +228,9 @@ fn frame_for(
     role: FloatOutBoyLedStripRole,
 ) -> &FloatOutBoyLedStripFrame {
     match role {
-        FloatOutBoyLedStripRole::Status => renderer.status(),
-        FloatOutBoyLedStripRole::Front => renderer.front(),
-        FloatOutBoyLedStripRole::Rear => renderer.rear(),
+        FloatOutBoyLedStripRole::Status => &renderer.status,
+        FloatOutBoyLedStripRole::Front => &renderer.front,
+        FloatOutBoyLedStripRole::Rear => &renderer.rear,
     }
 }
 

@@ -113,12 +113,13 @@ impl FloatOutBoyPackageState {
         hardware: FloatOutBoyHardwareLedsConfig,
         config: FloatOutBoyLedsConfig,
     ) {
-        if hardware.uses_internal_leds()
-            && !matches!(
-                self.all_data_payloads.base().footpad().state(),
-                crate::FloatOutBoyFootpadState::Both
-            )
-        {
+        if matches!(
+            hardware.mode,
+            crate::lcm::FloatOutBoyLedMode::Internal | crate::lcm::FloatOutBoyLedMode::Both
+        ) && !matches!(
+            self.all_data_payloads.base().footpad().state(),
+            crate::FloatOutBoyFootpadState::Both
+        ) {
             self.configure_internal_leds(hardware, config);
         }
     }
@@ -201,8 +202,8 @@ impl FloatOutBoyPackageState {
     ) {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
-        let frame = FloatOutBoyLedFrameUpdate::new(
-            FloatOutBoyLedUpdate {
+        let frame = FloatOutBoyLedFrameUpdate {
+            ride: FloatOutBoyLedUpdate {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
                 darkride: matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active),
@@ -210,7 +211,7 @@ impl FloatOutBoyPackageState {
                 pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
                 distance: telemetry.signed_trip_distance().distance().as_meters(),
             },
-            FloatOutBoyLedStatusUpdate {
+            status: FloatOutBoyLedStatusUpdate {
                 battery_level: telemetry.battery_level().as_fraction(),
                 duty_cycle: telemetry.duty_cycle().ratio().as_ratio(),
                 moving: telemetry
@@ -220,7 +221,7 @@ impl FloatOutBoyPackageState {
                     .abs()
                     > 100.0,
             },
-        );
+        };
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]

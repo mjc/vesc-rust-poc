@@ -15,13 +15,3 @@ pub enum FloatOutBoyLedMode {
     Both = 3,
 }
 }
-
-impl FloatOutBoyLedMode {
-    pub(crate) const fn uses_internal_leds(self) -> bool {
-        matches!(self, Self::Internal | Self::Both)
-    }
-
-    pub(crate) const fn uses_external_leds(self) -> bool {
-        matches!(self, Self::External | Self::Both)
-    }
-}
