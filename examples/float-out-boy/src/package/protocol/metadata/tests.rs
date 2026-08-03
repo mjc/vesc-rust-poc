@@ -92,10 +92,9 @@ fn info_v2_advertises_only_an_operational_recorder() {
 
 #[test]
 fn oversized_info_length_preserves_the_complete_buffer() {
-    let response = FloatOutBoyInfoResponse {
-        bytes: [0x5a; FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN],
-        len: usize::MAX,
-    };
+    let mut response = FloatOutBoyInfoResponse::new();
+    response.extend(&[0x5a; FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN]);
+    response.push(0xff);
 
     assert_eq!(
         response.as_bytes(),
