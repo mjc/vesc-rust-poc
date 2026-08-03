@@ -63,8 +63,8 @@ pub(super) fn float_out_boy_append_all_data_mode4<const N: usize>(
 ) {
     // C map: mode >= 4 appends charging current and voltage at
     // `third_party/float-out-boy/src/main.c:1391-1395`.
-    packet.push_scaled_i16(mode4.current().current().current().as_amps(), 10.0);
-    packet.push_scaled_i16(mode4.voltage().voltage().voltage().as_volts(), 10.0);
+    packet.push_scaled_i16(mode4.current().current().as_amps(), 10.0);
+    packet.push_scaled_i16(mode4.voltage().voltage().as_volts(), 10.0);
 }
 
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {

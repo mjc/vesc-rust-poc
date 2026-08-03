@@ -9,8 +9,7 @@ use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyMotorCommand,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
-    FloatOutBoyRealtimeChargingVoltage, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, FloatOutBoyRideState,
@@ -511,8 +510,8 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
         BatteryLevel::from_fraction(0.72),
     );
     let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-        FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        BatteryCurrent::new(Current::from_amps(1.2)),
+        BatteryVoltage::new(Voltage::from_volts(82.4)),
     );
 
     assert_f32_eq!(mode2.distance_abs().distance().as_meters(), 42.5);
@@ -531,8 +530,8 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
     assert_f32_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
     assert_f32_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
     assert_f32_eq!(mode3.battery_level().as_fraction(), 0.72);
-    assert_f32_eq!(mode4.current().current().current().as_amps(), 1.2);
-    assert_f32_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
+    assert_f32_eq!(mode4.current().current().as_amps(), 1.2);
+    assert_f32_eq!(mode4.voltage().voltage().as_volts(), 82.4);
 }
 
 #[test]
@@ -666,8 +665,8 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
         BatteryLevel::from_fraction(0.72),
     );
     let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-        FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        BatteryCurrent::new(Current::from_amps(1.2)),
+        BatteryVoltage::new(Voltage::from_volts(82.4)),
     );
 
     assert_eq!(
@@ -745,8 +744,8 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
             BatteryLevel::from_fraction(0.72),
         ),
         FloatOutBoyAllDataMode4Payload::new(
-            FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-            FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+            BatteryCurrent::new(Current::from_amps(1.2)),
+            BatteryVoltage::new(Voltage::from_volts(82.4)),
         ),
     )
 }

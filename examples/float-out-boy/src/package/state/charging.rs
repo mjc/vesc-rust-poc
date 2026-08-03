@@ -2,7 +2,6 @@ use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads,
     FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
-    FloatOutBoyRealtimeChargingCurrent, FloatOutBoyRealtimeChargingVoltage,
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::package::time::float_out_boy_ticks_elapsed;
@@ -78,10 +77,7 @@ pub(super) fn handle_packet(
 
     Some(
         FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
-            .with_mode4_charging(FloatOutBoyAllDataMode4Payload::new(
-                FloatOutBoyRealtimeChargingCurrent::new(current),
-                FloatOutBoyRealtimeChargingVoltage::new(voltage),
-            )),
+            .with_mode4_charging(FloatOutBoyAllDataMode4Payload::new(current, voltage)),
     )
 }
 

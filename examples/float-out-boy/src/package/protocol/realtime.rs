@@ -88,8 +88,8 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     packet.push_float32_auto(motor.filtered_motor_current().current().current().as_amps());
     packet.push_float32_auto(atr_accel_diff);
     if matches!(ride_state.charging(), FloatOutBoyChargingState::Charging) {
-        packet.push_float32_auto(payloads.mode4().current().current().current().as_amps());
-        packet.push_float32_auto(payloads.mode4().voltage().voltage().voltage().as_volts());
+        packet.push_float32_auto(payloads.mode4().current().current().as_amps());
+        packet.push_float32_auto(payloads.mode4().voltage().voltage().as_volts());
     } else {
         packet.push_float32_auto(base.booster_current().current().current().as_amps());
         packet.push_float32_auto(motor.directional_motor_current().current().as_amps());
@@ -178,14 +178,8 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
         }
     }
     if charging {
-        push_float_out_boy_float16(
-            &mut packet,
-            payloads.mode4().current().current().current().as_amps(),
-        );
-        push_float_out_boy_float16(
-            &mut packet,
-            payloads.mode4().voltage().voltage().voltage().as_volts(),
-        );
+        push_float_out_boy_float16(&mut packet, payloads.mode4().current().current().as_amps());
+        push_float_out_boy_float16(&mut packet, payloads.mode4().voltage().voltage().as_volts());
     }
 
     packet.push_u32(u32::from(tail.firmware_fault_active()));
