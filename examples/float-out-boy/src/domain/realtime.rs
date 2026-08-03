@@ -5,13 +5,13 @@
 
 use super::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
+    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadState,
+    FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
-    MotorTemperature, SignedRatio, TimestampTicks, VehicleSpeed,
+    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent,
+    FirmwareFaultWireCode, MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio,
+    TimestampTicks,
 };
 
 macro_rules! realtime_data_items {
@@ -155,40 +155,6 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime motor payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeMotorPayload {
-        speed: VehicleSpeed => speed,
-        electrical_speed: ElectricalSpeed => electrical_speed,
-        currents: FloatOutBoyRealtimeMotorCurrents => currents,
-        duty_cycle: DutyCycle => duty_cycle,
-        battery_voltage: BatteryVoltage => battery_voltage,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime IMU payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeImuPayload {
-        pitch: ImuPitch => pitch,
-        balance_pitch: FloatOutBoyRealtimeBalancePitch => balance_pitch,
-        roll: ImuRoll => roll,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeAlwaysPayload {
-        motor: FloatOutBoyRealtimeMotorPayload => motor,
-        imu: FloatOutBoyRealtimeImuPayload => imu,
-        footpad: FloatOutBoyFootpadSample => footpad,
-        remote_input: FloatOutBoyRealtimeRemoteInput => remote_input,
-    }
-}
-
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy runtime setpoint angle value.
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -238,15 +204,6 @@ vescpkg_rs::typed_newtype! {
     as_units;
 }
 
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy runtime ATR payload values.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeRuntimeAtrPayload {
-        accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff => accel_diff,
-        speed_boost: FloatOutBoyRealtimeAtrSpeedBoost => speed_boost,
-    }
-}
-
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `booster.current` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -254,17 +211,6 @@ vescpkg_rs::typed_newtype! {
     pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
     new(current);
     current;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime payload values sent only while running.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeRuntimePayload {
-        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints,
-        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
-        atr: FloatOutBoyRealtimeRuntimeAtrPayload => atr,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current,
-    }
 }
 
 vescpkg_rs::typed_newtype! {
@@ -283,15 +229,6 @@ vescpkg_rs::typed_newtype! {
     pub struct FloatOutBoyRealtimeChargingVoltage(BatteryVoltage);
     new(voltage);
     voltage;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime charging payload values.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeChargingPayload {
-        current: FloatOutBoyRealtimeChargingCurrent => current,
-        voltage: FloatOutBoyRealtimeChargingVoltage => voltage,
-    }
 }
 
 vescpkg_rs::typed_fields! {
