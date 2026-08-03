@@ -1,23 +1,21 @@
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS, FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS,
-    FloatOutBoyAlertId, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
-    FloatOutBoyAllDataMode, FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload,
-    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
-    FloatOutBoyAllDataRequest, FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse,
-    FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyBeepReason,
-    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags,
-    FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
-    FloatOutBoyMotorCommand, FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeAlwaysPayload,
-    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
-    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
-    FloatOutBoyRealtimeChargingPayload, FloatOutBoyRealtimeChargingVoltage,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem, FloatOutBoyRealtimeDataItemGroup,
-    FloatOutBoyRealtimeDataRecordPolicy, FloatOutBoyRealtimeFilteredMotorCurrent,
-    FloatOutBoyRealtimeImuPayload, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeMotorPayload, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeReservedFlags,
+    FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode,
+    FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload,
+    FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeepReason, FloatOutBoyChargingState,
+    FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyMotorCommand,
+    FloatOutBoyRealtimeAlwaysPayload, FloatOutBoyRealtimeAtrAccelerationDiff,
+    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeBalanceCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FloatOutBoyRealtimeChargingCurrent, FloatOutBoyRealtimeChargingPayload,
+    FloatOutBoyRealtimeChargingVoltage, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeImuPayload,
+    FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorPayload,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
     FloatOutBoyRealtimeRuntimeAtrPayload, FloatOutBoyRealtimeRuntimePayload,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyRealtimeTail, FloatOutBoyRideState, FloatOutBoyRunState,
@@ -408,23 +406,6 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "balance_current",
         ]
     );
-    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
-        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Always);
-    }
-    for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
-        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Runtime);
-    }
-    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
-        .into_iter()
-        .chain(FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS)
-    {
-        let expected = if FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.contains(&item) {
-            FloatOutBoyRealtimeDataRecordPolicy::Record
-        } else {
-            FloatOutBoyRealtimeDataRecordPolicy::SendOnly
-        };
-        assert_eq!(item.record_policy(), expected);
-    }
 }
 
 #[test]
@@ -464,10 +445,6 @@ fn package_author_builds_realtime_always_payload_without_raw_values() {
         FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.18)),
     );
 
-    assert_eq!(
-        payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
-        FLOAT_OUT_BOY_REALTIME_DATA_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
-    );
     assert_f32_eq!(
         payload.motor().speed().speed().as_kilometers_per_hour(),
         12.6
@@ -523,10 +500,6 @@ fn package_author_builds_realtime_runtime_payload_without_raw_values() {
         FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(1.25))),
     );
 
-    assert_eq!(
-        payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
-        FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
-    );
     assert_f32_eq!(payload.setpoints().board().angle().as_degrees(), 1.5);
     assert_f32_eq!(payload.setpoints().brake_tilt().angle().as_degrees(), -0.5);
     assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
@@ -544,20 +517,11 @@ fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
         FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(4.2))),
         FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.5))),
     );
-    let tail = FloatOutBoyRealtimeTail::new(
-        FloatOutBoyRealtimeAlertMask::empty().with_alert(FloatOutBoyAlertId::FirmwareFault),
-        FloatOutBoyRealtimeReservedFlags::none(),
-        FirmwareFaultWireCode::from_wire_code(12),
-    );
+    let tail = FloatOutBoyRealtimeTail::new(true, FirmwareFaultWireCode::from_wire_code(12));
 
     assert_f32_eq!(charging.current().current().current().as_amps(), 4.2);
     assert_f32_eq!(charging.voltage().voltage().voltage().as_volts(), 82.5);
-    assert!(
-        tail.active_alerts()
-            .contains(FloatOutBoyAlertId::FirmwareFault)
-    );
-    assert_eq!(tail.active_alerts().active_alert_mask_compat(), 0x1);
-    assert_eq!(tail.reserved_flags().extra_flags_compat(), 0);
+    assert!(tail.firmware_fault_active());
     assert_eq!(tail.firmware_fault_code().wire_code(), 12);
 }
 
