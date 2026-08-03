@@ -1,24 +1,26 @@
 use std::vec::Vec;
 
 use super::{
-    FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperCountdown,
-    FloatOutBoyBeeperLevel, FloatOutBoyBeeperTransitions,
+    FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel,
 };
 use crate::config::FloatOutBoyConfigImage;
 
 #[test]
-fn idle_countdown_tick_saturates_instead_of_panicking() {
-    let mut countdown = FloatOutBoyBeeperCountdown::IDLE;
+fn idle_beeper_tick_stays_quiet() {
+    let mut beeper = FloatOutBoyBeeper::new(true);
 
-    assert!(countdown.tick());
+    assert_eq!(beeper.tick(), None);
 }
 
 #[test]
-fn empty_transition_advance_saturates_instead_of_panicking() {
-    let mut transitions = FloatOutBoyBeeperTransitions::NONE;
+fn completed_alert_tick_stays_quiet() {
+    let mut beeper = FloatOutBoyBeeper::new(true);
+    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    for _ in 0..240 {
+        let _ = beeper.tick();
+    }
 
-    assert_eq!(transitions.advance(), FloatOutBoyBeeperLevel::Low);
-    assert!(transitions.is_empty());
+    assert_eq!(beeper.tick(), None);
 }
 
 #[test]
