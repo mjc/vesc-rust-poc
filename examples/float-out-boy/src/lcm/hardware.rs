@@ -55,7 +55,7 @@ impl FloatOutBoyInternalLedLayout {
         self.offsets.get(role.index()).copied().flatten()
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the complete physical pixel count.
         pub fn pixel_count -> usize = pixel_count;
     }

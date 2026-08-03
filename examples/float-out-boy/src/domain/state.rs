@@ -6,7 +6,7 @@
 //! - `third_party/float-out-boy/src/main.c:1927-1930` packs fatal/data-recorder bits into realtime extra flags.
 
 // C map: IDs mirror `third_party/float-out-boy/src/state.h:23-58`.
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy top-level run state.
     pub enum FloatOutBoyRunState {
         /// Package is disabled.
@@ -20,7 +20,7 @@ wire_enum! {
     }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy runtime mode.
     pub enum FloatOutBoyMode {
         /// Normal ride mode.
@@ -32,7 +32,7 @@ wire_enum! {
     }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy stop reason.
     pub enum FloatOutBoyStopCondition {
         /// No stop condition is active.
@@ -52,7 +52,7 @@ wire_enum! {
     }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy setpoint adjustment or pushback reason.
     pub enum FloatOutBoySetpointAdjustment {
         /// No adjustment.
@@ -116,7 +116,7 @@ pub enum FloatOutBoyDarkRideState {
 }
 
 // C map: IDs mirror `third_party/float-out-boy/src/main.c:61-80`.
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy beeper reason.
     pub enum FloatOutBoyBeepReason {
         /// No beep reason.

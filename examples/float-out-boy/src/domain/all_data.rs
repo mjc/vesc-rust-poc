@@ -73,7 +73,7 @@ impl FloatOutBoyAllDataResponse {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data attitude fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataAttitude {
@@ -83,7 +83,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data status fields.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FloatOutBoyAllDataStatus {
@@ -92,44 +92,12 @@ typed_fields! {
     }
 }
 
-/// Float Out Boy measurement that can carry a source-compatible unavailable marker.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FloatOutBoyMeasurement<T> {
-    /// A measured value is available.
-    Measured(T),
-    /// The measurement is unavailable.
-    Unavailable,
-}
-
-impl<T: Copy> FloatOutBoyMeasurement<T> {
-    /// Build an available measurement.
-    #[must_use]
-    pub const fn measured(value: T) -> Self {
-        Self::Measured(value)
-    }
-
-    /// Build an unavailable measurement.
-    #[must_use]
-    pub const fn unavailable() -> Self {
-        Self::Unavailable
-    }
-
-    /// Return the measured value, when available.
-    #[must_use]
-    pub const fn as_measured(self) -> Option<T> {
-        match self {
-            Self::Measured(value) => Some(value),
-            Self::Unavailable => None,
-        }
-    }
-}
-
 /// Float Out Boy compact all-data FOC ID current state.
 ///
 /// Unavailable values encode with the source-backed `222` marker.
-pub type FloatOutBoyFocIdCurrent = FloatOutBoyMeasurement<MotorCurrent>;
+pub type FloatOutBoyFocIdCurrent = Option<MotorCurrent>;
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data motor fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMotorPayload {
@@ -168,7 +136,7 @@ impl FloatOutBoyAllDataMotorPayload {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data base payload fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataBasePayload {
@@ -262,14 +230,9 @@ impl FloatOutBoyAllDataBasePayload {
             100.0,
             128.0,
         ));
-        packet.push(
-            self.motor
-                .foc_id_current()
-                .as_measured()
-                .map_or(222, |current| {
-                    float_out_boy_scaled_u8(current.current().as_amps().abs(), 3.0)
-                }),
-        );
+        packet.push(self.motor.foc_id_current().map_or(222, |current| {
+            float_out_boy_scaled_u8(current.current().as_amps().abs(), 3.0)
+        }));
     }
 
     /// Encode the compact all-data mode 4 response bytes.
@@ -342,7 +305,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataPayloads {
@@ -403,7 +366,7 @@ impl FloatOutBoyAllDataPayloads {
                         zero_battery_current,
                     ),
                     DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-                    FloatOutBoyFocIdCurrent::unavailable(),
+                    None,
                 ),
             ),
             FloatOutBoyAllDataMode2Payload::new(
@@ -412,7 +375,7 @@ impl FloatOutBoyAllDataPayloads {
                     MosfetTemperature::new(Temperature::from_degrees_celsius(0.0)),
                     MotorTemperature::new(Temperature::from_degrees_celsius(0.0)),
                 ),
-                FloatOutBoyAllDataBatteryTemperature::unavailable(),
+                None,
             ),
             FloatOutBoyAllDataMode3Payload::new(
                 OdometerMeters::from_meters(0),
@@ -493,9 +456,9 @@ impl FloatOutBoyAllDataPayloads {
 /// Float Out Boy all-data battery-temperature state.
 ///
 /// Unavailable values encode with Float Out Boy `v1.2.1`'s zero placeholder.
-pub type FloatOutBoyAllDataBatteryTemperature = FloatOutBoyMeasurement<Temperature>;
+pub type FloatOutBoyAllDataBatteryTemperature = Option<Temperature>;
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 2 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode2Payload {
@@ -505,7 +468,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 3 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode3Payload {
@@ -518,7 +481,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 4 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode4Payload {

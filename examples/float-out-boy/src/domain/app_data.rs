@@ -34,7 +34,7 @@ impl FloatOutBoyAppDataPackageId {
     }
 }
 
-wire_enum! {
+vescpkg_rs::wire_enum! {
     /// Float Out Boy app-data command IDs.
     ///
     /// Float Out Boy `v1.2.1` defines the core IDs in `third_party/float-out-boy/src/main.c:1241-1262`,
