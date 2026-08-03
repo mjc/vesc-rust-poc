@@ -927,15 +927,6 @@ struct FloatOutBoyStatusDynamics {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct FloatOutBoyStatusRenderState {
-    brightness: Ratio,
-    duty: f32,
-    duty_blend: Ratio,
-    idle_blend: Ratio,
-    idle_animation_time: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
 enum FloatOutBoyStatusIdleLayer {
     Animate(FloatOutBoyLedBarConfig, f32),
     Black,
@@ -994,7 +985,7 @@ impl FloatOutBoyStatusDynamics {
         sensors: (Ratio, Ratio),
         reset_idle: bool,
         current_time: f32,
-    ) -> FloatOutBoyStatusRenderState {
+    ) -> (f32, Ratio, Ratio, f32) {
         let status_config = config.status();
         if reset_idle || input.footpad.is_pressed() {
             self.idle_time = current_time;
@@ -1033,14 +1024,12 @@ impl FloatOutBoyStatusDynamics {
         if status.moving {
             self.idle_time = current_time;
         }
-
-        FloatOutBoyStatusRenderState {
-            brightness: Ratio::clamped(self.brightness),
+        (
             duty,
-            duty_blend: Ratio::clamped(self.duty_blend),
-            idle_blend: Ratio::clamped(self.idle_blend),
-            idle_animation_time: current_time - self.animation_start,
-        }
+            Ratio::clamped(self.duty_blend),
+            Ratio::clamped(self.idle_blend),
+            current_time - self.animation_start,
+        )
     }
 }
 
@@ -1061,19 +1050,6 @@ pub struct FloatOutBoyLedRenderer {
     status_on_front_blend: f32,
     status_on_front_idle_blend: f32,
     status_on_front_idle_time: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct FloatOutBoyFrameTransition {
-    config: FloatOutBoyLedsConfig,
-    input: FloatOutBoyLedUpdate,
-    current_time: f32,
-    fade: Ratio,
-    seed: u32,
-    old_headlights: (f32, bool, bool),
-    old_direction: (f32, bool),
-    headlights: (f32, bool, bool),
-    direction: (f32, bool),
 }
 
 impl FloatOutBoyLedRenderer {
@@ -1188,21 +1164,70 @@ impl FloatOutBoyLedRenderer {
         self.front.render_bar(front_bar, fade, animation_time);
         self.rear.render_bar(rear_bar, fade, animation_time);
 
-        let transition = FloatOutBoyFrameTransition {
+        let headlights = self.dynamics.headlights();
+        let direction = self.dynamics.direction();
+        let seed = crate::wire::saturating_trunc_f32_to_u32(self.animation_start);
+        self.compose_transitions(
             config,
             input,
             current_time,
-            fade,
-            seed: crate::wire::saturating_trunc_f32_to_u32(self.animation_start),
-            old_headlights,
-            old_direction,
-            headlights: self.dynamics.headlights(),
-            direction: self.dynamics.direction(),
-        };
-        self.compose_headlights(transition);
-        self.compose_direction(transition);
+            (seed, fade),
+            (old_headlights, headlights),
+            (old_direction, direction),
+        );
         self.compose_front_status(config, status, status_state, fade, current_time);
         true
+    }
+
+    fn compose_transitions(
+        &mut self,
+        config: FloatOutBoyLedsConfig,
+        input: FloatOutBoyLedUpdate,
+        current_time: f32,
+        (seed, fade): (u32, Ratio),
+        (old_headlights, headlights): ((f32, bool, bool), (f32, bool, bool)),
+        (old_direction, direction): ((f32, bool), (f32, bool)),
+    ) {
+        if headlights.2 || old_headlights.2 {
+            let targets = if headlights.2 {
+                let should_be_on = matches!(input.run_state, crate::FloatOutBoyRunState::Running)
+                    && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+                    && config.are_headlights_on();
+                select_front_rear_bars(config, should_be_on, old_direction.1)
+            } else {
+                select_front_rear_bars(config, headlights.1, direction.1)
+            };
+            self.render_pair_transition(
+                config.headlights_transition(),
+                headlights.0,
+                seed,
+                fade,
+                targets,
+            );
+            if !headlights.2 {
+                (self.front_bar, self.rear_bar) = targets;
+                self.animation_start = current_time;
+            }
+        }
+        if headlights.1 && !headlights.2 && direction.0.to_bits() != old_direction.0.to_bits() {
+            let targets = select_front_rear_bars(config, true, !old_direction.1);
+            let progress = if old_direction.1 {
+                -direction.0
+            } else {
+                direction.0
+            };
+            self.render_pair_transition(
+                config.direction_transition(),
+                progress,
+                seed,
+                fade,
+                targets,
+            );
+            if direction.1 != old_direction.1 {
+                (self.front_bar, self.rear_bar) = targets;
+                self.animation_start = current_time;
+            }
+        }
     }
 
     /// Begin Refloat's 0.8-second status-confirm animation.
@@ -1220,38 +1245,35 @@ impl FloatOutBoyLedRenderer {
         status: FloatOutBoyLedStatusUpdate,
         fade: Ratio,
         reset_idle: bool,
-    ) -> FloatOutBoyStatusRenderState {
+    ) -> (f32, Ratio) {
         let status_config = config.status();
         let sensors = self.dynamics.sensor_fades();
-        let state =
+        let (duty, duty_blend, idle_blend, idle_animation_time) =
             self.status_dynamics
                 .update(config, input, status, sensors, reset_idle, current_time);
 
         self.status.render_status_layers(FloatOutBoyStatusLayers {
-            brightness: state.brightness,
+            brightness: Ratio::clamped(self.status_dynamics.brightness),
             fade,
             blend: Ratio::from_ratio_const(1.0),
-            idle_blend: state.idle_blend,
-            idle: FloatOutBoyStatusIdleLayer::Animate(
-                config.status_idle(),
-                state.idle_animation_time,
-            ),
+            idle_blend,
+            idle: FloatOutBoyStatusIdleLayer::Animate(config.status_idle(), idle_animation_time),
             reverse: false,
             red_percentage: status_config.red_bar_percentage(),
             battery: status.battery_level.clamp(0.0, 1.0),
-            duty: state.duty,
-            duty_blend: state.duty_blend,
+            duty,
+            duty_blend,
             sensors,
             confirmation_progress: (current_time - self.confirmation_start) / 0.8,
         });
-        state
+        (duty, duty_blend)
     }
 
     fn compose_front_status(
         &mut self,
         config: FloatOutBoyLedsConfig,
         status: FloatOutBoyLedStatusUpdate,
-        state: FloatOutBoyStatusRenderState,
+        (duty, duty_blend): (f32, Ratio),
         fade: Ratio,
         current_time: f32,
     ) {
@@ -1268,94 +1290,25 @@ impl FloatOutBoyLedRenderer {
             reverse: true,
             red_percentage: config.status().red_bar_percentage(),
             battery: status.battery_level.clamp(0.0, 1.0),
-            duty: state.duty,
-            duty_blend: state.duty_blend,
+            duty,
+            duty_blend,
             sensors: self.dynamics.sensor_fades(),
             confirmation_progress: (current_time - self.confirmation_start) / 0.8,
         });
     }
 
-    fn compose_headlights(&mut self, transition: FloatOutBoyFrameTransition) {
-        let FloatOutBoyFrameTransition {
-            config,
-            input,
-            current_time,
-            old_headlights,
-            old_direction,
-            headlights,
-            direction,
-            ..
-        } = transition;
-        let targets = if headlights.2 {
-            let headlights_should = matches!(input.run_state, crate::FloatOutBoyRunState::Running)
-                && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
-                && config.are_headlights_on();
-            select_front_rear_bars(config, headlights_should, old_direction.1)
-        } else if old_headlights.2 {
-            select_front_rear_bars(config, headlights.1, direction.1)
-        } else {
-            return;
-        };
-        self.render_pair_transition(
-            transition,
-            config.headlights_transition(),
-            headlights.0,
-            targets,
-        );
-        if !headlights.2 {
-            (self.front_bar, self.rear_bar) = targets;
-            self.animation_start = current_time;
-        }
-    }
-
-    fn compose_direction(&mut self, transition: FloatOutBoyFrameTransition) {
-        let FloatOutBoyFrameTransition {
-            config,
-            current_time,
-            old_direction,
-            headlights,
-            direction,
-            ..
-        } = transition;
-        if !headlights.1 || headlights.2 || direction.0.to_bits() == old_direction.0.to_bits() {
-            return;
-        }
-        let targets = select_front_rear_bars(config, true, !old_direction.1);
-        let progress = if old_direction.1 {
-            -direction.0
-        } else {
-            direction.0
-        };
-        self.render_pair_transition(transition, config.direction_transition(), progress, targets);
-        if direction.1 != old_direction.1 {
-            (self.front_bar, self.rear_bar) = targets;
-            self.animation_start = current_time;
-        }
-    }
-
     fn render_pair_transition(
         &mut self,
-        tick: FloatOutBoyFrameTransition,
         mode: FloatOutBoyLedTransition,
         progress: f32,
+        seed: u32,
+        fade: Ratio,
         targets: (FloatOutBoyLedBarConfig, FloatOutBoyLedBarConfig),
     ) {
-        self.front.render_transition(
-            mode,
-            progress,
-            tick.seed,
-            self.front_bar,
-            targets.0,
-            tick.fade,
-        );
-        self.rear.render_transition(
-            mode,
-            progress,
-            tick.seed,
-            self.rear_bar,
-            targets.1,
-            tick.fade,
-        );
+        self.front
+            .render_transition(mode, progress, seed, self.front_bar, targets.0, fade);
+        self.rear
+            .render_transition(mode, progress, seed, self.rear_bar, targets.1, fade);
     }
 
     /// Return the composed status strip frame.
@@ -1419,11 +1372,16 @@ impl FloatOutBoyLedStripFrame {
             return None;
         }
         let logical_index = if self.config.is_reversed() {
-            len.checked_sub(index)?.checked_sub(1)?
+            len.saturating_sub(index).saturating_sub(1)
         } else {
             index
         };
         self.pixels.get(logical_index).copied()
+    }
+
+    fn pixels_mut(&mut self) -> &mut [FloatOutBoyLedPixel] {
+        let len = usize::from(self.config.count());
+        self.pixels.get_mut(..len).unwrap_or_default()
     }
 
     /// Paint Refloat's left/right footpad indicator over this strip.
@@ -1438,11 +1396,7 @@ impl FloatOutBoyLedStripFrame {
         if len == 0 {
             return;
         }
-        let offset = len
-            .saturating_add(1)
-            .checked_div(2)
-            .unwrap_or_default()
-            .saturating_sub(1);
+        let offset = len.div_ceil(2).saturating_sub(1);
         let right_offset = len.saturating_sub(offset).saturating_sub(1);
         let (left, right) = if reverse_roles {
             (right.as_ratio(), left.as_ratio())
@@ -1547,7 +1501,7 @@ impl FloatOutBoyLedStripFrame {
         overlay: FloatOutBoyLedOverlay,
     ) {
         let len = usize::from(self.config.count());
-        let len_float = f32::from(u16::try_from(len).unwrap_or_default());
+        let len_float = f32::from(self.config.count());
         let progress = len_float * value;
         let offset = usize::from(crate::wire::saturating_trunc_f32_to_u8(progress));
         let remaining = (progress - vescpkg_rs::floor(progress)) * 0.7;
@@ -1568,7 +1522,7 @@ impl FloatOutBoyLedStripFrame {
         };
         let low_battery = matches!(kind, FloatOutBoyStatusProgress::Battery)
             && -vescpkg_rs::floor(-progress)
-                <= f32::from(u16::try_from(red_count).unwrap_or_default());
+                <= f32::from(u8::try_from(red_count).unwrap_or_default());
 
         for index in 0..len {
             let (target, dim) = if index <= offset {
@@ -1619,7 +1573,7 @@ impl FloatOutBoyLedStripFrame {
         progress: f32,
     ) {
         let len = usize::from(self.config.count());
-        let len_float = f32::from(u16::try_from(len).unwrap_or_default());
+        let len_float = f32::from(self.config.count());
         let progress = progress.min(1.0);
         let blend_time = 0.06;
         let blend = if progress <= blend_time {
@@ -1653,7 +1607,7 @@ impl FloatOutBoyLedStripFrame {
         let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
 
         for index in 0..len {
-            let index_float = f32::from(u16::try_from(index).unwrap_or_default());
+            let index_float = f32::from(u8::try_from(index).unwrap_or_default());
             let distance = if index_float < len_float * 0.5 {
                 index_float - offset + 1.0
             } else {
@@ -1789,14 +1743,12 @@ impl FloatOutBoyLedStripFrame {
         }
 
         let mut map = [0_u8; MAX_CIPHER_STRIP_PIXELS * 2];
-        for index in 0..len {
-            let value = u8::try_from(index).unwrap_or_default();
-            if let Some(first) = map.get_mut(index) {
-                *first = value;
-            }
-            if let Some(second) = map.get_mut(index.saturating_add(len)) {
-                *second = value;
-            }
+        let (first, rest) = map.split_at_mut(len);
+        for (value, (first, second)) in
+            (0_u8..).zip(first.iter_mut().zip(rest.iter_mut().take(len)))
+        {
+            *first = value;
+            *second = value;
         }
         refloat_sattolo_shuffle(seed, map.get_mut(..len).unwrap_or_default());
         refloat_sattolo_shuffle(
@@ -1887,11 +1839,10 @@ impl FloatOutBoyLedStripFrame {
         time: f32,
         center_divisor: f32,
     ) {
-        let len = usize::from(self.config.count());
-        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+        let len_float = f32::from(self.config.count());
+        if len_float == 0.0 {
             return;
-        };
-        let len_float = f32::from(len_u16);
+        }
         let progress = refloat_cosine_progress(time);
         let center = len_float / center_divisor;
         let length = len_float / 2.0 - center;
@@ -1899,14 +1850,8 @@ impl FloatOutBoyLedStripFrame {
         let feather = len_float / 4.0;
         let ratio = center / length;
         let fade = if time < ratio { time / ratio } else { 1.0 };
-        for (index, pixel) in self
-            .pixels
-            .get_mut(..len)
-            .unwrap_or_default()
-            .iter_mut()
-            .enumerate()
-        {
-            let index = f32::from(u16::try_from(index).unwrap_or_default());
+        for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
+            let index = f32::from(u8::try_from(index).unwrap_or_default());
             let distance_from_start = index - offset + 1.0;
             let distance_from_end = len_float - offset - index;
             let start = (distance_from_start / feather).clamp(0.0, 1.0);
@@ -1917,12 +1862,12 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_knight_rider(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
-        let len = usize::from(self.config.count());
-        let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+        let count = self.config.count();
+        if count == 0 {
             return;
-        };
-        let len_float = f32::from(len_u16);
-        let tail = f32::from((len_u16 / 3).saturating_add(1));
+        }
+        let len_float = f32::from(count);
+        let tail = f32::from((count / 3).saturating_add(1));
         let time = time * 0.7;
         let backlight = if time > 0.3 { 0.08 } else { 0.0 };
         let first = len_float * vescpkg_rs::remainder(time, 2.0) - 0.5 * len_float - 1.0;
@@ -1931,14 +1876,8 @@ impl FloatOutBoyLedStripFrame {
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
 
-        for (index, pixel) in self
-            .pixels
-            .get_mut(..len)
-            .unwrap_or_default()
-            .iter_mut()
-            .enumerate()
-        {
-            let index = f32::from(u16::try_from(index).unwrap_or_default());
+        for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
+            let index = f32::from(u8::try_from(index).unwrap_or_default());
             let mut first_blend = backlight;
             let first_distance = (first - index).abs();
             if index <= first {
@@ -1969,19 +1908,13 @@ impl FloatOutBoyLedStripFrame {
         let phase = vescpkg_rs::remainder(time, 0.15);
         let len = usize::from(self.config.count());
         let stop = len / 2;
-        let start = stop.saturating_add(len.checked_rem(2).unwrap_or_default());
+        let start = stop.saturating_add(len & 1);
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color());
         let black = FloatOutBoyLedPixel::default();
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
 
-        for (index, pixel) in self
-            .pixels
-            .get_mut(..len)
-            .unwrap_or_default()
-            .iter_mut()
-            .enumerate()
-        {
+        for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let target = if phase < 0.05 {
                 if index < stop { primary } else { black }
             } else if phase < 0.1 {
@@ -2022,21 +1955,15 @@ impl FloatOutBoyLedStripFrame {
                 );
             }
             FloatOutBoyLedAnimationMode::RainbowRoll => {
-                let len = usize::from(self.config.count());
-                let Some(len_u16) = u16::try_from(len).ok().filter(|len| *len > 0) else {
+                let count = self.config.count();
+                if count == 0 {
                     return;
-                };
+                }
                 let offset = vescpkg_rs::remainder(time, 1.0) * 255.0;
-                for (index, pixel) in self
-                    .pixels
-                    .get_mut(..len)
-                    .unwrap_or_default()
-                    .iter_mut()
-                    .enumerate()
-                {
-                    let index = u16::try_from(index).unwrap_or_default();
+                for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
+                    let index = u8::try_from(index).unwrap_or_default();
                     let hue = crate::wire::saturating_trunc_f32_to_u8(
-                        255.0 / f32::from(len_u16) * f32::from(index) + offset,
+                        255.0 / f32::from(count) * f32::from(index) + offset,
                     );
                     *pixel = pixel.scaled_and_blended(
                         refloat_hue_to_pixel(hue),
@@ -2055,8 +1982,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
-        let len = usize::from(self.config.count());
-        for pixel in self.pixels.get_mut(..len).unwrap_or_default() {
+        for pixel in self.pixels_mut() {
             *pixel = pixel.scaled_and_blended(target, brightness, blend);
         }
     }
