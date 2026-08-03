@@ -14,60 +14,6 @@ use vescpkg_rs::prelude::{
     MotorTemperature, SignedRatio, TimestampTicks, VehicleSpeed,
 };
 
-/// The ID-list packet format is described in upstream `third_party/float-out-boy/src/main.c:1884-1898`.
-pub const FLOAT_OUT_BOY_REALTIME_DATA_ITEMS: [FloatOutBoyRealtimeDataItem; 16] = [
-    FloatOutBoyRealtimeDataItem::MotorSpeed,
-    FloatOutBoyRealtimeDataItem::MotorErpm,
-    FloatOutBoyRealtimeDataItem::MotorCurrent,
-    FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent,
-    FloatOutBoyRealtimeDataItem::MotorFilteredCurrent,
-    FloatOutBoyRealtimeDataItem::MotorDutyCycle,
-    FloatOutBoyRealtimeDataItem::MotorBatteryVoltage,
-    FloatOutBoyRealtimeDataItem::MotorBatteryCurrent,
-    FloatOutBoyRealtimeDataItem::MotorMosfetTemperature,
-    FloatOutBoyRealtimeDataItem::MotorTemperature,
-    FloatOutBoyRealtimeDataItem::ImuPitch,
-    FloatOutBoyRealtimeDataItem::ImuBalancePitch,
-    FloatOutBoyRealtimeDataItem::ImuRoll,
-    FloatOutBoyRealtimeDataItem::FootpadAdc1,
-    FloatOutBoyRealtimeDataItem::FootpadAdc2,
-    FloatOutBoyRealtimeDataItem::RemoteInput,
-];
-
-/// Float Out Boy realtime-data items sent only while running.
-///
-/// Upstream appends this second ID set after the always-sent set in
-/// `third_party/float-out-boy/src/main.c:1892-1898`.
-pub const FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS: [FloatOutBoyRealtimeDataItem; 10] = [
-    FloatOutBoyRealtimeDataItem::Setpoint,
-    FloatOutBoyRealtimeDataItem::AtrSetpoint,
-    FloatOutBoyRealtimeDataItem::BrakeTiltSetpoint,
-    FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint,
-    FloatOutBoyRealtimeDataItem::TurnTiltSetpoint,
-    FloatOutBoyRealtimeDataItem::RemoteSetpoint,
-    FloatOutBoyRealtimeDataItem::BalanceCurrent,
-    FloatOutBoyRealtimeDataItem::AtrAccelDiff,
-    FloatOutBoyRealtimeDataItem::AtrSpeedBoost,
-    FloatOutBoyRealtimeDataItem::BoosterCurrent,
-];
-
-/// Float Out Boy realtime-data items recorded by the data recorder.
-///
-/// This list mirrors the port's current data-recorder model; re-check against
-/// upstream `third_party/float-out-boy/src/data_recorder.c` before treating it as hardware parity.
-pub const FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS: [FloatOutBoyRealtimeDataItem; 10] = [
-    FloatOutBoyRealtimeDataItem::MotorErpm,
-    FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent,
-    FloatOutBoyRealtimeDataItem::MotorDutyCycle,
-    FloatOutBoyRealtimeDataItem::MotorBatteryVoltage,
-    FloatOutBoyRealtimeDataItem::ImuPitch,
-    FloatOutBoyRealtimeDataItem::ImuBalancePitch,
-    FloatOutBoyRealtimeDataItem::Setpoint,
-    FloatOutBoyRealtimeDataItem::AtrSetpoint,
-    FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint,
-    FloatOutBoyRealtimeDataItem::BalanceCurrent,
-];
-
 /// Float Out Boy realtime-data item group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyRealtimeDataItemGroup {
@@ -86,166 +32,109 @@ pub enum FloatOutBoyRealtimeDataRecordPolicy {
     Record,
 }
 
-/// Float Out Boy realtime-data item ID.
-///
-/// C map: item order, always/runtime grouping, and data-recorder policy mirror
-/// `RT_DATA_ITEMS` / `RT_DATA_RUNTIME_ITEMS` in
-/// `third_party/float-out-boy/src/rt_data.h:38-66`; upstream sends the two ID lists
-/// from `third_party/float-out-boy/src/main.c:1876-1901`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyRealtimeDataItem {
-    /// `motor.speed`.
-    MotorSpeed,
-    /// `motor.erpm`.
-    MotorErpm,
-    /// `motor.current`.
-    MotorCurrent,
-    /// `motor.dir_current`.
-    MotorDirectionalCurrent,
-    /// `motor.filt_current`.
-    MotorFilteredCurrent,
-    /// `motor.duty_cycle`.
-    MotorDutyCycle,
-    /// `motor.batt_voltage`.
-    MotorBatteryVoltage,
-    /// `motor.batt_current`.
-    MotorBatteryCurrent,
-    /// `motor.mosfet_temp`.
-    MotorMosfetTemperature,
-    /// `motor.motor_temp`.
-    MotorTemperature,
-    /// `imu.pitch`.
-    ImuPitch,
-    /// `imu.balance_pitch`.
-    ImuBalancePitch,
-    /// `imu.roll`.
-    ImuRoll,
-    /// `footpad.adc1`.
-    FootpadAdc1,
-    /// `footpad.adc2`.
-    FootpadAdc2,
-    /// `remote.input`.
-    RemoteInput,
-    /// `setpoint`.
-    Setpoint,
-    /// `atr.setpoint`.
-    AtrSetpoint,
-    /// `brake_tilt.setpoint`.
-    BrakeTiltSetpoint,
-    /// `torque_tilt.setpoint`.
-    TorqueTiltSetpoint,
-    /// `turn_tilt.setpoint`.
-    TurnTiltSetpoint,
-    /// `remote.setpoint`.
-    RemoteSetpoint,
-    /// `balance_current`.
-    BalanceCurrent,
-    /// `atr.accel_diff`.
-    AtrAccelDiff,
-    /// `atr.speed_boost`.
-    AtrSpeedBoost,
-    /// `booster.current`.
-    BoosterCurrent,
+macro_rules! realtime_data_items {
+    (
+        always { $( $always:ident => $always_id:literal, )+ }
+        runtime { $( $runtime:ident => $runtime_id:literal, )+ }
+        recorded { $( $recorded:ident, )+ }
+    ) => {
+        /// Float Out Boy realtime-data item ID.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum FloatOutBoyRealtimeDataItem {
+            $( #[doc = concat!("`", $always_id, "`.")] $always, )+
+            $( #[doc = concat!("`", $runtime_id, "`.")] $runtime, )+
+        }
+
+        /// Realtime-data items sent in every packet, in source order.
+        pub const FLOAT_OUT_BOY_REALTIME_DATA_ITEMS: [FloatOutBoyRealtimeDataItem; 16] =
+            [$(FloatOutBoyRealtimeDataItem::$always,)+];
+
+        /// Realtime-data items appended while running, in source order.
+        pub const FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS: [FloatOutBoyRealtimeDataItem; 10] =
+            [$(FloatOutBoyRealtimeDataItem::$runtime,)+];
+
+        /// Realtime-data items captured by the data recorder, in source order.
+        pub const FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS: [FloatOutBoyRealtimeDataItem; 10] =
+            [$(FloatOutBoyRealtimeDataItem::$recorded,)+];
+
+        impl FloatOutBoyRealtimeDataItem {
+            /// Return the Float Out Boy `v1.2.1` realtime-data string ID.
+            #[must_use]
+            pub const fn id(self) -> &'static str {
+                match self {
+                    $(Self::$always => $always_id,)+
+                    $(Self::$runtime => $runtime_id,)+
+                }
+            }
+
+            /// Return the Float Out Boy `v1.2.1` realtime-data group.
+            #[must_use]
+            pub const fn group(self) -> FloatOutBoyRealtimeDataItemGroup {
+                if matches!(self, $(Self::$runtime)|+) {
+                    FloatOutBoyRealtimeDataItemGroup::Runtime
+                } else {
+                    FloatOutBoyRealtimeDataItemGroup::Always
+                }
+            }
+
+            /// Return the Float Out Boy `v1.2.1` data-recorder policy.
+            #[must_use]
+            pub const fn record_policy(self) -> FloatOutBoyRealtimeDataRecordPolicy {
+                if matches!(self, $(Self::$recorded)|+) {
+                    FloatOutBoyRealtimeDataRecordPolicy::Record
+                } else {
+                    FloatOutBoyRealtimeDataRecordPolicy::SendOnly
+                }
+            }
+        }
+    };
 }
 
-impl FloatOutBoyRealtimeDataItem {
-    /// Return the Float Out Boy `v1.2.1` realtime-data string ID.
-    #[must_use]
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::MotorSpeed => "motor.speed",
-            Self::MotorErpm => "motor.erpm",
-            Self::MotorCurrent => "motor.current",
-            Self::MotorDirectionalCurrent => "motor.dir_current",
-            Self::MotorFilteredCurrent => "motor.filt_current",
-            Self::MotorDutyCycle => "motor.duty_cycle",
-            Self::MotorBatteryVoltage => "motor.batt_voltage",
-            Self::MotorBatteryCurrent => "motor.batt_current",
-            Self::MotorMosfetTemperature => "motor.mosfet_temp",
-            Self::MotorTemperature => "motor.motor_temp",
-            Self::ImuPitch => "imu.pitch",
-            Self::ImuBalancePitch => "imu.balance_pitch",
-            Self::ImuRoll => "imu.roll",
-            Self::FootpadAdc1 => "footpad.adc1",
-            Self::FootpadAdc2 => "footpad.adc2",
-            Self::RemoteInput => "remote.input",
-            Self::Setpoint => "setpoint",
-            Self::AtrSetpoint => "atr.setpoint",
-            Self::BrakeTiltSetpoint => "brake_tilt.setpoint",
-            Self::TorqueTiltSetpoint => "torque_tilt.setpoint",
-            Self::TurnTiltSetpoint => "turn_tilt.setpoint",
-            Self::RemoteSetpoint => "remote.setpoint",
-            Self::BalanceCurrent => "balance_current",
-            Self::AtrAccelDiff => "atr.accel_diff",
-            Self::AtrSpeedBoost => "atr.speed_boost",
-            Self::BoosterCurrent => "booster.current",
-        }
+// C map: order, grouping, and IDs mirror `RT_DATA_ITEMS` / `RT_DATA_RUNTIME_ITEMS` in
+// `third_party/float-out-boy/src/rt_data.h:38-66`. The recorded subset follows the port's
+// current data-recorder model and remains intentionally separate from the upstream lists.
+realtime_data_items! {
+    always {
+        MotorSpeed => "motor.speed",
+        MotorErpm => "motor.erpm",
+        MotorCurrent => "motor.current",
+        MotorDirectionalCurrent => "motor.dir_current",
+        MotorFilteredCurrent => "motor.filt_current",
+        MotorDutyCycle => "motor.duty_cycle",
+        MotorBatteryVoltage => "motor.batt_voltage",
+        MotorBatteryCurrent => "motor.batt_current",
+        MotorMosfetTemperature => "motor.mosfet_temp",
+        MotorTemperature => "motor.motor_temp",
+        ImuPitch => "imu.pitch",
+        ImuBalancePitch => "imu.balance_pitch",
+        ImuRoll => "imu.roll",
+        FootpadAdc1 => "footpad.adc1",
+        FootpadAdc2 => "footpad.adc2",
+        RemoteInput => "remote.input",
     }
-
-    /// Return the Float Out Boy `v1.2.1` realtime-data group.
-    #[must_use]
-    pub const fn group(self) -> FloatOutBoyRealtimeDataItemGroup {
-        match self {
-            Self::Setpoint
-            | Self::AtrSetpoint
-            | Self::BrakeTiltSetpoint
-            | Self::TorqueTiltSetpoint
-            | Self::TurnTiltSetpoint
-            | Self::RemoteSetpoint
-            | Self::BalanceCurrent
-            | Self::AtrAccelDiff
-            | Self::AtrSpeedBoost
-            | Self::BoosterCurrent => FloatOutBoyRealtimeDataItemGroup::Runtime,
-            Self::MotorSpeed
-            | Self::MotorErpm
-            | Self::MotorCurrent
-            | Self::MotorDirectionalCurrent
-            | Self::MotorFilteredCurrent
-            | Self::MotorDutyCycle
-            | Self::MotorBatteryVoltage
-            | Self::MotorBatteryCurrent
-            | Self::MotorMosfetTemperature
-            | Self::MotorTemperature
-            | Self::ImuPitch
-            | Self::ImuBalancePitch
-            | Self::ImuRoll
-            | Self::FootpadAdc1
-            | Self::FootpadAdc2
-            | Self::RemoteInput => FloatOutBoyRealtimeDataItemGroup::Always,
-        }
+    runtime {
+        Setpoint => "setpoint",
+        AtrSetpoint => "atr.setpoint",
+        BrakeTiltSetpoint => "brake_tilt.setpoint",
+        TorqueTiltSetpoint => "torque_tilt.setpoint",
+        TurnTiltSetpoint => "turn_tilt.setpoint",
+        RemoteSetpoint => "remote.setpoint",
+        BalanceCurrent => "balance_current",
+        AtrAccelDiff => "atr.accel_diff",
+        AtrSpeedBoost => "atr.speed_boost",
+        BoosterCurrent => "booster.current",
     }
-
-    /// Return the Float Out Boy `v1.2.1` data-recorder policy.
-    #[must_use]
-    pub const fn record_policy(self) -> FloatOutBoyRealtimeDataRecordPolicy {
-        match self {
-            Self::MotorErpm
-            | Self::MotorDirectionalCurrent
-            | Self::MotorDutyCycle
-            | Self::MotorBatteryVoltage
-            | Self::ImuPitch
-            | Self::ImuBalancePitch
-            | Self::Setpoint
-            | Self::AtrSetpoint
-            | Self::TorqueTiltSetpoint
-            | Self::BalanceCurrent => FloatOutBoyRealtimeDataRecordPolicy::Record,
-            Self::MotorSpeed
-            | Self::MotorCurrent
-            | Self::MotorFilteredCurrent
-            | Self::MotorBatteryCurrent
-            | Self::MotorMosfetTemperature
-            | Self::MotorTemperature
-            | Self::ImuRoll
-            | Self::FootpadAdc1
-            | Self::FootpadAdc2
-            | Self::RemoteInput
-            | Self::BrakeTiltSetpoint
-            | Self::TurnTiltSetpoint
-            | Self::RemoteSetpoint
-            | Self::AtrAccelDiff
-            | Self::AtrSpeedBoost
-            | Self::BoosterCurrent => FloatOutBoyRealtimeDataRecordPolicy::SendOnly,
-        }
+    recorded {
+        MotorErpm,
+        MotorDirectionalCurrent,
+        MotorDutyCycle,
+        MotorBatteryVoltage,
+        ImuPitch,
+        ImuBalancePitch,
+        Setpoint,
+        AtrSetpoint,
+        TorqueTiltSetpoint,
+        BalanceCurrent,
     }
 }
 

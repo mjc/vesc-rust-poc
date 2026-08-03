@@ -335,22 +335,23 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "balance_current",
         ]
     );
-    assert_eq!(
-        FloatOutBoyRealtimeDataItem::MotorSpeed.group(),
-        FloatOutBoyRealtimeDataItemGroup::Always
-    );
-    assert_eq!(
-        FloatOutBoyRealtimeDataItem::BalanceCurrent.group(),
-        FloatOutBoyRealtimeDataItemGroup::Runtime
-    );
-    assert_eq!(
-        FloatOutBoyRealtimeDataItem::MotorErpm.record_policy(),
-        FloatOutBoyRealtimeDataRecordPolicy::Record
-    );
-    assert_eq!(
-        FloatOutBoyRealtimeDataItem::MotorSpeed.record_policy(),
-        FloatOutBoyRealtimeDataRecordPolicy::SendOnly
-    );
+    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
+        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Always);
+    }
+    for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
+        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Runtime);
+    }
+    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
+        .into_iter()
+        .chain(FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS)
+    {
+        let expected = if FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.contains(&item) {
+            FloatOutBoyRealtimeDataRecordPolicy::Record
+        } else {
+            FloatOutBoyRealtimeDataRecordPolicy::SendOnly
+        };
+        assert_eq!(item.record_policy(), expected);
+    }
 }
 
 #[test]
