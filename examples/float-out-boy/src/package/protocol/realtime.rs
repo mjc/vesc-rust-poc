@@ -55,7 +55,7 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     // writes this legacy 72-byte payload at `third_party/float-out-boy/src/main.c:1267-1310`.
     // Its IMU fields are degree-valued because `imu_update` converts them at
     // `third_party/float-out-boy/src/imu.c:35-41`.
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(FloatOutBoyAppDataCommand::GetRealtimeData.id());
     packet.push_float32_auto(base.balance_current().current().current().as_amps());
     packet.push_float32_auto(float_out_boy_degrees(attitude.balance_pitch().angle()));
@@ -139,7 +139,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
 
     // Upstream `cmd_realtime_data` writes the realtime packet in
     // `third_party/float-out-boy/src/main.c:1904-1960`; QML consumes it at `ui.qml.in:853-925`.
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(FloatOutBoyAppDataCommand::RealtimeData.id());
     packet.push(header.data_mask_compat());
     packet.push(header.extra_flags_compat());

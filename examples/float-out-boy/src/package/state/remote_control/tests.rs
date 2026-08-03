@@ -121,7 +121,7 @@ fn rc_move_rejects_a_trailing_payload_byte_without_queueing_current() {
         FloatOutBoyMode::Normal,
     );
     let packet = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::RcMove.id(),
         1,
         40,

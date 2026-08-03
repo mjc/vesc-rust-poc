@@ -73,7 +73,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -150,7 +150,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -177,7 +177,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -253,7 +253,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -323,7 +323,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
             telemetry.telemetry(),
             imu,
             &[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -391,7 +391,7 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -486,7 +486,7 @@ fn tick_realtime_data(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     )

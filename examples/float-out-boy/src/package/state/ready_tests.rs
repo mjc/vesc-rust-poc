@@ -95,7 +95,7 @@ fn app_data_ready_uses_configured_startup_tolerances_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -140,7 +140,7 @@ fn app_data_ready_pushstart_uses_wide_pitch_gate_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -184,7 +184,7 @@ fn app_data_ready_pushstart_reverse_stop_blocks_negative_erpm_like_float_out_boy
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -213,7 +213,7 @@ fn app_data_ready_normal_both_footpads_engages_like_float_out_boy_start_conditio
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -249,7 +249,7 @@ fn ready_engage_plays_the_configured_three_transition_motor_click_like_refloat()
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -291,7 +291,7 @@ fn app_data_ready_flywheel_without_footpads_engages_like_float_out_boy_can_engag
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -347,7 +347,7 @@ fn app_data_ready_flywheel_pressed_footpad_stops_flywheel_like_upstream_fix() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -402,7 +402,7 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -456,7 +456,7 @@ fn app_data_ready_single_footpad_default_config_does_not_engage_like_float_out_b
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -513,7 +513,7 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

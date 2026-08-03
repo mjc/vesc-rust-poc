@@ -68,7 +68,7 @@ fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -100,7 +100,7 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_float_out
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -135,7 +135,7 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -216,7 +216,7 @@ fn startup_ready_gate_does_not_engage_active_footpads_until_next_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -260,7 +260,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -320,7 +320,7 @@ fn disabled_config_applies_before_startup_ready_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -396,7 +396,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -481,7 +481,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -514,7 +514,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             0,
         ],
@@ -563,7 +563,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             0,
         ],
@@ -723,7 +723,7 @@ fn running_enters_reverse_stop_from_reverse_motor_speed_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -801,7 +801,7 @@ fn running_reverse_stop_grows_target_past_erpm_tolerance_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -828,7 +828,7 @@ fn running_reverse_stop_exits_below_half_tolerance_while_moving_forward_like_flo
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -865,7 +865,7 @@ fn running_reverse_stop_stays_active_at_half_tolerance_while_reversing_like_floa
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1226,7 +1226,7 @@ fn tick_running_protective_pushback(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1328,7 +1328,7 @@ fn running_enters_duty_pushback_above_configured_threshold_like_float_out_boy() 
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1701,7 +1701,7 @@ fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_float_out_bo
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1727,7 +1727,7 @@ fn running_duty_at_threshold_does_not_push_back_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1755,7 +1755,7 @@ fn running_duty_pushback_clears_below_threshold_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1786,7 +1786,7 @@ fn running_enters_high_voltage_pushback_one_volt_above_threshold_like_float_out_
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -2248,7 +2248,7 @@ fn running_runtime_requests_balance_current_like_float_out_boy_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -2274,7 +2274,7 @@ fn running_motor_apply_uses_current_branch_like_float_out_boy_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

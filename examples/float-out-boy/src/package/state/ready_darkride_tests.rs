@@ -65,7 +65,7 @@ fn app_data_ready_darkride_first_second_engages_without_roll_gate_like_float_out
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -91,7 +91,7 @@ fn app_data_ready_darkride_after_grace_engages_with_upside_down_roll_like_float_
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -128,7 +128,7 @@ fn ready_darkride_disables_and_alerts_after_ten_seconds_like_float_out_boy() {
             telemetry.telemetry(),
             imu,
             &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -170,7 +170,7 @@ fn ready_darkride_timeout_prevents_same_tick_reactivation_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

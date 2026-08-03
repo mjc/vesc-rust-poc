@@ -419,7 +419,7 @@ impl FloatOutBoyPackageState {
         let [package_id, command, ..] = bytes else {
             return false;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return false;
         }
         let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {

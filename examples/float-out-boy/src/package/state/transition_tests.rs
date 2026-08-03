@@ -117,7 +117,7 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
             telemetry.telemetry(),
             telemetry.imu(),
             &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -140,7 +140,7 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
                 telemetry.telemetry(),
                 telemetry.imu(),
                 &[
-                    crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
                 ],
             ));
@@ -195,7 +195,7 @@ fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays(
             telemetry.telemetry(),
             telemetry.imu(),
             &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -222,7 +222,7 @@ fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
         assert!(config.set_darkride_enabled(true));
     });
     let packet = [
-        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
     ];
 
@@ -265,7 +265,7 @@ fn running_darkride_stays_upright_when_feature_is_disabled() {
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
     let packet = [
-        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
     ];
 
@@ -336,7 +336,7 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -390,7 +390,7 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -425,7 +425,7 @@ fn app_data_running_flywheel_pressed_footpad_stops_like_upstream_fix() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -477,7 +477,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_float_out_boy_state_stop
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -503,7 +503,7 @@ fn app_data_running_darkride_footpads_stop_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -538,7 +538,7 @@ fn app_data_running_darkride_timed_low_erpm_stops_like_float_out_boy_fault_check
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -596,7 +596,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_float_out_boy_fault_ch
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -623,7 +623,7 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -663,7 +663,7 @@ fn full_switch_stopped_state_with_pitch(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -714,7 +714,7 @@ fn tick_ready_engagement(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -837,7 +837,7 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -882,7 +882,7 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -956,7 +956,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -991,7 +991,7 @@ fn app_data_running_darkride_high_erpm_stops_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

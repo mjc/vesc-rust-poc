@@ -52,7 +52,7 @@ impl FloatOutBoyAllDataResponse {
     #[must_use]
     pub const fn fault(fault: FirmwareFaultWireCode) -> Self {
         Self::Fault([
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             69,
             fault.wire_code(),
@@ -160,7 +160,7 @@ impl FloatOutBoyAllDataBasePayload {
     pub fn encode_base_response(&self, mode: u8) -> [u8; 34] {
         let mut packet = FloatOutBoyPacket::new();
 
-        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
         packet.push(self.command().id());
         packet.push(mode);
         packet.push_scaled_i16(self.balance_current.current().current().as_amps(), 10.0);
