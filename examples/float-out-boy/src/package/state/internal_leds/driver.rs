@@ -1,10 +1,39 @@
 use crate::{
-    lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedStripRole},
+    lcm::FloatOutBoyHardwareLedsConfig,
     leds::{
         FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
         FloatOutBoyLedRenderer, FloatOutBoyLedStripConfig, FloatOutBoyLedStripFrame,
     },
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatOutBoyLedStripRole {
+    Status,
+    Front,
+    Rear,
+}
+
+fn ordered_strips(
+    hardware: FloatOutBoyHardwareLedsConfig,
+) -> impl Iterator<Item = (FloatOutBoyLedStripRole, FloatOutBoyLedStripConfig)> {
+    let strips = [
+        (FloatOutBoyLedStripRole::Status, hardware.status),
+        (FloatOutBoyLedStripRole::Front, hardware.front),
+        (FloatOutBoyLedStripRole::Rear, hardware.rear),
+    ];
+    [
+        crate::leds::FloatOutBoyLedStripOrder::First,
+        crate::leds::FloatOutBoyLedStripOrder::Second,
+        crate::leds::FloatOutBoyLedStripOrder::Third,
+    ]
+    .into_iter()
+    .filter_map(move |order| {
+        strips
+            .into_iter()
+            .find(|(_, strip)| strip.order == order && strip.count > 0)
+    })
+}
+
 const WS2812_ZERO: u16 = 31;
 const WS2812_ONE: u16 = 72;
 const WS2812_RESET: u16 = 0;
@@ -120,9 +149,7 @@ impl FloatOutBoyInternalLedDriver {
         ) {
             return None;
         }
-        let layout = self.hardware.internal_layout().ok()?;
-        let bits = layout.roles().iter().try_fold(0_usize, |bits, role| {
-            let strip = strip_for(self.hardware, *role);
+        let bits = ordered_strips(self.hardware).try_fold(0_usize, |bits, (_, strip)| {
             (usize::from(strip.count) <= MAX_STRIP_PIXELS)
                 .then_some(strip)
                 .and_then(|strip| {
@@ -178,9 +205,6 @@ impl FloatOutBoyInternalLedDriver {
     }
 
     fn encode(&mut self, renderer: &FloatOutBoyLedRenderer) -> bool {
-        let Ok(layout) = self.hardware.internal_layout() else {
-            return false;
-        };
         let Some(data_pulse_count) = self.pulse_count.checked_sub(1) else {
             return false;
         };
@@ -189,9 +213,8 @@ impl FloatOutBoyInternalLedDriver {
             return false;
         };
         let mut pulse_index = 0;
-        for role in layout.roles() {
-            let strip = strip_for(hardware, *role);
-            let frame = frame_for(renderer, *role);
+        for (role, strip) in ordered_strips(hardware) {
+            let frame = frame_for(renderer, role);
             for pixel_index in 0..usize::from(strip.count) {
                 let Some(pixel) = frame.physical_pixel(pixel_index) else {
                     return false;
@@ -209,17 +232,6 @@ impl FloatOutBoyInternalLedDriver {
     #[cfg(test)]
     fn pulses(&self) -> &[u16] {
         self.pulse_slice(self.pulse_count).unwrap_or_default()
-    }
-}
-
-const fn strip_for(
-    hardware: FloatOutBoyHardwareLedsConfig,
-    role: FloatOutBoyLedStripRole,
-) -> FloatOutBoyLedStripConfig {
-    match role {
-        FloatOutBoyLedStripRole::Status => hardware.status,
-        FloatOutBoyLedStripRole::Front => hardware.front,
-        FloatOutBoyLedStripRole::Rear => hardware.rear,
     }
 }
 
