@@ -1,0 +1,11 @@
+[package]
+name = "fob-production-rust"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full", "parsing", "visit"] }
+
+[workspace]

@@ -118,7 +118,7 @@ pub(super) fn balance_filter_with_pitch(pitch: AngleRadians) -> BalanceFilter {
 }
 
 pub(super) fn default_float_out_boy_config_bytes() -> [u8; 276] {
-    *include_bytes!("../conf/default_config.dat")
+    *include_bytes!("../../conf/default_config.dat")
 }
 
 pub(super) fn editable_config_from_bytes(bytes: &[u8]) -> FloatOutBoyConfigImage {
