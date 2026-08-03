@@ -185,6 +185,16 @@ fn evaluate(meta: &Meta) -> Truth {
                 _ => Truth::Unknown,
             }
         }
+        Meta::NameValue(value) if value.path.is_ident("target_arch") => {
+            let Expr::Lit(literal) = &value.value else {
+                return Truth::Unknown;
+            };
+            match &literal.lit {
+                syn::Lit::Str(arch) if arch.value() == "arm" => Truth::True,
+                syn::Lit::Str(_) => Truth::False,
+                _ => Truth::Unknown,
+            }
+        }
         Meta::Path(_) | Meta::NameValue(_) => Truth::Unknown,
         Meta::List(list) => {
             let Ok(items) =
@@ -339,6 +349,12 @@ fn test_helper() {
 #[cfg(any(test, target_arch = "arm"))]
 fn firmware_and_test() {}
 
+#[cfg(target_arch = "arm")]
+fn firmware_only() {}
+
+#[cfg(not(target_arch = "arm"))]
+fn host_only() {}
+
 #[cfg(any(test, feature = "test-support"))]
 mod support {}
 
@@ -352,6 +368,8 @@ fn runtime() {
         let filtered = without_tests(source);
         assert!(!filtered.contains("test_helper"));
         assert!(filtered.contains("firmware_and_test"));
+        assert!(filtered.contains("firmware_only"));
+        assert!(!filtered.contains("host_only"));
         assert!(!filtered.contains("mod support"));
         assert!(!filtered.contains("assert!(false)"));
         assert!(filtered.contains("run();"));
