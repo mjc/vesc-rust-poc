@@ -258,24 +258,16 @@ typed_newtype! {
     current;
 }
 
-/// Float Out Boy `imu.balance_pitch` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
+typed_newtype! {
+    /// Float Out Boy `imu.balance_pitch` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
+    new(angle);
+    angle;
+}
 
 impl FloatOutBoyRealtimeBalancePitch {
-    /// Build a typed Float Out Boy balance-pitch value.
-    #[must_use]
-    pub const fn new(angle: AngleRadians) -> Self {
-        Self(angle)
-    }
-
-    /// Return the typed balance-pitch angle without erasing it to a primitive.
-    #[must_use]
-    pub const fn angle(self) -> AngleRadians {
-        self.0
-    }
-
     /// Return the balance pitch in degrees for Float Out Boy PID and booster math.
     #[must_use]
     pub fn angle_degrees(self) -> AngleDegrees {
