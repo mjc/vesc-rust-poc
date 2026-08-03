@@ -28,60 +28,6 @@ fn advance_ring_index(index: usize, capacity: usize) -> usize {
         .unwrap_or(0)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(any(test, target_arch = "arm"))]
-struct DataRecorderSample {
-    timestamp: TimestampTicks,
-    flags: u8,
-    values: [u16; RECORDED_VALUE_COUNT],
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl DataRecorderSample {
-    fn encode(self) -> [u8; SAMPLE_SIZE] {
-        let mut bytes = [0; SAMPLE_SIZE];
-        bytes[..4].copy_from_slice(&self.timestamp.as_ticks().to_be_bytes());
-        bytes[4] = self.flags;
-        if let Some(value_bytes) = bytes.get_mut(5..) {
-            for (target, value) in value_bytes.chunks_exact_mut(2).zip(self.values) {
-                target.copy_from_slice(&value.to_be_bytes());
-            }
-        }
-        bytes
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DataRecorderAvailability {
-    Unavailable,
-    Available,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DataRecorderRequest {
-    SetRecording(bool),
-    SetAutostart(bool),
-    SetAutostop(bool),
-    SendHeader,
-    SendData { offset: u32 },
-    Ignore,
-}
-
-impl DataRecorderRequest {
-    fn parse(payload: &[u8]) -> Self {
-        match payload {
-            [1, 1, value, ..] => Self::SetRecording(*value > 0),
-            [1, 2, value, ..] => Self::SetAutostart(*value > 0),
-            [1, 3, value, ..] => Self::SetAutostop(*value > 0),
-            [2, 1, ..] => Self::SendHeader,
-            [2, 2, a, b, c, d, ..] => Self::SendData {
-                offset: u32::from_be_bytes([*a, *b, *c, *d]),
-            },
-            _ => Self::Ignore,
-        }
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct DataRecorderRing {
     next: usize,
@@ -128,11 +74,12 @@ mod ring_tests;
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
-    availability: DataRecorderAvailability,
     recording: bool,
     autostart: bool,
     autostop: bool,
     ring: DataRecorderRing,
+    #[cfg(test)]
+    capability: Option<()>,
     #[cfg(test)]
     buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
     #[cfg(all(not(test), target_arch = "arm"))]
@@ -142,15 +89,12 @@ pub(super) struct DataRecorderState {
 impl Default for DataRecorderState {
     fn default() -> Self {
         Self {
-            availability: if cfg!(test) {
-                DataRecorderAvailability::Available
-            } else {
-                DataRecorderAvailability::Unavailable
-            },
             recording: false,
             autostart: true,
             autostop: true,
             ring: DataRecorderRing::default(),
+            #[cfg(test)]
+            capability: Some(()),
             #[cfg(test)]
             buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
             #[cfg(all(not(test), target_arch = "arm"))]
@@ -163,17 +107,24 @@ impl DataRecorderState {
     #[cfg(all(not(test), target_arch = "arm"))]
     fn initialize(&mut self, buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>) {
         self.buffer = buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE);
-        self.availability = if self.buffer.is_some() {
-            DataRecorderAvailability::Available
-        } else {
-            DataRecorderAvailability::Unavailable
-        };
         self.stop();
         self.ring.clear();
     }
 
     pub(super) const fn has_capability(&self) -> bool {
-        matches!(self.availability, DataRecorderAvailability::Available)
+        #[cfg(test)]
+        {
+            self.capability.is_some()
+        }
+        #[cfg(all(not(test), target_arch = "arm"))]
+        {
+            self.buffer.is_some()
+        }
+        #[cfg(all(not(test), not(target_arch = "arm")))]
+        {
+            let _ = self;
+            false
+        }
     }
 
     pub(super) const fn flags(&self) -> FloatOutBoyDataRecorderFlags {
@@ -217,8 +168,11 @@ impl DataRecorderState {
     #[cfg(any(test, target_arch = "arm"))]
     fn shutdown(&mut self) {
         self.stop();
-        self.availability = DataRecorderAvailability::Unavailable;
         self.ring.clear();
+        #[cfg(test)]
+        {
+            self.capability = None;
+        }
         #[cfg(all(not(test), target_arch = "arm"))]
         {
             self.buffer = None;
@@ -226,7 +180,7 @@ impl DataRecorderState {
     }
 
     #[cfg(any(test, target_arch = "arm"))]
-    fn sample(&mut self, sample: DataRecorderSample) {
+    fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
         if !self.has_capability() || !self.recording {
             return;
         }
@@ -237,7 +191,7 @@ impl DataRecorderState {
         let Some(offset) = slot.checked_mul(SAMPLE_SIZE) else {
             return;
         };
-        if self.write(offset, &sample.encode()) {
+        if self.write(offset, sample) {
             self.ring.commit_write(capacity);
         }
     }
@@ -249,7 +203,7 @@ impl DataRecorderState {
     fn capacity(&self) -> usize {
         #[cfg(test)]
         {
-            let _ = self.availability;
+            let _ = self;
             TEST_SAMPLE_CAPACITY
         }
         #[cfg(all(not(test), target_arch = "arm"))]
@@ -260,7 +214,7 @@ impl DataRecorderState {
         }
         #[cfg(all(not(test), not(target_arch = "arm")))]
         {
-            let _ = self.availability;
+            let _ = self;
             0
         }
     }
@@ -314,7 +268,7 @@ impl DataRecorderState {
         }
         #[cfg(all(not(test), not(target_arch = "arm")))]
         {
-            let _ = (self.availability, offset, bytes);
+            let _ = (self, offset, bytes);
             false
         }
     }
@@ -336,7 +290,7 @@ impl FloatOutBoyPackageState {
 
     #[cfg(test)]
     pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.availability = DataRecorderAvailability::Unavailable;
+        self.data_recorder.capability = None;
         self.data_recorder.stop();
     }
 
@@ -364,11 +318,13 @@ impl FloatOutBoyPackageState {
                 self.ride_modifiers.atr_speed_boost(),
             ))
         });
-        self.data_recorder.sample(DataRecorderSample {
-            timestamp,
-            flags,
-            values,
-        });
+        let mut sample = [0; SAMPLE_SIZE];
+        sample[..4].copy_from_slice(&timestamp.as_ticks().to_be_bytes());
+        sample[4] = flags;
+        for (target, value) in sample[5..].chunks_exact_mut(2).zip(values) {
+            target.copy_from_slice(&value.to_be_bytes());
+        }
+        self.data_recorder.sample(&sample);
     }
 
     pub(super) fn trigger_data_recorder(&mut self, engage: bool) {
@@ -389,20 +345,20 @@ impl FloatOutBoyPackageState {
             return true;
         }
 
-        match DataRecorderRequest::parse(payload) {
-            DataRecorderRequest::SetRecording(true) => {
+        match payload {
+            [1, 1, value, ..] if *value > 0 => {
                 self.data_recorder.start();
             }
-            DataRecorderRequest::SetRecording(false) => {
+            [1, 1, ..] => {
                 self.data_recorder.stop();
             }
-            DataRecorderRequest::SetAutostart(enabled) => {
-                self.data_recorder.autostart = enabled;
+            [1, 2, value, ..] => {
+                self.data_recorder.autostart = *value > 0;
             }
-            DataRecorderRequest::SetAutostop(enabled) => {
-                self.data_recorder.autostop = enabled;
+            [1, 3, value, ..] => {
+                self.data_recorder.autostop = *value > 0;
             }
-            DataRecorderRequest::SendHeader => {
+            [2, 1, ..] => {
                 self.data_recorder.stop();
                 let mut response = DATA_RECORD_HEADER_BYTES;
                 response[1] = FloatOutBoyAppDataCommand::DataRecordHeader.id();
@@ -411,7 +367,8 @@ impl FloatOutBoyPackageState {
                 response[2..6].copy_from_slice(&sample_count.to_be_bytes());
                 let _ = reply(&response);
             }
-            DataRecorderRequest::SendData { offset } => {
+            [2, 2, a, b, c, d, ..] => {
+                let offset = u32::from_be_bytes([*a, *b, *c, *d]);
                 let mut response = FloatOutBoyPacket::<DATA_RESPONSE_CAPACITY>::new();
                 response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
                 response.push(FloatOutBoyAppDataCommand::DataRecordData.id());
@@ -428,7 +385,7 @@ impl FloatOutBoyPackageState {
                     let _ = reply(response.as_bytes());
                 }
             }
-            DataRecorderRequest::Ignore => {}
+            _ => {}
         }
         true
     }
