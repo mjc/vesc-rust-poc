@@ -9,9 +9,8 @@ use super::{
     FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent,
-    FirmwareFaultWireCode, MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio,
-    TimestampTicks,
+    AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
+    MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio, TimestampTicks,
 };
 
 macro_rules! realtime_data_items {
@@ -187,48 +186,12 @@ vescpkg_rs::typed_newtype! {
 }
 
 vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `atr.accel_diff` runtime realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeAtrAccelerationDiff(f32);
-    from_erpm_delta(value);
-    as_erpm_delta;
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `atr.speed_boost` runtime realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeAtrSpeedBoost(f32);
-    from_units(value);
-    as_units;
-}
-
-vescpkg_rs::typed_newtype! {
     /// Float Out Boy `booster.current` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
     new(current);
     current;
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `charging.current` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeChargingCurrent(BatteryCurrent);
-    new(current);
-    current;
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `charging.voltage` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeChargingVoltage(BatteryVoltage);
-    new(voltage);
-    voltage;
 }
 
 vescpkg_rs::typed_fields! {

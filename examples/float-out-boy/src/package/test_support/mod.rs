@@ -97,8 +97,8 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
             BatteryLevel::from_fraction(0.72),
         ),
         FloatOutBoyAllDataMode4Payload::new(
-            FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-            FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+            BatteryCurrent::new(Current::from_amps(1.2)),
+            BatteryVoltage::new(Voltage::from_volts(82.4)),
         ),
     )
 }
