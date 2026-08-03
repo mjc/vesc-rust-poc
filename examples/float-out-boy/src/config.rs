@@ -500,106 +500,62 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
     }
 
     fn decode(mut self) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
-        let on = self.boolean()?;
-        let headlights_on = self.boolean()?;
-        let headlights_transition = self.enum_value()?;
-        let direction_transition = self.enum_value()?;
-        let lights_off_when_lifted = self.boolean()?;
-        let status_on_front_when_lifted = self.boolean()?;
-        let front = self.bar()?;
-        let rear = self.bar()?;
-        let headlights = self.bar()?;
-        let taillights = self.bar()?;
-        let brightness_headlights_off = self.ratio(10_000.0)?;
-        let brightness_headlights_on = self.ratio(10_000.0)?;
-        let show_sensors = self.boolean()?;
-        let duty_threshold = self.ratio(10_000.0)?;
-        let red_bar_percentage = self.ratio(10_000.0)?;
-        let idle_timeout = self.u16()?;
-        let status_idle = self.bar()?;
-        let mode = self.enum_value()?;
-        let pin = self.enum_value()?;
-        let pin_config = self.enum_value()?;
-        let status_strip = self.strip()?;
-        let front_strip = self.strip()?;
-        let rear_strip = self.strip()?;
-
-        let status = FloatOutBoyStatusBarConfig {
-            idle_timeout: FloatOutBoyStatusBarIdleTimeout(idle_timeout),
-            duty_threshold,
-            red_bar_percentage,
-            show_sensors_while_running: show_sensors,
-            brightness_headlights_on,
-            brightness_headlights_off,
-        };
         let leds = FloatOutBoyLedsConfig {
-            on,
-            headlights_on,
-            headlights_transition,
-            direction_transition,
+            on: self.boolean()?,
+            headlights_on: self.boolean()?,
+            headlights_transition: self.enum_value()?,
+            direction_transition: self.enum_value()?,
             lifted: crate::leds::FloatOutBoyLiftedLedsConfig {
-                lights_off: lights_off_when_lifted,
-                status_on_front: status_on_front_when_lifted,
+                lights_off: self.boolean()?,
+                status_on_front: self.boolean()?,
             },
-            headlights,
-            taillights,
-            front,
-            rear,
-            status,
-            status_idle,
+            front: self.bar()?,
+            rear: self.bar()?,
+            headlights: self.bar()?,
+            taillights: self.bar()?,
+            status: FloatOutBoyStatusBarConfig {
+                brightness_headlights_off: self.ratio(10_000.0)?,
+                brightness_headlights_on: self.ratio(10_000.0)?,
+                show_sensors_while_running: self.boolean()?,
+                duty_threshold: self.ratio(10_000.0)?,
+                red_bar_percentage: self.ratio(10_000.0)?,
+                idle_timeout: FloatOutBoyStatusBarIdleTimeout(self.u16()?),
+            },
+            status_idle: self.bar()?,
         };
         let hardware = FloatOutBoyHardwareLedsConfig {
-            mode,
-            pin,
-            pin_config,
-            status: status_strip,
-            front: front_strip,
-            rear: rear_strip,
+            mode: self.enum_value()?,
+            pin: self.enum_value()?,
+            pin_config: self.enum_value()?,
+            status: self.strip()?,
+            front: self.strip()?,
+            rear: self.strip()?,
         };
 
         (self.offset == 242).then_some((hardware, leds))
     }
 
-    fn validate(mut self) -> Option<()> {
-        self.boolean()?;
-        self.boolean()?;
-        self.enum_value::<FloatOutBoyLedTransition>()?;
-        self.enum_value::<FloatOutBoyLedTransition>()?;
-        self.boolean()?;
-        self.boolean()?;
-        for _ in 0..4 {
-            self.validate_bar()?;
+    fn validate(self) -> Option<()> {
+        self.enums::<FloatOutBoyLedTransition>(&[177, 178])?;
+        self.enums::<FloatOutBoyLedAnimationMode>(&[181, 188, 195, 202, 220])?;
+        self.enums::<FloatOutBoyLedColor>(&[184, 185, 191, 192, 198, 199, 205, 206, 223, 224])?;
+        self.enums::<FloatOutBoyLedMode>(&[227])?;
+        self.enums::<FloatOutBoyLedPin>(&[228])?;
+        self.enums::<FloatOutBoyLedPinConfig>(&[229])?;
+        self.enums::<FloatOutBoyLedStripOrder>(&[230, 234, 238])?;
+        self.enums::<FloatOutBoyLedColorOrder>(&[232, 236, 240])?;
+        for offset in [182, 189, 196, 203, 209, 211, 214, 216, 221] {
+            let high = self.bytes.get(offset).copied()?;
+            let low = self.bytes.get(offset.saturating_add(1)).copied()?;
+            Ratio::from_ratio(f32::from(u16::from_be_bytes([high, low])) / 10_000.0).ok()?;
         }
-        self.ratio(10_000.0)?;
-        self.ratio(10_000.0)?;
-        self.boolean()?;
-        self.ratio(10_000.0)?;
-        self.ratio(10_000.0)?;
-        self.u16()?;
-        self.validate_bar()?;
-        self.enum_value::<FloatOutBoyLedMode>()?;
-        self.enum_value::<FloatOutBoyLedPin>()?;
-        self.enum_value::<FloatOutBoyLedPinConfig>()?;
-        for _ in 0..3 {
-            self.validate_strip()?;
-        }
-        (self.offset == 242).then_some(())
-    }
-
-    fn validate_bar(&mut self) -> Option<()> {
-        self.enum_value::<FloatOutBoyLedAnimationMode>()?;
-        self.ratio(10_000.0)?;
-        self.enum_value::<FloatOutBoyLedColor>()?;
-        self.enum_value::<FloatOutBoyLedColor>()?;
-        self.u16()?;
         Some(())
     }
 
-    fn validate_strip(&mut self) -> Option<()> {
-        self.enum_value::<FloatOutBoyLedStripOrder>()?;
-        self.byte()?;
-        self.enum_value::<FloatOutBoyLedColorOrder>()?;
-        self.boolean()?;
+    fn enums<T: TryFrom<u8>>(&self, offsets: &[usize]) -> Option<()> {
+        for offset in offsets {
+            T::try_from(self.bytes.get(*offset).copied()?).ok()?;
+        }
         Some(())
     }
 
