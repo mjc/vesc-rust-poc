@@ -84,7 +84,7 @@ fn generated_field<T: Default>(value: Option<T>) -> T {
 macro_rules! generated_config_fields {
     ($(
         $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
-        offset: $offset:expr $(, scale: $scale:expr)?;
+        offset: $offset:expr $(, scale: $scale:expr)? $(, map: $map:expr)?;
     )*) => {$(
         const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
             $field_type,
@@ -94,7 +94,9 @@ macro_rules! generated_config_fields {
         );
 
         pub(crate) fn $getter(self) -> $value_type {
-            generated_field(Self::$field.read(self.0))
+            let value = generated_field(Self::$field.read(self.0));
+            $(let value = ($map)(value);)?
+            value
         }
     )*};
 }
@@ -391,80 +393,26 @@ pub(crate) struct FloatOutBoyHapticConfig<'a>(&'a FloatOutBoyConfigImage);
 
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHapticConfig<'_> {
-    const DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 244, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 246, scale: 10.0);
-    const ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 248, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 250, scale: 10.0);
-    const VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 252, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 254, scale: 10.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 256, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const CURRENT_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 258, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const MIN_STRENGTH_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 260, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
+    generated_config_fields! {
+        DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField => duty_frequency -> AudioFrequency, offset: 244, scale: 1.0, map: AudioFrequency::new;
+        DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField => duty_strength -> AudioVoltage, offset: 246, scale: 10.0, map: AudioVoltage::new;
+        ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField => error_frequency -> AudioFrequency, offset: 248, scale: 1.0, map: AudioFrequency::new;
+        ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField => error_strength -> AudioVoltage, offset: 250, scale: 10.0, map: AudioVoltage::new;
+        VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField => vibrate_frequency -> AudioFrequency, offset: 252, scale: 1.0, map: AudioFrequency::new;
+        VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField => vibrate_strength -> MotorCurrent, offset: 254, scale: 10.0;
+        DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField => duty_solid_offset -> Ratio, offset: 256, scale: 10000.0;
+        CURRENT_THRESHOLD_FIELD: CustomConfigRatioField => current_threshold -> Ratio, offset: 258, scale: 10000.0;
+        MIN_STRENGTH_FIELD: CustomConfigRatioField => min_strength -> Ratio, offset: 260, scale: 10000.0;
+        STRENGTH_CURVATURE_FIELD: CustomConfigRatioField => strength_curvature -> Ratio, offset: 263, scale: 1000.0;
+    }
     const MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 262);
-    #[cfg(any(test, target_arch = "arm"))]
-    const STRENGTH_CURVATURE_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 263, scale: 1000.0);
 
-    pub(crate) fn duty_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::DUTY_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn duty_strength(self) -> AudioVoltage {
-        AudioVoltage::new(generated_field(Self::DUTY_STRENGTH_FIELD.read(self.0)))
-    }
-
-    pub(crate) fn error_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::ERROR_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn error_strength(self) -> AudioVoltage {
-        AudioVoltage::new(generated_field(Self::ERROR_STRENGTH_FIELD.read(self.0)))
-    }
-
-    pub(crate) fn vibrate_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::VIBRATE_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn vibrate_strength(self) -> MotorCurrent {
-        generated_field(Self::VIBRATE_STRENGTH_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn duty_solid_offset(self) -> Ratio {
-        generated_field(Self::DUTY_SOLID_OFFSET_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn current_threshold(self) -> Ratio {
-        generated_field(Self::CURRENT_THRESHOLD_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn min_strength(self) -> Ratio {
-        generated_field(Self::MIN_STRENGTH_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn max_strength_speed(self) -> Speed {
         generated_field(Self::MAX_STRENGTH_SPEED_FIELD.read(self.0)).scaled(
             1.0,
             0.0,
             Speed::from_kilometers_per_hour,
         )
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn strength_curvature(self) -> Ratio {
-        generated_field(Self::STRENGTH_CURVATURE_FIELD.read(self.0))
     }
 }
 
@@ -790,42 +738,21 @@ impl FloatOutBoyBmsConfig<'_> {
     // Generated Float Out Boy v1.2.1 serialization places `bms.enabled` after the
     // haptic fields and before the six BMS thresholds at
     // `third_party/float-out-boy/src/conf/settings.xml:4076-4082`.
-    const ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 265
-    );
-    const CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 266,
-        scale: 1000.0
-    );
-    const CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 268,
-        scale: 1000.0
-    );
-    const CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 270,
-        scale: 1000.0
-    );
+    generated_config_flags! { ENABLED_FIELD => enabled, offset: 265; }
+    generated_config_fields! {
+        CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_low_voltage -> Voltage, offset: 266, scale: 1000.0;
+        CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_high_voltage -> Voltage, offset: 268, scale: 1000.0;
+        CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_balance_voltage -> Voltage, offset: 270, scale: 1000.0;
+    }
     const CELL_HIGH_TEMPERATURE_OFFSET: usize = 272;
     const CELL_LOW_TEMPERATURE_OFFSET: usize = 273;
     const BMS_HIGH_TEMPERATURE_OFFSET: usize = 274;
 
-    pub(crate) fn enabled(self) -> bool {
-        self.0.flag(Self::ENABLED_FIELD)
-    }
-
     pub(crate) fn thresholds(self) -> FloatOutBoyBmsThresholds {
         FloatOutBoyBmsThresholds::new(
-            generated_field(Self::CELL_LOW_VOLTAGE_FIELD.read(self.0)),
-            generated_field(Self::CELL_HIGH_VOLTAGE_FIELD.read(self.0)),
-            generated_field(Self::CELL_BALANCE_VOLTAGE_FIELD.read(self.0)),
+            self.cell_low_voltage(),
+            self.cell_high_voltage(),
+            self.cell_balance_voltage(),
             FloatOutBoyBmsTemperature::from_config_byte(
                 self.0.as_bytes()[Self::CELL_LOW_TEMPERATURE_OFFSET],
             ),
