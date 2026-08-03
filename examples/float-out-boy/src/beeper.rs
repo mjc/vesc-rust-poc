@@ -86,13 +86,6 @@ impl FloatOutBoyBeeper {
         self.enabled = enabled;
     }
 
-    #[cfg(test)]
-    pub(crate) fn on(&mut self) {
-        if self.enabled && self.transitions == 0 {
-            self.pending_level = Some(FloatOutBoyBeeperLevel::High);
-        }
-    }
-
     pub(crate) fn force_on(&mut self) {
         if self.enabled {
             self.pending_level = Some(FloatOutBoyBeeperLevel::High);
@@ -103,11 +96,6 @@ impl FloatOutBoyBeeper {
         if self.transitions == 0 {
             self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn force_off(&mut self) {
-        self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
     }
 
     pub(crate) fn take_level(&mut self) -> Option<FloatOutBoyBeeperLevel> {

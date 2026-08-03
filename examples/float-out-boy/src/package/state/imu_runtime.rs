@@ -21,12 +21,16 @@ use super::{
 };
 use crate::bms::FloatOutBoyBmsFault;
 use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
-#[cfg(test)]
-use vescpkg_rs::prelude::SystemTicks;
 use vescpkg_rs::prelude::{
     AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
+
+#[cfg(test)]
+pub(super) use test_support::{ActiveReverseStopFaultInput, reverse_stop_timer_inactive};
+
+#[cfg(test)]
+mod test_support;
 
 fn rate_limit_angle(
     current: AngleDegrees,
@@ -426,50 +430,6 @@ fn evaluate_darkride_faults(
 }
 
 const DIRTY_LANDING_PITCH_MARGIN_DEGREES: u8 = 10;
-
-#[cfg(test)]
-pub(super) struct ActiveReverseStopFaultInput {
-    pub(super) footpad: FloatOutBoyFootpadState,
-    pub(super) darkride: FloatOutBoyDarkRideState,
-    pub(super) pitch: AngleDegrees,
-    pub(super) elapsed: SystemTicks,
-    pub(super) total_erpm: Rpm,
-}
-
-#[cfg(test)]
-impl ActiveReverseStopFaultInput {
-    #[must_use]
-    pub(super) fn stop_event(self) -> Option<FloatOutBoyStopEvent> {
-        if !self.footpad.is_pressed() {
-            return Some(FloatOutBoyStopEvent::ReverseStopNoFootpads);
-        }
-        if matches!(self.darkride, FloatOutBoyDarkRideState::Active) {
-            return None;
-        }
-        if self.pitch > reverse_stop::PITCH {
-            return Some(FloatOutBoyStopEvent::ReverseStopPitch);
-        }
-        let fast_timer_expired = self.pitch > reverse_stop::TIMER_FAST_PITCH
-            && VescSeconds::from_seconds(1.0)
-                .to_system_ticks_saturating()
-                .is_some_and(|timeout| self.elapsed > timeout);
-        let slow_timer_expired = self.pitch > reverse_stop::TIMER_SLOW_PITCH
-            && VescSeconds::from_seconds(2.0)
-                .to_system_ticks_saturating()
-                .is_some_and(|timeout| self.elapsed > timeout);
-        if fast_timer_expired || slow_timer_expired {
-            return Some(FloatOutBoyStopEvent::ReverseStopTimer);
-        }
-        (self.total_erpm.abs() > reverse_stop::TOTAL_ERPM)
-            .then_some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
-    }
-}
-
-#[must_use]
-#[cfg(test)]
-pub(super) fn reverse_stop_timer_inactive(pitch_abs: AngleDegrees) -> bool {
-    pitch_abs <= reverse_stop::TIMER_SLOW_PITCH
-}
 
 fn first_transition_stop(
     normal: &NormalFaultEvaluation,

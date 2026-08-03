@@ -102,25 +102,6 @@ impl FloatOutBoyPackageState {
         FloatOutBoyHandtestRequest::from_packet(bytes).map(|request| request.apply_to(self))
     }
 
-    #[cfg(test)]
-    pub(super) fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
-        let Some(restore) = self.prepare_handtest_packet(bytes) else {
-            return false;
-        };
-        if restore {
-            let loaded =
-                vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
-            let now = vescpkg_rs::FirmwareClock::current_timestamp();
-            if self.commit_handtest_restore(&loaded, now) {
-                let migration = vescpkg_rs::test_support::with_firmware_effects(
-                    super::migrate_legacy_firmware_imu_settings,
-                );
-                self.finish_configure_active(migration);
-            }
-        }
-        true
-    }
-
     pub(super) fn set_ride_mode(&mut self, mode: FloatOutBoyMode) {
         // HANDTEST changes only `state.mode` in C at `third_party/float-out-boy/src/main.c:1430`;
         // preserve the rest of the packed Rust ride state while swapping mode.

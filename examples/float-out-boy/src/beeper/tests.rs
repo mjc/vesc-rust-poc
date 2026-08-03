@@ -5,6 +5,18 @@ use super::{
 };
 use crate::config::FloatOutBoyConfigImage;
 
+impl FloatOutBoyBeeper {
+    fn on(&mut self) {
+        if self.enabled && self.transitions == 0 {
+            self.pending_level = Some(FloatOutBoyBeeperLevel::High);
+        }
+    }
+
+    fn force_off(&mut self) {
+        self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
+    }
+}
+
 #[test]
 fn idle_beeper_tick_stays_quiet() {
     let mut beeper = FloatOutBoyBeeper::new(true);

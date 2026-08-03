@@ -154,6 +154,8 @@ mod generated_field_tests;
 
 #[cfg(test)]
 mod led_config_tests;
+#[cfg(test)]
+mod test_support;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -283,14 +285,6 @@ impl FloatOutBoyConfigImage {
     config_views! {
         bms => FloatOutBoyBmsConfig;
         haptic => FloatOutBoyHapticConfig;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_haptic_current_threshold(&mut self, threshold: Ratio) -> bool {
-        let mut editor = self.editor();
-        FloatOutBoyHapticConfig::CURRENT_THRESHOLD_FIELD
-            .write(&mut editor, threshold)
-            .is_some()
     }
 
     pub(crate) fn balance_loop_config(&self) -> LoopConfig {
@@ -517,11 +511,6 @@ impl FloatOutBoyConfigEditor<'_> {
         self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, false);
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_meta_is_default(&mut self, is_default: bool) -> bool {
-        self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, is_default)
-    }
-
     pub(crate) fn keep_enabled_while_running(&mut self) {
         // C map: `set_cfg` refuses to persist package disablement while
         // RUNNING at `third_party/float-out-boy/src/main.c:2370-2373`.
@@ -533,9 +522,6 @@ impl FloatOutBoyConfigEditor<'_> {
         set_disabled(disabled: bool) => FloatOutBoyMetadataConfig::DISABLED_FIELD;
         set_beeper_enabled(enabled: bool) => FloatOutBoyConfigImage::BEEPER_ENABLED_FIELD;
     }
-
-    #[cfg(test)]
-    generated_config_setters! { set_hertz(sample_rate: SampleRate) => FloatOutBoyStartupConfig::HERTZ_FIELD; }
 
     generated_config_setters! { set_startup_pitch_tolerance(angle: AngleDegrees) => FloatOutBoyStartupConfig::PITCH_TOLERANCE_FIELD; }
 
@@ -550,27 +536,6 @@ impl FloatOutBoyConfigEditor<'_> {
         set_darkride_enabled(enabled: bool) => FloatOutBoyFaultConfig::DARKRIDE_FIELD;
         set_dual_switch(enabled: bool) => FloatOutBoyFaultConfig::DUAL_SWITCH_FIELD;
     }
-
-    #[cfg(test)]
-    pub(crate) fn set_moving_faults_disabled(&mut self, disabled: bool) -> bool {
-        self.set_flag(
-            FloatOutBoyFaultConfig::MOVING_FAULT_DISABLED_FIELD,
-            disabled,
-        )
-    }
-
-    #[cfg(test)]
-    generated_config_setters! {
-        set_fault_adc_half_erpm(speed: ElectricalSpeed) => FloatOutBoyFaultConfig::ADC_HALF_ERPM_FIELD;
-        set_switch_half_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_HALF_FIELD;
-        set_switch_full_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_FULL_FIELD;
-    }
-
-    #[cfg(test)]
-    generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
-
-    #[cfg(test)]
-    generated_config_setters! { set_remote_throttle_grace_period(duration: VescSeconds) => FloatOutBoyRemoteThrottleConfig::GRACE_PERIOD_FIELD; }
 
     generated_config_setters! {
         set_kp(kp: AngleCurrentGain) => FloatOutBoyBalanceConfig::KP_FIELD;
@@ -601,9 +566,6 @@ impl FloatOutBoyConfigEditor<'_> {
 
     generated_config_setters! { set_tiltback_return_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::TILTBACK_RETURN_SPEED_FIELD; }
 
-    #[cfg(test)]
-    generated_config_setters! { set_speed_pushback_threshold(speed: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD; }
-
     generated_config_setters! { set_dirty_landings_enabled(enabled: bool) => FloatOutBoyStartupConfig::DIRTY_LANDINGS_FIELD; }
 
     generated_config_setters! { set_startup_click_current(current: vescpkg_rs::WireByte) => FloatOutBoyStartupConfig::CLICK_CURRENT_FIELD; }
@@ -627,12 +589,6 @@ impl FloatOutBoyConfigEditor<'_> {
     generated_config_setters! { set_input_tilt_angle_limit(angle: AngleDegrees) => FloatOutBoyConfigImage::INPUT_TILT_ANGLE_LIMIT_FIELD; }
 
     generated_config_setters! { set_input_tilt_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::INPUT_TILT_SPEED_FIELD; }
-
-    #[cfg(test)]
-    generated_config_setters! { set_input_tilt_inverted(inverted: bool) => FloatOutBoyConfigImage::INPUT_TILT_INVERT_FIELD; }
-
-    #[cfg(test)]
-    generated_config_setters! { set_input_tilt_deadband(deadband: Ratio) => FloatOutBoyConfigImage::INPUT_TILT_DEADBAND_FIELD; }
 
     generated_config_setters! {
         set_booster_angle(angle: AngleDegrees) => FloatOutBoyBalanceConfig::BOOSTER_ANGLE_FIELD;
@@ -685,11 +641,6 @@ impl FloatOutBoyMetadataConfig<'_> {
         len: FLOAT_OUT_BOY_CONFIG_LEN,
         offset: 275
     );
-
-    #[cfg(test)]
-    pub(crate) fn is_default(self) -> bool {
-        generated_field(Self::IS_DEFAULT_FIELD.read(self.0))
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

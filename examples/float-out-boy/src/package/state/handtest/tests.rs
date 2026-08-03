@@ -8,12 +8,32 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
 };
+use crate::package::state::{load_persisted_config, migrate_legacy_firmware_imu_settings};
 use crate::package::test_support::{
     balance_filter_with_pitch, editable_config_from_bytes, editable_config_from_state,
     sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
+
+impl FloatOutBoyPackageState {
+    fn handle_handtest_packet(&mut self, bytes: &[u8]) -> bool {
+        let Some(restore) = self.prepare_handtest_packet(bytes) else {
+            return false;
+        };
+        if restore {
+            let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+            let now = vescpkg_rs::FirmwareClock::current_timestamp();
+            if self.commit_handtest_restore(&loaded, now) {
+                let migration = vescpkg_rs::test_support::with_firmware_effects(
+                    migrate_legacy_firmware_imu_settings,
+                );
+                self.finish_configure_active(migration);
+            }
+        }
+        true
+    }
+}
 
 #[test]
 fn handtest_request_selects_mode_only_while_ready_like_float_out_boy() {

@@ -8,6 +8,9 @@ use vescpkg_rs::{
     timer_older_whole_seconds as float_out_boy_ticks_elapsed,
 };
 
+#[cfg(test)]
+mod test_support;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BmsReadyAlertFault {
     Connection,
@@ -83,15 +86,5 @@ impl BmsRuntimeState {
 
     pub(super) const fn contains(&self, fault: FloatOutBoyBmsFault) -> bool {
         self.faults.contains(fault)
-    }
-
-    #[cfg(test)]
-    pub(super) const fn sample(self) -> FloatOutBoyBmsSample {
-        self.sample
-    }
-
-    #[cfg(test)]
-    pub(super) const fn faults(self) -> FloatOutBoyBmsFaults {
-        self.faults
     }
 }

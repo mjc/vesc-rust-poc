@@ -8,6 +8,9 @@ use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::TimestampTicks;
 
+#[cfg(test)]
+mod test_support;
+
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
 const HEADER_RESPONSE_LEN: usize = 159;
@@ -129,12 +132,6 @@ impl FloatOutBoyPackageState {
         buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
     ) {
         self.data_recorder.initialize(buffer);
-    }
-
-    #[cfg(test)]
-    pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.records.replace_storage(None);
-        self.data_recorder.stop();
     }
 
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
