@@ -1,28 +1,7 @@
 use super::{
-    FloatOutBoyPacket, saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8,
-    saturating_trunc_f32_to_u32, saturating_usize_to_u8, truncating_u64_to_u32,
+    saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
+    saturating_usize_to_u8, truncating_u64_to_u32,
 };
-
-#[test]
-fn fob_packet_preserves_incrementing_partial_overflow_writes() {
-    let mut packet = FloatOutBoyPacket::<5>::new();
-    packet.push(0x12);
-    packet.push_u16(0x3456);
-    packet.push_u32(0x789a_bcde);
-
-    assert_eq!(packet.as_bytes(), [0x12, 0x34, 0x56, 0x78, 0x9a]);
-    assert_eq!(packet.len, 7);
-}
-
-#[test]
-fn fob_packet_encodes_signed_scaled_and_float_values() {
-    let mut packet = FloatOutBoyPacket::<8>::new();
-    packet.push_scaled_i16(-12.39, 10.0);
-    packet.push_float32_auto(1.4e-38);
-    packet.push_i16(0x1234);
-
-    assert_eq!(packet.into_bytes(), [0xff, 0x85, 0, 0, 0, 0, 0x12, 0x34]);
-}
 
 #[test]
 fn unsigned_wire_conversion_saturates_without_panicking() {

@@ -51,7 +51,7 @@ impl FloatOutBoyPackageState {
                 count = count.saturating_add(1);
                 true
             });
-            response.set(count_index, count);
+            let _ = response.set(count_index, count);
             return reply(response.as_bytes());
         }
 
