@@ -12,9 +12,8 @@ use super::limits::{
 use super::{
     AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
-    FloatOutBoyBeeperCount, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyPackageState,
-    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyPackageState, FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
@@ -25,6 +24,7 @@ use super::{
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
 use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
+use crate::wire::saturating_trunc_f32_to_u8;
 use vescpkg_rs::prelude::{
     AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
 };
@@ -56,25 +56,9 @@ fn pack_voltage_threshold(
     }
 }
 
-pub(super) fn startup_ready_beep_count(
-    warning_threshold: Voltage,
-    battery_voltage: Voltage,
-) -> FloatOutBoyBeeperCount {
-    if battery_voltage + Voltage::from_volts(6.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::SEVEN
-    } else if battery_voltage + Voltage::from_volts(5.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::SIX
-    } else if battery_voltage + Voltage::from_volts(4.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::FIVE
-    } else if battery_voltage + Voltage::from_volts(3.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::FOUR
-    } else if battery_voltage + Voltage::from_volts(2.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::THREE
-    } else if battery_voltage + Voltage::from_volts(1.0) <= warning_threshold {
-        FloatOutBoyBeeperCount::TWO
-    } else {
-        FloatOutBoyBeeperCount::ONE
-    }
+pub(super) fn startup_ready_beep_count(warning_threshold: Voltage, battery_voltage: Voltage) -> u8 {
+    let deficit = (warning_threshold - battery_voltage).as_volts();
+    saturating_trunc_f32_to_u8(deficit).min(6).saturating_add(1)
 }
 
 fn refresh_darkride_state(
@@ -112,7 +96,7 @@ fn refresh_darkride_state(
     // Float Out Boy removes the post-flip darkride grace after updating the
     // roll transition at `third_party/float-out-boy/src/main.c:781-794,984-992`.
     let alert = matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active)
-        .then_some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+        .then_some(FloatOutBoyBeeperAlert::Long(1));
     state.upside_down_flags.enabled = false;
     (
         ride_state.with_darkride(FloatOutBoyDarkRideState::Upright),
@@ -152,10 +136,7 @@ fn refresh_ready_alert(
                 FloatOutBoyBeepReason::CellBalance
             }
         };
-        alert = Some((
-            reason,
-            FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::FOUR),
-        ));
+        alert = Some((reason, FloatOutBoyBeeperAlert::Short(4)));
     }
 
     // READY nags after 30 idle minutes, at most once per minute, and suppresses
@@ -167,10 +148,7 @@ fn refresh_ready_alert(
             if battery_voltage > state.idle_voltage {
                 state.idle_voltage = battery_voltage;
             } else {
-                alert = Some((
-                    FloatOutBoyBeepReason::Idle,
-                    FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::TWO),
-                ));
+                alert = Some((FloatOutBoyBeepReason::Idle, FloatOutBoyBeeperAlert::Long(2)));
             }
         }
     } else {
@@ -844,7 +822,7 @@ fn apply_protective_setpoint(
         } else {
             FloatOutBoyBeepReason::HighVoltage
         };
-        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(3));
         let tiltback = float_out_boy_ticks_elapsed_seconds(
             system_time_ticks,
             state.high_voltage_ticks,
@@ -867,7 +845,7 @@ fn apply_protective_setpoint(
     }
     if signals.bms_connection_fault {
         phase.beep_reason = FloatOutBoyBeepReason::BmsConnection;
-        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
+        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
         phase.ride_state = phase
             .ride_state
             .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
@@ -879,7 +857,7 @@ fn apply_protective_setpoint(
     }
     if let Some((reason, tiltback)) = signals.motor_temperature_warning {
         phase.beep_reason = reason;
-        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
+        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
         phase.ride_state = phase.ride_state.with_setpoint_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackTemperature
         } else {
@@ -895,7 +873,7 @@ fn apply_protective_setpoint(
     }
     if let Some(reason) = signals.bms_temperature_reason {
         phase.beep_reason = reason;
-        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
+        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
         phase.ride_state = phase
             .ride_state
             .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackTemperature);
@@ -914,7 +892,7 @@ fn apply_protective_setpoint(
         } else {
             FloatOutBoyBeepReason::LowVoltage
         };
-        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+        phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(3));
         let voltage_delta = signals.low_voltage_threshold - signals.battery_voltage;
         let motor_current = base.motor().directional_motor_current().current().abs();
         let tiltback = voltage_delta > Voltage::from_volts(2.0)

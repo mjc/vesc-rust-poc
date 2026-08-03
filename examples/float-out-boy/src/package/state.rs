@@ -4,7 +4,7 @@ use super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_secon
 use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::FloatOutBoyBeeperLevel;
-use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
+use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::FloatOutBoyConfigImage;

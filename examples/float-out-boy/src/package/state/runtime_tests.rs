@@ -1,5 +1,5 @@
 use super::FloatOutBoyPackageState;
-use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
+use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
@@ -164,15 +164,15 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
 fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_float_out_boy() {
     let warning_threshold = Voltage::from_volts(59.0);
     let cases = [
-        (Voltage::from_volts(60.0), FloatOutBoyBeeperCount::ONE),
-        (Voltage::from_volts(58.9), FloatOutBoyBeeperCount::ONE),
-        (Voltage::from_volts(58.0), FloatOutBoyBeeperCount::TWO),
-        (Voltage::from_volts(57.0), FloatOutBoyBeeperCount::THREE),
-        (Voltage::from_volts(56.0), FloatOutBoyBeeperCount::FOUR),
-        (Voltage::from_volts(55.0), FloatOutBoyBeeperCount::FIVE),
-        (Voltage::from_volts(54.0), FloatOutBoyBeeperCount::SIX),
-        (Voltage::from_volts(53.0), FloatOutBoyBeeperCount::SEVEN),
-        (Voltage::from_volts(40.0), FloatOutBoyBeeperCount::SEVEN),
+        (Voltage::from_volts(60.0), 1),
+        (Voltage::from_volts(58.9), 1),
+        (Voltage::from_volts(58.0), 2),
+        (Voltage::from_volts(57.0), 3),
+        (Voltage::from_volts(56.0), 4),
+        (Voltage::from_volts(55.0), 5),
+        (Voltage::from_volts(54.0), 6),
+        (Voltage::from_volts(53.0), 7),
+        (Voltage::from_volts(40.0), 7),
     ];
 
     for (battery_voltage, expected) in cases {

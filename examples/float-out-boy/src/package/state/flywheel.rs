@@ -1,6 +1,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyRunState,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyRunState,
     float_out_boy_command_payload,
 };
 use super::{FloatOutBoyMode, FloatOutBoyPackageState, LoopConfig};
@@ -267,9 +267,9 @@ impl FloatOutBoyPackageState {
             }
             self.flywheel
                 .calibrate(pitch, AngleDegrees::from(attitude.roll().angle()));
-            self.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
         } else {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
         }
         None
     }

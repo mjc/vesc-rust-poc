@@ -1,6 +1,6 @@
 use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
-    FloatOutBoyPackageState, float_out_boy_command_payload,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyPackageState,
+    float_out_boy_command_payload,
 };
 use crate::config::FloatOutBoyConfigEditor;
 use vescpkg_rs::prelude::{
@@ -265,7 +265,7 @@ fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8])
         .all(core::convert::identity)
     });
     if updated {
-        state.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+        state.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
     }
     updated
 }
@@ -335,7 +335,7 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
     if !updated {
         return false;
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+    state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     true
 }
 
@@ -518,7 +518,7 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     if !updated {
         return false;
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    state.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
     true
 }
 
