@@ -894,7 +894,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     }
 
     assert!(state.serialized_config.headlights_enabled());
-    assert!(!state.led_runtime_status().headlights_enabled());
+    assert!(!state.led_runtime_status().are_headlights_on());
     assert_eq!(
         state.internal_led_confirmation_start_for_test(),
         Some(0.7505)
@@ -920,7 +920,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     }
 
     assert!(state.serialized_config.headlights_enabled());
-    assert!(state.led_runtime_status().headlights_enabled());
+    assert!(state.led_runtime_status().are_headlights_on());
     assert_eq!(
         state.internal_led_confirmation_start_for_test(),
         Some(1.7505)
