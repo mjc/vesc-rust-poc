@@ -993,13 +993,6 @@ fn refresh_reverse_stop(
     }
 }
 
-struct ProtectionContext<'a> {
-    base: &'a FloatOutBoyAllDataBasePayload,
-    phase: &'a TransitionPhase,
-    signals: &'a ProtectionSignals,
-    system_time_ticks: TimestampTicks,
-}
-
 fn directional_angle(angle: AngleDegrees, motor_erpm: Rpm) -> AngleDegrees {
     if motor_erpm.is_positive() {
         angle
@@ -1008,211 +1001,152 @@ fn directional_angle(angle: AngleDegrees, motor_erpm: Rpm) -> AngleDegrees {
     }
 }
 
-fn apply_duty_pushback(
+#[expect(
+    clippy::too_many_lines,
+    reason = "one ordered dispatcher preserves priority without seven one-use boolean helpers"
+)]
+fn apply_protective_setpoint(
     state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
+    base: &FloatOutBoyAllDataBasePayload,
+    phase: &TransitionPhase,
+    signals: &ProtectionSignals,
+    system_time_ticks: TimestampTicks,
     control: &mut RunningControl,
-) -> bool {
-    if context.base.motor().duty_cycle().ratio().as_ratio()
-        <= state.runtime_duty_pushback_threshold().as_ratio()
-    {
-        return false;
+) {
+    let duty = base.motor().duty_cycle().ratio().as_ratio();
+    if duty > state.runtime_duty_pushback_threshold().as_ratio() {
+        if !matches!(control.ride_state.mode(), FloatOutBoyMode::Flywheel) {
+            control.ride_state = control
+                .ride_state
+                .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackDuty);
+        }
+        control.board_setpoint = rate_limit_angle(
+            control.board_setpoint,
+            directional_angle(state.runtime_duty_pushback_angle(), phase.motor_erpm),
+            state.runtime_duty_pushback_step(),
+        );
+        return;
     }
-    let angle = state.runtime_duty_pushback_angle();
-    if !matches!(control.ride_state.mode(), FloatOutBoyMode::Flywheel) {
-        control.ride_state = control
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackDuty);
-    }
-    control.board_setpoint = rate_limit_angle(
-        control.board_setpoint,
-        directional_angle(angle, context.phase.motor_erpm),
-        state.runtime_duty_pushback_step(),
-    );
-    true
-}
-
-fn apply_high_voltage_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    let signals = context.signals;
-    if context.base.motor().duty_cycle().ratio().as_ratio() <= 0.05
-        || !(signals.battery_voltage > signals.high_voltage_threshold
+    if duty > 0.05
+        && (signals.battery_voltage > signals.high_voltage_threshold
             || signals.bms_cell_over_voltage)
     {
-        return false;
+        control.beep_reason = if signals.bms_cell_over_voltage {
+            FloatOutBoyBeepReason::CellHighVoltage
+        } else {
+            FloatOutBoyBeepReason::HighVoltage
+        };
+        control.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+        let tiltback = float_out_boy_ticks_elapsed_seconds(
+            system_time_ticks,
+            state.high_voltage_ticks,
+            VescSeconds::from_seconds(0.5),
+        ) || signals.battery_voltage
+            > signals.high_voltage_threshold + Voltage::from_volts(1.0)
+            || signals.bms_cell_over_voltage;
+        control.ride_state = control.ride_state.with_setpoint_adjustment(if tiltback {
+            FloatOutBoySetpointAdjustment::PushbackHighVoltage
+        } else {
+            FloatOutBoySetpointAdjustment::None
+        });
+        if tiltback {
+            control.board_setpoint = directional_angle(
+                state.serialized_config.high_voltage_pushback_angle(),
+                phase.motor_erpm,
+            );
+        }
+        return;
     }
-    control.beep_reason = if signals.bms_cell_over_voltage {
-        FloatOutBoyBeepReason::CellHighVoltage
-    } else {
-        FloatOutBoyBeepReason::HighVoltage
-    };
-    control.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
-    let tiltback = float_out_boy_ticks_elapsed_seconds(
-        context.system_time_ticks,
-        state.high_voltage_ticks,
-        VescSeconds::from_seconds(0.5),
-    ) || signals.battery_voltage
-        > signals.high_voltage_threshold + Voltage::from_volts(1.0)
-        || signals.bms_cell_over_voltage;
-    if tiltback {
+    if signals.bms_connection_fault {
+        control.beep_reason = FloatOutBoyBeepReason::BmsConnection;
+        control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
         control.ride_state = control
             .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackHighVoltage);
+            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
         control.board_setpoint = directional_angle(
             state.serialized_config.high_voltage_pushback_angle(),
-            context.phase.motor_erpm,
+            phase.motor_erpm,
         );
-    } else {
-        control.ride_state = control
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+        return;
     }
-    true
-}
-
-fn apply_bms_connection_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    if !context.signals.bms_connection_fault {
-        return false;
+    if let Some((reason, tiltback)) = signals.motor_temperature_warning {
+        control.beep_reason = reason;
+        control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
+        control.ride_state = control.ride_state.with_setpoint_adjustment(if tiltback {
+            FloatOutBoySetpointAdjustment::PushbackTemperature
+        } else {
+            FloatOutBoySetpointAdjustment::None
+        });
+        if tiltback {
+            control.board_setpoint = directional_angle(
+                state.serialized_config.low_voltage_pushback_angle(),
+                phase.motor_erpm,
+            );
+        }
+        return;
     }
-    control.beep_reason = FloatOutBoyBeepReason::BmsConnection;
-    control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
-    control.ride_state = control
-        .ride_state
-        .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
-    control.board_setpoint = directional_angle(
-        state.serialized_config.high_voltage_pushback_angle(),
-        context.phase.motor_erpm,
-    );
-    true
-}
-
-fn apply_motor_temperature_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    let Some((reason, tiltback)) = context.signals.motor_temperature_warning else {
-        return false;
-    };
-    control.beep_reason = reason;
-    control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
-    if tiltback {
+    if let Some(reason) = signals.bms_temperature_reason {
+        control.beep_reason = reason;
+        control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
         control.ride_state = control
             .ride_state
             .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackTemperature);
         control.board_setpoint = directional_angle(
             state.serialized_config.low_voltage_pushback_angle(),
-            context.phase.motor_erpm,
+            phase.motor_erpm,
         );
-    } else {
-        control.ride_state = control
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+        return;
     }
-    true
-}
-
-fn apply_bms_temperature_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    let Some(reason) = context.signals.bms_temperature_reason else {
-        return false;
-    };
-    control.beep_reason = reason;
-    control.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
-    control.ride_state = control
-        .ride_state
-        .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackTemperature);
-    control.board_setpoint = directional_angle(
-        state.serialized_config.low_voltage_pushback_angle(),
-        context.phase.motor_erpm,
-    );
-    true
-}
-
-fn apply_low_voltage_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    let signals = context.signals;
-    if context.base.motor().duty_cycle().ratio().as_ratio() <= 0.05
-        || !(signals.bms_cell_under_voltage
+    if duty > 0.05
+        && (signals.bms_cell_under_voltage
             || signals.battery_voltage < signals.low_voltage_threshold)
     {
-        return false;
+        control.beep_reason = if signals.bms_cell_under_voltage {
+            FloatOutBoyBeepReason::CellLowVoltage
+        } else {
+            FloatOutBoyBeepReason::LowVoltage
+        };
+        control.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+        let voltage_delta = signals.low_voltage_threshold - signals.battery_voltage;
+        let motor_current = base.motor().directional_motor_current().current().abs();
+        let tiltback = voltage_delta > Voltage::from_volts(2.0)
+            || motor_current < Current::from_amps(5.0)
+            || voltage_delta.as_volts() * 20.0 / motor_current.as_amps() > 1.0
+            || signals.bms_cell_under_voltage;
+        control.ride_state = control.ride_state.with_setpoint_adjustment(if tiltback {
+            FloatOutBoySetpointAdjustment::PushbackLowVoltage
+        } else {
+            FloatOutBoySetpointAdjustment::None
+        });
+        control.board_setpoint = if tiltback {
+            directional_angle(
+                state.serialized_config.low_voltage_pushback_angle(),
+                phase.motor_erpm,
+            )
+        } else {
+            AngleDegrees::ZERO
+        };
+        return;
     }
-    control.beep_reason = if signals.bms_cell_under_voltage {
-        FloatOutBoyBeepReason::CellLowVoltage
-    } else {
-        FloatOutBoyBeepReason::LowVoltage
-    };
-    control.beeper_alert = Some(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
-    let voltage_delta = signals.low_voltage_threshold - signals.battery_voltage;
-    let motor_current = context
-        .base
-        .motor()
-        .directional_motor_current()
-        .current()
-        .abs();
-    let tiltback = voltage_delta > Voltage::from_volts(2.0)
-        || motor_current < Current::from_amps(5.0)
-        || voltage_delta.as_volts() * 20.0 / motor_current.as_amps() > 1.0
-        || signals.bms_cell_under_voltage;
-    if tiltback {
-        control.ride_state = control
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackLowVoltage);
-        control.board_setpoint = directional_angle(
-            state.serialized_config.low_voltage_pushback_angle(),
-            context.phase.motor_erpm,
-        );
-    } else {
-        control.ride_state = control
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
-        control.board_setpoint = AngleDegrees::ZERO;
-    }
-    true
-}
-
-fn apply_speed_pushback(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) -> bool {
-    let speed = context.base.motor().vehicle_speed().speed();
+    let speed = base.motor().vehicle_speed().speed();
     let threshold = state.serialized_config.speed_pushback_threshold();
-    if !threshold.is_positive() || speed.abs() <= threshold {
-        return false;
+    if threshold.is_positive() && speed.abs() > threshold {
+        control.beep_reason = FloatOutBoyBeepReason::Speed;
+        control.ride_state = control
+            .ride_state
+            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackSpeed);
+        let target = if speed.is_positive() {
+            state.runtime_duty_pushback_angle()
+        } else {
+            -state.runtime_duty_pushback_angle()
+        };
+        control.board_setpoint = rate_limit_angle(
+            control.board_setpoint,
+            target,
+            state.runtime_duty_pushback_step(),
+        );
+        return;
     }
-    control.beep_reason = FloatOutBoyBeepReason::Speed;
-    control.ride_state = control
-        .ride_state
-        .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackSpeed);
-    let target = if speed.is_positive() {
-        state.runtime_duty_pushback_angle()
-    } else {
-        -state.runtime_duty_pushback_angle()
-    };
-    control.board_setpoint = rate_limit_angle(
-        control.board_setpoint,
-        target,
-        state.runtime_duty_pushback_step(),
-    );
-    true
-}
-
-fn return_protective_setpoint(state: &FloatOutBoyPackageState, control: &mut RunningControl) {
     if matches!(
         control.ride_state.setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::PushbackDuty
@@ -1233,24 +1167,6 @@ fn return_protective_setpoint(state: &FloatOutBoyPackageState, control: &mut Run
             state.runtime_tiltback_return_step(),
         );
     }
-}
-
-fn apply_protective_setpoint(
-    state: &FloatOutBoyPackageState,
-    context: &ProtectionContext<'_>,
-    control: &mut RunningControl,
-) {
-    if apply_duty_pushback(state, context, control)
-        || apply_high_voltage_pushback(state, context, control)
-        || apply_bms_connection_pushback(state, context, control)
-        || apply_motor_temperature_pushback(state, context, control)
-        || apply_bms_temperature_pushback(state, context, control)
-        || apply_low_voltage_pushback(state, context, control)
-        || apply_speed_pushback(state, context, control)
-    {
-        return;
-    }
-    return_protective_setpoint(state, control);
 }
 
 fn advance_runtime_setpoints(
@@ -1385,12 +1301,10 @@ fn advance_running_control(
     {
         apply_protective_setpoint(
             state,
-            &ProtectionContext {
-                base,
-                phase,
-                signals: &signals,
-                system_time_ticks,
-            },
+            base,
+            phase,
+            &signals,
+            system_time_ticks,
             &mut control,
         );
     }
