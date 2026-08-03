@@ -542,10 +542,10 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
         crate::leds::FloatOutBoyLedColor::Blue,
         crate::leds::FloatOutBoyLedColor::Black,
         crate::leds::FloatOutBoyLedAnimationMode::Solid,
-        crate::leds::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let status = crate::leds::FloatOutBoyStatusBarConfig::new(
-        crate::leds::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+        0,
         Ratio::from_ratio_const(0.9),
         Ratio::from_ratio_const(0.1),
         Ratio::from_ratio_const(1.0),

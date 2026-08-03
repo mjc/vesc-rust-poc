@@ -2,8 +2,7 @@ use crate::{
     domain::FloatOutBoyDarkRideState,
     lcm::FloatOutBoyHardwareLedsConfig,
     leds::{
-        FloatOutBoyLedFrameUpdate, FloatOutBoyLedPin, FloatOutBoyLedRenderer,
-        FloatOutBoyLedStatusUpdate, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
+        FloatOutBoyLedPin, FloatOutBoyLedRenderer, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
     },
 };
 use vescpkg_rs::{MotorTelemetry, TimestampTicks};
@@ -202,25 +201,21 @@ impl FloatOutBoyPackageState {
     ) {
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
-        let frame = FloatOutBoyLedFrameUpdate {
-            ride: FloatOutBoyLedUpdate {
-                run_state: ride_state.run_state(),
-                mode: ride_state.mode(),
-                darkride: matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active),
-                footpad: base.footpad().state(),
-                pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
-                distance: telemetry.signed_trip_distance().distance().as_meters(),
-            },
-            status: FloatOutBoyLedStatusUpdate {
-                battery_level: telemetry.battery_level().as_fraction(),
-                duty_cycle: telemetry.duty_cycle().ratio().as_ratio(),
-                moving: telemetry
-                    .electrical_speed()
-                    .rpm()
-                    .as_revolutions_per_minute()
-                    .abs()
-                    > 100.0,
-            },
+        let frame = FloatOutBoyLedUpdate {
+            run_state: ride_state.run_state(),
+            mode: ride_state.mode(),
+            darkride: matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active),
+            footpad: base.footpad().state(),
+            pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
+            distance: telemetry.signed_trip_distance().distance().as_meters(),
+            battery_level: telemetry.battery_level().as_fraction(),
+            duty_cycle: telemetry.duty_cycle().ratio().as_ratio(),
+            moving: telemetry
+                .electrical_speed()
+                .rpm()
+                .as_revolutions_per_minute()
+                .abs()
+                > 100.0,
         };
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
