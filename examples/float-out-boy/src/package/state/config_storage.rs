@@ -1,4 +1,4 @@
-use super::{FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyPackageState};
+use super::{FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
 use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigImage};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
@@ -221,7 +221,7 @@ pub(in crate::package) fn store_persisted_config(
 impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn acknowledge_command_config_write(&mut self, now: TimestampTicks) {
-        self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+        self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         #[cfg(any(test, target_arch = "arm"))]
         self.start_internal_led_confirmation(now);
         #[cfg(not(any(test, target_arch = "arm")))]
@@ -311,7 +311,7 @@ impl FloatOutBoyPackageState {
             config.editor().keep_enabled_while_running();
         }
         if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         }
         self.serialized_config = config;
         self.begin_configure_active(now);
@@ -398,14 +398,12 @@ impl FloatOutBoyPackageState {
             .ride_state()
             .run_state();
         let alert = match run_state {
-            FloatOutBoyRunState::Disabled => {
-                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
-            }
+            FloatOutBoyRunState::Disabled => FloatOutBoyBeeperAlert::Short(3),
             // Intentional Refloat 1.2.1 bug fix from upstream 37cf343:
             // leave the beeper free for the READY battery-status alert.
             FloatOutBoyRunState::Startup => return,
             FloatOutBoyRunState::Ready | FloatOutBoyRunState::Running => {
-                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
+                FloatOutBoyBeeperAlert::Short(1)
             }
         };
         self.alert_beeper(alert);
@@ -473,7 +471,7 @@ impl FloatOutBoyPackageState {
             store_persisted_config(effects, &config)
         });
         if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         }
         self.replace_active_config(&config);
         let migration =
