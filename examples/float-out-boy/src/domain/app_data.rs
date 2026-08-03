@@ -13,26 +13,7 @@
 
 /// Float Out Boy app-data package ID; upstream writes literal `101` in
 /// `third_party/float-out-boy/src/main.c:1271`, `1318`, `1881`, and `1909`.
-pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: FloatOutBoyAppDataPackageId =
-    FloatOutBoyAppDataPackageId::new(101);
-
-/// Float Out Boy app-data package identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct FloatOutBoyAppDataPackageId(u8);
-
-impl FloatOutBoyAppDataPackageId {
-    /// Build a package ID token from the source-backed package ID.
-    const fn new(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// Explicitly extract the app-data package ID.
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
+pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: u8 = 101;
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy app-data command IDs.
@@ -226,7 +207,7 @@ impl FloatOutBoyAllDataRequest {
             });
         };
 
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return Err(FloatOutBoyAllDataRequestError::PackageId { value: *package_id });
         }
 

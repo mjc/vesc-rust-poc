@@ -210,7 +210,7 @@ impl LcmState {
 
 fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoyPacket<N> {
     let mut packet = FloatOutBoyPacket::new();
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(command.id());
     packet
 }
@@ -234,7 +234,7 @@ impl FloatOutBoyPackageState {
         let [package_id, command_id, payload @ ..] = bytes else {
             return false;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return false;
         }
         let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command_id) else {
@@ -268,7 +268,7 @@ impl FloatOutBoyPackageState {
                 }
                 let status = self.led_runtime_status();
                 reply(&[
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     FloatOutBoyAppDataCommand::LightsControl.id(),
                     u8::from(status.enabled) | (u8::from(status.headlights_enabled) << 1),
                 ])

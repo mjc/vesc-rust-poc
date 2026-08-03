@@ -243,7 +243,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (99, FloatOutBoyAppDataCommand::LcmDebug),
     ];
 
-    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), 101);
+    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 101);
     assert!(commands.into_iter().all(|(id, command)| {
         FloatOutBoyAppDataCommand::try_from_id(id)
             .is_ok_and(|parsed| parsed == command && parsed.id() == id)
@@ -259,7 +259,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
 #[test]
 fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     let request = FloatOutBoyAllDataRequest::parse(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         4,
     ])
@@ -272,7 +272,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     assert!(request.mode().includes_mode4());
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id()
         ])
         .expect_err("truncated request should be rejected"),
@@ -285,7 +285,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::PrintInfo.id(),
             4
         ])
@@ -294,7 +294,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             9
         ])

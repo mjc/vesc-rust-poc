@@ -19,7 +19,7 @@ fn handle(state: &mut FloatOutBoyPackageState, request: &[u8]) -> (bool, Vec<Vec
 }
 
 fn request(command: FloatOutBoyAppDataCommand, payload: &[u8]) -> Vec<u8> {
-    let mut bytes = vec![FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command.id()];
+    let mut bytes = vec![FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, command.id()];
     bytes.extend_from_slice(payload);
     bytes
 }

@@ -34,7 +34,7 @@ fn handle_all_data_mode(
             &mut now,
             &mut reply,
             &[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 FloatOutBoyAppDataCommand::GetAllData.id(),
                 mode,
             ],
@@ -311,7 +311,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -398,7 +398,7 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
         &mut now,
         &mut discard,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

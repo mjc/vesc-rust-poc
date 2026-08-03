@@ -370,7 +370,7 @@ impl FloatOutBoyPackageState {
             [2, 2, a, b, c, d, ..] => {
                 let offset = u32::from_be_bytes([*a, *b, *c, *d]);
                 let mut response = FloatOutBoyPacket::<DATA_RESPONSE_CAPACITY>::new();
-                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
                 response.push(FloatOutBoyAppDataCommand::DataRecordData.id());
                 response.push_u32(offset);
                 let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);

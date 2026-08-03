@@ -110,8 +110,7 @@ fn float_out_boy_command_payload(
 ) -> Option<&[u8]> {
     match bytes {
         [package_id, command_id, payload @ ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()
-                && *command_id == command.id() =>
+            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID && *command_id == command.id() =>
         {
             Some(payload)
         }
@@ -123,7 +122,7 @@ fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
     matches!(
         bytes,
         [package_id, command_id, ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()
+            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
                 && (*command_id == FloatOutBoyAppDataCommand::PrintInfo.id()
                     || *command_id == FloatOutBoyAppDataCommand::Experiment.id())
     )
@@ -763,7 +762,7 @@ impl FloatOutBoyPackageState {
                 // C map: `main.c:85-89` and `main.c:945-949`; this is the same
                 // armed default flywheel command used by the native handler.
                 let command = [
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     FloatOutBoyAppDataCommand::Flywheel.id(),
                     0x82,
                     0,
@@ -879,7 +878,7 @@ impl FloatOutBoyPackageState {
         let [package_id, command, payload @ ..] = bytes else {
             return None;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return None;
         }
         let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {

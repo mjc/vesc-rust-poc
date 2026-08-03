@@ -11,7 +11,7 @@ fn charging_state_command_updates_status_and_mode4_payload_like_float_out_boy() 
     let payloads = handle_packet(
         sample_all_data_payloads(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::ChargingState.id(),
             151,
             1,
@@ -37,7 +37,7 @@ fn charging_packet_preserves_signed_current_and_zeroes_inactive_measurements() {
         handle_packet(
             sample_all_data_payloads(),
             &[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 FloatOutBoyAppDataCommand::ChargingState.id(),
                 151,
                 charging,
@@ -64,7 +64,7 @@ fn charging_packet_rejects_short_inactive_measurements_like_float_out_boy() {
         handle_packet(
             sample_all_data_payloads(),
             &[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 FloatOutBoyAppDataCommand::ChargingState.id(),
                 151,
                 0,
@@ -89,7 +89,7 @@ fn charging_times_out_after_five_seconds_and_allows_ready_to_engage() {
             FloatOutBoyMode::Normal,
         ));
     let packet = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::ChargingState.id(),
         151,
         1,

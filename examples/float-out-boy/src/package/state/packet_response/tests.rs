@@ -22,7 +22,7 @@ fn realtime_packet_response_uses_system_ticks_like_float_out_boy() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -37,7 +37,7 @@ fn all_data_response_retains_last_beep_reason_like_upstream_fix() {
     let firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         0,
     ];
@@ -70,7 +70,7 @@ fn all_data_fault_response_preserves_pending_beep_reason_like_refloat() {
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         0,
     ];
@@ -96,7 +96,7 @@ fn rejected_all_data_send_retains_last_beep_reason_like_upstream_fix() {
     let firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         0,
     ];
@@ -124,7 +124,7 @@ fn malformed_all_data_request_preserves_pending_beep_reason_like_refloat() {
         firmware.telemetry(),
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
         ],
     ));
@@ -137,7 +137,7 @@ fn malformed_all_data_request_preserves_pending_beep_reason_like_refloat() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             0,
         ],
@@ -162,7 +162,7 @@ fn realtime_packet_reports_live_firmware_fault_alert_like_float_out_boy() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -186,7 +186,7 @@ fn alerts_list_command_returns_source_header_when_empty() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::AlertsList.id(),
         ],
     ));
@@ -211,7 +211,7 @@ fn alerts_list_command_returns_firmware_fault_name_and_record() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::AlertsList.id(),
         ],
     ));
@@ -251,7 +251,7 @@ fn alerts_list_uses_each_historical_fault_code_for_its_name() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::AlertsList.id(),
         ],
     ));
@@ -281,7 +281,7 @@ fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
         &mut || now,
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::AlertsControl.id(),
             1,
         ],
@@ -296,7 +296,7 @@ fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -317,7 +317,7 @@ fn metadata_packet_response_defaults_to_legacy_info_like_float_out_boy() {
             true
         },
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Info.id(),
         ],
     ));
@@ -337,7 +337,7 @@ fn metadata_packet_response_sends_realtime_ids_directly() {
     assert!(state.reply_to_metadata_packet(
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeDataIds.id(),
         ],
     ));
@@ -348,7 +348,7 @@ fn metadata_packet_response_sends_realtime_ids_directly() {
     assert_eq!(
         &packet[..3],
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeDataIds.id(),
             16,
         ]
