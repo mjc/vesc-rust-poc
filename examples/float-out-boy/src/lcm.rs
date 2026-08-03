@@ -6,8 +6,5 @@
 mod hardware;
 mod mode;
 
-pub use self::hardware::{
-    FloatOutBoyHardwareLedsConfig, FloatOutBoyInternalLedLayout, FloatOutBoyInternalLedLayoutError,
-    FloatOutBoyLedStripRole,
-};
+pub use self::hardware::FloatOutBoyHardwareLedsConfig;
 pub use self::mode::FloatOutBoyLedMode;
