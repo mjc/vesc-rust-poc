@@ -249,43 +249,25 @@ impl FloatOutBoyRealtimeDataItem {
     }
 }
 
-/// Float Out Boy `motor.filt_current` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
-
-impl FloatOutBoyRealtimeFilteredMotorCurrent {
-    /// Build a typed Float Out Boy filtered-current value.
-    #[must_use]
-    pub const fn new(current: DirectionalMotorCurrent) -> Self {
-        Self(current)
-    }
-
-    /// Return the typed filtered current without erasing it to a primitive.
-    #[must_use]
-    pub const fn current(self) -> DirectionalMotorCurrent {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy `motor.filt_current` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
+    new(current);
+    current;
 }
 
-/// Float Out Boy `imu.balance_pitch` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
+typed_newtype! {
+    /// Float Out Boy `imu.balance_pitch` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
+    new(angle);
+    angle;
+}
 
 impl FloatOutBoyRealtimeBalancePitch {
-    /// Build a typed Float Out Boy balance-pitch value.
-    #[must_use]
-    pub const fn new(angle: AngleRadians) -> Self {
-        Self(angle)
-    }
-
-    /// Return the typed balance-pitch angle without erasing it to a primitive.
-    #[must_use]
-    pub const fn angle(self) -> AngleRadians {
-        self.0
-    }
-
     /// Return the balance pitch in degrees for Float Out Boy PID and booster math.
     #[must_use]
     pub fn angle_degrees(self) -> AngleDegrees {
@@ -293,597 +275,196 @@ impl FloatOutBoyRealtimeBalancePitch {
     }
 }
 
-/// Float Out Boy `remote.input` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeRemoteInput(SignedRatio);
+typed_newtype! {
+    /// Float Out Boy `remote.input` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeRemoteInput(SignedRatio);
+    new(ratio);
+    ratio;
+}
 
-impl FloatOutBoyRealtimeRemoteInput {
-    /// Build a typed Float Out Boy remote-input value.
-    #[must_use]
-    pub const fn new(ratio: SignedRatio) -> Self {
-        Self(ratio)
-    }
-
-    /// Return the typed remote input without erasing it to a primitive.
-    #[must_use]
-    pub const fn ratio(self) -> SignedRatio {
-        self.0
+typed_fields! {
+    /// Float Out Boy realtime motor-current values that are always sent.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeMotorCurrents {
+        motor: MotorCurrent => motor,
+        directional: DirectionalMotorCurrent => directional,
+        filtered: FloatOutBoyRealtimeFilteredMotorCurrent => filtered,
+        battery: BatteryCurrent => battery,
     }
 }
 
-/// Float Out Boy realtime motor-current values that are always sent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeMotorCurrents {
-    motor: MotorCurrent,
-    directional: DirectionalMotorCurrent,
-    filtered: FloatOutBoyRealtimeFilteredMotorCurrent,
-    battery: BatteryCurrent,
-}
-
-impl FloatOutBoyRealtimeMotorCurrents {
-    /// Build typed Float Out Boy realtime current values.
-    #[must_use]
-    pub const fn new(
-        motor: MotorCurrent,
-        directional: DirectionalMotorCurrent,
-        filtered: FloatOutBoyRealtimeFilteredMotorCurrent,
-        battery: BatteryCurrent,
-    ) -> Self {
-        Self {
-            motor,
-            directional,
-            filtered,
-            battery,
-        }
-    }
-
-    /// Return `motor.current`.
-    #[must_use]
-    pub const fn motor(self) -> MotorCurrent {
-        self.motor
-    }
-
-    /// Return `motor.dir_current`.
-    #[must_use]
-    pub const fn directional(self) -> DirectionalMotorCurrent {
-        self.directional
-    }
-
-    /// Return `motor.filt_current`.
-    #[must_use]
-    pub const fn filtered(self) -> FloatOutBoyRealtimeFilteredMotorCurrent {
-        self.filtered
-    }
-
-    /// Return `motor.batt_current`.
-    #[must_use]
-    pub const fn battery(self) -> BatteryCurrent {
-        self.battery
+typed_fields! {
+    /// Float Out Boy realtime motor-temperature values that are always sent.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeMotorTemperatures {
+        mosfet: MosfetTemperature => mosfet,
+        motor: MotorTemperature => motor,
     }
 }
 
-/// Float Out Boy realtime motor-temperature values that are always sent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeMotorTemperatures {
-    mosfet: MosfetTemperature,
-    motor: MotorTemperature,
-}
-
-impl FloatOutBoyRealtimeMotorTemperatures {
-    /// Build typed Float Out Boy realtime motor-temperature values.
-    #[must_use]
-    pub const fn new(mosfet: MosfetTemperature, motor: MotorTemperature) -> Self {
-        Self { mosfet, motor }
-    }
-
-    /// Return `motor.mosfet_temp`.
-    #[must_use]
-    pub const fn mosfet(self) -> MosfetTemperature {
-        self.mosfet
-    }
-
-    /// Return `motor.motor_temp`.
-    #[must_use]
-    pub const fn motor(self) -> MotorTemperature {
-        self.motor
+typed_fields! {
+    /// Float Out Boy realtime motor payload values that are always sent.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeMotorPayload {
+        speed: VehicleSpeed => speed,
+        electrical_speed: ElectricalSpeed => electrical_speed,
+        currents: FloatOutBoyRealtimeMotorCurrents => currents,
+        duty_cycle: DutyCycle => duty_cycle,
+        battery_voltage: BatteryVoltage => battery_voltage,
+        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures,
     }
 }
 
-/// Float Out Boy realtime motor payload values that are always sent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeMotorPayload {
-    speed: VehicleSpeed,
-    electrical_speed: ElectricalSpeed,
-    currents: FloatOutBoyRealtimeMotorCurrents,
-    duty_cycle: DutyCycle,
-    battery_voltage: BatteryVoltage,
-    temperatures: FloatOutBoyRealtimeMotorTemperatures,
-}
-
-impl FloatOutBoyRealtimeMotorPayload {
-    /// Build typed Float Out Boy realtime motor values.
-    #[must_use]
-    pub const fn new(
-        speed: VehicleSpeed,
-        electrical_speed: ElectricalSpeed,
-        currents: FloatOutBoyRealtimeMotorCurrents,
-        duty_cycle: DutyCycle,
-        battery_voltage: BatteryVoltage,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures,
-    ) -> Self {
-        Self {
-            speed,
-            electrical_speed,
-            currents,
-            duty_cycle,
-            battery_voltage,
-            temperatures,
-        }
-    }
-
-    /// Return `motor.speed`.
-    #[must_use]
-    pub const fn speed(self) -> VehicleSpeed {
-        self.speed
-    }
-
-    /// Return `motor.erpm`.
-    #[must_use]
-    pub const fn electrical_speed(self) -> ElectricalSpeed {
-        self.electrical_speed
-    }
-
-    /// Return grouped motor-current values.
-    #[must_use]
-    pub const fn currents(self) -> FloatOutBoyRealtimeMotorCurrents {
-        self.currents
-    }
-
-    /// Return `motor.duty_cycle`.
-    #[must_use]
-    pub const fn duty_cycle(self) -> DutyCycle {
-        self.duty_cycle
-    }
-
-    /// Return `motor.batt_voltage`.
-    #[must_use]
-    pub const fn battery_voltage(self) -> BatteryVoltage {
-        self.battery_voltage
-    }
-
-    /// Return grouped motor-temperature values.
-    #[must_use]
-    pub const fn temperatures(self) -> FloatOutBoyRealtimeMotorTemperatures {
-        self.temperatures
+typed_fields! {
+    /// Float Out Boy realtime IMU payload values that are always sent.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeImuPayload {
+        pitch: ImuPitch => pitch,
+        balance_pitch: FloatOutBoyRealtimeBalancePitch => balance_pitch,
+        roll: ImuRoll => roll,
     }
 }
 
-/// Float Out Boy realtime IMU payload values that are always sent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeImuPayload {
-    pitch: ImuPitch,
-    balance_pitch: FloatOutBoyRealtimeBalancePitch,
-    roll: ImuRoll,
-}
-
-impl FloatOutBoyRealtimeImuPayload {
-    /// Build typed Float Out Boy realtime IMU values.
-    #[must_use]
-    pub const fn new(
-        pitch: ImuPitch,
-        balance_pitch: FloatOutBoyRealtimeBalancePitch,
-        roll: ImuRoll,
-    ) -> Self {
-        Self {
-            pitch,
-            balance_pitch,
-            roll,
-        }
+typed_fields! {
+    /// Float Out Boy realtime payload values that are always sent.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeAlwaysPayload {
+        motor: FloatOutBoyRealtimeMotorPayload => motor,
+        imu: FloatOutBoyRealtimeImuPayload => imu,
+        footpad: FloatOutBoyFootpadSample => footpad,
+        remote_input: FloatOutBoyRealtimeRemoteInput => remote_input,
     }
-
-    /// Return `imu.pitch`.
-    #[must_use]
-    pub const fn pitch(self) -> ImuPitch {
-        self.pitch
-    }
-
-    /// Return `imu.balance_pitch`.
-    #[must_use]
-    pub const fn balance_pitch(self) -> FloatOutBoyRealtimeBalancePitch {
-        self.balance_pitch
-    }
-
-    /// Return `imu.roll`.
-    #[must_use]
-    pub const fn roll(self) -> ImuRoll {
-        self.roll
-    }
-}
-
-/// Float Out Boy realtime payload values that are always sent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeAlwaysPayload {
-    motor: FloatOutBoyRealtimeMotorPayload,
-    imu: FloatOutBoyRealtimeImuPayload,
-    footpad: FloatOutBoyFootpadSample,
-    remote_input: FloatOutBoyRealtimeRemoteInput,
 }
 
 impl FloatOutBoyRealtimeAlwaysPayload {
-    /// Build typed Float Out Boy realtime values that are always sent.
-    #[must_use]
-    pub const fn new(
-        motor: FloatOutBoyRealtimeMotorPayload,
-        imu: FloatOutBoyRealtimeImuPayload,
-        footpad: FloatOutBoyFootpadSample,
-        remote_input: FloatOutBoyRealtimeRemoteInput,
-    ) -> Self {
-        Self {
-            motor,
-            imu,
-            footpad,
-            remote_input,
-        }
-    }
-
     /// Return the source-backed item contract for this payload section.
     #[must_use]
     pub const fn item_contract(self) -> [FloatOutBoyRealtimeDataItem; 16] {
         FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
     }
-
-    /// Return grouped motor values.
-    #[must_use]
-    pub const fn motor(self) -> FloatOutBoyRealtimeMotorPayload {
-        self.motor
-    }
-
-    /// Return grouped IMU values.
-    #[must_use]
-    pub const fn imu(self) -> FloatOutBoyRealtimeImuPayload {
-        self.imu
-    }
-
-    /// Return grouped footpad values.
-    #[must_use]
-    pub const fn footpad(self) -> FloatOutBoyFootpadSample {
-        self.footpad
-    }
-
-    /// Return `remote.input`.
-    #[must_use]
-    pub const fn remote_input(self) -> FloatOutBoyRealtimeRemoteInput {
-        self.remote_input
-    }
 }
 
-/// Float Out Boy runtime setpoint angle value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees);
-
-impl FloatOutBoyRealtimeRuntimeSetpoint {
-    /// Build a typed Float Out Boy runtime setpoint value.
-    #[must_use]
-    pub const fn new(angle: AngleDegrees) -> Self {
-        Self(angle)
-    }
-
-    /// Return the typed setpoint angle without erasing it to a primitive.
-    #[must_use]
-    pub const fn angle(self) -> AngleDegrees {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy runtime setpoint angle value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees);
+    new(angle);
+    angle;
 }
 
-/// Float Out Boy runtime setpoint values sent only while running.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeRuntimeSetpoints {
-    board: FloatOutBoyRealtimeRuntimeSetpoint,
-    atr: FloatOutBoyRealtimeRuntimeSetpoint,
-    brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-    torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-    turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-    remote: FloatOutBoyRealtimeRuntimeSetpoint,
+typed_fields! {
+    /// Float Out Boy runtime setpoint values sent only while running.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeRuntimeSetpoints {
+        board: FloatOutBoyRealtimeRuntimeSetpoint => board,
+        atr: FloatOutBoyRealtimeRuntimeSetpoint => atr,
+        brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint => brake_tilt,
+        torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint => torque_tilt,
+        turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint => turn_tilt,
+        remote: FloatOutBoyRealtimeRuntimeSetpoint => remote,
+    }
 }
 
 impl FloatOutBoyRealtimeRuntimeSetpoints {
-    /// Build typed Float Out Boy runtime setpoint values.
-    #[must_use]
-    pub const fn new(
-        board: FloatOutBoyRealtimeRuntimeSetpoint,
-        atr: FloatOutBoyRealtimeRuntimeSetpoint,
-        brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-        torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-        turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint,
-        remote: FloatOutBoyRealtimeRuntimeSetpoint,
-    ) -> Self {
-        Self {
-            board,
-            atr,
-            brake_tilt,
-            torque_tilt,
-            turn_tilt,
-            remote,
-        }
-    }
-
     /// Return these runtime setpoints with a new board target.
     #[must_use]
     pub const fn with_board(mut self, board: FloatOutBoyRealtimeRuntimeSetpoint) -> Self {
         self.board = board;
         self
     }
+}
 
-    /// Return `setpoint`.
-    #[must_use]
-    pub const fn board(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.board
-    }
+typed_newtype! {
+    /// Float Out Boy `balance_current` runtime realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent);
+    new(current);
+    current;
+}
 
-    /// Return `atr.setpoint`.
-    #[must_use]
-    pub const fn atr(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.atr
-    }
+typed_newtype! {
+    /// Float Out Boy `atr.accel_diff` runtime realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeAtrAccelerationDiff(f32);
+    from_erpm_delta(value);
+    as_erpm_delta;
+}
 
-    /// Return `brake_tilt.setpoint`.
-    #[must_use]
-    pub const fn brake_tilt(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.brake_tilt
-    }
+typed_newtype! {
+    /// Float Out Boy `atr.speed_boost` runtime realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeAtrSpeedBoost(f32);
+    from_units(value);
+    as_units;
+}
 
-    /// Return `torque_tilt.setpoint`.
-    #[must_use]
-    pub const fn torque_tilt(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.torque_tilt
-    }
-
-    /// Return `turn_tilt.setpoint`.
-    #[must_use]
-    pub const fn turn_tilt(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.turn_tilt
-    }
-
-    /// Return `remote.setpoint`.
-    #[must_use]
-    pub const fn remote(self) -> FloatOutBoyRealtimeRuntimeSetpoint {
-        self.remote
+typed_fields! {
+    /// Float Out Boy runtime ATR payload values.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeRuntimeAtrPayload {
+        accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff => accel_diff,
+        speed_boost: FloatOutBoyRealtimeAtrSpeedBoost => speed_boost,
     }
 }
 
-/// Float Out Boy `balance_current` runtime realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent);
-
-impl FloatOutBoyRealtimeBalanceCurrent {
-    /// Build a typed Float Out Boy balance-current value.
-    #[must_use]
-    pub const fn new(current: MotorCurrent) -> Self {
-        Self(current)
-    }
-
-    /// Return the typed balance current without erasing it to a primitive.
-    #[must_use]
-    pub const fn current(self) -> MotorCurrent {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy `booster.current` runtime realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
+    new(current);
+    current;
 }
 
-/// Float Out Boy `atr.accel_diff` runtime realtime value.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeAtrAccelerationDiff(f32);
-
-impl FloatOutBoyRealtimeAtrAccelerationDiff {
-    /// Build a typed Float Out Boy ATR acceleration-difference value from ERPM delta units.
-    #[must_use]
-    pub const fn from_erpm_delta(value: f32) -> Self {
-        Self(value)
+typed_fields! {
+    /// Float Out Boy realtime payload values sent only while running.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeRuntimePayload {
+        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints,
+        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
+        atr: FloatOutBoyRealtimeRuntimeAtrPayload => atr,
+        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current,
     }
-
-    /// Return the Float Out Boy ATR acceleration-difference value in ERPM delta units.
-    #[must_use]
-    pub const fn as_erpm_delta(self) -> f32 {
-        self.0
-    }
-}
-
-/// Float Out Boy `atr.speed_boost` runtime realtime value.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeAtrSpeedBoost(f32);
-
-impl FloatOutBoyRealtimeAtrSpeedBoost {
-    /// Build a typed Float Out Boy ATR speed-boost value.
-    #[must_use]
-    pub const fn from_units(value: f32) -> Self {
-        Self(value)
-    }
-
-    /// Return the Float Out Boy ATR speed-boost value.
-    #[must_use]
-    pub const fn as_units(self) -> f32 {
-        self.0
-    }
-}
-
-/// Float Out Boy runtime ATR payload values.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeRuntimeAtrPayload {
-    accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
-    speed_boost: FloatOutBoyRealtimeAtrSpeedBoost,
-}
-
-impl FloatOutBoyRealtimeRuntimeAtrPayload {
-    /// Build typed Float Out Boy runtime ATR payload values.
-    #[must_use]
-    pub const fn new(
-        accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
-        speed_boost: FloatOutBoyRealtimeAtrSpeedBoost,
-    ) -> Self {
-        Self {
-            accel_diff,
-            speed_boost,
-        }
-    }
-
-    /// Return `atr.accel_diff`.
-    #[must_use]
-    pub const fn accel_diff(self) -> FloatOutBoyRealtimeAtrAccelerationDiff {
-        self.accel_diff
-    }
-
-    /// Return `atr.speed_boost`.
-    #[must_use]
-    pub const fn speed_boost(self) -> FloatOutBoyRealtimeAtrSpeedBoost {
-        self.speed_boost
-    }
-}
-
-/// Float Out Boy `booster.current` runtime realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
-
-impl FloatOutBoyRealtimeBoosterCurrent {
-    /// Build a typed Float Out Boy booster-current value.
-    #[must_use]
-    pub const fn new(current: MotorCurrent) -> Self {
-        Self(current)
-    }
-
-    /// Return the typed booster current without erasing it to a primitive.
-    #[must_use]
-    pub const fn current(self) -> MotorCurrent {
-        self.0
-    }
-}
-
-/// Float Out Boy realtime payload values sent only while running.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeRuntimePayload {
-    setpoints: FloatOutBoyRealtimeRuntimeSetpoints,
-    balance_current: FloatOutBoyRealtimeBalanceCurrent,
-    atr: FloatOutBoyRealtimeRuntimeAtrPayload,
-    booster_current: FloatOutBoyRealtimeBoosterCurrent,
 }
 
 impl FloatOutBoyRealtimeRuntimePayload {
-    /// Build typed Float Out Boy realtime values sent only while running.
-    #[must_use]
-    pub const fn new(
-        setpoints: FloatOutBoyRealtimeRuntimeSetpoints,
-        balance_current: FloatOutBoyRealtimeBalanceCurrent,
-        atr: FloatOutBoyRealtimeRuntimeAtrPayload,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent,
-    ) -> Self {
-        Self {
-            setpoints,
-            balance_current,
-            atr,
-            booster_current,
-        }
-    }
-
     /// Return the source-backed item contract for this payload section.
     #[must_use]
     pub const fn item_contract(self) -> [FloatOutBoyRealtimeDataItem; 10] {
         FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS
     }
-
-    /// Return grouped runtime setpoint values.
-    #[must_use]
-    pub const fn setpoints(self) -> FloatOutBoyRealtimeRuntimeSetpoints {
-        self.setpoints
-    }
-
-    /// Return `balance_current`.
-    #[must_use]
-    pub const fn balance_current(self) -> FloatOutBoyRealtimeBalanceCurrent {
-        self.balance_current
-    }
-
-    /// Return grouped ATR runtime values.
-    #[must_use]
-    pub const fn atr(self) -> FloatOutBoyRealtimeRuntimeAtrPayload {
-        self.atr
-    }
-
-    /// Return `booster.current`.
-    #[must_use]
-    pub const fn booster_current(self) -> FloatOutBoyRealtimeBoosterCurrent {
-        self.booster_current
-    }
 }
 
-/// Float Out Boy `charging.current` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeChargingCurrent(BatteryCurrent);
-
-impl FloatOutBoyRealtimeChargingCurrent {
-    /// Build a typed Float Out Boy charging-current value.
-    #[must_use]
-    pub const fn new(current: BatteryCurrent) -> Self {
-        Self(current)
-    }
-
-    /// Return the typed charging current without erasing it to a primitive.
-    #[must_use]
-    pub const fn current(self) -> BatteryCurrent {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy `charging.current` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeChargingCurrent(BatteryCurrent);
+    new(current);
+    current;
 }
 
-/// Float Out Boy `charging.voltage` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeChargingVoltage(BatteryVoltage);
-
-impl FloatOutBoyRealtimeChargingVoltage {
-    /// Build a typed Float Out Boy charging-voltage value.
-    #[must_use]
-    pub const fn new(voltage: BatteryVoltage) -> Self {
-        Self(voltage)
-    }
-
-    /// Return the typed charging voltage without erasing it to a primitive.
-    #[must_use]
-    pub const fn voltage(self) -> BatteryVoltage {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy `charging.voltage` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeChargingVoltage(BatteryVoltage);
+    new(voltage);
+    voltage;
 }
 
-/// Float Out Boy realtime charging payload values.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyRealtimeChargingPayload {
-    current: FloatOutBoyRealtimeChargingCurrent,
-    voltage: FloatOutBoyRealtimeChargingVoltage,
-}
-
-impl FloatOutBoyRealtimeChargingPayload {
-    /// Build typed Float Out Boy realtime charging values.
-    #[must_use]
-    pub const fn new(
-        current: FloatOutBoyRealtimeChargingCurrent,
-        voltage: FloatOutBoyRealtimeChargingVoltage,
-    ) -> Self {
-        Self { current, voltage }
-    }
-
-    /// Return `charging.current`.
-    #[must_use]
-    pub const fn current(self) -> FloatOutBoyRealtimeChargingCurrent {
-        self.current
-    }
-
-    /// Return `charging.voltage`.
-    #[must_use]
-    pub const fn voltage(self) -> FloatOutBoyRealtimeChargingVoltage {
-        self.voltage
+typed_fields! {
+    /// Float Out Boy realtime charging payload values.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyRealtimeChargingPayload {
+        current: FloatOutBoyRealtimeChargingCurrent => current,
+        voltage: FloatOutBoyRealtimeChargingVoltage => voltage,
     }
 }
 
@@ -960,48 +541,16 @@ impl FloatOutBoyRealtimeReservedFlags {
     }
 }
 
-/// Float Out Boy realtime tail fields appended after conditional payload values.
-///
-/// Source map: upstream appends active-alert mask, reserved flags, and firmware
-/// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyRealtimeTail {
-    active_alerts: FloatOutBoyRealtimeAlertMask,
-    reserved_flags: FloatOutBoyRealtimeReservedFlags,
-    firmware_fault_code: FirmwareFaultWireCode,
-}
-
-impl FloatOutBoyRealtimeTail {
-    /// Build typed Float Out Boy realtime tail fields.
-    #[must_use]
-    pub const fn new(
-        active_alerts: FloatOutBoyRealtimeAlertMask,
-        reserved_flags: FloatOutBoyRealtimeReservedFlags,
-        firmware_fault_code: FirmwareFaultWireCode,
-    ) -> Self {
-        Self {
-            active_alerts,
-            reserved_flags,
-            firmware_fault_code,
-        }
-    }
-
-    /// Return active alerts.
-    #[must_use]
-    pub const fn active_alerts(self) -> FloatOutBoyRealtimeAlertMask {
-        self.active_alerts
-    }
-
-    /// Return reserved extra flags.
-    #[must_use]
-    pub const fn reserved_flags(self) -> FloatOutBoyRealtimeReservedFlags {
-        self.reserved_flags
-    }
-
-    /// Return firmware fault code.
-    #[must_use]
-    pub const fn firmware_fault_code(self) -> FirmwareFaultWireCode {
-        self.firmware_fault_code
+typed_fields! {
+    /// Float Out Boy realtime tail fields appended after conditional payload values.
+    ///
+    /// Source map: upstream appends active-alert mask, reserved flags, and firmware
+    /// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FloatOutBoyRealtimeTail {
+        active_alerts: FloatOutBoyRealtimeAlertMask => active_alerts,
+        reserved_flags: FloatOutBoyRealtimeReservedFlags => reserved_flags,
+        firmware_fault_code: FirmwareFaultWireCode => firmware_fault_code,
     }
 }
 
