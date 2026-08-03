@@ -33,19 +33,18 @@ pub use self::app_data::{
 pub use self::motor_command::FloatOutBoyMotorCommand;
 pub use self::realtime::{
     FLOAT_OUT_BOY_REALTIME_DATA_ITEMS, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAlertId, FloatOutBoyRealtimeAlertMask,
-    FloatOutBoyRealtimeAlwaysPayload, FloatOutBoyRealtimeAtrAccelerationDiff,
-    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
-    FloatOutBoyRealtimeChargingCurrent, FloatOutBoyRealtimeChargingPayload,
-    FloatOutBoyRealtimeChargingVoltage, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeDataItemGroup, FloatOutBoyRealtimeDataRecordPolicy,
+    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAlwaysPayload,
+    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
+    FloatOutBoyRealtimeChargingPayload, FloatOutBoyRealtimeChargingVoltage,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeImuPayload,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorPayload,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
-    FloatOutBoyRealtimeReservedFlags, FloatOutBoyRealtimeRuntimeAtrPayload,
-    FloatOutBoyRealtimeRuntimePayload, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeRuntimeAtrPayload, FloatOutBoyRealtimeRuntimePayload,
+    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
+    FloatOutBoyRealtimeTail,
 };
 pub use self::ride_state::FloatOutBoyRideState;
 pub use self::state::{

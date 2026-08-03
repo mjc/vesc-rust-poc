@@ -6,8 +6,6 @@ use crate::domain::{
     FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeTail, FloatOutBoyRunState,
 };
-#[cfg(test)]
-use crate::domain::{FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeReservedFlags};
 use crate::wire::FloatOutBoyPacket;
 #[cfg(test)]
 use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
@@ -115,11 +113,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response(
             payloads.base().footpad().state(),
             payloads.base().status().beep_reason(),
         ),
-        FloatOutBoyRealtimeTail::new(
-            FloatOutBoyRealtimeAlertMask::empty(),
-            FloatOutBoyRealtimeReservedFlags::none(),
-            FirmwareFaultWireCode::from_wire_code(0),
-        ),
+        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
         crate::domain::FloatOutBoyRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
         ),
@@ -194,8 +188,8 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
         );
     }
 
-    packet.push_u32(tail.active_alerts().active_alert_mask_compat());
-    packet.push_u32(tail.reserved_flags().extra_flags_compat());
+    packet.push_u32(u32::from(tail.firmware_fault_active()));
+    packet.push_u32(0);
     packet.push(tail.firmware_fault_code().wire_code());
 
     packet
