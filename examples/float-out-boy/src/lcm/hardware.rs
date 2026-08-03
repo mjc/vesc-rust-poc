@@ -149,7 +149,7 @@ impl FloatOutBoyHardwareLedsConfig {
         self
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the configured LED mode.
         pub fn mode -> FloatOutBoyLedMode = mode;
         /// Return the configured LED output pin.

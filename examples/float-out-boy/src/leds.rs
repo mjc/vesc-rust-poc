@@ -102,21 +102,6 @@ pub struct FloatOutBoyLedPixel {
     channels: [u8; 4],
 }
 
-/// Gamma-corrected physical channels in one configured strip's wire order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyLedPhysicalChannels {
-    bytes: [u8; 4],
-    len: usize,
-}
-
-impl FloatOutBoyLedPhysicalChannels {
-    /// Return the three or four physical channel bytes.
-    #[must_use]
-    pub fn as_slice(&self) -> &[u8] {
-        self.bytes.get(..self.len).unwrap_or_default()
-    }
-}
-
 const NAMED_LED_COLOR_CHANNELS: [[u8; 4]; 32] = [
     [0x00, 0x00, 0x00, 0x00],
     [0xff, 0xff, 0xff, 0xff],
@@ -167,17 +152,13 @@ impl FloatOutBoyLedPixel {
         Self { channels }
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the pixel as red, green, blue, white channel values.
         pub fn channels -> [u8; 4] = channels;
     }
 
     /// Gamma-correct and reorder this pixel for one physical strip.
-    #[must_use]
-    pub fn physical_channels(
-        self,
-        order: FloatOutBoyLedColorOrder,
-    ) -> FloatOutBoyLedPhysicalChannels {
+    pub fn physical_channels(self, order: FloatOutBoyLedColorOrder) -> ([u8; 4], usize) {
         let [red, green, blue, white] = self.channels.map(refloat_led_gamma);
         let (bytes, len) = match order {
             FloatOutBoyLedColorOrder::Grb => ([green, red, blue, 0], 3),
@@ -185,7 +166,7 @@ impl FloatOutBoyLedPixel {
             FloatOutBoyLedColorOrder::Rgb => ([red, green, blue, 0], 3),
             FloatOutBoyLedColorOrder::Wrgb => ([white, red, green, blue], 4),
         };
-        FloatOutBoyLedPhysicalChannels { bytes, len }
+        (bytes, len)
     }
 
     fn scaled_and_blended(self, target: Self, brightness: Ratio, blend: Ratio) -> Self {
@@ -309,7 +290,7 @@ impl FloatOutBoyLedBarConfig {
         }
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the configured brightness.
         pub fn brightness -> Ratio = brightness;
         /// Return the primary LED color.
@@ -398,7 +379,7 @@ impl FloatOutBoyStatusBarConfig {
         self
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the idle timeout.
         pub fn idle_timeout -> FloatOutBoyStatusBarIdleTimeout = idle_timeout;
         /// Return the duty threshold for switching status display.
@@ -558,7 +539,7 @@ impl FloatOutBoyLedsConfig {
         self.headlights_power.is_on()
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the headlights transition.
         pub fn headlights_transition -> FloatOutBoyLedTransition = headlights_transition;
         /// Return the direction transition.
@@ -577,7 +558,7 @@ impl FloatOutBoyLedsConfig {
         self.lifted.status_on_front
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the headlights LED bar config.
         pub fn headlights -> FloatOutBoyLedBarConfig = headlights;
         /// Return the taillights LED bar config.
@@ -639,7 +620,7 @@ impl FloatOutBoyLedStripConfig {
         self
     }
 
-    const_field_getters! {
+    vescpkg_rs::const_field_getters! {
         /// Return the physical strip order.
         pub fn order -> FloatOutBoyLedStripOrder = order;
         /// Return the configured LED count.

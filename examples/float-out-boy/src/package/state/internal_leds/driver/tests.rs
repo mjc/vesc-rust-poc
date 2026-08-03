@@ -46,6 +46,91 @@ fn enabled_config() -> FloatOutBoyLedsConfig {
 }
 
 #[test]
+fn internal_layout_matches_production_order_offsets_and_empty_strips() {
+    let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+        .with_status_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            2,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_front_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::Third,
+            3,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_rear_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::Second,
+            5,
+            FloatOutBoyLedColorOrder::Grb,
+        ));
+    let layout = hardware.internal_layout().unwrap();
+
+    assert_eq!(
+        layout.roles(),
+        &[
+            crate::lcm::FloatOutBoyLedStripRole::Status,
+            crate::lcm::FloatOutBoyLedStripRole::Rear,
+            crate::lcm::FloatOutBoyLedStripRole::Front,
+        ]
+    );
+    assert_eq!(
+        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Status),
+        Some(0)
+    );
+    assert_eq!(
+        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Rear),
+        Some(2)
+    );
+    assert_eq!(
+        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Front),
+        Some(7)
+    );
+    assert_eq!(layout.pixel_count(), 10);
+
+    let empty = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+        .with_status_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::None,
+            u8::MAX,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_front_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::None,
+            u8::MAX,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_rear_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::None,
+            u8::MAX,
+            FloatOutBoyLedColorOrder::Grb,
+        ));
+    let layout = empty.internal_layout().unwrap();
+    assert!(layout.roles().is_empty());
+    assert_eq!(layout.pixel_count(), 0);
+}
+
+#[test]
+fn internal_layout_rejects_front_and_rear_over_60_pixels() {
+    let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+        .with_status_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::None,
+            0,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_front_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::First,
+            30,
+            FloatOutBoyLedColorOrder::Grb,
+        ))
+        .with_rear_strip(FloatOutBoyLedStripConfig::new(
+            FloatOutBoyLedStripOrder::Second,
+            31,
+            FloatOutBoyLedColorOrder::Grb,
+        ));
+
+    assert!(hardware.internal_layout().is_err());
+}
+
+#[test]
 fn setup_builds_source_sized_zero_pulse_buffer() {
     let strip = FloatOutBoyLedStripConfig::new(
         FloatOutBoyLedStripOrder::First,
