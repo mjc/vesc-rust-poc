@@ -17,7 +17,7 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
 };
-use crate::wire::{degrees, push_bytes, push_float32_auto, push_u8, push_u16};
+use crate::wire::{FloatOutBoyPacket, degrees};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::FirmwareFault;
 
@@ -133,8 +133,8 @@ impl LcmState {
         &mut self,
         payloads: crate::domain::FloatOutBoyAllDataPayloads,
         telemetry: &impl MotorTelemetry,
-    ) -> LcmPacket<POLL_RESPONSE_CAPACITY> {
-        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmPoll);
+    ) -> FloatOutBoyPacket<POLL_RESPONSE_CAPACITY> {
+        let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmPoll);
 
         if !self.enabled() {
             return packet;
@@ -175,8 +175,8 @@ impl LcmState {
         packet
     }
 
-    fn light_info_response(self) -> LcmPacket<12> {
-        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmLightInfo);
+    fn light_info_response(self) -> FloatOutBoyPacket<12> {
+        let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmLightInfo);
         if self.enabled() {
             packet.push(3);
             packet.push(self.brightness);
@@ -191,16 +191,16 @@ impl LcmState {
         packet
     }
 
-    fn device_info_response(self) -> LcmPacket<22> {
-        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmDeviceInfo);
+    fn device_info_response(self) -> FloatOutBoyPacket<22> {
+        let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmDeviceInfo);
         if self.enabled() {
             packet.extend(nul_terminated_prefix(&self.name));
         }
         packet
     }
 
-    fn battery_response(self, telemetry: &impl MotorTelemetry) -> LcmPacket<6> {
-        let mut packet = LcmPacket::new(FloatOutBoyAppDataCommand::LcmGetBattery);
+    fn battery_response(self, telemetry: &impl MotorTelemetry) -> FloatOutBoyPacket<6> {
+        let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmGetBattery);
         if self.enabled() {
             packet.push_float32_auto(telemetry.battery_level().as_fraction());
         }
@@ -208,40 +208,11 @@ impl LcmState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LcmPacket<const N: usize> {
-    bytes: [u8; N],
-    len: usize,
-}
-
-impl<const N: usize> LcmPacket<N> {
-    const fn new(command: FloatOutBoyAppDataCommand) -> Self {
-        let mut bytes = [0; N];
-        bytes[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
-        bytes[1] = command.id();
-        Self { bytes, len: 2 }
-    }
-
-    fn push(&mut self, byte: u8) {
-        push_u8(&mut self.bytes, &mut self.len, byte);
-    }
-
-    fn extend(&mut self, bytes: &[u8]) {
-        push_bytes(&mut self.bytes, &mut self.len, bytes);
-    }
-
-    fn push_scaled_i16(&mut self, value: f32, scale: f32) {
-        let value = (value * scale) as i16 as u16;
-        push_u16(&mut self.bytes, &mut self.len, value);
-    }
-
-    fn push_float32_auto(&mut self, value: f32) {
-        push_float32_auto(&mut self.bytes, &mut self.len, value);
-    }
-
-    fn bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
-    }
+fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoyPacket<N> {
+    let mut packet = FloatOutBoyPacket::new();
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(command.id());
+    packet
 }
 
 fn firmware_fault_code(fault: FirmwareFault) -> u8 {
@@ -276,16 +247,16 @@ impl FloatOutBoyPackageState {
                 reply(
                     self.lcm
                         .poll_response(self.all_data_payloads, telemetry)
-                        .bytes(),
+                        .as_bytes(),
                 )
             }
-            Command::LcmLightInfo => reply(self.lcm.light_info_response().bytes()),
+            Command::LcmLightInfo => reply(self.lcm.light_info_response().as_bytes()),
             Command::LcmLightControl => {
                 self.lcm.light_control(payload);
                 true
             }
-            Command::LcmDeviceInfo => reply(self.lcm.device_info_response().bytes()),
-            Command::LcmGetBattery => reply(self.lcm.battery_response(telemetry).bytes()),
+            Command::LcmDeviceInfo => reply(self.lcm.device_info_response().as_bytes()),
+            Command::LcmGetBattery => reply(self.lcm.battery_response(telemetry).as_bytes()),
             Command::LightsControl => {
                 if let [_, _, _, mask, value, ..] = payload {
                     if *mask != 0 {

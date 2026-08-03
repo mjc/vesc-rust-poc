@@ -2,9 +2,6 @@
 use super::super::protocol::realtime_value;
 #[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::wire::encode_float_out_boy_float16;
-use super::super::protocol::wire::{
-    float_out_boy_realtime_push_u8, float_out_boy_realtime_push_u32,
-};
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
@@ -12,6 +9,7 @@ use crate::domain::{
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
+use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
@@ -466,35 +464,20 @@ impl FloatOutBoyPackageState {
                 let _ = reply(&response);
             }
             DataRecorderRequest::SendData { offset } => {
-                let mut response = [0; DATA_RESPONSE_CAPACITY];
-                let mut index = 0;
-                float_out_boy_realtime_push_u8(
-                    &mut response,
-                    &mut index,
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                );
-                float_out_boy_realtime_push_u8(
-                    &mut response,
-                    &mut index,
-                    FloatOutBoyAppDataCommand::DataRecordData.id(),
-                );
-                float_out_boy_realtime_push_u32(&mut response, &mut index, offset);
+                let mut response = FloatOutBoyPacket::<DATA_RESPONSE_CAPACITY>::new();
+                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+                response.push(FloatOutBoyAppDataCommand::DataRecordData.id());
+                response.push_u32(offset);
                 let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);
-                while let Some(end) = index.checked_add(SAMPLE_SIZE) {
-                    let Some(target) = response.get_mut(index..end) else {
-                        break;
-                    };
+                while response.remaining() >= SAMPLE_SIZE {
                     let Some(sample) = self.data_recorder.sample_at(sample_index) else {
                         break;
                     };
-                    target.copy_from_slice(&sample.encode());
-                    index = end;
+                    response.extend(&sample.encode());
                     sample_index = sample_index.saturating_add(1);
                 }
                 if self.data_recorder.sample_count() > 0 {
-                    if let Some(packet) = response.get(..index) {
-                        let _ = reply(packet);
-                    }
+                    let _ = reply(response.as_bytes());
                 }
             }
             DataRecorderRequest::Ignore => {}
