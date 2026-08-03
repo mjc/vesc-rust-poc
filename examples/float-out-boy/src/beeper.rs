@@ -22,68 +22,21 @@ impl FloatOutBoyBeeperCount {
     pub(crate) const SEVEN: Self = Self(7);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyBeeperTransitions(u8);
-
-impl FloatOutBoyBeeperTransitions {
-    const NONE: Self = Self(0);
-
-    const fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    const fn from_beeps(count: FloatOutBoyBeeperCount) -> Self {
-        Self(count.0.saturating_mul(2).saturating_add(1))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn advance(&mut self) -> FloatOutBoyBeeperLevel {
-        self.0 = self.0.saturating_sub(1);
-        if self.0 & 1 == 1 {
-            FloatOutBoyBeeperLevel::High
-        } else {
-            FloatOutBoyBeeperLevel::Low
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyBeeperPeriod(u16);
-
-impl FloatOutBoyBeeperPeriod {
-    const SHORT: Self = Self(80);
-    const LONG: Self = Self(300);
-}
+const SHORT_BEEP_PERIOD: u16 = 80;
+const LONG_BEEP_PERIOD: u16 = 300;
 
 impl FloatOutBoyBeeperAlert {
-    const fn sequence(self) -> (FloatOutBoyBeeperTransitions, FloatOutBoyBeeperPeriod) {
+    const fn sequence(self) -> (u8, u16) {
         match self {
             Self::Short(count) => (
-                FloatOutBoyBeeperTransitions::from_beeps(count),
-                FloatOutBoyBeeperPeriod::SHORT,
+                count.0.saturating_mul(2).saturating_add(1),
+                SHORT_BEEP_PERIOD,
             ),
             Self::Long(count) => (
-                FloatOutBoyBeeperTransitions::from_beeps(count),
-                FloatOutBoyBeeperPeriod::LONG,
+                count.0.saturating_mul(2).saturating_add(1),
+                LONG_BEEP_PERIOD,
             ),
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyBeeperCountdown(u16);
-
-impl FloatOutBoyBeeperCountdown {
-    const IDLE: Self = Self(0);
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn tick(&mut self) -> bool {
-        self.0 = self.0.saturating_sub(1);
-        self.0 == 0
-    }
-
-    fn restart(&mut self, period: FloatOutBoyBeeperPeriod) {
-        self.0 = period.0;
     }
 }
 
@@ -91,9 +44,9 @@ impl FloatOutBoyBeeperCountdown {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyBeeper {
     enabled: bool,
-    transitions: FloatOutBoyBeeperTransitions,
-    period: FloatOutBoyBeeperPeriod,
-    countdown: FloatOutBoyBeeperCountdown,
+    transitions: u8,
+    period: u16,
+    countdown: u16,
     pending_level: Option<FloatOutBoyBeeperLevel>,
 }
 
@@ -101,20 +54,20 @@ impl FloatOutBoyBeeper {
     pub(crate) const fn new(enabled: bool) -> Self {
         Self {
             enabled,
-            transitions: FloatOutBoyBeeperTransitions::NONE,
-            period: FloatOutBoyBeeperPeriod::SHORT,
-            countdown: FloatOutBoyBeeperCountdown::IDLE,
+            transitions: 0,
+            period: SHORT_BEEP_PERIOD,
+            countdown: 0,
             pending_level: None,
         }
     }
 
     pub(crate) fn alert(&mut self, alert: FloatOutBoyBeeperAlert) {
-        if !self.enabled || !self.transitions.is_empty() {
+        if !self.enabled || self.transitions != 0 {
             return;
         }
 
         (self.transitions, self.period) = alert.sequence();
-        self.countdown.restart(self.period);
+        self.countdown = self.period;
     }
 
     pub(crate) fn set_enabled(&mut self, enabled: bool) {
@@ -128,13 +81,13 @@ impl FloatOutBoyBeeper {
     }
 
     pub(crate) fn on(&mut self, force: bool) {
-        if self.enabled && (force || self.transitions.is_empty()) {
+        if self.enabled && (force || self.transitions == 0) {
             self.pending_level = Some(FloatOutBoyBeeperLevel::High);
         }
     }
 
     pub(crate) fn off(&mut self, force: bool) {
-        if force || self.transitions.is_empty() {
+        if force || self.transitions == 0 {
             self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
     }
@@ -146,9 +99,17 @@ impl FloatOutBoyBeeper {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn tick(&mut self) -> Option<FloatOutBoyBeeperLevel> {
-        if self.enabled && !self.transitions.is_empty() && self.countdown.tick() {
-            self.countdown.restart(self.period);
-            self.pending_level = Some(self.transitions.advance());
+        if self.enabled && self.transitions != 0 {
+            self.countdown = self.countdown.saturating_sub(1);
+            if self.countdown == 0 {
+                self.countdown = self.period;
+                self.transitions = self.transitions.saturating_sub(1);
+                self.pending_level = Some(if self.transitions & 1 == 1 {
+                    FloatOutBoyBeeperLevel::High
+                } else {
+                    FloatOutBoyBeeperLevel::Low
+                });
+            }
         }
 
         self.take_level()
