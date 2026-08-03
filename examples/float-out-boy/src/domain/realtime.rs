@@ -5,32 +5,13 @@
 
 use super::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
+    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadState,
+    FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, BatteryCurrent, BatteryVoltage, DirectionalMotorCurrent, DutyCycle,
-    ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
-    MotorTemperature, SignedRatio, TimestampTicks, VehicleSpeed,
+    AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
+    MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio, TimestampTicks,
 };
-
-/// Float Out Boy realtime-data item group.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyRealtimeDataItemGroup {
-    /// Always sent in realtime data.
-    Always,
-    /// Sent only while the board is running.
-    Runtime,
-}
-
-/// Float Out Boy data-recorder policy for a realtime-data item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyRealtimeDataRecordPolicy {
-    /// Send in realtime data only.
-    SendOnly,
-    /// Send in realtime data and record in the data recorder.
-    Record,
-}
 
 macro_rules! realtime_data_items {
     (
@@ -67,26 +48,6 @@ macro_rules! realtime_data_items {
                 match self {
                     $(Self::$always => $always_id,)+
                     $(Self::$runtime => $runtime_id,)+
-                }
-            }
-
-            /// Return the Float Out Boy `v1.2.1` realtime-data group.
-            #[must_use]
-            pub const fn group(self) -> FloatOutBoyRealtimeDataItemGroup {
-                if matches!(self, $(Self::$runtime)|+) {
-                    FloatOutBoyRealtimeDataItemGroup::Runtime
-                } else {
-                    FloatOutBoyRealtimeDataItemGroup::Always
-                }
-            }
-
-            /// Return the Float Out Boy `v1.2.1` data-recorder policy.
-            #[must_use]
-            pub const fn record_policy(self) -> FloatOutBoyRealtimeDataRecordPolicy {
-                if matches!(self, $(Self::$recorded)|+) {
-                    FloatOutBoyRealtimeDataRecordPolicy::Record
-                } else {
-                    FloatOutBoyRealtimeDataRecordPolicy::SendOnly
                 }
             }
         }
@@ -196,48 +157,6 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime motor payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeMotorPayload {
-        speed: VehicleSpeed => speed,
-        electrical_speed: ElectricalSpeed => electrical_speed,
-        currents: FloatOutBoyRealtimeMotorCurrents => currents,
-        duty_cycle: DutyCycle => duty_cycle,
-        battery_voltage: BatteryVoltage => battery_voltage,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime IMU payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeImuPayload {
-        pitch: ImuPitch => pitch,
-        balance_pitch: FloatOutBoyRealtimeBalancePitch => balance_pitch,
-        roll: ImuRoll => roll,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime payload values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeAlwaysPayload {
-        motor: FloatOutBoyRealtimeMotorPayload => motor,
-        imu: FloatOutBoyRealtimeImuPayload => imu,
-        footpad: FloatOutBoyFootpadSample => footpad,
-        remote_input: FloatOutBoyRealtimeRemoteInput => remote_input,
-    }
-}
-
-impl FloatOutBoyRealtimeAlwaysPayload {
-    /// Return the source-backed item contract for this payload section.
-    #[must_use]
-    pub const fn item_contract(self) -> [FloatOutBoyRealtimeDataItem; 16] {
-        FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
-    }
-}
-
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy runtime setpoint angle value.
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -270,6 +189,15 @@ vescpkg_rs::typed_newtype! {
 }
 
 vescpkg_rs::typed_newtype! {
+    /// Float Out Boy `booster.current` runtime realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
+    new(current);
+    current;
+}
+
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `atr.accel_diff` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     #[repr(transparent)]
@@ -288,151 +216,13 @@ vescpkg_rs::typed_newtype! {
 }
 
 vescpkg_rs::typed_fields! {
-    /// Float Out Boy runtime ATR payload values.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeRuntimeAtrPayload {
-        accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff => accel_diff,
-        speed_boost: FloatOutBoyRealtimeAtrSpeedBoost => speed_boost,
-    }
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `booster.current` runtime realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
-    new(current);
-    current;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime payload values sent only while running.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeRuntimePayload {
-        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints,
-        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
-        atr: FloatOutBoyRealtimeRuntimeAtrPayload => atr,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current,
-    }
-}
-
-impl FloatOutBoyRealtimeRuntimePayload {
-    /// Return the source-backed item contract for this payload section.
-    #[must_use]
-    pub const fn item_contract(self) -> [FloatOutBoyRealtimeDataItem; 10] {
-        FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS
-    }
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `charging.current` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeChargingCurrent(BatteryCurrent);
-    new(current);
-    current;
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `charging.voltage` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeChargingVoltage(BatteryVoltage);
-    new(voltage);
-    voltage;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime charging payload values.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeChargingPayload {
-        current: FloatOutBoyRealtimeChargingCurrent => current,
-        voltage: FloatOutBoyRealtimeChargingVoltage => voltage,
-    }
-}
-
-/// Float Out Boy alert ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyAlertId {
-    /// Firmware fault alert.
-    FirmwareFault,
-}
-
-impl FloatOutBoyAlertId {
-    /// Return the Float Out Boy `v1.2.1` alert ID.
-    #[must_use]
-    pub const fn id(self) -> u8 {
-        match self {
-            Self::FirmwareFault => 1,
-        }
-    }
-
-    const fn mask(self) -> u32 {
-        match self {
-            Self::FirmwareFault => 1,
-        }
-    }
-}
-
-/// Float Out Boy active-alert mask appended to realtime data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeAlertMask(u32);
-
-impl FloatOutBoyRealtimeAlertMask {
-    /// Build an empty active-alert mask.
-    #[must_use]
-    pub const fn empty() -> Self {
-        Self(0)
-    }
-
-    /// Return a copy with the alert marked active.
-    #[must_use]
-    pub const fn with_alert(self, alert: FloatOutBoyAlertId) -> Self {
-        Self(self.0 | alert.mask())
-    }
-
-    /// Return whether the alert is active.
-    #[must_use]
-    pub const fn contains(self, alert: FloatOutBoyAlertId) -> bool {
-        self.0 & alert.mask() != 0
-    }
-
-    /// Return the Float Out Boy-compatible active-alert mask.
-    #[must_use]
-    pub const fn active_alert_mask_compat(self) -> u32 {
-        self.0
-    }
-}
-
-/// Float Out Boy reserved realtime tail flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeReservedFlags(u32);
-
-impl FloatOutBoyRealtimeReservedFlags {
-    /// Build the currently empty Float Out Boy realtime extra-flags field.
-    #[must_use]
-    pub const fn none() -> Self {
-        Self(0)
-    }
-
-    /// Return the Float Out Boy-compatible extra-flags value.
-    #[must_use]
-    pub const fn extra_flags_compat(self) -> u32 {
-        self.0
-    }
-}
-
-vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime tail fields appended after conditional payload values.
     ///
     /// Source map: upstream appends active-alert mask, reserved flags, and firmware
     /// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FloatOutBoyRealtimeTail {
-        active_alerts: FloatOutBoyRealtimeAlertMask => active_alerts,
-        reserved_flags: FloatOutBoyRealtimeReservedFlags => reserved_flags,
+        firmware_fault_active: bool => firmware_fault_active,
         firmware_fault_code: FirmwareFaultWireCode => firmware_fault_code,
     }
 }

@@ -1,5 +1,6 @@
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
+    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
@@ -571,12 +572,12 @@ impl RideModifierState {
         );
     }
 
-    pub(super) const fn atr_accel_diff(self) -> f32 {
-        self.atr.accel_diff
+    pub(super) const fn atr_accel_diff(self) -> FloatOutBoyRealtimeAtrAccelerationDiff {
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(self.atr.accel_diff)
     }
 
-    pub(super) const fn atr_speed_boost(self) -> f32 {
-        self.atr.speed_boost
+    pub(super) const fn atr_speed_boost(self) -> FloatOutBoyRealtimeAtrSpeedBoost {
+        FloatOutBoyRealtimeAtrSpeedBoost::from_units(self.atr.speed_boost)
     }
 }
 

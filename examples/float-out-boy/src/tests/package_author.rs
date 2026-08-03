@@ -1,27 +1,20 @@
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS, FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS,
-    FloatOutBoyAlertId, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
-    FloatOutBoyAllDataMode, FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload,
-    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
-    FloatOutBoyAllDataRequest, FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse,
-    FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyBeepReason,
-    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags,
-    FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
-    FloatOutBoyMotorCommand, FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeAlwaysPayload,
-    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
+    FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode,
+    FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload,
+    FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeepReason, FloatOutBoyChargingState,
+    FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyMotorCommand,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
-    FloatOutBoyRealtimeChargingPayload, FloatOutBoyRealtimeChargingVoltage,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem, FloatOutBoyRealtimeDataItemGroup,
-    FloatOutBoyRealtimeDataRecordPolicy, FloatOutBoyRealtimeFilteredMotorCurrent,
-    FloatOutBoyRealtimeImuPayload, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeMotorPayload, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeReservedFlags,
-    FloatOutBoyRealtimeRuntimeAtrPayload, FloatOutBoyRealtimeRuntimePayload,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
-    FloatOutBoyRealtimeTail, FloatOutBoyRideState, FloatOutBoyRunState,
-    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, FloatOutBoyRideState,
+    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
+    FloatOutBoyWheelSlipState,
 };
 use crate::leds::{
     FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
@@ -408,156 +401,13 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "balance_current",
         ]
     );
-    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
-        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Always);
-    }
-    for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
-        assert_eq!(item.group(), FloatOutBoyRealtimeDataItemGroup::Runtime);
-    }
-    for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS
-        .into_iter()
-        .chain(FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS)
-    {
-        let expected = if FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.contains(&item) {
-            FloatOutBoyRealtimeDataRecordPolicy::Record
-        } else {
-            FloatOutBoyRealtimeDataRecordPolicy::SendOnly
-        };
-        assert_eq!(item.record_policy(), expected);
-    }
 }
 
 #[test]
-fn package_author_builds_realtime_always_payload_without_raw_values() {
-    let motor = FloatOutBoyRealtimeMotorPayload::new(
-        VehicleSpeed::new(Speed::from_kilometers_per_hour(12.6)),
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(2400.0)),
-        FloatOutBoyRealtimeMotorCurrents::new(
-            MotorCurrent::new(Current::from_amps(7.0)),
-            DirectionalMotorCurrent::new(Current::from_amps(-6.75)),
-            FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-                Current::from_amps(-6.5),
-            )),
-            BatteryCurrent::new(Current::from_amps(3.5)),
-        ),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.21)),
-        BatteryVoltage::new(Voltage::from_volts(73.0)),
-        FloatOutBoyRealtimeMotorTemperatures::new(
-            MosfetTemperature::new(Temperature::from_degrees_celsius(41.0)),
-            MotorTemperature::new(Temperature::from_degrees_celsius(52.0)),
-        ),
-    );
-    let imu = FloatOutBoyRealtimeImuPayload::new(
-        ImuPitch::new(AngleRadians::from_radians(0.04)),
-        FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from_radians(0.03)),
-        ImuRoll::new(AngleRadians::from_radians(-0.02)),
-    );
-    let footpad = FloatOutBoyFootpadSample::new(
-        Voltage::from_volts(0.61),
-        Voltage::from_volts(0.58),
-        FloatOutBoyFootpadState::Both,
-    );
-    let payload = FloatOutBoyRealtimeAlwaysPayload::new(
-        motor,
-        imu,
-        footpad,
-        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.18)),
-    );
+fn package_author_builds_realtime_tail_without_raw_values() {
+    let tail = FloatOutBoyRealtimeTail::new(true, FirmwareFaultWireCode::from_wire_code(12));
 
-    assert_eq!(
-        payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
-        FLOAT_OUT_BOY_REALTIME_DATA_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
-    );
-    assert_f32_eq!(
-        payload.motor().speed().speed().as_kilometers_per_hour(),
-        12.6
-    );
-    assert_f32_eq!(
-        payload
-            .motor()
-            .electrical_speed()
-            .rpm()
-            .as_revolutions_per_minute(),
-        2400.0
-    );
-    assert_f32_eq!(
-        payload
-            .motor()
-            .currents()
-            .filtered()
-            .current()
-            .current()
-            .as_amps(),
-        -6.5
-    );
-    assert_f32_eq!(
-        payload
-            .motor()
-            .temperatures()
-            .motor()
-            .temperature()
-            .as_degrees_celsius(),
-        52.0
-    );
-    assert_f32_eq!(payload.imu().balance_pitch().angle().as_radians(), 0.03);
-    assert_eq!(payload.footpad().state(), FloatOutBoyFootpadState::Both);
-    assert_f32_eq!(payload.remote_input().ratio().as_ratio(), 0.18);
-}
-
-#[test]
-fn package_author_builds_realtime_runtime_payload_without_raw_values() {
-    let payload = FloatOutBoyRealtimeRuntimePayload::new(
-        FloatOutBoyRealtimeRuntimeSetpoints::new(
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.5)),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.25)),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-0.5)),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.75)),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-0.125)),
-            FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
-        ),
-        FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.5))),
-        FloatOutBoyRealtimeRuntimeAtrPayload::new(
-            FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(12.0),
-            FloatOutBoyRealtimeAtrSpeedBoost::from_units(-0.1),
-        ),
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(1.25))),
-    );
-
-    assert_eq!(
-        payload.item_contract().map(FloatOutBoyRealtimeDataItem::id),
-        FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS.map(FloatOutBoyRealtimeDataItem::id)
-    );
-    assert_f32_eq!(payload.setpoints().board().angle().as_degrees(), 1.5);
-    assert_f32_eq!(payload.setpoints().brake_tilt().angle().as_degrees(), -0.5);
-    assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
-    assert_f32_eq!(payload.atr().accel_diff().as_erpm_delta(), 12.0);
-    assert_f32_eq!(payload.atr().speed_boost().as_units(), -0.1);
-    assert_f32_eq!(
-        payload.booster_current().current().current().as_amps(),
-        1.25
-    );
-}
-
-#[test]
-fn package_author_builds_realtime_charging_and_tail_without_raw_values() {
-    let charging = FloatOutBoyRealtimeChargingPayload::new(
-        FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(4.2))),
-        FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.5))),
-    );
-    let tail = FloatOutBoyRealtimeTail::new(
-        FloatOutBoyRealtimeAlertMask::empty().with_alert(FloatOutBoyAlertId::FirmwareFault),
-        FloatOutBoyRealtimeReservedFlags::none(),
-        FirmwareFaultWireCode::from_wire_code(12),
-    );
-
-    assert_f32_eq!(charging.current().current().current().as_amps(), 4.2);
-    assert_f32_eq!(charging.voltage().voltage().voltage().as_volts(), 82.5);
-    assert!(
-        tail.active_alerts()
-            .contains(FloatOutBoyAlertId::FirmwareFault)
-    );
-    assert_eq!(tail.active_alerts().active_alert_mask_compat(), 0x1);
-    assert_eq!(tail.reserved_flags().extra_flags_compat(), 0);
+    assert!(tail.firmware_fault_active());
     assert_eq!(tail.firmware_fault_code().wire_code(), 12);
 }
 
@@ -660,8 +510,8 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
         BatteryLevel::from_fraction(0.72),
     );
     let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-        FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        BatteryCurrent::new(Current::from_amps(1.2)),
+        BatteryVoltage::new(Voltage::from_volts(82.4)),
     );
 
     assert_f32_eq!(mode2.distance_abs().distance().as_meters(), 42.5);
@@ -680,8 +530,8 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
     assert_f32_eq!(mode3.discharged_energy().energy().as_watt_hours(), 170.0);
     assert_f32_eq!(mode3.charged_energy().energy().as_watt_hours(), 18.5);
     assert_f32_eq!(mode3.battery_level().as_fraction(), 0.72);
-    assert_f32_eq!(mode4.current().current().current().as_amps(), 1.2);
-    assert_f32_eq!(mode4.voltage().voltage().voltage().as_volts(), 82.4);
+    assert_f32_eq!(mode4.current().current().as_amps(), 1.2);
+    assert_f32_eq!(mode4.voltage().voltage().as_volts(), 82.4);
 }
 
 #[test]
@@ -815,8 +665,8 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
         BatteryLevel::from_fraction(0.72),
     );
     let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-        FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+        BatteryCurrent::new(Current::from_amps(1.2)),
+        BatteryVoltage::new(Voltage::from_volts(82.4)),
     );
 
     assert_eq!(
@@ -894,8 +744,8 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
             BatteryLevel::from_fraction(0.72),
         ),
         FloatOutBoyAllDataMode4Payload::new(
-            FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-            FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+            BatteryCurrent::new(Current::from_amps(1.2)),
+            BatteryVoltage::new(Voltage::from_volts(82.4)),
         ),
     )
 }

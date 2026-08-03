@@ -93,6 +93,7 @@ macro_rules! generated_config_fields {
             $(, scale: $scale)?
         );
 
+        #[must_use]
         pub(crate) fn $getter(self) -> $value_type {
             let value = generated_field(Self::$field.read(self.0));
             $(let value = ($map)(value);)?
@@ -113,6 +114,7 @@ macro_rules! generated_image_config_fields {
             $(, scale: $scale)?
         );
 
+        #[must_use]
         pub(crate) fn $getter(&self) -> $value_type {
             generated_field(Self::$field.read(self))
         }
@@ -122,6 +124,7 @@ macro_rules! generated_image_config_fields {
 macro_rules! config_views {
     ($( $getter:ident => $view:ident; )+) => {
         $(
+            #[must_use]
             pub(crate) const fn $getter(&self) -> $view<'_> {
                 $view(self)
             }

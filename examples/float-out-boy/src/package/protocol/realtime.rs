@@ -3,11 +3,10 @@ use crate::domain::FloatOutBoyMode;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-    FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyChargingState, FloatOutBoyRealtimeAtrAccelerationDiff,
+    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeTail, FloatOutBoyRunState,
 };
-#[cfg(test)]
-use crate::domain::{FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeReservedFlags};
 use crate::wire::FloatOutBoyPacket;
 #[cfg(test)]
 use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
@@ -34,7 +33,7 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response(
         crate::domain::FloatOutBoyRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
         ),
-        0.0,
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
     )
 }
 
@@ -42,7 +41,7 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response(
 pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_remote(
     payloads: &FloatOutBoyAllDataPayloads,
     remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
-    atr_accel_diff: f32,
+    atr_accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
 ) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
@@ -88,10 +87,10 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     // Upstream reads `d->motor.filt_current`, `d->atr.accel_diff`, and
     // `d->motor.dir_current` at `third_party/float-out-boy/src/main.c:1298-1306`.
     packet.push_float32_auto(motor.filtered_motor_current().current().current().as_amps());
-    packet.push_float32_auto(atr_accel_diff);
+    packet.push_float32_auto(atr_accel_diff.as_erpm_delta());
     if matches!(ride_state.charging(), FloatOutBoyChargingState::Charging) {
-        packet.push_float32_auto(payloads.mode4().current().current().current().as_amps());
-        packet.push_float32_auto(payloads.mode4().voltage().voltage().voltage().as_volts());
+        packet.push_float32_auto(payloads.mode4().current().current().as_amps());
+        packet.push_float32_auto(payloads.mode4().voltage().voltage().as_volts());
     } else {
         packet.push_float32_auto(base.booster_current().current().current().as_amps());
         packet.push_float32_auto(motor.directional_motor_current().current().as_amps());
@@ -115,16 +114,12 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response(
             payloads.base().footpad().state(),
             payloads.base().status().beep_reason(),
         ),
-        FloatOutBoyRealtimeTail::new(
-            FloatOutBoyRealtimeAlertMask::empty(),
-            FloatOutBoyRealtimeReservedFlags::none(),
-            FirmwareFaultWireCode::from_wire_code(0),
-        ),
+        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
         crate::domain::FloatOutBoyRealtimeRemoteInput::new(
             vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
         ),
-        0.0,
-        0.0,
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
+        FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
     )
 }
 
@@ -134,8 +129,8 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     header: FloatOutBoyRealtimeDataHeader,
     tail: FloatOutBoyRealtimeTail,
     remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
-    atr_accel_diff: f32,
-    atr_speed_boost: f32,
+    atr_accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
+    atr_speed_boost: FloatOutBoyRealtimeAtrSpeedBoost,
 ) -> FloatOutBoyRealtimeDataResponse {
     let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
@@ -184,18 +179,12 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
         }
     }
     if charging {
-        push_float_out_boy_float16(
-            &mut packet,
-            payloads.mode4().current().current().current().as_amps(),
-        );
-        push_float_out_boy_float16(
-            &mut packet,
-            payloads.mode4().voltage().voltage().voltage().as_volts(),
-        );
+        push_float_out_boy_float16(&mut packet, payloads.mode4().current().current().as_amps());
+        push_float_out_boy_float16(&mut packet, payloads.mode4().voltage().voltage().as_volts());
     }
 
-    packet.push_u32(tail.active_alerts().active_alert_mask_compat());
-    packet.push_u32(tail.reserved_flags().extra_flags_compat());
+    packet.push_u32(u32::from(tail.firmware_fault_active()));
+    packet.push_u32(0);
     packet.push(tail.firmware_fault_code().wire_code());
 
     packet
@@ -205,8 +194,8 @@ pub(in crate::package) fn realtime_value(
     payloads: &FloatOutBoyAllDataPayloads,
     item: FloatOutBoyRealtimeDataItem,
     remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
-    atr_accel_diff: f32,
-    atr_speed_boost: f32,
+    atr_accel_diff: FloatOutBoyRealtimeAtrAccelerationDiff,
+    atr_speed_boost: FloatOutBoyRealtimeAtrSpeedBoost,
 ) -> f32 {
     // C map: `cmd_realtime_data` expands `RT_DATA_ITEMS` and
     // `RT_DATA_RUNTIME_ITEMS` through `buffer_append_float16_auto` at
@@ -274,8 +263,8 @@ pub(in crate::package) fn realtime_value(
         // C map: runtime-only ATR fields are appended at
         // `third_party/float-out-boy/src/main.c:1946-1948`; the live values come
         // from the source-shaped `RideModifierState` refresh.
-        FloatOutBoyRealtimeDataItem::AtrAccelDiff => atr_accel_diff,
-        FloatOutBoyRealtimeDataItem::AtrSpeedBoost => atr_speed_boost,
+        FloatOutBoyRealtimeDataItem::AtrAccelDiff => atr_accel_diff.as_erpm_delta(),
+        FloatOutBoyRealtimeDataItem::AtrSpeedBoost => atr_speed_boost.as_units(),
         FloatOutBoyRealtimeDataItem::BoosterCurrent => {
             base.booster_current().current().current().as_amps()
         }

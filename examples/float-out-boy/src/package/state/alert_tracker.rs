@@ -1,4 +1,4 @@
-use crate::domain::{FloatOutBoyAlertId, FloatOutBoyFatalErrorState, FloatOutBoyRealtimeAlertMask};
+use crate::domain::FloatOutBoyFatalErrorState;
 use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultWireCode, TimestampTicks};
 
 const ALERT_RECORD_CAPACITY: usize = 20;
@@ -6,14 +6,13 @@ const ALERT_RECORD_CAPACITY: usize = 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlertRecord {
     pub(super) timestamp: TimestampTicks,
-    pub(super) id: FloatOutBoyAlertId,
     pub(super) active: bool,
     pub(super) code: FirmwareFaultWireCode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlertTrackerState {
-    active_alerts: FloatOutBoyRealtimeAlertMask,
+    firmware_fault_active: bool,
     firmware_fault_code: FirmwareFaultWireCode,
     fatal_error: FloatOutBoyFatalErrorState,
     records: [Option<AlertRecord>; ALERT_RECORD_CAPACITY],
@@ -24,7 +23,7 @@ pub(super) struct AlertTrackerState {
 impl Default for AlertTrackerState {
     fn default() -> Self {
         Self {
-            active_alerts: FloatOutBoyRealtimeAlertMask::empty(),
+            firmware_fault_active: false,
             firmware_fault_code: FirmwareFaultWireCode::from_wire_code(0),
             fatal_error: FloatOutBoyFatalErrorState::None,
             records: [None; ALERT_RECORD_CAPACITY],
@@ -46,30 +45,22 @@ impl AlertTrackerState {
             FirmwareFault::Active(fault) => (true, fault.wire_code()),
             FirmwareFault::Unknown => (true, FirmwareFaultWireCode::from_wire_code(0)),
         };
-        let was_active = self
-            .active_alerts
-            .contains(FloatOutBoyAlertId::FirmwareFault);
+        let was_active = self.firmware_fault_active;
         if is_active && (!was_active || code != self.firmware_fault_code) {
             self.push_record(AlertRecord {
                 timestamp,
-                id: FloatOutBoyAlertId::FirmwareFault,
                 active: true,
                 code,
             });
         } else if was_active && !is_active {
             self.push_record(AlertRecord {
                 timestamp,
-                id: FloatOutBoyAlertId::FirmwareFault,
                 active: false,
                 code: FirmwareFaultWireCode::from_wire_code(0),
             });
         }
 
-        self.active_alerts = if is_active {
-            FloatOutBoyRealtimeAlertMask::empty().with_alert(FloatOutBoyAlertId::FirmwareFault)
-        } else {
-            FloatOutBoyRealtimeAlertMask::empty()
-        };
+        self.firmware_fault_active = is_active;
         self.firmware_fault_code = if is_active {
             code
         } else {
@@ -87,8 +78,8 @@ impl AlertTrackerState {
         self.fatal_error = FloatOutBoyFatalErrorState::None;
     }
 
-    pub(super) const fn active_alerts(&self) -> FloatOutBoyRealtimeAlertMask {
-        self.active_alerts
+    pub(super) const fn firmware_fault_active(&self) -> bool {
+        self.firmware_fault_active
     }
 
     pub(super) const fn firmware_fault_code(&self) -> FirmwareFaultWireCode {

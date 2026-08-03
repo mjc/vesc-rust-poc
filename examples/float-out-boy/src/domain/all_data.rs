@@ -5,8 +5,7 @@
 
 use super::realtime::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
-    FloatOutBoyRealtimeChargingVoltage, FloatOutBoyRealtimeFilteredMotorCurrent,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
 };
@@ -92,11 +91,6 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-/// Float Out Boy compact all-data FOC ID current state.
-///
-/// Unavailable values encode with the source-backed `222` marker.
-pub type FloatOutBoyFocIdCurrent = Option<MotorCurrent>;
-
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data motor fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -106,7 +100,7 @@ vescpkg_rs::typed_fields! {
         vehicle_speed: VehicleSpeed => vehicle_speed,
         currents: FloatOutBoyRealtimeMotorCurrents => currents,
         duty_cycle: DutyCycle => duty_cycle => with_duty_cycle,
-        foc_id_current: FloatOutBoyFocIdCurrent => foc_id_current,
+        foc_id_current: Option<MotorCurrent> => foc_id_current,
     }
 }
 
@@ -385,10 +379,7 @@ impl FloatOutBoyAllDataPayloads {
                 WattHoursCharged::new(Energy::from_watt_hours(0.0)),
                 BatteryLevel::from_fraction(0.0),
             ),
-            FloatOutBoyAllDataMode4Payload::new(
-                FloatOutBoyRealtimeChargingCurrent::new(zero_battery_current),
-                FloatOutBoyRealtimeChargingVoltage::new(zero_voltage),
-            ),
+            FloatOutBoyAllDataMode4Payload::new(zero_battery_current, zero_voltage),
         )
     }
 
@@ -453,18 +444,13 @@ impl FloatOutBoyAllDataPayloads {
     }
 }
 
-/// Float Out Boy all-data battery-temperature state.
-///
-/// Unavailable values encode with Float Out Boy `v1.2.1`'s zero placeholder.
-pub type FloatOutBoyAllDataBatteryTemperature = Option<Temperature>;
-
 vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 2 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode2Payload {
         distance_abs: TripDistance => distance_abs => with_distance_abs,
         temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures => with_temperatures,
-        battery_temperature: FloatOutBoyAllDataBatteryTemperature => battery_temperature,
+        battery_temperature: Option<Temperature> => battery_temperature,
     }
 }
 
@@ -485,7 +471,7 @@ vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 4 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode4Payload {
-        current: FloatOutBoyRealtimeChargingCurrent => current,
-        voltage: FloatOutBoyRealtimeChargingVoltage => voltage,
+        current: BatteryCurrent => current,
+        voltage: BatteryVoltage => voltage,
     }
 }

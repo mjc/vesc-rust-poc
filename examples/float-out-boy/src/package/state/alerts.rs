@@ -27,11 +27,7 @@ impl FloatOutBoyPackageState {
             let mut response = FloatOutBoyPacket::<ALERTS_RESPONSE_CAPACITY>::new();
             response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
             response.push(FloatOutBoyAppDataCommand::AlertsList.id());
-            response.push_u32(
-                self.alert_tracker
-                    .active_alerts()
-                    .active_alert_mask_compat(),
-            );
+            response.push_u32(u32::from(self.alert_tracker.firmware_fault_active()));
             response.push_u32(0);
             let fault = self.alert_tracker.firmware_fault_code();
             response.push(fault.wire_code());
@@ -44,7 +40,7 @@ impl FloatOutBoyPackageState {
                     return false;
                 }
                 response.push_u32(record.timestamp.as_ticks());
-                response.push(record.id.id());
+                response.push(1);
                 response.push(u8::from(record.active));
                 response.push(record.code.wire_code());
                 push_fault_name(&mut response, telemetry, record.code);

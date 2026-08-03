@@ -75,8 +75,11 @@ fn realtime_encoders_use_live_remote_input_like_float_out_boy() {
     let input = crate::domain::FloatOutBoyRealtimeRemoteInput::new(
         vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.5),
     );
-    let legacy =
-        encode_float_out_boy_get_realtime_data_response_with_remote(&payloads, input, 0.25);
+    let legacy = encode_float_out_boy_get_realtime_data_response_with_remote(
+        &payloads,
+        input,
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.25),
+    );
 
     assert_f32_be(&legacy, 56, 0.25);
     assert_f32_be(&legacy, 68, 0.5);
@@ -85,8 +88,8 @@ fn realtime_encoders_use_live_remote_input_like_float_out_boy() {
             &payloads,
             FloatOutBoyRealtimeDataItem::RemoteInput,
             input,
-            0.0,
-            0.0,
+            FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
+            FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
         ),
         0.5,
     );
