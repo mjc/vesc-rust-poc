@@ -249,23 +249,13 @@ impl FloatOutBoyRealtimeDataItem {
     }
 }
 
-/// Float Out Boy `motor.filt_current` realtime value.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
-
-impl FloatOutBoyRealtimeFilteredMotorCurrent {
-    /// Build a typed Float Out Boy filtered-current value.
-    #[must_use]
-    pub const fn new(current: DirectionalMotorCurrent) -> Self {
-        Self(current)
-    }
-
-    /// Return the typed filtered current without erasing it to a primitive.
-    #[must_use]
-    pub const fn current(self) -> DirectionalMotorCurrent {
-        self.0
-    }
+typed_newtype! {
+    /// Float Out Boy `motor.filt_current` realtime value.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
+    new(current);
+    current;
 }
 
 /// Float Out Boy `imu.balance_pitch` realtime value.

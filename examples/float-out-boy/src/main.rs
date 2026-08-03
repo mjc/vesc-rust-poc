@@ -115,7 +115,6 @@ macro_rules! typed_fields {
     };
 }
 
-#[allow(unused_macros)]
 macro_rules! typed_newtype {
     (
         $(#[$type_attribute:meta])*
