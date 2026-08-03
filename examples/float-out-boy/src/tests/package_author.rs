@@ -155,6 +155,78 @@ fn package_author_reads_float_out_boy_state_as_enums_not_bool_or_integer_flags()
 }
 
 #[test]
+fn package_author_reads_every_float_out_boy_state_wire_id() {
+    for (value, id) in [
+        (FloatOutBoyRunState::Disabled, 0),
+        (FloatOutBoyRunState::Startup, 1),
+        (FloatOutBoyRunState::Ready, 2),
+        (FloatOutBoyRunState::Running, 3),
+    ] {
+        assert_eq!(value.id(), id);
+        assert_eq!(FloatOutBoyRunState::try_from(id), Ok(value));
+    }
+    for (value, id) in [
+        (FloatOutBoyMode::Normal, 0),
+        (FloatOutBoyMode::HandTest, 1),
+        (FloatOutBoyMode::Flywheel, 2),
+    ] {
+        assert_eq!(value.id(), id);
+        assert_eq!(FloatOutBoyMode::try_from(id), Ok(value));
+    }
+    for (value, id) in [
+        (FloatOutBoyStopCondition::None, 0),
+        (FloatOutBoyStopCondition::Pitch, 1),
+        (FloatOutBoyStopCondition::Roll, 2),
+        (FloatOutBoyStopCondition::SwitchHalf, 3),
+        (FloatOutBoyStopCondition::SwitchFull, 4),
+        (FloatOutBoyStopCondition::ReverseStop, 5),
+        (FloatOutBoyStopCondition::QuickStop, 6),
+    ] {
+        assert_eq!(value.id(), id);
+        assert_eq!(FloatOutBoyStopCondition::try_from(id), Ok(value));
+    }
+    for (value, id) in [
+        (FloatOutBoySetpointAdjustment::None, 0),
+        (FloatOutBoySetpointAdjustment::Centering, 1),
+        (FloatOutBoySetpointAdjustment::ReverseStop, 2),
+        (FloatOutBoySetpointAdjustment::PushbackSpeed, 5),
+        (FloatOutBoySetpointAdjustment::PushbackDuty, 6),
+        (FloatOutBoySetpointAdjustment::PushbackError, 7),
+        (FloatOutBoySetpointAdjustment::PushbackHighVoltage, 10),
+        (FloatOutBoySetpointAdjustment::PushbackLowVoltage, 11),
+        (FloatOutBoySetpointAdjustment::PushbackTemperature, 12),
+    ] {
+        assert_eq!(value.id(), id);
+        assert_eq!(FloatOutBoySetpointAdjustment::try_from(id), Ok(value));
+    }
+    for (value, id) in [
+        (FloatOutBoyBeepReason::None, 0),
+        (FloatOutBoyBeepReason::LowVoltage, 1),
+        (FloatOutBoyBeepReason::HighVoltage, 2),
+        (FloatOutBoyBeepReason::MosfetTemperature, 3),
+        (FloatOutBoyBeepReason::MotorTemperature, 4),
+        (FloatOutBoyBeepReason::Current, 5),
+        (FloatOutBoyBeepReason::Duty, 6),
+        (FloatOutBoyBeepReason::Sensors, 7),
+        (FloatOutBoyBeepReason::LowBattery, 8),
+        (FloatOutBoyBeepReason::Idle, 9),
+        (FloatOutBoyBeepReason::Error, 10),
+        (FloatOutBoyBeepReason::Speed, 11),
+        (FloatOutBoyBeepReason::CellUnderTemperature, 12),
+        (FloatOutBoyBeepReason::CellOverTemperature, 13),
+        (FloatOutBoyBeepReason::CellLowVoltage, 14),
+        (FloatOutBoyBeepReason::CellHighVoltage, 15),
+        (FloatOutBoyBeepReason::CellBalance, 16),
+        (FloatOutBoyBeepReason::BmsConnection, 17),
+        (FloatOutBoyBeepReason::BmsOverTemperature, 18),
+        (FloatOutBoyBeepReason::FirmwareFault, 19),
+    ] {
+        assert_eq!(value.id(), id);
+        assert_eq!(FloatOutBoyBeepReason::try_from(id), Ok(value));
+    }
+}
+
+#[test]
 fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
     let commands = [
         (0, FloatOutBoyAppDataCommand::Info),
@@ -185,6 +257,8 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (35, FloatOutBoyAppDataCommand::AlertsList),
         (36, FloatOutBoyAppDataCommand::AlertsControl),
         (41, FloatOutBoyAppDataCommand::DataRecordRequest),
+        (42, FloatOutBoyAppDataCommand::DataRecordHeader),
+        (43, FloatOutBoyAppDataCommand::DataRecordData),
         (99, FloatOutBoyAppDataCommand::LcmDebug),
     ];
 

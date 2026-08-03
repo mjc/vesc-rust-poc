@@ -171,16 +171,20 @@ macro_rules! wire_enum {
             pub const fn id(self) -> u8 {
                 self as u8
             }
+
+            const fn try_from_wire_id(value: u8) -> Result<Self, u8> {
+                match value {
+                    $($id => Ok(Self::$variant),)+
+                    _ => Err(value),
+                }
+            }
         }
 
         impl TryFrom<u8> for $name {
             type Error = u8;
 
-            fn try_from(value: u8) -> Result<Self, Self::Error> {
-                match value {
-                    $($id => Ok(Self::$variant),)+
-                    _ => Err(value),
-                }
+            fn try_from(value: u8) -> Result<Self, u8> {
+                Self::try_from_wire_id(value)
             }
         }
     };
