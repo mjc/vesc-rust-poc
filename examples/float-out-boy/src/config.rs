@@ -119,22 +119,6 @@ macro_rules! generated_image_config_fields {
     )*};
 }
 
-macro_rules! generated_config_flags {
-    ($(
-        $field:ident => $getter:ident, offset: $offset:expr;
-    )*) => {$(
-        const $field: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-            CustomConfigFlagField,
-            len: FLOAT_OUT_BOY_CONFIG_LEN,
-            offset: $offset
-        );
-
-        pub(crate) fn $getter(self) -> bool {
-            self.0.flag(Self::$field)
-        }
-    )*};
-}
-
 macro_rules! config_views {
     ($( $getter:ident => $view:ident; )+) => {
         $(
@@ -198,6 +182,9 @@ impl FloatOutBoyConfigImage {
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
         LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => low_voltage_threshold -> Voltage, offset: 61, scale: 100.0;
         BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
+        LEDS_ON_FIELD: CustomConfigFlagField => leds_enabled -> bool, offset: 175;
+        LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField => headlights_enabled -> bool, offset: 176;
+        LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField => lights_off_when_lifted -> bool, offset: 179;
     }
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
     #[cfg(any(test, target_arch = "arm"))]
@@ -220,22 +207,6 @@ impl FloatOutBoyConfigImage {
     // `SerOrder` at `third_party/float-out-boy/src/conf/settings.xml:4134-4140`.
     // The generated default image confirms the bytes at 175, 176, and 179 as
     // the default-on LEDs/headlights and lifted-lights flags.
-    const LEDS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 175
-    );
-    const LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 176
-    );
-    const LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 179
-    );
-
     pub(crate) const fn defaults() -> Self {
         Self(CustomConfigImage::new(FLOAT_OUT_BOY_DEFAULT_CONFIG))
     }
@@ -287,29 +258,13 @@ impl FloatOutBoyConfigImage {
     pub(crate) fn hardware_led_mode_id(&self) -> u8 {
         Self::HARDWARE_LED_MODE_FIELD
             .read(&self.0)
-            .map_or(0, |mode| mode.0)
+            .map_or(0, WireByte::as_u8)
     }
 
     pub(crate) fn led_configs(
         &self,
     ) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
         FloatOutBoyLedConfigDecoder::new(self.as_bytes()).decode()
-    }
-
-    pub(crate) fn leds_enabled(&self) -> bool {
-        self.flag(Self::LEDS_ON_FIELD)
-    }
-
-    pub(crate) fn headlights_enabled(&self) -> bool {
-        self.flag(Self::LEDS_HEADLIGHTS_ON_FIELD)
-    }
-
-    pub(crate) fn lights_off_when_lifted(&self) -> bool {
-        self.flag(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD)
-    }
-
-    fn flag(&self, field: CustomConfigFlagField) -> bool {
-        field.read(&self.0).unwrap_or(false)
     }
 
     config_views! {
@@ -373,7 +328,7 @@ impl FloatOutBoyConfigImage {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_inverted(&self) -> bool {
-        self.flag(Self::INPUT_TILT_INVERT_FIELD)
+        generated_field(Self::INPUT_TILT_INVERT_FIELD.read(self))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -416,14 +371,7 @@ impl FloatOutBoyHapticConfig<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyHardwareLedMode(u8);
-
-impl From<u8> for FloatOutBoyHardwareLedMode {
-    fn from(value: u8) -> Self {
-        Self(value)
-    }
-}
+type FloatOutBoyHardwareLedMode = WireByte;
 
 struct FloatOutBoyLedConfigDecoder<'a> {
     bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN],
@@ -712,8 +660,8 @@ impl FloatOutBoyMetadataConfig<'_> {
     // its `<ser>disabled</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4064`.
     // Upstream defines `meta.is_default` in `third_party/float-out-boy/src/conf/settings.xml:3903-3914`;
     // its `<ser>meta.is_default</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4083`.
-    generated_config_flags! {
-        DISABLED_FIELD => disabled, offset: 243;
+    generated_config_fields! {
+        DISABLED_FIELD: CustomConfigFlagField => disabled -> bool, offset: 243;
     }
 
     const IS_DEFAULT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
@@ -724,7 +672,7 @@ impl FloatOutBoyMetadataConfig<'_> {
 
     #[cfg(test)]
     pub(crate) fn is_default(self) -> bool {
-        self.0.flag(Self::IS_DEFAULT_FIELD)
+        generated_field(Self::IS_DEFAULT_FIELD.read(self.0))
     }
 }
 
@@ -738,8 +686,8 @@ impl FloatOutBoyBmsConfig<'_> {
     // Generated Float Out Boy v1.2.1 serialization places `bms.enabled` after the
     // haptic fields and before the six BMS thresholds at
     // `third_party/float-out-boy/src/conf/settings.xml:4076-4082`.
-    generated_config_flags! { ENABLED_FIELD => enabled, offset: 265; }
     generated_config_fields! {
+        ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 265;
         CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_low_voltage -> Voltage, offset: 266, scale: 1000.0;
         CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_high_voltage -> Voltage, offset: 268, scale: 1000.0;
         CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_balance_voltage -> Voltage, offset: 270, scale: 1000.0;
@@ -844,12 +792,12 @@ impl FloatOutBoyFaultConfig<'_> {
         DELAY_SWITCH_HALF_FIELD: CustomConfigDurationField => switch_half_delay -> VescSeconds, offset: 33;
         DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField => switch_full_delay -> VescSeconds, offset: 35;
     }
-    generated_config_flags! {
-        DUAL_SWITCH_FIELD => dual_switch, offset: 39;
-        MOVING_FAULT_DISABLED_FIELD => moving_faults_disabled, offset: 40;
-        QUICKSTOP_FIELD => quickstop_enabled, offset: 41;
-        DARKRIDE_FIELD => darkride_enabled, offset: 42;
-        REVERSESTOP_FIELD => reversestop_enabled, offset: 43;
+    generated_config_fields! {
+        DUAL_SWITCH_FIELD: CustomConfigFlagField => dual_switch -> bool, offset: 39;
+        MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField => moving_faults_disabled -> bool, offset: 40;
+        QUICKSTOP_FIELD: CustomConfigFlagField => quickstop_enabled -> bool, offset: 41;
+        DARKRIDE_FIELD: CustomConfigFlagField => darkride_enabled -> bool, offset: 42;
+        REVERSESTOP_FIELD: CustomConfigFlagField => reversestop_enabled -> bool, offset: 43;
     }
 }
 
@@ -868,9 +816,9 @@ impl FloatOutBoyStartupConfig<'_> {
         SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
     }
     const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
-    generated_config_flags! {
-        SIMPLESTART_FIELD => simplestart_enabled, offset: 98;
-        PUSHSTART_FIELD => pushstart_enabled, offset: 99;
+    generated_config_fields! {
+        SIMPLESTART_FIELD: CustomConfigFlagField => simplestart_enabled -> bool, offset: 98;
+        PUSHSTART_FIELD: CustomConfigFlagField => pushstart_enabled -> bool, offset: 99;
     }
     const DIRTY_LANDINGS_OFFSET: usize = 100;
     const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
@@ -974,10 +922,8 @@ pub(crate) struct FloatOutBoyRemoteThrottleConfig<'a>(&'a FloatOutBoyConfigImage
 impl FloatOutBoyRemoteThrottleConfig<'_> {
     // Upstream serializes remote throttle fields immediately before startup
     // tolerances at `third_party/float-out-boy/src/conf/settings.xml:3962-3965`.
-    generated_config_flags! {
-        INVERT_THROTTLE_FIELD => invert_throttle, offset: 84;
-    }
     generated_config_fields! {
+        INVERT_THROTTLE_FIELD: CustomConfigFlagField => invert_throttle -> bool, offset: 84;
         CURRENT_MAX_FIELD: CustomConfigMotorCurrentField => current_max -> MotorCurrent, offset: 87, scale: 10.0;
         GRACE_PERIOD_FIELD: CustomConfigSecondsField => grace_period -> VescSeconds, offset: 89, scale: 10.0;
     }

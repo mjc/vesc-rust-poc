@@ -44,6 +44,12 @@ impl WireByte {
     }
 }
 
+impl From<u8> for WireByte {
+    fn from(value: u8) -> Self {
+        Self::new(value)
+    }
+}
+
 pub use crate::units::{BatteryCellCount, BatteryCellCountError};
 use crate::units::{Distance, FluxLinkage, Inductance, Resistance};
 
@@ -1051,6 +1057,7 @@ mod tests {
         );
         let mut image = CustomConfigImage::new([7]);
 
+        assert_eq!(WireByte::from(7), WireByte::new(7));
         assert_eq!(field.read(&image), Some(WireByte::new(7)));
         assert_eq!(
             field.write(&mut image.editor(), WireByte::new(42)),
