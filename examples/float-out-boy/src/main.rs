@@ -90,7 +90,7 @@ macro_rules! typed_fields {
     (
         $(#[$type_attribute:meta])*
         $visibility:vis struct $name:ident {
-            $( $field:ident: $field_type:ty => $getter:ident, )+
+            $( $field:ident: $field_type:ty => $getter:ident $(=> $with:ident)?, )+
         }
     ) => {
         $(#[$type_attribute])*
@@ -111,8 +111,21 @@ macro_rules! typed_fields {
                     pub fn $getter -> $field_type = $field;
                 )+
             }
+
+            $(typed_fields!(@with $field: $field_type $(=> $with)?);)+
         }
     };
+
+    (@with $field:ident: $field_type:ty => $with:ident) => {
+        #[doc = concat!("Return this field group with a new `", stringify!($field), "` field.")]
+        #[must_use]
+        pub const fn $with(mut self, $field: $field_type) -> Self {
+            self.$field = $field;
+            self
+        }
+    };
+
+    (@with $field:ident: $field_type:ty) => {};
 }
 
 macro_rules! typed_newtype {

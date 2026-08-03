@@ -248,21 +248,12 @@ typed_fields! {
     /// Float Out Boy runtime setpoint values sent only while running.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeRuntimeSetpoints {
-        board: FloatOutBoyRealtimeRuntimeSetpoint => board,
+        board: FloatOutBoyRealtimeRuntimeSetpoint => board => with_board,
         atr: FloatOutBoyRealtimeRuntimeSetpoint => atr,
         brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint => brake_tilt,
         torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint => torque_tilt,
         turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint => turn_tilt,
         remote: FloatOutBoyRealtimeRuntimeSetpoint => remote,
-    }
-}
-
-impl FloatOutBoyRealtimeRuntimeSetpoints {
-    /// Return these runtime setpoints with a new board target.
-    #[must_use]
-    pub const fn with_board(mut self, board: FloatOutBoyRealtimeRuntimeSetpoint) -> Self {
-        self.board = board;
-        self
     }
 }
 

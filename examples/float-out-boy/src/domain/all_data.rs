@@ -92,67 +92,57 @@ typed_fields! {
     }
 }
 
-/// Float Out Boy compact all-data FOC ID current state.
+/// Float Out Boy measurement that can carry a source-compatible unavailable marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FloatOutBoyFocIdCurrent {
-    /// A measured FOC ID current is available.
-    Measured(MotorCurrent),
-    /// Float Out Boy will emit its source-backed unavailable marker during encoding.
+pub enum FloatOutBoyMeasurement<T> {
+    /// A measured value is available.
+    Measured(T),
+    /// The measurement is unavailable.
     Unavailable,
 }
 
-impl FloatOutBoyFocIdCurrent {
-    /// Build a measured FOC ID current value.
+impl<T: Copy> FloatOutBoyMeasurement<T> {
+    /// Build an available measurement.
     #[must_use]
-    pub const fn measured(current: MotorCurrent) -> Self {
-        Self::Measured(current)
+    pub const fn measured(value: T) -> Self {
+        Self::Measured(value)
     }
 
-    /// Build an unavailable FOC ID current marker.
+    /// Build an unavailable measurement.
     #[must_use]
     pub const fn unavailable() -> Self {
         Self::Unavailable
     }
 
-    /// Return the measured current, when available.
+    /// Return the measured value, when available.
     #[must_use]
-    pub const fn as_measured(self) -> Option<MotorCurrent> {
+    pub const fn as_measured(self) -> Option<T> {
         match self {
-            Self::Measured(current) => Some(current),
+            Self::Measured(value) => Some(value),
             Self::Unavailable => None,
         }
     }
 }
 
+/// Float Out Boy compact all-data FOC ID current state.
+///
+/// Unavailable values encode with the source-backed `222` marker.
+pub type FloatOutBoyFocIdCurrent = FloatOutBoyMeasurement<MotorCurrent>;
+
 typed_fields! {
     /// Float Out Boy compact all-data motor fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMotorPayload {
-        battery_voltage: BatteryVoltage => battery_voltage,
+        battery_voltage: BatteryVoltage => battery_voltage => with_battery_voltage,
         electrical_speed: ElectricalSpeed => electrical_speed,
         vehicle_speed: VehicleSpeed => vehicle_speed,
         currents: FloatOutBoyRealtimeMotorCurrents => currents,
-        duty_cycle: DutyCycle => duty_cycle,
+        duty_cycle: DutyCycle => duty_cycle => with_duty_cycle,
         foc_id_current: FloatOutBoyFocIdCurrent => foc_id_current,
     }
 }
 
 impl FloatOutBoyAllDataMotorPayload {
-    /// Return motor fields with refreshed battery voltage.
-    #[must_use]
-    pub const fn with_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
-        Self {
-            battery_voltage,
-            ..self
-        }
-    }
-
-    /// Return motor fields with a refreshed smoothed duty cycle.
-    #[must_use]
-    pub const fn with_duty_cycle(self, duty_cycle: DutyCycle) -> Self {
-        Self { duty_cycle, ..self }
-    }
-
     /// Return motor current.
     #[must_use]
     pub const fn motor_current(self) -> MotorCurrent {
@@ -429,10 +419,10 @@ typed_fields! {
     /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataPayloads {
-        base: FloatOutBoyAllDataBasePayload => base,
+        base: FloatOutBoyAllDataBasePayload => base => with_base,
         mode2: FloatOutBoyAllDataMode2Payload => mode2,
-        mode3: FloatOutBoyAllDataMode3Payload => mode3,
-        mode4: FloatOutBoyAllDataMode4Payload => mode4,
+        mode3: FloatOutBoyAllDataMode3Payload => mode3 => with_mode3_ride_totals,
+        mode4: FloatOutBoyAllDataMode4Payload => mode4 => with_mode4_charging,
     }
 }
 
@@ -542,12 +532,6 @@ impl FloatOutBoyAllDataPayloads {
         }
     }
 
-    /// Return a payload snapshot with replacement base fields.
-    #[must_use]
-    pub const fn with_base(self, base: FloatOutBoyAllDataBasePayload) -> Self {
-        Self { base, ..self }
-    }
-
     /// Return a payload snapshot with refreshed base battery voltage.
     #[must_use]
     pub const fn with_base_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
@@ -577,82 +561,20 @@ impl FloatOutBoyAllDataPayloads {
             ..self
         }
     }
-
-    /// Return a payload snapshot with refreshed mode 3 ride totals.
-    #[must_use]
-    pub const fn with_mode3_ride_totals(self, mode3: FloatOutBoyAllDataMode3Payload) -> Self {
-        Self { mode3, ..self }
-    }
-
-    /// Return a payload snapshot with refreshed mode 4 charging data.
-    #[must_use]
-    pub const fn with_mode4_charging(self, mode4: FloatOutBoyAllDataMode4Payload) -> Self {
-        Self { mode4, ..self }
-    }
 }
 
 /// Float Out Boy all-data battery-temperature state.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FloatOutBoyAllDataBatteryTemperature {
-    /// A measured battery temperature is available.
-    Measured(Temperature),
-    /// Float Out Boy `v1.2.1` emits a zero placeholder for this field.
-    Unavailable,
-}
-
-impl FloatOutBoyAllDataBatteryTemperature {
-    /// Build a measured battery-temperature value.
-    #[must_use]
-    pub const fn measured(temperature: Temperature) -> Self {
-        Self::Measured(temperature)
-    }
-
-    /// Build an unavailable battery-temperature marker.
-    #[must_use]
-    pub const fn unavailable() -> Self {
-        Self::Unavailable
-    }
-
-    /// Return the measured battery temperature, when available.
-    #[must_use]
-    pub const fn as_measured(self) -> Option<Temperature> {
-        match self {
-            Self::Measured(temperature) => Some(temperature),
-            Self::Unavailable => None,
-        }
-    }
-}
+///
+/// Unavailable values encode with Float Out Boy `v1.2.1`'s zero placeholder.
+pub type FloatOutBoyAllDataBatteryTemperature = FloatOutBoyMeasurement<Temperature>;
 
 typed_fields! {
     /// Float Out Boy all-data mode 2 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode2Payload {
-        distance_abs: TripDistance => distance_abs,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures,
+        distance_abs: TripDistance => distance_abs => with_distance_abs,
+        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures => with_temperatures,
         battery_temperature: FloatOutBoyAllDataBatteryTemperature => battery_temperature,
-    }
-}
-
-impl FloatOutBoyAllDataMode2Payload {
-    /// Return mode 2 fields with refreshed absolute distance.
-    #[must_use]
-    pub const fn with_distance_abs(self, distance_abs: TripDistance) -> Self {
-        Self {
-            distance_abs,
-            ..self
-        }
-    }
-
-    /// Return mode 2 fields with refreshed motor temperatures.
-    #[must_use]
-    pub const fn with_temperatures(
-        self,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures,
-    ) -> Self {
-        Self {
-            temperatures,
-            ..self
-        }
     }
 }
 
