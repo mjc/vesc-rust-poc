@@ -7,10 +7,10 @@ fn white_led_config(idle_timeout_seconds: u16) -> super::FloatOutBoyLedsConfig {
         FloatOutBoyLedColor::WhiteRgb,
         FloatOutBoyLedColor::Black,
         super::FloatOutBoyLedAnimationMode::Solid,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let status = super::FloatOutBoyStatusBarConfig::new(
-        super::FloatOutBoyStatusBarIdleTimeout::from_seconds(idle_timeout_seconds),
+        idle_timeout_seconds,
         Ratio::from_ratio_const(0.9),
         Ratio::from_ratio_const(0.1),
         Ratio::from_ratio_const(1.0),
@@ -19,8 +19,8 @@ fn white_led_config(idle_timeout_seconds: u16) -> super::FloatOutBoyLedsConfig {
     super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled()
 }
 
-fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedFrameUpdate {
-    super::FloatOutBoyLedFrameUpdate::new(
+fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedUpdate {
+    super::FloatOutBoyLedUpdate::with_status(
         ride,
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 0.0,
@@ -296,7 +296,7 @@ fn solid_bar_applies_brightness_on_off_fade_and_blend_like_refloat() {
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Black,
         super::FloatOutBoyLedAnimationMode::Solid,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
 
     frame.render_target(
@@ -324,14 +324,14 @@ fn fade_and_strobe_match_refloat_time_boundaries() {
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Fade,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let strobe = super::FloatOutBoyLedBarConfig::new(
         Ratio::from_ratio_const(1.0),
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Strobe,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
 
     let mut frame = super::FloatOutBoyLedStripFrame::new(config);
@@ -382,7 +382,7 @@ fn felony_preserves_odd_center_blackout_across_all_three_phases() {
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Felony,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
     let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
@@ -425,7 +425,7 @@ fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
             FloatOutBoyLedColor::Black,
             FloatOutBoyLedColor::Black,
             mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let mut frame = super::FloatOutBoyLedStripFrame::new(config);
@@ -486,7 +486,7 @@ fn pulse_and_knight_rider_match_refloat_spatial_frames() {
             FloatOutBoyLedColor::Red,
             FloatOutBoyLedColor::Blue,
             mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = |count| {
@@ -549,7 +549,7 @@ fn all_transition_modes_match_refloat_frames() {
             primary,
             secondary,
             mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let from = bar(
@@ -768,7 +768,7 @@ fn front_rear_bar_selection_matches_refloat_direction_roles() {
             color,
             FloatOutBoyLedColor::Black,
             super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = super::FloatOutBoyLedsConfig::new(
@@ -777,7 +777,7 @@ fn front_rear_bar_selection_matches_refloat_direction_roles() {
         bar(FloatOutBoyLedColor::Blue),
         bar(FloatOutBoyLedColor::Green),
         super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.9),
             Ratio::from_ratio_const(0.1),
             Ratio::from_ratio_const(1.0),
@@ -829,7 +829,7 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
             color,
             FloatOutBoyLedColor::Black,
             super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = super::FloatOutBoyLedsConfig::new(
@@ -838,7 +838,7 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
         bar(FloatOutBoyLedColor::Blue),
         bar(FloatOutBoyLedColor::Green),
         super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.9),
             Ratio::from_ratio_const(0.1),
             Ratio::from_ratio_const(1.0),
@@ -866,6 +866,9 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
             footpad: crate::FloatOutBoyFootpadState::None,
             pitch_degrees: 1.0,
             distance,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            moving: true,
         })
     };
     let first = |frame: &super::FloatOutBoyLedStripFrame| {
@@ -948,7 +951,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
             color,
             FloatOutBoyLedColor::Black,
             super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = super::FloatOutBoyLedsConfig::new(
@@ -957,7 +960,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
         bar(FloatOutBoyLedColor::Black),
         bar(FloatOutBoyLedColor::Black),
         super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.2),
             Ratio::from_ratio_const(0.4),
             Ratio::from_ratio_const(1.0),
@@ -975,7 +978,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
         crate::lcm::FloatOutBoyHardwareLedsConfig::new(crate::lcm::FloatOutBoyLedMode::Internal)
             .with_status_strip(strip);
     let input = |footpad, duty| {
-        super::FloatOutBoyLedFrameUpdate::new(
+        super::FloatOutBoyLedUpdate::with_status(
             super::FloatOutBoyLedUpdate {
                 run_state: crate::FloatOutBoyRunState::Running,
                 mode: crate::FloatOutBoyMode::Normal,
@@ -983,6 +986,9 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
                 footpad,
                 pitch_degrees: 0.0,
                 distance: 0.0,
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
             },
             super::FloatOutBoyLedStatusUpdate {
                 battery_level: 0.45,
@@ -1064,7 +1070,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             color,
             FloatOutBoyLedColor::Black,
             super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = super::FloatOutBoyLedsConfig::new(
@@ -1073,7 +1079,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
         bar(1.0, FloatOutBoyLedColor::Black),
         bar(1.0, FloatOutBoyLedColor::Black),
         super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1),
+            1,
             Ratio::from_ratio_const(0.9),
             Ratio::from_ratio_const(0.1),
             Ratio::from_ratio_const(1.0),
@@ -1090,7 +1096,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
     let hardware =
         crate::lcm::FloatOutBoyHardwareLedsConfig::new(crate::lcm::FloatOutBoyLedMode::Internal)
             .with_status_strip(strip);
-    let frame = super::FloatOutBoyLedFrameUpdate::new(
+    let frame = super::FloatOutBoyLedUpdate::with_status(
         super::FloatOutBoyLedUpdate {
             run_state: crate::FloatOutBoyRunState::Ready,
             mode: crate::FloatOutBoyMode::Normal,
@@ -1098,6 +1104,9 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             footpad: crate::FloatOutBoyFootpadState::None,
             pitch_degrees: 0.0,
             distance: 0.0,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            moving: true,
         },
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,
@@ -1126,13 +1135,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
     }
     assert_eq!(pixel(&renderer), [0, 0, 0x80, 0]);
 
-    let with_footpad = |footpad| super::FloatOutBoyLedFrameUpdate {
-        ride: super::FloatOutBoyLedUpdate {
-            footpad,
-            ..frame.ride
-        },
-        ..frame
-    };
+    let with_footpad = |footpad| super::FloatOutBoyLedUpdate { footpad, ..frame };
     for tick in 41..=43 {
         renderer.update(
             config,
@@ -1154,7 +1157,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             color,
             FloatOutBoyLedColor::Black,
             super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+            1.0,
         )
     };
     let config = super::FloatOutBoyLedsConfig::new(
@@ -1163,7 +1166,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
         bar(FloatOutBoyLedColor::Blue),
         bar(FloatOutBoyLedColor::Red),
         super::FloatOutBoyStatusBarConfig::new(
-            super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.9),
             Ratio::from_ratio_const(0.1),
             Ratio::from_ratio_const(1.0),
@@ -1184,7 +1187,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             .with_front_strip(strip)
             .with_rear_strip(strip);
     let frame = |pitch_degrees| {
-        super::FloatOutBoyLedFrameUpdate::new(
+        super::FloatOutBoyLedUpdate::with_status(
             super::FloatOutBoyLedUpdate {
                 run_state: crate::FloatOutBoyRunState::Ready,
                 mode: crate::FloatOutBoyMode::Normal,
@@ -1192,6 +1195,9 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
                 footpad: crate::FloatOutBoyFootpadState::None,
                 pitch_degrees,
                 distance: 0.0,
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
             },
             super::FloatOutBoyLedStatusUpdate {
                 battery_level: 1.0,
@@ -1251,6 +1257,9 @@ fn headlight_transition_uses_elapsed_time_like_refloat() {
         footpad: crate::FloatOutBoyFootpadState::None,
         pitch_degrees: 0.0,
         distance: 0.0,
+        battery_level: 0.0,
+        duty_cycle: 0.0,
+        moving: true,
     };
     let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
 
@@ -1272,6 +1281,9 @@ fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
         footpad: crate::FloatOutBoyFootpadState::None,
         pitch_degrees: 0.0,
         distance: 0.0,
+        battery_level: 0.0,
+        duty_cycle: 0.0,
+        moving: true,
     };
     let mut dynamics = super::FloatOutBoyLedDynamics::new(0.0);
 
@@ -1308,6 +1320,9 @@ fn disabled_front_stays_dark_while_lifted_like_refloat() {
             footpad: crate::FloatOutBoyFootpadState::None,
             pitch_degrees: 61.0,
             distance: 0.0,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            moving: true,
         })
     };
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
@@ -1351,6 +1366,9 @@ fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
             footpad: crate::FloatOutBoyFootpadState::None,
             pitch_degrees: 0.0,
             distance: 0.0,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            moving: true,
         })
     };
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
@@ -1387,6 +1405,9 @@ fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
                     footpad: $footpad,
                     pitch_degrees: $pitch,
                     distance: $distance,
+                    battery_level: 0.0,
+                    duty_cycle: 0.0,
+                    moving: true,
                 },
                 current_time,
             )
@@ -1397,10 +1418,10 @@ fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
         FloatOutBoyLedColor::WhiteRgb,
         FloatOutBoyLedColor::Black,
         super::FloatOutBoyLedAnimationMode::Solid,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let status = super::FloatOutBoyStatusBarConfig::new(
-        super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+        0,
         Ratio::from_ratio_const(0.9),
         Ratio::from_ratio_const(0.1),
         Ratio::from_ratio_const(1.0),

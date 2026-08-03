@@ -237,11 +237,6 @@ pub enum FloatOutBoyLedTransition {
 }
 }
 
-/// Float Out Boy LED animation speed scalar.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct FloatOutBoyLedAnimationSpeed(pub(crate) f32);
-
 /// Float Out Boy LED bar configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedBarConfig {
@@ -249,18 +244,13 @@ pub struct FloatOutBoyLedBarConfig {
     pub(crate) primary_color: FloatOutBoyLedColor,
     pub(crate) secondary_color: FloatOutBoyLedColor,
     pub(crate) animation_mode: FloatOutBoyLedAnimationMode,
-    pub(crate) animation_speed: FloatOutBoyLedAnimationSpeed,
+    pub(crate) animation_speed: f32,
 }
-
-/// Float Out Boy status-bar idle timeout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct FloatOutBoyStatusBarIdleTimeout(pub(crate) u16);
 
 /// Float Out Boy status-bar configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyStatusBarConfig {
-    pub(crate) idle_timeout: FloatOutBoyStatusBarIdleTimeout,
+    pub(crate) idle_timeout: u16,
     pub(crate) duty_threshold: Ratio,
     pub(crate) red_bar_percentage: Ratio,
     pub(crate) show_sensors_while_running: bool,
@@ -358,6 +348,12 @@ pub struct FloatOutBoyLedUpdate {
     pub pitch_degrees: f32,
     /// Current motor distance.
     pub distance: f32,
+    /// Remaining battery fraction.
+    pub battery_level: f32,
+    /// Raw VESC duty-cycle fraction.
+    pub duty_cycle: f32,
+    /// Whether motor distance changed during this update.
+    pub moving: bool,
 }
 
 /// Pure 30 Hz state for Refloat's lifted-board, footpad, and direction decisions.
@@ -409,6 +405,7 @@ impl FloatOutBoyLedDynamics {
             footpad,
             pitch_degrees,
             distance,
+            ..
         } = input;
         if matches!(run_state, crate::FloatOutBoyRunState::Startup) {
             self.run_state = run_state;
@@ -553,7 +550,8 @@ fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
     }
 }
 
-/// Values used only by Refloat's status-strip composition.
+#[cfg(test)]
+/// Test-only split status input retained for compact renderer fixtures.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedStatusUpdate {
     /// Remaining battery fraction.
@@ -562,15 +560,6 @@ pub struct FloatOutBoyLedStatusUpdate {
     pub duty_cycle: f32,
     /// Whether motor distance changed during this update.
     pub moving: bool,
-}
-
-/// One coherent 30 Hz renderer snapshot.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyLedFrameUpdate {
-    /// Ride and transition inputs.
-    pub ride: FloatOutBoyLedUpdate,
-    /// Status-strip inputs sampled for the same frame.
-    pub status: FloatOutBoyLedStatusUpdate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -637,7 +626,6 @@ impl FloatOutBoyStatusDynamics {
         &mut self,
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
-        status: FloatOutBoyLedStatusUpdate,
         sensors: (Ratio, Ratio),
         reset_idle: bool,
         current_time: f32,
@@ -650,7 +638,7 @@ impl FloatOutBoyStatusDynamics {
         let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
             && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
         {
-            (status.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
+            (input.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
         } else {
             0.0
         };
@@ -667,7 +655,7 @@ impl FloatOutBoyStatusDynamics {
         if sensors.0.as_ratio() >= 1.0 || sensors.1.as_ratio() >= 1.0 {
             self.idle_blend = 0.0;
         }
-        let idle_timeout = f32::from(status_config.idle_timeout.0);
+        let idle_timeout = f32::from(status_config.idle_timeout);
         let idle_target = if idle_timeout > 0.0 && current_time - self.idle_time > idle_timeout {
             if self.idle_blend == 0.0 {
                 self.animation_start = current_time;
@@ -677,7 +665,7 @@ impl FloatOutBoyStatusDynamics {
             0.0
         };
         self.idle_blend = rate_limit(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
-        if status.moving {
+        if input.moving {
             self.idle_time = current_time;
         }
         (
@@ -738,13 +726,9 @@ impl FloatOutBoyLedRenderer {
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
-        frame: FloatOutBoyLedFrameUpdate,
+        input: FloatOutBoyLedUpdate,
         current_time: f32,
     ) -> bool {
-        let FloatOutBoyLedFrameUpdate {
-            ride: input,
-            status,
-        } = frame;
         let was_startup = matches!(self.dynamics.run_state, crate::FloatOutBoyRunState::Startup);
         let old_headlights = self.dynamics.headlights();
         let old_direction = self.dynamics.direction();
@@ -800,8 +784,7 @@ impl FloatOutBoyLedRenderer {
             return true;
         }
 
-        let status_state =
-            self.compose_status(config, input, current_time, status, fade, upright_changed);
+        let status_state = self.compose_status(config, input, current_time, fade, upright_changed);
         if config.lifted.status_on_front && self.status_on_front_blend > 0.0 {
             let front_idle =
                 config.lifted.lights_off && current_time - self.status_on_front_idle_time > 3.0;
@@ -831,7 +814,13 @@ impl FloatOutBoyLedRenderer {
             (old_headlights, headlights),
             (old_direction, direction),
         );
-        self.compose_front_status(config, status, status_state, fade, current_time);
+        self.compose_front_status(
+            config,
+            input.battery_level,
+            status_state,
+            fade,
+            current_time,
+        );
         true
     }
 
@@ -892,7 +881,6 @@ impl FloatOutBoyLedRenderer {
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
         current_time: f32,
-        status: FloatOutBoyLedStatusUpdate,
         fade: Ratio,
         reset_idle: bool,
     ) -> (f32, Ratio) {
@@ -900,7 +888,7 @@ impl FloatOutBoyLedRenderer {
         let sensors = self.dynamics.sensor_fades();
         let (duty, duty_blend, idle_blend, idle_animation_time) =
             self.status_dynamics
-                .update(config, input, status, sensors, reset_idle, current_time);
+                .update(config, input, sensors, reset_idle, current_time);
 
         self.status.render_status_layers(FloatOutBoyStatusLayers {
             brightness: Ratio::clamped(self.status_dynamics.brightness),
@@ -910,7 +898,7 @@ impl FloatOutBoyLedRenderer {
             idle: FloatOutBoyStatusIdleLayer::Animate(config.status_idle, idle_animation_time),
             reverse: false,
             red_percentage: status_config.red_bar_percentage,
-            battery: status.battery_level.clamp(0.0, 1.0),
+            battery: input.battery_level.clamp(0.0, 1.0),
             duty,
             duty_blend,
             sensors,
@@ -922,7 +910,7 @@ impl FloatOutBoyLedRenderer {
     fn compose_front_status(
         &mut self,
         config: FloatOutBoyLedsConfig,
-        status: FloatOutBoyLedStatusUpdate,
+        battery_level: f32,
         (duty, duty_blend): (f32, Ratio),
         fade: Ratio,
         current_time: f32,
@@ -939,7 +927,7 @@ impl FloatOutBoyLedRenderer {
             idle: FloatOutBoyStatusIdleLayer::Black,
             reverse: true,
             red_percentage: config.status.red_bar_percentage,
-            battery: status.battery_level.clamp(0.0, 1.0),
+            battery: battery_level.clamp(0.0, 1.0),
             duty,
             duty_blend,
             sensors: self.dynamics.sensor_fades(),
@@ -1256,7 +1244,7 @@ impl FloatOutBoyLedStripFrame {
 
     /// Render one currently implemented Refloat bar animation.
     pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
-        let time = time * bar.animation_speed.0;
+        let time = time * bar.animation_speed;
         let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::Felony => {
                 self.render_felony(bar, on_off_fade, time);

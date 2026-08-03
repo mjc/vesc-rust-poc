@@ -8,10 +8,10 @@ use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
-        FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
-        FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+        FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
+        FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
         FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder, FloatOutBoyLedTransition,
-        FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig, FloatOutBoyStatusBarIdleTimeout,
+        FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
     },
 };
 #[cfg(any(test, target_arch = "arm"))]
@@ -403,7 +403,7 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
                 show_sensors_while_running: self.boolean()?,
                 duty_threshold: self.ratio(10_000.0)?,
                 red_bar_percentage: self.ratio(10_000.0)?,
-                idle_timeout: FloatOutBoyStatusBarIdleTimeout(self.u16()?),
+                idle_timeout: self.u16()?,
             },
             status_idle: self.bar()?,
         };
@@ -471,7 +471,7 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
             primary_color: self.enum_value()?,
             secondary_color: self.enum_value()?,
             animation_mode,
-            animation_speed: FloatOutBoyLedAnimationSpeed(f32::from(self.u16()?) / 1_000.0),
+            animation_speed: f32::from(self.u16()?) / 1_000.0,
         })
     }
 

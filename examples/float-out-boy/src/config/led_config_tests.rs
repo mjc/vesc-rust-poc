@@ -50,7 +50,7 @@ fn decodes_refloat_1_2_1_default_led_config() {
     );
     assert_eq!(leds.taillights().primary_color(), FloatOutBoyLedColor::Red);
     assert!(leds.status().shows_sensors_while_running());
-    assert_eq!(leds.status().idle_timeout().as_seconds(), 0);
+    assert_eq!(leds.status().idle_timeout(), 0);
 }
 
 #[test]

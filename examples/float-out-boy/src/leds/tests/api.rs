@@ -6,23 +6,13 @@ impl FloatOutBoyLedPixel {
     }
 }
 
-impl FloatOutBoyLedAnimationSpeed {
-    pub(crate) const fn from_units(value: f32) -> Self {
-        Self(value)
-    }
-
-    pub(crate) const fn as_units(self) -> f32 {
-        self.0
-    }
-}
-
 impl FloatOutBoyLedBarConfig {
     pub(crate) const fn new(
         brightness: Ratio,
         primary_color: FloatOutBoyLedColor,
         secondary_color: FloatOutBoyLedColor,
         animation_mode: FloatOutBoyLedAnimationMode,
-        animation_speed: FloatOutBoyLedAnimationSpeed,
+        animation_speed: f32,
     ) -> Self {
         Self {
             brightness,
@@ -49,24 +39,14 @@ impl FloatOutBoyLedBarConfig {
         self.animation_mode
     }
 
-    pub(crate) const fn animation_speed(self) -> FloatOutBoyLedAnimationSpeed {
+    pub(crate) const fn animation_speed(self) -> f32 {
         self.animation_speed
-    }
-}
-
-impl FloatOutBoyStatusBarIdleTimeout {
-    pub(crate) const fn from_seconds(value: u16) -> Self {
-        Self(value)
-    }
-
-    pub(crate) const fn as_seconds(self) -> u16 {
-        self.0
     }
 }
 
 impl FloatOutBoyStatusBarConfig {
     pub(crate) const fn new(
-        idle_timeout: FloatOutBoyStatusBarIdleTimeout,
+        idle_timeout: u16,
         duty_threshold: Ratio,
         red_bar_percentage: Ratio,
         brightness_headlights_on: Ratio,
@@ -87,7 +67,7 @@ impl FloatOutBoyStatusBarConfig {
         self
     }
 
-    pub(crate) const fn idle_timeout(self) -> FloatOutBoyStatusBarIdleTimeout {
+    pub(crate) const fn idle_timeout(self) -> u16 {
         self.idle_timeout
     }
 
@@ -266,12 +246,17 @@ impl FloatOutBoyLedRuntimeStatus {
     }
 }
 
-impl FloatOutBoyLedFrameUpdate {
-    pub(crate) const fn new(
+impl FloatOutBoyLedUpdate {
+    pub(crate) const fn with_status(
         ride: FloatOutBoyLedUpdate,
         status: FloatOutBoyLedStatusUpdate,
     ) -> Self {
-        Self { ride, status }
+        Self {
+            battery_level: status.battery_level,
+            duty_cycle: status.duty_cycle,
+            moving: status.moving,
+            ..ride
+        }
     }
 }
 
