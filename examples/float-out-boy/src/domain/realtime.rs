@@ -541,48 +541,16 @@ impl FloatOutBoyRealtimeReservedFlags {
     }
 }
 
-/// Float Out Boy realtime tail fields appended after conditional payload values.
-///
-/// Source map: upstream appends active-alert mask, reserved flags, and firmware
-/// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyRealtimeTail {
-    active_alerts: FloatOutBoyRealtimeAlertMask,
-    reserved_flags: FloatOutBoyRealtimeReservedFlags,
-    firmware_fault_code: FirmwareFaultWireCode,
-}
-
-impl FloatOutBoyRealtimeTail {
-    /// Build typed Float Out Boy realtime tail fields.
-    #[must_use]
-    pub const fn new(
-        active_alerts: FloatOutBoyRealtimeAlertMask,
-        reserved_flags: FloatOutBoyRealtimeReservedFlags,
-        firmware_fault_code: FirmwareFaultWireCode,
-    ) -> Self {
-        Self {
-            active_alerts,
-            reserved_flags,
-            firmware_fault_code,
-        }
-    }
-
-    /// Return active alerts.
-    #[must_use]
-    pub const fn active_alerts(self) -> FloatOutBoyRealtimeAlertMask {
-        self.active_alerts
-    }
-
-    /// Return reserved extra flags.
-    #[must_use]
-    pub const fn reserved_flags(self) -> FloatOutBoyRealtimeReservedFlags {
-        self.reserved_flags
-    }
-
-    /// Return firmware fault code.
-    #[must_use]
-    pub const fn firmware_fault_code(self) -> FirmwareFaultWireCode {
-        self.firmware_fault_code
+typed_fields! {
+    /// Float Out Boy realtime tail fields appended after conditional payload values.
+    ///
+    /// Source map: upstream appends active-alert mask, reserved flags, and firmware
+    /// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FloatOutBoyRealtimeTail {
+        active_alerts: FloatOutBoyRealtimeAlertMask => active_alerts,
+        reserved_flags: FloatOutBoyRealtimeReservedFlags => reserved_flags,
+        firmware_fault_code: FirmwareFaultWireCode => firmware_fault_code,
     }
 }
 
