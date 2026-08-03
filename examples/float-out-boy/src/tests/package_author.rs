@@ -7,7 +7,7 @@ use crate::domain::{
     FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
     FloatOutBoyAppDataCommand, FloatOutBoyBeepReason, FloatOutBoyChargingState,
     FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyMotorCommand,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
@@ -100,17 +100,6 @@ fn package_author_models_float_out_boy_ride_inputs_without_raw_float_handoff() {
     assert_f32_eq!(electrical_speed.rpm().as_revolutions_per_minute(), 2400.0);
     assert_f32_eq!(motor_current.current().as_amps(), 8.0);
     assert_f32_eq!(battery_current.current().as_amps(), 3.0);
-}
-
-#[test]
-fn package_author_requests_float_out_boy_motor_current_with_domain_intent() {
-    fn apply_requested_current(command: FloatOutBoyMotorCommand) -> MotorCurrent {
-        command.requested_current()
-    }
-
-    let command = FloatOutBoyMotorCommand::new(MotorCurrent::new(Current::from_amps(11.0)));
-
-    assert_f32_eq!(apply_requested_current(command).current().as_amps(), 11.0);
 }
 
 #[test]

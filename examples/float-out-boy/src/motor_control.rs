@@ -4,7 +4,7 @@
 //! and `third_party/float-out-boy/src/motor_control.h`.
 
 use crate::config::FloatOutBoyParkingBrakeMode;
-use crate::domain::{FloatOutBoyMotorCommand, FloatOutBoyRunState};
+use crate::domain::FloatOutBoyRunState;
 use vescpkg_rs::prelude::{AudioFrequency, SampleRate};
 use vescpkg_rs::prelude::{
     BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm, SYSTEM_TICK_RATE_HZ,
@@ -25,7 +25,7 @@ fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) ->
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct FloatOutBoyMotorControl {
     disabled: bool,
-    requested_current: Option<FloatOutBoyMotorCommand>,
+    requested_current: Option<MotorCurrent>,
     // Float Out Boy updates this flag before every idle motor output at
     // `third_party/float-out-boy/src/motor_control.c:66-70`.
     parking_brake_active: bool,
@@ -59,7 +59,7 @@ impl FloatOutBoyMotorControl {
     pub(crate) fn request_current(&mut self, current: MotorCurrent) {
         // Upstream `motor_control_request_current` sets the request flag and
         // stores the requested current at `third_party/float-out-boy/src/motor_control.c:44-47`.
-        self.requested_current = Some(FloatOutBoyMotorCommand::new(current));
+        self.requested_current = Some(current);
     }
 
     pub(crate) fn play_tone(
@@ -103,7 +103,7 @@ impl FloatOutBoyMotorControl {
             // `third_party/float-out-boy/src/motor_control.c:93-99`.
             motor.keep_alive();
             motor.set_current_off_delay(CURRENT_OFF_DELAY).is_ok()
-                && motor.set_current(command.requested_current()).is_ok()
+                && motor.set_current(command).is_ok()
         })
     }
 
@@ -165,9 +165,9 @@ impl FloatOutBoyMotorControl {
                     self.stop_tone();
                 }
             }
-            let requested = self.requested_current.map_or(Current::ZERO, |command| {
-                command.requested_current().current()
-            });
+            let requested = self
+                .requested_current
+                .map_or(Current::ZERO, MotorCurrent::current);
             let tone = self.tone_intensity.current();
             self.request_current(MotorCurrent::new(if self.tone_high {
                 requested + tone
