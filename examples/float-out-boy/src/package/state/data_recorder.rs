@@ -10,6 +10,7 @@ use crate::domain::{
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
@@ -28,12 +29,14 @@ fn advance_ring_index(index: usize, capacity: usize) -> usize {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(test, target_arch = "arm"))]
 struct DataRecorderSample {
     timestamp: TimestampTicks,
     flags: u8,
     values: [u16; RECORDED_VALUE_COUNT],
 }
 
+#[cfg(any(test, target_arch = "arm"))]
 impl DataRecorderSample {
     fn encode(self) -> [u8; SAMPLE_SIZE] {
         let mut bytes = [0; SAMPLE_SIZE];
@@ -46,25 +49,6 @@ impl DataRecorderSample {
         }
         bytes
     }
-
-    fn decode(bytes: [u8; SAMPLE_SIZE]) -> Self {
-        let timestamp_bytes = bytes
-            .get(..4)
-            .and_then(|source| source.try_into().ok())
-            .unwrap_or_default();
-        let timestamp = TimestampTicks::from_ticks(u32::from_be_bytes(timestamp_bytes));
-        let mut values = [0; RECORDED_VALUE_COUNT];
-        if let Some(value_bytes) = bytes.get(5..) {
-            for (value, source) in values.iter_mut().zip(value_bytes.chunks_exact(2)) {
-                *value = u16::from_be_bytes(source.try_into().unwrap_or_default());
-            }
-        }
-        Self {
-            timestamp,
-            flags: bytes[4],
-            values,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,14 +58,8 @@ enum DataRecorderAvailability {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DataRecorderActivity {
-    Stopped,
-    Recording,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DataRecorderRequest {
-    SetActivity(DataRecorderActivity),
+    SetRecording(bool),
     SetAutostart(bool),
     SetAutostop(bool),
     SendHeader,
@@ -92,14 +70,7 @@ enum DataRecorderRequest {
 impl DataRecorderRequest {
     fn parse(payload: &[u8]) -> Self {
         match payload {
-            [1, 1, value, ..] => {
-                let activity = if *value > 0 {
-                    DataRecorderActivity::Recording
-                } else {
-                    DataRecorderActivity::Stopped
-                };
-                Self::SetActivity(activity)
-            }
+            [1, 1, value, ..] => Self::SetRecording(*value > 0),
             [1, 2, value, ..] => Self::SetAutostart(*value > 0),
             [1, 3, value, ..] => Self::SetAutostop(*value > 0),
             [2, 1, ..] => Self::SendHeader,
@@ -111,21 +82,10 @@ impl DataRecorderRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct DataRecorderRing {
-    head: usize,
-    tail: usize,
-    empty: bool,
-}
-
-impl Default for DataRecorderRing {
-    fn default() -> Self {
-        Self {
-            head: 0,
-            tail: 0,
-            empty: true,
-        }
-    }
+    next: usize,
+    len: usize,
 }
 
 impl DataRecorderRing {
@@ -135,37 +95,30 @@ impl DataRecorderRing {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn write_slot(self, capacity: usize) -> Option<usize> {
-        (capacity > 0).then_some(self.head)
+        (capacity > 0).then_some(self.next)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     fn commit_write(&mut self, capacity: usize) {
-        if !self.empty && self.head == self.tail {
-            self.tail = advance_ring_index(self.tail, capacity);
-        }
-        self.head = advance_ring_index(self.head, capacity);
-        self.empty = false;
+        self.next = advance_ring_index(self.next, capacity);
+        self.len = self.len.saturating_add(1).min(capacity);
     }
 
     fn len(self, capacity: usize) -> usize {
-        if self.empty {
-            0
-        } else if self.head == self.tail {
-            capacity
-        } else if self.head > self.tail {
-            self.head.saturating_sub(self.tail)
-        } else {
-            self.head
-                .checked_add(capacity)
-                .and_then(|count| count.checked_sub(self.tail))
-                .unwrap_or(0)
-        }
+        self.len.min(capacity)
     }
 
     fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
-        (index < self.len(capacity) && capacity > 0)
-            .then(|| self.tail.checked_add(index)?.checked_rem(capacity))
-            .flatten()
+        let len = self.len(capacity);
+        if index >= len || capacity == 0 {
+            return None;
+        }
+        let oldest = self
+            .next
+            .checked_add(capacity)?
+            .checked_sub(len)?
+            .checked_rem(capacity)?;
+        oldest.checked_add(index)?.checked_rem(capacity)
     }
 }
 
@@ -176,7 +129,7 @@ mod ring_tests;
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     availability: DataRecorderAvailability,
-    activity: DataRecorderActivity,
+    recording: bool,
     autostart: bool,
     autostop: bool,
     ring: DataRecorderRing,
@@ -194,7 +147,7 @@ impl Default for DataRecorderState {
             } else {
                 DataRecorderAvailability::Unavailable
             },
-            activity: DataRecorderActivity::Stopped,
+            recording: false,
             autostart: true,
             autostop: true,
             ring: DataRecorderRing::default(),
@@ -229,7 +182,7 @@ impl DataRecorderState {
         }
 
         let mut flags = FloatOutBoyDataRecorderFlags::inactive();
-        if matches!(self.activity, DataRecorderActivity::Recording) {
+        if self.recording {
             flags = flags.with_recording();
         }
         if self.autostart {
@@ -254,15 +207,11 @@ impl DataRecorderState {
 
     fn start(&mut self) {
         self.ring.clear();
-        self.activity = if self.has_capability() {
-            DataRecorderActivity::Recording
-        } else {
-            DataRecorderActivity::Stopped
-        };
+        self.recording = self.has_capability();
     }
 
     fn stop(&mut self) {
-        self.activity = DataRecorderActivity::Stopped;
+        self.recording = false;
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -278,7 +227,7 @@ impl DataRecorderState {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: DataRecorderSample) {
-        if !self.has_capability() || !matches!(self.activity, DataRecorderActivity::Recording) {
+        if !self.has_capability() || !self.recording {
             return;
         }
         let capacity = self.capacity();
@@ -316,13 +265,12 @@ impl DataRecorderState {
         }
     }
 
-    fn sample_at(&self, index: usize) -> Option<DataRecorderSample> {
+    fn sample_at(&self, index: usize) -> Option<[u8; SAMPLE_SIZE]> {
         let capacity = self.capacity();
         let slot = self.ring.slot_at(index, capacity)?;
         let offset = slot.checked_mul(SAMPLE_SIZE)?;
         let mut bytes = [0; SAMPLE_SIZE];
-        self.read(offset, &mut bytes)
-            .then(|| DataRecorderSample::decode(bytes))
+        self.read(offset, &mut bytes).then_some(bytes)
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -442,10 +390,10 @@ impl FloatOutBoyPackageState {
         }
 
         match DataRecorderRequest::parse(payload) {
-            DataRecorderRequest::SetActivity(DataRecorderActivity::Recording) => {
+            DataRecorderRequest::SetRecording(true) => {
                 self.data_recorder.start();
             }
-            DataRecorderRequest::SetActivity(DataRecorderActivity::Stopped) => {
+            DataRecorderRequest::SetRecording(false) => {
                 self.data_recorder.stop();
             }
             DataRecorderRequest::SetAutostart(enabled) => {
@@ -473,7 +421,7 @@ impl FloatOutBoyPackageState {
                     let Some(sample) = self.data_recorder.sample_at(sample_index) else {
                         break;
                     };
-                    response.extend(&sample.encode());
+                    response.extend(&sample);
                     sample_index = sample_index.saturating_add(1);
                 }
                 if self.data_recorder.sample_count() > 0 {
