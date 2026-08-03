@@ -84,7 +84,7 @@ fn generated_field<T: Default>(value: Option<T>) -> T {
 macro_rules! generated_config_fields {
     ($(
         $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
-        offset: $offset:expr $(, scale: $scale:expr)?;
+        offset: $offset:expr $(, scale: $scale:expr)? $(, map: $map:expr)?;
     )*) => {$(
         const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
             $field_type,
@@ -94,7 +94,9 @@ macro_rules! generated_config_fields {
         );
 
         pub(crate) fn $getter(self) -> $value_type {
-            generated_field(Self::$field.read(self.0))
+            let value = generated_field(Self::$field.read(self.0));
+            $(let value = ($map)(value);)?
+            value
         }
     )*};
 }
@@ -113,22 +115,6 @@ macro_rules! generated_image_config_fields {
 
         pub(crate) fn $getter(&self) -> $value_type {
             generated_field(Self::$field.read(self))
-        }
-    )*};
-}
-
-macro_rules! generated_config_flags {
-    ($(
-        $field:ident => $getter:ident, offset: $offset:expr;
-    )*) => {$(
-        const $field: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-            CustomConfigFlagField,
-            len: FLOAT_OUT_BOY_CONFIG_LEN,
-            offset: $offset
-        );
-
-        pub(crate) fn $getter(self) -> bool {
-            self.0.flag(Self::$field)
         }
     )*};
 }
@@ -196,6 +182,9 @@ impl FloatOutBoyConfigImage {
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
         LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => low_voltage_threshold -> Voltage, offset: 61, scale: 100.0;
         BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
+        LEDS_ON_FIELD: CustomConfigFlagField => leds_enabled -> bool, offset: 175;
+        LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField => headlights_enabled -> bool, offset: 176;
+        LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField => lights_off_when_lifted -> bool, offset: 179;
     }
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
     #[cfg(any(test, target_arch = "arm"))]
@@ -218,22 +207,6 @@ impl FloatOutBoyConfigImage {
     // `SerOrder` at `third_party/float-out-boy/src/conf/settings.xml:4134-4140`.
     // The generated default image confirms the bytes at 175, 176, and 179 as
     // the default-on LEDs/headlights and lifted-lights flags.
-    const LEDS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 175
-    );
-    const LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 176
-    );
-    const LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 179
-    );
-
     pub(crate) const fn defaults() -> Self {
         Self(CustomConfigImage::new(FLOAT_OUT_BOY_DEFAULT_CONFIG))
     }
@@ -285,29 +258,13 @@ impl FloatOutBoyConfigImage {
     pub(crate) fn hardware_led_mode_id(&self) -> u8 {
         Self::HARDWARE_LED_MODE_FIELD
             .read(&self.0)
-            .map_or(0, |mode| mode.0)
+            .map_or(0, WireByte::as_u8)
     }
 
     pub(crate) fn led_configs(
         &self,
     ) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
         FloatOutBoyLedConfigDecoder::new(self.as_bytes()).decode()
-    }
-
-    pub(crate) fn leds_enabled(&self) -> bool {
-        self.flag(Self::LEDS_ON_FIELD)
-    }
-
-    pub(crate) fn headlights_enabled(&self) -> bool {
-        self.flag(Self::LEDS_HEADLIGHTS_ON_FIELD)
-    }
-
-    pub(crate) fn lights_off_when_lifted(&self) -> bool {
-        self.flag(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD)
-    }
-
-    fn flag(&self, field: CustomConfigFlagField) -> bool {
-        field.read(&self.0).unwrap_or(false)
     }
 
     config_views! {
@@ -371,7 +328,7 @@ impl FloatOutBoyConfigImage {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn input_tilt_inverted(&self) -> bool {
-        self.flag(Self::INPUT_TILT_INVERT_FIELD)
+        generated_field(Self::INPUT_TILT_INVERT_FIELD.read(self))
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -391,69 +348,20 @@ pub(crate) struct FloatOutBoyHapticConfig<'a>(&'a FloatOutBoyConfigImage);
 
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHapticConfig<'_> {
-    const DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 244, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 246, scale: 10.0);
-    const ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 248, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(CustomConfigScaledVoltageField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 250, scale: 10.0);
-    const VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField = vescpkg_rs::generated_custom_config_field!(CustomConfigFrequencyField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 252, scale: 1.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 254, scale: 10.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 256, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const CURRENT_THRESHOLD_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 258, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
-    const MIN_STRENGTH_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 260, scale: 10000.0);
-    #[cfg(any(test, target_arch = "arm"))]
+    generated_config_fields! {
+        DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField => duty_frequency -> AudioFrequency, offset: 244, scale: 1.0, map: AudioFrequency::new;
+        DUTY_STRENGTH_FIELD: CustomConfigScaledVoltageField => duty_strength -> AudioVoltage, offset: 246, scale: 10.0, map: AudioVoltage::new;
+        ERROR_FREQUENCY_FIELD: CustomConfigFrequencyField => error_frequency -> AudioFrequency, offset: 248, scale: 1.0, map: AudioFrequency::new;
+        ERROR_STRENGTH_FIELD: CustomConfigScaledVoltageField => error_strength -> AudioVoltage, offset: 250, scale: 10.0, map: AudioVoltage::new;
+        VIBRATE_FREQUENCY_FIELD: CustomConfigFrequencyField => vibrate_frequency -> AudioFrequency, offset: 252, scale: 1.0, map: AudioFrequency::new;
+        VIBRATE_STRENGTH_FIELD: CustomConfigMotorCurrentField => vibrate_strength -> MotorCurrent, offset: 254, scale: 10.0;
+        DUTY_SOLID_OFFSET_FIELD: CustomConfigRatioField => duty_solid_offset -> Ratio, offset: 256, scale: 10000.0;
+        CURRENT_THRESHOLD_FIELD: CustomConfigRatioField => current_threshold -> Ratio, offset: 258, scale: 10000.0;
+        MIN_STRENGTH_FIELD: CustomConfigRatioField => min_strength -> Ratio, offset: 260, scale: 10000.0;
+        STRENGTH_CURVATURE_FIELD: CustomConfigRatioField => strength_curvature -> Ratio, offset: 263, scale: 1000.0;
+    }
     const MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 262);
-    #[cfg(any(test, target_arch = "arm"))]
-    const STRENGTH_CURVATURE_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 263, scale: 1000.0);
 
-    pub(crate) fn duty_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::DUTY_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn duty_strength(self) -> AudioVoltage {
-        AudioVoltage::new(generated_field(Self::DUTY_STRENGTH_FIELD.read(self.0)))
-    }
-
-    pub(crate) fn error_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::ERROR_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn error_strength(self) -> AudioVoltage {
-        AudioVoltage::new(generated_field(Self::ERROR_STRENGTH_FIELD.read(self.0)))
-    }
-
-    pub(crate) fn vibrate_frequency(self) -> AudioFrequency {
-        AudioFrequency::new(generated_field(Self::VIBRATE_FREQUENCY_FIELD.read(self.0)))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn vibrate_strength(self) -> MotorCurrent {
-        generated_field(Self::VIBRATE_STRENGTH_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn duty_solid_offset(self) -> Ratio {
-        generated_field(Self::DUTY_SOLID_OFFSET_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn current_threshold(self) -> Ratio {
-        generated_field(Self::CURRENT_THRESHOLD_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn min_strength(self) -> Ratio {
-        generated_field(Self::MIN_STRENGTH_FIELD.read(self.0))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn max_strength_speed(self) -> Speed {
         generated_field(Self::MAX_STRENGTH_SPEED_FIELD.read(self.0)).scaled(
             1.0,
@@ -461,21 +369,9 @@ impl FloatOutBoyHapticConfig<'_> {
             Speed::from_kilometers_per_hour,
         )
     }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn strength_curvature(self) -> Ratio {
-        generated_field(Self::STRENGTH_CURVATURE_FIELD.read(self.0))
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyHardwareLedMode(u8);
-
-impl From<u8> for FloatOutBoyHardwareLedMode {
-    fn from(value: u8) -> Self {
-        Self(value)
-    }
-}
+type FloatOutBoyHardwareLedMode = WireByte;
 
 struct FloatOutBoyLedConfigDecoder<'a> {
     bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN],
@@ -811,8 +707,8 @@ impl FloatOutBoyMetadataConfig<'_> {
     // its `<ser>disabled</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4064`.
     // Upstream defines `meta.is_default` in `third_party/float-out-boy/src/conf/settings.xml:3903-3914`;
     // its `<ser>meta.is_default</ser>` entry at `third_party/float-out-boy/src/conf/settings.xml:4083`.
-    generated_config_flags! {
-        DISABLED_FIELD => disabled, offset: 243;
+    generated_config_fields! {
+        DISABLED_FIELD: CustomConfigFlagField => disabled -> bool, offset: 243;
     }
 
     const IS_DEFAULT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
@@ -823,7 +719,7 @@ impl FloatOutBoyMetadataConfig<'_> {
 
     #[cfg(test)]
     pub(crate) fn is_default(self) -> bool {
-        self.0.flag(Self::IS_DEFAULT_FIELD)
+        generated_field(Self::IS_DEFAULT_FIELD.read(self.0))
     }
 }
 
@@ -837,29 +733,12 @@ impl FloatOutBoyBmsConfig<'_> {
     // Generated Float Out Boy v1.2.1 serialization places `bms.enabled` after the
     // haptic fields and before the six BMS thresholds at
     // `third_party/float-out-boy/src/conf/settings.xml:4076-4082`.
-    const ENABLED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigFlagField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 265
-    );
-    const CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 266,
-        scale: 1000.0
-    );
-    const CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 268,
-        scale: 1000.0
-    );
-    const CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigScaledVoltageField,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 270,
-        scale: 1000.0
-    );
+    generated_config_fields! {
+        ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 265;
+        CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_low_voltage -> Voltage, offset: 266, scale: 1000.0;
+        CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_high_voltage -> Voltage, offset: 268, scale: 1000.0;
+        CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_balance_voltage -> Voltage, offset: 270, scale: 1000.0;
+    }
     const CELL_HIGH_TEMPERATURE_OFFSET: usize = 272;
     const CELL_LOW_TEMPERATURE_OFFSET: usize = 273;
     const BMS_HIGH_TEMPERATURE_OFFSET: usize = 274;
@@ -872,12 +751,11 @@ impl FloatOutBoyBmsConfig<'_> {
             FloatOutBoyBmsIntegration::Disabled
         }
     }
-
     pub(crate) fn thresholds(self) -> FloatOutBoyBmsThresholds {
         FloatOutBoyBmsThresholds::new(
-            generated_field(Self::CELL_LOW_VOLTAGE_FIELD.read(self.0)),
-            generated_field(Self::CELL_HIGH_VOLTAGE_FIELD.read(self.0)),
-            generated_field(Self::CELL_BALANCE_VOLTAGE_FIELD.read(self.0)),
+            self.cell_low_voltage(),
+            self.cell_high_voltage(),
+            self.cell_balance_voltage(),
             FloatOutBoyBmsTemperature::from_config_byte(
                 self.0.as_bytes()[Self::CELL_LOW_TEMPERATURE_OFFSET],
             ),
@@ -969,12 +847,12 @@ impl FloatOutBoyFaultConfig<'_> {
         DELAY_SWITCH_HALF_FIELD: CustomConfigDurationField => switch_half_delay -> VescSeconds, offset: 33;
         DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField => switch_full_delay -> VescSeconds, offset: 35;
     }
-    generated_config_flags! {
-        DUAL_SWITCH_FIELD => dual_switch, offset: 39;
-        MOVING_FAULT_DISABLED_FIELD => moving_faults_disabled, offset: 40;
-        QUICKSTOP_FIELD => quickstop_enabled, offset: 41;
-        DARKRIDE_FIELD => darkride_enabled, offset: 42;
-        REVERSESTOP_FIELD => reversestop_enabled, offset: 43;
+    generated_config_fields! {
+        DUAL_SWITCH_FIELD: CustomConfigFlagField => dual_switch -> bool, offset: 39;
+        MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField => moving_faults_disabled -> bool, offset: 40;
+        QUICKSTOP_FIELD: CustomConfigFlagField => quickstop_enabled -> bool, offset: 41;
+        DARKRIDE_FIELD: CustomConfigFlagField => darkride_enabled -> bool, offset: 42;
+        REVERSESTOP_FIELD: CustomConfigFlagField => reversestop_enabled -> bool, offset: 43;
     }
 }
 
@@ -993,9 +871,9 @@ impl FloatOutBoyStartupConfig<'_> {
         SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
     }
     const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
-    generated_config_flags! {
-        SIMPLESTART_FIELD => simplestart_enabled, offset: 98;
-        PUSHSTART_FIELD => pushstart_enabled, offset: 99;
+    generated_config_fields! {
+        SIMPLESTART_FIELD: CustomConfigFlagField => simplestart_enabled -> bool, offset: 98;
+        PUSHSTART_FIELD: CustomConfigFlagField => pushstart_enabled -> bool, offset: 99;
     }
     const DIRTY_LANDINGS_OFFSET: usize = 100;
     const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
@@ -1099,10 +977,8 @@ pub(crate) struct FloatOutBoyRemoteThrottleConfig<'a>(&'a FloatOutBoyConfigImage
 impl FloatOutBoyRemoteThrottleConfig<'_> {
     // Upstream serializes remote throttle fields immediately before startup
     // tolerances at `third_party/float-out-boy/src/conf/settings.xml:3962-3965`.
-    generated_config_flags! {
-        INVERT_THROTTLE_FIELD => invert_throttle, offset: 84;
-    }
     generated_config_fields! {
+        INVERT_THROTTLE_FIELD: CustomConfigFlagField => invert_throttle -> bool, offset: 84;
         CURRENT_MAX_FIELD: CustomConfigMotorCurrentField => current_max -> MotorCurrent, offset: 87, scale: 10.0;
         GRACE_PERIOD_FIELD: CustomConfigSecondsField => grace_period -> VescSeconds, offset: 89, scale: 10.0;
     }

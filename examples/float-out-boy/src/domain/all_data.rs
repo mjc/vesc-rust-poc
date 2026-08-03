@@ -17,14 +17,14 @@ use super::state::{
 use super::wire::{
     float_out_boy_append_all_data_mode2, float_out_boy_append_all_data_mode3,
     float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
-    float_out_boy_push_bytes, float_out_boy_push_i16, float_out_boy_push_scaled_i16,
-    float_out_boy_push_u8, float_out_boy_scaled_u8,
+    float_out_boy_scaled_u8,
 };
 use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
     FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
     FloatOutBoyRideState,
 };
+use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
     BatteryVoltage, Charge, Current, DirectionalMotorCurrent, Distance, DutyCycle, ElectricalSpeed,
@@ -73,7 +73,7 @@ impl FloatOutBoyAllDataResponse {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data attitude fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataAttitude {
@@ -83,7 +83,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data status fields.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FloatOutBoyAllDataStatus {
@@ -92,44 +92,12 @@ typed_fields! {
     }
 }
 
-/// Float Out Boy measurement that can carry a source-compatible unavailable marker.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FloatOutBoyMeasurement<T> {
-    /// A measured value is available.
-    Measured(T),
-    /// The measurement is unavailable.
-    Unavailable,
-}
-
-impl<T: Copy> FloatOutBoyMeasurement<T> {
-    /// Build an available measurement.
-    #[must_use]
-    pub const fn measured(value: T) -> Self {
-        Self::Measured(value)
-    }
-
-    /// Build an unavailable measurement.
-    #[must_use]
-    pub const fn unavailable() -> Self {
-        Self::Unavailable
-    }
-
-    /// Return the measured value, when available.
-    #[must_use]
-    pub const fn as_measured(self) -> Option<T> {
-        match self {
-            Self::Measured(value) => Some(value),
-            Self::Unavailable => None,
-        }
-    }
-}
-
 /// Float Out Boy compact all-data FOC ID current state.
 ///
 /// Unavailable values encode with the source-backed `222` marker.
-pub type FloatOutBoyFocIdCurrent = FloatOutBoyMeasurement<MotorCurrent>;
+pub type FloatOutBoyFocIdCurrent = Option<MotorCurrent>;
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data motor fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMotorPayload {
@@ -168,7 +136,7 @@ impl FloatOutBoyAllDataMotorPayload {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data base payload fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataBasePayload {
@@ -196,60 +164,29 @@ impl FloatOutBoyAllDataBasePayload {
     /// readings as typed radians and converts at this wire boundary.
     #[must_use]
     pub fn encode_base_response(&self, mode: u8) -> [u8; 34] {
-        let mut buffer = [0; 34];
-        let mut ind = 0;
+        let mut packet = FloatOutBoyPacket::new();
 
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-        );
-        float_out_boy_push_u8(&mut buffer, &mut ind, self.command().id());
-        float_out_boy_push_u8(&mut buffer, &mut ind, mode);
-        float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
-            self.balance_current.current().current().as_amps(),
-            10.0,
-        );
-        float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
+        packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+        packet.push(self.command().id());
+        packet.push(mode);
+        packet.push_scaled_i16(self.balance_current.current().current().as_amps(), 10.0);
+        packet.push_scaled_i16(
             float_out_boy_degrees(self.attitude.balance_pitch().angle()),
             10.0,
         );
-        float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
-            float_out_boy_degrees(self.attitude.roll().angle()),
-            10.0,
-        );
+        packet.push_scaled_i16(float_out_boy_degrees(self.attitude.roll().angle()), 10.0);
 
         let ride_state = self.status.ride_state;
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
+        packet.push(
             (ride_state.float_state_compat() & 0x0f)
                 | (ride_state.setpoint_adjustment_compat() << 4),
         );
 
         let handtest = matches!(ride_state.mode(), FloatOutBoyMode::HandTest);
         let switch_state = self.footpad.state().switch_compat() | u8::from(handtest) << 3;
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
-            (switch_state & 0x0f) | (self.status.beep_reason.id() << 4),
-        );
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
-            float_out_boy_scaled_u8(self.footpad.adc1_volts(), 50.0),
-        );
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
-            float_out_boy_scaled_u8(self.footpad.adc2_volts(), 50.0),
-        );
+        packet.push((switch_state & 0x0f) | (self.status.beep_reason.id() << 4));
+        packet.push(float_out_boy_scaled_u8(self.footpad.adc1_volts(), 50.0));
+        packet.push(float_out_boy_scaled_u8(self.footpad.adc2_volts(), 50.0));
 
         for setpoint in [
             self.setpoints.board(),
@@ -260,83 +197,42 @@ impl FloatOutBoyAllDataBasePayload {
             self.setpoints.remote(),
         ] {
             let value = float_out_boy_offset_scaled_u8(setpoint.angle().as_degrees(), 5.0, 128.0);
-            float_out_boy_push_u8(&mut buffer, &mut ind, value);
+            packet.push(value);
         }
 
-        float_out_boy_push_scaled_i16(
-            &mut buffer,
-            &mut ind,
-            float_out_boy_degrees(self.attitude.pitch().angle()),
-            10.0,
-        );
-        float_out_boy_push_u8(
-            &mut buffer,
-            &mut ind,
-            float_out_boy_offset_scaled_u8(
-                self.booster_current.current().current().as_amps(),
-                1.0,
-                128.0,
-            ),
-        );
-        self.encode_motor_response(&mut buffer, &mut ind);
+        packet.push_scaled_i16(float_out_boy_degrees(self.attitude.pitch().angle()), 10.0);
+        packet.push(float_out_boy_offset_scaled_u8(
+            self.booster_current.current().current().as_amps(),
+            1.0,
+            128.0,
+        ));
+        self.encode_motor_response(&mut packet);
 
-        buffer
+        packet.into_bytes()
     }
 
-    fn encode_motor_response(&self, buffer: &mut [u8], ind: &mut usize) {
-        float_out_boy_push_scaled_i16(
-            buffer,
-            ind,
-            self.motor.battery_voltage().voltage().as_volts(),
-            10.0,
-        );
-        float_out_boy_push_i16(
-            buffer,
-            ind,
-            crate::wire::saturating_trunc_f32_to_i16(
-                self.motor
-                    .electrical_speed()
-                    .rpm()
-                    .as_revolutions_per_minute(),
-            ),
-        );
-        float_out_boy_push_scaled_i16(
-            buffer,
-            ind,
+    fn encode_motor_response<const N: usize>(&self, packet: &mut FloatOutBoyPacket<N>) {
+        packet.push_scaled_i16(self.motor.battery_voltage().voltage().as_volts(), 10.0);
+        packet.push_i16(crate::wire::saturating_trunc_f32_to_i16(
+            self.motor
+                .electrical_speed()
+                .rpm()
+                .as_revolutions_per_minute(),
+        ));
+        packet.push_scaled_i16(
             self.motor.vehicle_speed().speed().as_meters_per_second(),
             10.0,
         );
-        float_out_boy_push_scaled_i16(
-            buffer,
-            ind,
-            self.motor.motor_current().current().as_amps(),
-            10.0,
-        );
-        float_out_boy_push_scaled_i16(
-            buffer,
-            ind,
-            self.motor.battery_current().current().as_amps(),
-            10.0,
-        );
-        float_out_boy_push_u8(
-            buffer,
-            ind,
-            float_out_boy_offset_scaled_u8(
-                self.motor.duty_cycle().ratio().as_ratio(),
-                100.0,
-                128.0,
-            ),
-        );
-        float_out_boy_push_u8(
-            buffer,
-            ind,
-            self.motor
-                .foc_id_current()
-                .as_measured()
-                .map_or(222, |current| {
-                    float_out_boy_scaled_u8(current.current().as_amps().abs(), 3.0)
-                }),
-        );
+        packet.push_scaled_i16(self.motor.motor_current().current().as_amps(), 10.0);
+        packet.push_scaled_i16(self.motor.battery_current().current().as_amps(), 10.0);
+        packet.push(float_out_boy_offset_scaled_u8(
+            self.motor.duty_cycle().ratio().as_ratio(),
+            100.0,
+            128.0,
+        ));
+        packet.push(self.motor.foc_id_current().map_or(222, |current| {
+            float_out_boy_scaled_u8(current.current().as_amps().abs(), 3.0)
+        }));
     }
 
     /// Encode the compact all-data mode 4 response bytes.
@@ -357,14 +253,12 @@ impl FloatOutBoyAllDataBasePayload {
         mode: FloatOutBoyAllDataMode,
         mode2: FloatOutBoyAllDataMode2Payload,
     ) -> [u8; 41] {
-        let mut buffer = [0; 41];
+        let mut packet = FloatOutBoyPacket::new();
         let base = self.encode_base_response(mode.source_id());
-        let mut ind = 0;
-        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
+        packet.extend(&base);
+        float_out_boy_append_all_data_mode2(&mut packet, mode2);
 
-        float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
-
-        buffer
+        packet.into_bytes()
     }
 
     /// Encode the compact all-data mode 3 response bytes.
@@ -375,15 +269,13 @@ impl FloatOutBoyAllDataBasePayload {
         mode2: FloatOutBoyAllDataMode2Payload,
         mode3: FloatOutBoyAllDataMode3Payload,
     ) -> [u8; 54] {
-        let mut buffer = [0; 54];
+        let mut packet = FloatOutBoyPacket::new();
         let base = self.encode_base_response(mode.source_id());
-        let mut ind = 0;
-        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
+        packet.extend(&base);
+        float_out_boy_append_all_data_mode2(&mut packet, mode2);
+        float_out_boy_append_all_data_mode3(&mut packet, mode3);
 
-        float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
-        float_out_boy_append_all_data_mode3(&mut buffer, &mut ind, mode3);
-
-        buffer
+        packet.into_bytes()
     }
 
     fn encode_mode4_response_for_mode(
@@ -393,16 +285,14 @@ impl FloatOutBoyAllDataBasePayload {
         mode3: FloatOutBoyAllDataMode3Payload,
         mode4: FloatOutBoyAllDataMode4Payload,
     ) -> [u8; 58] {
-        let mut buffer = [0; 58];
+        let mut packet = FloatOutBoyPacket::new();
         let base = self.encode_base_response(mode);
-        let mut ind = 0;
-        float_out_boy_push_bytes(&mut buffer, &mut ind, &base);
+        packet.extend(&base);
+        float_out_boy_append_all_data_mode2(&mut packet, mode2);
+        float_out_boy_append_all_data_mode3(&mut packet, mode3);
+        float_out_boy_append_all_data_mode4(&mut packet, mode4);
 
-        float_out_boy_append_all_data_mode2(&mut buffer, &mut ind, mode2);
-        float_out_boy_append_all_data_mode3(&mut buffer, &mut ind, mode3);
-        float_out_boy_append_all_data_mode4(&mut buffer, &mut ind, mode4);
-
-        buffer
+        packet.into_bytes()
     }
 
     /// Return base all-data fields with refreshed motor battery voltage.
@@ -415,7 +305,7 @@ impl FloatOutBoyAllDataBasePayload {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataPayloads {
@@ -476,7 +366,7 @@ impl FloatOutBoyAllDataPayloads {
                         zero_battery_current,
                     ),
                     DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-                    FloatOutBoyFocIdCurrent::unavailable(),
+                    None,
                 ),
             ),
             FloatOutBoyAllDataMode2Payload::new(
@@ -485,7 +375,7 @@ impl FloatOutBoyAllDataPayloads {
                     MosfetTemperature::new(Temperature::from_degrees_celsius(0.0)),
                     MotorTemperature::new(Temperature::from_degrees_celsius(0.0)),
                 ),
-                FloatOutBoyAllDataBatteryTemperature::unavailable(),
+                None,
             ),
             FloatOutBoyAllDataMode3Payload::new(
                 OdometerMeters::from_meters(0),
@@ -566,9 +456,9 @@ impl FloatOutBoyAllDataPayloads {
 /// Float Out Boy all-data battery-temperature state.
 ///
 /// Unavailable values encode with Float Out Boy `v1.2.1`'s zero placeholder.
-pub type FloatOutBoyAllDataBatteryTemperature = FloatOutBoyMeasurement<Temperature>;
+pub type FloatOutBoyAllDataBatteryTemperature = Option<Temperature>;
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 2 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode2Payload {
@@ -578,7 +468,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 3 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode3Payload {
@@ -591,7 +481,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 4 extension fields.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode4Payload {

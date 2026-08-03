@@ -2,14 +2,13 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS, FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS,
     FloatOutBoyAlertId, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
-    FloatOutBoyAllDataBatteryTemperature, FloatOutBoyAllDataMode, FloatOutBoyAllDataMode2Payload,
-    FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload,
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest, FloatOutBoyAllDataRequestError,
-    FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
-    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFocIdCurrent,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyMotorCommand,
-    FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeAlwaysPayload,
+    FloatOutBoyAllDataMode, FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload,
+    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
+    FloatOutBoyAllDataRequest, FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse,
+    FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyBeepReason,
+    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags,
+    FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyMotorCommand, FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeAlwaysPayload,
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeChargingCurrent,
@@ -596,7 +595,7 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
             BatteryCurrent::new(Current::from_amps(3.75)),
         ),
         DutyCycle::new(SignedRatio::from_ratio_const(0.34)),
-        FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(1.5))),
+        Some(MotorCurrent::new(Current::from_amps(1.5))),
     );
     let payload = FloatOutBoyAllDataBasePayload::new(
         FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.5))),
@@ -635,7 +634,6 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         payload
             .motor()
             .foc_id_current()
-            .as_measured()
             .expect("FOC ID current should be measured")
             .current()
             .as_amps(),
@@ -651,7 +649,7 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
             MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
             MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
         ),
-        FloatOutBoyAllDataBatteryTemperature::unavailable(),
+        None,
     );
     let mode3 = FloatOutBoyAllDataMode3Payload::new(
         OdometerMeters::from_meters(123_456),
@@ -675,7 +673,7 @@ fn package_author_builds_all_data_extension_payloads_without_raw_values() {
             .as_degrees_celsius(),
         44.0
     );
-    assert!(mode2.battery_temperature().as_measured().is_none());
+    assert!(mode2.battery_temperature().is_none());
     assert_eq!(mode3.odometer().as_meters(), 123_456);
     assert_f32_eq!(mode3.discharged_charge().charge().as_amp_hours(), 3.2);
     assert_f32_eq!(mode3.charged_charge().charge().as_amp_hours(), 0.8);
@@ -731,7 +729,7 @@ fn package_author_encodes_all_data_base_response_like_float_out_boy_v1_2_1() {
                 BatteryCurrent::new(Current::from_amps(-2.0)),
             ),
             DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-            FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+            Some(MotorCurrent::new(Current::from_amps(2.0))),
         ),
     );
 
@@ -797,7 +795,7 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
                 BatteryCurrent::new(Current::from_amps(-2.0)),
             ),
             DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-            FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+            Some(MotorCurrent::new(Current::from_amps(2.0))),
         ),
     );
     let mode2 = FloatOutBoyAllDataMode2Payload::new(
@@ -806,7 +804,7 @@ fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
             MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
             MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
         ),
-        FloatOutBoyAllDataBatteryTemperature::unavailable(),
+        None,
     );
     let mode3 = FloatOutBoyAllDataMode3Payload::new(
         OdometerMeters::from_meters(123_456),
@@ -876,7 +874,7 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
                     BatteryCurrent::new(Current::from_amps(-2.0)),
                 ),
                 DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-                FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+                Some(MotorCurrent::new(Current::from_amps(2.0))),
             ),
         ),
         FloatOutBoyAllDataMode2Payload::new(
@@ -885,7 +883,7 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
                 MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
                 MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
             ),
-            FloatOutBoyAllDataBatteryTemperature::unavailable(),
+            None,
         ),
         FloatOutBoyAllDataMode3Payload::new(
             OdometerMeters::from_meters(123_456),

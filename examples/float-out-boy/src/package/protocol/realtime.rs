@@ -1,8 +1,4 @@
-use super::wire::float_out_boy_realtime_push_float32_auto;
-use super::wire::{
-    float_out_boy_degrees, float_out_boy_realtime_push_u8, float_out_boy_realtime_push_u32,
-    push_float_out_boy_float16,
-};
+use super::wire::{float_out_boy_degrees, push_float_out_boy_float16};
 use crate::domain::FloatOutBoyMode;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
@@ -12,6 +8,7 @@ use crate::domain::{
 };
 #[cfg(test)]
 use crate::domain::{FloatOutBoyRealtimeAlertMask, FloatOutBoyRealtimeReservedFlags};
+use crate::wire::FloatOutBoyPacket;
 #[cfg(test)]
 use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
@@ -24,18 +21,8 @@ const FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY: usize = 77;
 
 /// Variable-length Float Out Boy `COMMAND_REALTIME_DATA` response bytes from
 /// `third_party/float-out-boy/src/main.c:1904-1960`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::package) struct FloatOutBoyRealtimeDataResponse {
-    bytes: [u8; FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY],
-    len: usize,
-}
-
-impl FloatOutBoyRealtimeDataResponse {
-    /// Return the encoded response bytes actually sent on the app-data wire.
-    pub(in crate::package) fn as_bytes(&self) -> &[u8] {
-        self.bytes.get(..self.len).unwrap_or(&self.bytes)
-    }
-}
+pub(in crate::package) type FloatOutBoyRealtimeDataResponse =
+    FloatOutBoyPacket<FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY>;
 
 #[inline(never)]
 #[cfg(test)]
@@ -57,8 +44,7 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
     atr_accel_diff: f32,
 ) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
-    let mut bytes = [0; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN];
-    let mut ind = 0;
+    let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
     let ride_state = base.status().ride_state();
     let footpad = base.footpad();
@@ -71,47 +57,20 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     // writes this legacy 72-byte payload at `third_party/float-out-boy/src/main.c:1267-1310`.
     // Its IMU fields are degree-valued because `imu_update` converts them at
     // `third_party/float-out-boy/src/imu.c:35-41`.
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-    );
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        FloatOutBoyAppDataCommand::GetRealtimeData.id(),
-    );
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FloatOutBoyAppDataCommand::GetRealtimeData.id());
+    packet.push_float32_auto(base.balance_current().current().current().as_amps());
+    packet.push_float32_auto(float_out_boy_degrees(attitude.balance_pitch().angle()));
+    packet.push_float32_auto(float_out_boy_degrees(attitude.roll().angle()));
 
-    float_out_boy_realtime_push_float32_auto(
-        &mut bytes,
-        &mut ind,
-        base.balance_current().current().current().as_amps(),
-    );
-    float_out_boy_realtime_push_float32_auto(
-        &mut bytes,
-        &mut ind,
-        float_out_boy_degrees(attitude.balance_pitch().angle()),
-    );
-    float_out_boy_realtime_push_float32_auto(
-        &mut bytes,
-        &mut ind,
-        float_out_boy_degrees(attitude.roll().angle()),
-    );
-
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
+    packet.push(
         (ride_state.float_state_compat() & 0x0f) | (ride_state.setpoint_adjustment_compat() << 4),
     );
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        (switch_state & 0x0f) | (base.status().beep_reason().id() << 4),
-    );
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc1_volts());
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, footpad.adc2_volts());
+    packet.push((switch_state & 0x0f) | (base.status().beep_reason().id() << 4));
+    packet.push_float32_auto(footpad.adc1_volts());
+    packet.push_float32_auto(footpad.adc2_volts());
 
     [
         setpoints.board(),
@@ -123,47 +82,23 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     ]
     .into_iter()
     .map(|setpoint| setpoint.angle().as_degrees())
-    .for_each(|value| float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, value));
+    .for_each(|value| packet.push_float32_auto(value));
 
-    float_out_boy_realtime_push_float32_auto(
-        &mut bytes,
-        &mut ind,
-        float_out_boy_degrees(attitude.pitch().angle()),
-    );
+    packet.push_float32_auto(float_out_boy_degrees(attitude.pitch().angle()));
     // Upstream reads `d->motor.filt_current`, `d->atr.accel_diff`, and
     // `d->motor.dir_current` at `third_party/float-out-boy/src/main.c:1298-1306`.
-    float_out_boy_realtime_push_float32_auto(
-        &mut bytes,
-        &mut ind,
-        motor.filtered_motor_current().current().current().as_amps(),
-    );
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, atr_accel_diff);
+    packet.push_float32_auto(motor.filtered_motor_current().current().current().as_amps());
+    packet.push_float32_auto(atr_accel_diff);
     if matches!(ride_state.charging(), FloatOutBoyChargingState::Charging) {
-        float_out_boy_realtime_push_float32_auto(
-            &mut bytes,
-            &mut ind,
-            payloads.mode4().current().current().current().as_amps(),
-        );
-        float_out_boy_realtime_push_float32_auto(
-            &mut bytes,
-            &mut ind,
-            payloads.mode4().voltage().voltage().voltage().as_volts(),
-        );
+        packet.push_float32_auto(payloads.mode4().current().current().current().as_amps());
+        packet.push_float32_auto(payloads.mode4().voltage().voltage().voltage().as_volts());
     } else {
-        float_out_boy_realtime_push_float32_auto(
-            &mut bytes,
-            &mut ind,
-            base.booster_current().current().current().as_amps(),
-        );
-        float_out_boy_realtime_push_float32_auto(
-            &mut bytes,
-            &mut ind,
-            motor.directional_motor_current().current().as_amps(),
-        );
+        packet.push_float32_auto(base.booster_current().current().current().as_amps());
+        packet.push_float32_auto(motor.directional_motor_current().current().as_amps());
     }
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut ind, remote_input.ratio().as_ratio());
+    packet.push_float32_auto(remote_input.ratio().as_ratio());
 
-    bytes
+    packet.into_bytes()
 }
 
 #[inline(never)]
@@ -202,8 +137,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     atr_accel_diff: f32,
     atr_speed_boost: f32,
 ) -> FloatOutBoyRealtimeDataResponse {
-    let mut bytes = [0; FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY];
-    let mut ind = 0;
+    let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
     let ride_state = base.status().ride_state();
     let running = matches!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -211,32 +145,21 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
 
     // Upstream `cmd_realtime_data` writes the realtime packet in
     // `third_party/float-out-boy/src/main.c:1904-1960`; QML consumes it at `ui.qml.in:853-925`.
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-    );
-    float_out_boy_realtime_push_u8(
-        &mut bytes,
-        &mut ind,
-        FloatOutBoyAppDataCommand::RealtimeData.id(),
-    );
-
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.data_mask_compat());
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.extra_flags_compat());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FloatOutBoyAppDataCommand::RealtimeData.id());
+    packet.push(header.data_mask_compat());
+    packet.push(header.extra_flags_compat());
     // Upstream writes `d->time.now` at `third_party/float-out-boy/src/main.c:1931`; VESC timestamps are
     // represented as 100 us system ticks.
-    float_out_boy_realtime_push_u32(&mut bytes, &mut ind, header.timestamp().as_ticks());
-
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.state_byte_compat());
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.footpad_flags_compat());
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.stop_setpoint_byte_compat());
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, header.beep_reason_compat());
+    packet.push_u32(header.timestamp().as_ticks());
+    packet.push(header.state_byte_compat());
+    packet.push(header.footpad_flags_compat());
+    packet.push(header.stop_setpoint_byte_compat());
+    packet.push(header.beep_reason_compat());
 
     for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
         push_float_out_boy_float16(
-            &mut bytes,
-            &mut ind,
+            &mut packet,
             realtime_value(
                 payloads,
                 item,
@@ -249,8 +172,7 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     if running {
         for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
             push_float_out_boy_float16(
-                &mut bytes,
-                &mut ind,
+                &mut packet,
                 realtime_value(
                     payloads,
                     item,
@@ -263,30 +185,20 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     }
     if charging {
         push_float_out_boy_float16(
-            &mut bytes,
-            &mut ind,
+            &mut packet,
             payloads.mode4().current().current().current().as_amps(),
         );
         push_float_out_boy_float16(
-            &mut bytes,
-            &mut ind,
+            &mut packet,
             payloads.mode4().voltage().voltage().voltage().as_volts(),
         );
     }
 
-    float_out_boy_realtime_push_u32(
-        &mut bytes,
-        &mut ind,
-        tail.active_alerts().active_alert_mask_compat(),
-    );
-    float_out_boy_realtime_push_u32(
-        &mut bytes,
-        &mut ind,
-        tail.reserved_flags().extra_flags_compat(),
-    );
-    float_out_boy_realtime_push_u8(&mut bytes, &mut ind, tail.firmware_fault_code().wire_code());
+    packet.push_u32(tail.active_alerts().active_alert_mask_compat());
+    packet.push_u32(tail.reserved_flags().extra_flags_compat());
+    packet.push(tail.firmware_fault_code().wire_code());
 
-    FloatOutBoyRealtimeDataResponse { bytes, len: ind }
+    packet
 }
 
 pub(in crate::package) fn realtime_value(

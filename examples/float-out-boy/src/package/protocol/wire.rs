@@ -3,6 +3,7 @@
 //! C map: app-data packet encoders forward through Float Out Boy buffer helpers in
 //! `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
+use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::prelude::AngleRadians;
 
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
@@ -11,10 +12,13 @@ pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
     crate::wire::degrees(angle)
 }
 
-pub(super) fn push_float_out_boy_float16(buffer: &mut [u8], ind: &mut usize, value: f32) {
+pub(super) fn push_float_out_boy_float16<const N: usize>(
+    packet: &mut FloatOutBoyPacket<N>,
+    value: f32,
+) {
     // Float Out Boy forwards through `buffer_append_float16_auto` at
     // `third_party/float-out-boy/src/conf/buffer.c:143-145`, which writes `to_float16` big-endian.
-    float_out_boy_realtime_push_u16(buffer, ind, encode_float_out_boy_float16(value));
+    packet.push_u16(encode_float_out_boy_float16(value));
 }
 
 #[must_use]
@@ -43,37 +47,6 @@ pub(in crate::package) fn encode_float_out_boy_float16(value: f32) -> u16 {
     let saturated = if exponent > 143 { 0x7fff } else { 0 };
     let encoded = ((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated;
     u16::try_from(encoded).unwrap_or(u16::MAX)
-}
-
-pub(super) fn float_out_boy_realtime_push_float32_auto(
-    buffer: &mut [u8],
-    ind: &mut usize,
-    value: f32,
-) {
-    // Float Out Boy forwards through `buffer_append_float32_auto` at
-    // `third_party/float-out-boy/src/conf/buffer.c:118-140`, preserving its exact
-    // `1.5e-38` cutoff before big-endian encoding.
-    crate::wire::push_float32_auto(buffer, ind, value);
-}
-
-pub(in crate::package) fn float_out_boy_realtime_push_u32(
-    buffer: &mut [u8],
-    ind: &mut usize,
-    value: u32,
-) {
-    crate::wire::push_u32(buffer, ind, value);
-}
-
-fn float_out_boy_realtime_push_u16(buffer: &mut [u8], ind: &mut usize, value: u16) {
-    crate::wire::push_u16(buffer, ind, value);
-}
-
-pub(in crate::package) fn float_out_boy_realtime_push_u8(
-    buffer: &mut [u8],
-    ind: &mut usize,
-    value: u8,
-) {
-    crate::wire::push_u8(buffer, ind, value);
 }
 
 #[cfg(test)]

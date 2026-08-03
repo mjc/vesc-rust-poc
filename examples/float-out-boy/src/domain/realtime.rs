@@ -141,7 +141,7 @@ realtime_data_items! {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `motor.filt_current` realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -150,7 +150,7 @@ typed_newtype! {
     current;
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `imu.balance_pitch` realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -167,7 +167,7 @@ impl FloatOutBoyRealtimeBalancePitch {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `remote.input` realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -176,7 +176,7 @@ typed_newtype! {
     ratio;
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime motor-current values that are always sent.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeMotorCurrents {
@@ -187,7 +187,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime motor-temperature values that are always sent.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeMotorTemperatures {
@@ -196,7 +196,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime motor payload values that are always sent.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeMotorPayload {
@@ -209,7 +209,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime IMU payload values that are always sent.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeImuPayload {
@@ -219,7 +219,7 @@ typed_fields! {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime payload values that are always sent.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeAlwaysPayload {
@@ -238,7 +238,7 @@ impl FloatOutBoyRealtimeAlwaysPayload {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy runtime setpoint angle value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -247,7 +247,7 @@ typed_newtype! {
     angle;
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy runtime setpoint values sent only while running.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeRuntimeSetpoints {
@@ -260,7 +260,7 @@ typed_fields! {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `balance_current` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -269,7 +269,7 @@ typed_newtype! {
     current;
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `atr.accel_diff` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     #[repr(transparent)]
@@ -278,7 +278,7 @@ typed_newtype! {
     as_erpm_delta;
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `atr.speed_boost` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     #[repr(transparent)]
@@ -287,7 +287,7 @@ typed_newtype! {
     as_units;
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy runtime ATR payload values.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeRuntimeAtrPayload {
@@ -296,7 +296,7 @@ typed_fields! {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `booster.current` runtime realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -305,7 +305,7 @@ typed_newtype! {
     current;
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime payload values sent only while running.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeRuntimePayload {
@@ -324,7 +324,7 @@ impl FloatOutBoyRealtimeRuntimePayload {
     }
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `charging.current` realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -333,7 +333,7 @@ typed_newtype! {
     current;
 }
 
-typed_newtype! {
+vescpkg_rs::typed_newtype! {
     /// Float Out Boy `charging.voltage` realtime value.
     #[derive(Debug, Clone, Copy, PartialEq)]
     #[repr(transparent)]
@@ -342,7 +342,7 @@ typed_newtype! {
     voltage;
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime charging payload values.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeChargingPayload {
@@ -424,7 +424,7 @@ impl FloatOutBoyRealtimeReservedFlags {
     }
 }
 
-typed_fields! {
+vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime tail fields appended after conditional payload values.
     ///
     /// Source map: upstream appends active-alert mask, reserved flags, and firmware

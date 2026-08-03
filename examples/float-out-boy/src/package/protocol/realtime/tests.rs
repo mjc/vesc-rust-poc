@@ -1,6 +1,9 @@
 use super::super::super::test_support::sample_all_data_payloads;
 use super::*;
-use crate::domain::{FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload};
+use crate::domain::{
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
+    FloatOutBoyChargingState,
+};
 use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
 
 fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPayloads {
@@ -117,14 +120,54 @@ fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
 }
 
 #[test]
+fn command_31_running_charging_preserves_the_fault_tail_at_capacity() {
+    let payloads = sample_all_data_payloads();
+    let base = payloads.base();
+    let ride_state = base
+        .status()
+        .ride_state()
+        .with_charging(FloatOutBoyChargingState::Charging);
+    let base = FloatOutBoyAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
+        base.footpad(),
+        base.setpoints(),
+        base.booster_current(),
+        base.motor(),
+    );
+    let payloads = payloads.with_base(base);
+    let response = encode_float_out_boy_realtime_data_response_with_runtime(
+        &payloads,
+        FloatOutBoyRealtimeDataHeader::new(
+            TimestampTicks::from_ticks(0),
+            ride_state,
+            payloads.base().footpad().state(),
+            payloads.base().status().beep_reason(),
+        ),
+        FloatOutBoyRealtimeTail::new(true, FirmwareFaultWireCode::from_wire_code(0x2a)),
+        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
+            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
+        ),
+        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
+        FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
+    );
+
+    assert_eq!(response.len(), 77);
+    assert_eq!(response.as_bytes().len(), response.len());
+    assert_eq!(&response.as_bytes()[68..72], &[0, 0, 0, 1]);
+    assert_eq!(&response.as_bytes()[72..76], &[0, 0, 0, 0]);
+    assert_eq!(response.as_bytes()[76], 0x2a);
+}
+
+#[test]
 fn float32_auto_zeros_small_normal_like_float_out_boy() {
     let value = 1.25e-38_f32;
-    let mut bytes = [0xff; 4];
-    let mut index = 0;
+    let mut packet = crate::wire::FloatOutBoyPacket::<4>::new();
 
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut index, value);
+    packet.push_float32_auto(value);
 
-    assert_eq!((value.is_normal(), index, bytes), (true, 4, [0; 4]));
+    assert_eq!((value.is_normal(), packet.into_bytes()), (true, [0; 4]));
 }
 
 #[test]

@@ -1,8 +1,6 @@
-use super::super::protocol::wire::{
-    float_out_boy_realtime_push_u8, float_out_boy_realtime_push_u32,
-};
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
 
@@ -26,52 +24,35 @@ impl FloatOutBoyPackageState {
                 }
                 _ => TimestampTicks::from_ticks(0),
             };
-            let mut response = [0; ALERTS_RESPONSE_CAPACITY];
-            let mut index = 0;
-            float_out_boy_realtime_push_u8(
-                &mut response,
-                &mut index,
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            );
-            float_out_boy_realtime_push_u8(
-                &mut response,
-                &mut index,
-                FloatOutBoyAppDataCommand::AlertsList.id(),
-            );
-            float_out_boy_realtime_push_u32(
-                &mut response,
-                &mut index,
+            let mut response = FloatOutBoyPacket::<ALERTS_RESPONSE_CAPACITY>::new();
+            response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+            response.push(FloatOutBoyAppDataCommand::AlertsList.id());
+            response.push_u32(
                 self.alert_tracker
                     .active_alerts()
                     .active_alert_mask_compat(),
             );
-            float_out_boy_realtime_push_u32(&mut response, &mut index, 0);
+            response.push_u32(0);
             let fault = self.alert_tracker.firmware_fault_code();
-            float_out_boy_realtime_push_u8(&mut response, &mut index, fault.wire_code());
-            push_fault_name(&mut response, &mut index, telemetry, fault);
-            let count_index = index;
-            float_out_boy_realtime_push_u8(&mut response, &mut index, 0);
+            response.push(fault.wire_code());
+            push_fault_name(&mut response, telemetry, fault);
+            let count_index = response.len();
+            response.push(0);
             let mut count = 0_u8;
             self.alert_tracker.for_each_record_since(since, |record| {
-                if response.len().saturating_sub(index) < 58 {
+                if response.remaining() < 58 {
                     return false;
                 }
-                float_out_boy_realtime_push_u32(
-                    &mut response,
-                    &mut index,
-                    record.timestamp.as_ticks(),
-                );
-                float_out_boy_realtime_push_u8(&mut response, &mut index, record.id.id());
-                float_out_boy_realtime_push_u8(&mut response, &mut index, u8::from(record.active));
-                float_out_boy_realtime_push_u8(&mut response, &mut index, record.code.wire_code());
-                push_fault_name(&mut response, &mut index, telemetry, record.code);
+                response.push_u32(record.timestamp.as_ticks());
+                response.push(record.id.id());
+                response.push(u8::from(record.active));
+                response.push(record.code.wire_code());
+                push_fault_name(&mut response, telemetry, record.code);
                 count = count.saturating_add(1);
                 true
             });
-            if let Some(count_slot) = response.get_mut(count_index) {
-                *count_slot = count;
-            }
-            return response.get(..index).is_some_and(reply);
+            let _ = response.set(count_index, count);
+            return reply(response.as_bytes());
         }
 
         if let Some(payload) =
@@ -87,9 +68,8 @@ impl FloatOutBoyPackageState {
     }
 }
 
-fn push_fault_name(
-    buffer: &mut [u8],
-    index: &mut usize,
+fn push_fault_name<const N: usize>(
+    packet: &mut FloatOutBoyPacket<N>,
     telemetry: &impl MotorTelemetry,
     code: FirmwareFaultWireCode,
 ) {
@@ -103,8 +83,8 @@ fn push_fault_name(
             .unwrap_or_default()
             .as_bytes(),
     );
-    float_out_boy_realtime_push_u8(buffer, index, u8::try_from(name.len()).unwrap_or(u8::MAX));
-    crate::wire::push_bytes(buffer, index, name);
+    packet.push(u8::try_from(name.len()).unwrap_or(u8::MAX));
+    packet.extend(name);
 }
 
 fn bounded_fault_name(name: &[u8]) -> &[u8] {
