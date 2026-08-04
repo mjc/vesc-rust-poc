@@ -271,7 +271,7 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
-pub use numeric::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
+pub use numeric::{FixedRingIndex, MotorKinematics, SmoothAngle, angle_step, slew_toward};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.

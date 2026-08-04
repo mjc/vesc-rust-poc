@@ -111,7 +111,9 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
-    state.motor_kinematics.record(motor_erpm);
+    state
+        .motor_kinematics
+        .record(motor_erpm, super::motor_kinematics::ABS_ERPM_SMOOTHING);
     let motor = FloatOutBoyAllDataMotorPayload::new(
         BatteryVoltage::new(telemetry.input_voltage().voltage()),
         electrical_speed,
