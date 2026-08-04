@@ -238,7 +238,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.next().is_some() {
         return Err("usage: production-rust INPUT OUTPUT".into());
     }
-    copy_production_rust(&input, &output, &input)?;
+    if input.is_file() {
+        fs::create_dir_all(output.parent().ok_or("output file has no parent")?)?;
+        fs::write(output, without_tests(&fs::read_to_string(input)?))?;
+    } else {
+        copy_production_rust(&input, &output, &input)?;
+    }
     Ok(())
 }
 
