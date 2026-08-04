@@ -18,20 +18,8 @@ fn float_out_boy_runtime_threads_reserve_their_measured_rust_working_areas() {
     // The persisted-config call chain measured 1976 bytes before ChibiOS's
     // thread metadata, saved contexts, and interrupt reserve. The aux LED
     // reconfiguration chain measures 1948 bytes.
-    assert_eq!(
-        super::FloatOutBoyRuntimeThread::Main
-            .working_area_size()
-            .expect("valid main working area")
-            .usable_stack_bytes(),
-        2_656,
-    );
-    assert_eq!(
-        super::FloatOutBoyRuntimeThread::Aux
-            .working_area_size()
-            .expect("valid aux working area")
-            .usable_stack_bytes(),
-        2_656,
-    );
+    let working_area = super::float_out_boy_working_area().expect("valid working area");
+    assert_eq!(working_area.usable_stack_bytes(), 2_656);
 }
 
 #[test]
@@ -105,7 +93,7 @@ fn float_out_boy_main_thread_tick_applies_motor_control_like_float_out_boy_loop(
             AdcVoltage::new(Voltage::from_volts(0.0)),
             TimestampTicks::from_ticks(0),
         )
-        .sleep_us()
+        .sleep_us
     });
 
     // Upstream `float_out_boy_thd` applies motor control after the state switch at
@@ -201,7 +189,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
             AdcVoltage::new(Voltage::ZERO),
             TimestampTicks::from_ticks(0),
         );
-        if let Some(level) = result.beeper_level() {
+        if let Some(level) = result.beeper_pin_level {
             changes.push((tick, level));
         }
     }
@@ -306,7 +294,7 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
         AdcVoltage::new(Voltage::ZERO),
         TimestampTicks::from_ticks(1),
     );
-    assert_eq!(warning.beeper_level(), Some(DigitalOutputLevel::High));
+    assert_eq!(warning.beeper_pin_level, Some(DigitalOutputLevel::High));
     assert_eq!(
         state.all_data_payloads().base().status().beep_reason(),
         FloatOutBoyBeepReason::Sensors
@@ -321,7 +309,7 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
         AdcVoltage::new(Voltage::from_volts(3.0)),
         TimestampTicks::from_ticks(2),
     );
-    assert_eq!(restored.beeper_level(), Some(DigitalOutputLevel::Low));
+    assert_eq!(restored.beeper_pin_level, Some(DigitalOutputLevel::Low));
 }
 
 #[test]
@@ -359,7 +347,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
             AdcVoltage::new(Voltage::from_volts(3.0)),
             TimestampTicks::from_ticks(*tick),
         )
-        .beeper_level()
+        .beeper_pin_level
             == Some(DigitalOutputLevel::High)
     });
 
@@ -400,7 +388,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
             AdcVoltage::new(Voltage::from_volts(3.0)),
             TimestampTicks::from_ticks(*tick),
         )
-        .beeper_level()
+        .beeper_pin_level
             == Some(DigitalOutputLevel::Low)
     });
     assert!(release_tick.is_some());
