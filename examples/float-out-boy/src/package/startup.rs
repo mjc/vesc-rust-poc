@@ -27,7 +27,7 @@ fn allocate_float_out_boy_startup_state(
             })
             .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
     }
-    #[cfg(not(target_arch = "arm"))]
+    #[cfg(test)]
     {
         Ok(())
     }

@@ -1,7 +1,7 @@
-#[cfg(not(target_arch = "arm"))]
+#[cfg(test)]
 use crate::leds::{FloatOutBoyLedPin, FloatOutBoyLedPinConfig};
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(test)]
 pub(super) fn setup(
     _pin: FloatOutBoyLedPin,
     _pin_config: FloatOutBoyLedPinConfig,
@@ -10,17 +10,17 @@ pub(super) fn setup(
     true
 }
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(test)]
 pub(super) fn quiesce(_pin: FloatOutBoyLedPin) -> bool {
     true
 }
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(test)]
 pub(super) fn restart(_pin: FloatOutBoyLedPin, _pulses: &[u16]) -> bool {
     true
 }
 
-#[cfg(not(target_arch = "arm"))]
+#[cfg(test)]
 pub(super) fn teardown(_pin: FloatOutBoyLedPin) -> bool {
     true
 }

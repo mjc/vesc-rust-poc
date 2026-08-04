@@ -82,28 +82,15 @@ vescpkg_rs::typed_fields! {
 }
 
 impl FloatOutBoyAllDataMotorPayload {
-    /// Return motor current.
-    #[must_use]
-    pub const fn motor_current(self) -> MotorCurrent {
-        self.currents.motor()
-    }
-
-    /// Return directional motor current.
-    #[must_use]
-    pub const fn directional_motor_current(self) -> DirectionalMotorCurrent {
-        self.currents.directional()
-    }
-
-    /// Return Float Out Boy's filtered directional motor current.
-    #[must_use]
-    pub const fn filtered_motor_current(self) -> FloatOutBoyRealtimeFilteredMotorCurrent {
-        self.currents.filtered()
-    }
-
-    /// Return battery current.
-    #[must_use]
-    pub const fn battery_current(self) -> BatteryCurrent {
-        self.currents.battery()
+    vescpkg_rs::const_forward_getters! {
+        /// Return motor current.
+        pub fn motor_current -> MotorCurrent = currents.motor();
+        /// Return directional motor current.
+        pub fn directional_motor_current -> DirectionalMotorCurrent = currents.directional();
+        /// Return Float Out Boy's filtered directional motor current.
+        pub fn filtered_motor_current -> FloatOutBoyRealtimeFilteredMotorCurrent = currents.filtered();
+        /// Return battery current.
+        pub fn battery_current -> BatteryCurrent = currents.battery();
     }
 }
 
