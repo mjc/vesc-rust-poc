@@ -8,6 +8,7 @@ const MAX_WINDOW_U32: u32 = 222;
 const ABS_ERPM_CUTOFF: Frequency = Frequency::from_hertz(10.0);
 const ACCELERATION_CUTOFF_HZ: f32 = 8.0;
 
+#[pin_init::pin_init]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MotorKinematicsTracker(vescpkg_rs::MotorKinematics<MAX_WINDOW>);
 
@@ -23,6 +24,19 @@ impl Default for MotorKinematicsTracker {
 }
 
 impl MotorKinematicsTracker {
+    pub(super) fn default_in_place() -> impl pin_init::Init<Self, core::convert::Infallible> {
+        pin_init::init_from_closure(|state| {
+            let mut state = state.init(pin_init::init_pin!(MotorKinematicsTracker(
+                vescpkg_rs::MotorKinematics::default()
+            )))?;
+            state
+                .as_mut()
+                .get_mut()
+                .configure(crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE);
+            Ok(state)
+        })
+    }
+
     pub(super) fn configure(&mut self, sample_rate: SampleRate) {
         let smoothing = Ratio::clamped(vescpkg_rs::ema_alpha(ABS_ERPM_CUTOFF, sample_rate));
         let normalized_cutoff = ACCELERATION_CUTOFF_HZ / sample_rate.as_hertz();
