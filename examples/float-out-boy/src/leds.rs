@@ -5,6 +5,8 @@
 
 use vescpkg_rs::prelude::Ratio;
 
+const FULL_RATIO: Ratio = Ratio::from_ratio_const(1.0);
+
 pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
     Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
 };
@@ -190,7 +192,7 @@ impl FloatOutBoyLedPixel {
         if blend.is_nan() {
             return Self::default();
         }
-        first.scaled_and_blended(second, Ratio::from_ratio_const(1.0), Ratio::clamped(blend))
+        first.scaled_and_blended(second, FULL_RATIO, Ratio::clamped(blend))
     }
 }
 
@@ -784,7 +786,7 @@ impl FloatOutBoyLedRenderer {
             return true;
         }
 
-        let status_state = self.compose_status(config, input, current_time, fade, upright_changed);
+        let status_layers = self.compose_status(config, input, current_time, fade, upright_changed);
         if config.lifted.status_on_front && self.status_on_front_blend > 0.0 {
             let front_idle =
                 config.lifted.lights_off && current_time - self.status_on_front_idle_time > 3.0;
@@ -814,13 +816,7 @@ impl FloatOutBoyLedRenderer {
             (old_headlights, headlights),
             (old_direction, direction),
         );
-        self.compose_front_status(
-            config,
-            input.battery_level,
-            status_state,
-            fade,
-            current_time,
-        );
+        self.compose_front_status(config, status_layers);
         true
     }
 
@@ -883,17 +879,17 @@ impl FloatOutBoyLedRenderer {
         current_time: f32,
         fade: Ratio,
         reset_idle: bool,
-    ) -> (f32, Ratio) {
+    ) -> FloatOutBoyStatusLayers {
         let status_config = config.status;
         let sensors = self.dynamics.sensor_fades();
         let (duty, duty_blend, idle_blend, idle_animation_time) =
             self.status_dynamics
                 .update(config, input, sensors, reset_idle, current_time);
 
-        self.status.render_status_layers(FloatOutBoyStatusLayers {
+        let layers = FloatOutBoyStatusLayers {
             brightness: Ratio::clamped(self.status_dynamics.brightness),
             fade,
-            blend: Ratio::from_ratio_const(1.0),
+            blend: FULL_RATIO,
             idle_blend,
             idle: FloatOutBoyStatusIdleLayer::Animate(config.status_idle, idle_animation_time),
             reverse: false,
@@ -903,36 +899,26 @@ impl FloatOutBoyLedRenderer {
             duty_blend,
             sensors,
             confirmation_progress: (current_time - self.confirmation_start) / 0.8,
-        });
-        (duty, duty_blend)
+        };
+        self.status.render_status_layers(layers);
+        layers
     }
 
     fn compose_front_status(
         &mut self,
         config: FloatOutBoyLedsConfig,
-        battery_level: f32,
-        (duty, duty_blend): (f32, Ratio),
-        fade: Ratio,
-        current_time: f32,
+        mut layers: FloatOutBoyStatusLayers,
     ) {
         let blend = Ratio::clamped(self.status_on_front_blend);
         if !config.lifted.status_on_front || blend.as_ratio() <= 0.0 {
             return;
         }
-        self.front.render_status_layers(FloatOutBoyStatusLayers {
-            brightness: Ratio::clamped(self.front_brightness),
-            fade,
-            blend,
-            idle_blend: Ratio::clamped(self.status_on_front_idle_blend),
-            idle: FloatOutBoyStatusIdleLayer::Black,
-            reverse: true,
-            red_percentage: config.status.red_bar_percentage,
-            battery: battery_level.clamp(0.0, 1.0),
-            duty,
-            duty_blend,
-            sensors: self.dynamics.sensor_fades(),
-            confirmation_progress: (current_time - self.confirmation_start) / 0.8,
-        });
+        layers.brightness = Ratio::clamped(self.front_brightness);
+        layers.blend = blend;
+        layers.idle_blend = Ratio::clamped(self.status_on_front_idle_blend);
+        layers.idle = FloatOutBoyStatusIdleLayer::Black;
+        layers.reverse = true;
+        self.front.render_status_layers(layers);
     }
 
     fn render_pair_transition(
@@ -1282,7 +1268,7 @@ impl FloatOutBoyLedStripFrame {
             }
         };
         let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
-        self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+        self.render_target(target, brightness, FULL_RATIO);
     }
 
     /// Render one Refloat transition over the existing source frame.
@@ -1322,29 +1308,27 @@ impl FloatOutBoyLedStripFrame {
         from_brightness: Ratio,
         on_off_fade: Ratio,
     ) {
-        if progress <= 0.0 {
+        let (target, blend, brightness_progress) = if progress <= 0.0 {
             let blend = Ratio::clamped(progress + 1.0);
-            let brightness = Ratio::clamped(
-                (from_brightness.as_ratio()
-                    + (to_bar.brightness.as_ratio() - from_brightness.as_ratio())
-                        * blend.as_ratio())
-                    * on_off_fade.as_ratio(),
-            );
-            self.render_target(FloatOutBoyLedPixel::default(), brightness, blend);
-            return;
-        }
-
-        let target = FloatOutBoyLedPixel::blend(
-            FloatOutBoyLedPixel::default(),
-            transition_target(to_bar),
-            progress,
-        );
+            (FloatOutBoyLedPixel::default(), blend, blend.as_ratio())
+        } else {
+            (
+                FloatOutBoyLedPixel::blend(
+                    FloatOutBoyLedPixel::default(),
+                    transition_target(to_bar),
+                    progress,
+                ),
+                FULL_RATIO,
+                progress,
+            )
+        };
         let brightness = Ratio::clamped(
             (from_brightness.as_ratio()
-                + (to_bar.brightness.as_ratio() - from_brightness.as_ratio()) * progress)
+                + (to_bar.brightness.as_ratio() - from_brightness.as_ratio())
+                    * brightness_progress)
                 * on_off_fade.as_ratio(),
         );
-        self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
+        self.render_target(target, brightness, blend);
     }
 
     fn render_cipher(
@@ -1429,7 +1413,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_pixel(&mut self, index: usize, target: FloatOutBoyLedPixel, brightness: Ratio) {
-        self.render_pixel_blended(index, target, brightness, Ratio::from_ratio_const(1.0));
+        self.render_pixel_blended(index, target, brightness, FULL_RATIO);
     }
 
     fn render_pixel_blended(
@@ -1477,7 +1461,7 @@ impl FloatOutBoyLedStripFrame {
             let start = (distance_from_start / feather).clamp(0.0, 1.0);
             let end = (distance_from_end / feather).clamp(0.0, 1.0);
             let target = FloatOutBoyLedPixel::blend(secondary, primary, start.min(end) * fade);
-            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
         }
     }
 
@@ -1520,7 +1504,7 @@ impl FloatOutBoyLedStripFrame {
 
             let target =
                 FloatOutBoyLedPixel::blend(secondary, primary, first_blend.max(second_blend));
-            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
         }
     }
 
@@ -1546,33 +1530,25 @@ impl FloatOutBoyLedStripFrame {
             } else {
                 black
             };
-            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
+            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
         }
     }
 
     fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
-        match bar.animation_mode {
+        let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::RainbowCycle => {
                 let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0)
                     .checked_rem(10)
                     .unwrap_or_default();
                 let hue = crate::wire::saturating_trunc_f32_to_u8(f32::from(step) * 25.5);
-                self.render_target(
-                    refloat_hue_to_pixel(hue),
-                    brightness,
-                    Ratio::from_ratio_const(1.0),
-                );
+                refloat_hue_to_pixel(hue)
             }
             FloatOutBoyLedAnimationMode::RainbowFade => {
                 let hue = crate::wire::saturating_trunc_f32_to_u8(
                     vescpkg_rs::remainder(time, 1.0) * 255.0,
                 );
-                self.render_target(
-                    refloat_hue_to_pixel(hue),
-                    brightness,
-                    Ratio::from_ratio_const(1.0),
-                );
+                refloat_hue_to_pixel(hue)
             }
             FloatOutBoyLedAnimationMode::RainbowRoll => {
                 let count = self.config.count;
@@ -1585,20 +1561,19 @@ impl FloatOutBoyLedStripFrame {
                     let hue = crate::wire::saturating_trunc_f32_to_u8(
                         255.0 / f32::from(count) * f32::from(index) + offset,
                     );
-                    *pixel = pixel.scaled_and_blended(
-                        refloat_hue_to_pixel(hue),
-                        brightness,
-                        Ratio::from_ratio_const(1.0),
-                    );
+                    *pixel =
+                        pixel.scaled_and_blended(refloat_hue_to_pixel(hue), brightness, FULL_RATIO);
                 }
+                return;
             }
             FloatOutBoyLedAnimationMode::Solid
             | FloatOutBoyLedAnimationMode::Fade
             | FloatOutBoyLedAnimationMode::Pulse
             | FloatOutBoyLedAnimationMode::Strobe
             | FloatOutBoyLedAnimationMode::KnightRider
-            | FloatOutBoyLedAnimationMode::Felony => {}
-        }
+            | FloatOutBoyLedAnimationMode::Felony => return,
+        };
+        self.render_target(target, brightness, FULL_RATIO);
     }
 
     fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
