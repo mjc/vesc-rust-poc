@@ -242,6 +242,52 @@ pub fn angle_step(speed: AngularVelocity, sample_rate: SampleRate) -> AngleDegre
         })
 }
 
+/// Fixed-state smoothed, rate-limited angle output.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct SmoothedAngleSlew {
+    ramped_step: AngleDegrees,
+    setpoint: AngleDegrees,
+}
+
+impl SmoothedAngleSlew {
+    /// Advance toward `target` with caller-owned smoothing and center-window policy.
+    pub fn advance(
+        &mut self,
+        target: AngleDegrees,
+        step: AngleDegrees,
+        smoothing: Ratio,
+        center_window: AngleDegrees,
+    ) -> AngleDegrees {
+        let diff = target - self.setpoint;
+        let smoothing = smoothing.as_ratio();
+        if diff.abs() < center_window {
+            self.ramped_step =
+                step * (smoothing * diff.as_degrees() / 2.0) + self.ramped_step * (1.0 - smoothing);
+            let centering = self
+                .ramped_step
+                .abs()
+                .min(step * (diff.as_degrees().abs() / 2.0))
+                * diff.signum();
+            self.setpoint = if diff.abs() < centering.abs() {
+                target
+            } else {
+                self.setpoint + centering
+            };
+        } else {
+            self.ramped_step =
+                step * (smoothing * diff.signum()) + self.ramped_step * (1.0 - smoothing);
+            self.setpoint = self.setpoint + self.ramped_step;
+        }
+        self.setpoint
+    }
+
+    /// Return the current output without advancing it.
+    #[must_use]
+    pub const fn setpoint(self) -> AngleDegrees {
+        self.setpoint
+    }
+}
+
 /// State for a smoothed, rate-limited angle target.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct SmoothAngle {
@@ -284,7 +330,8 @@ mod tests {
     #[cfg(feature = "math")]
     use super::BiquadLowPass;
     use super::{
-        FixedRingIndex, MotorKinematics, SmoothAngle, WrappedAngleMotion, angle_step, slew_toward,
+        FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+        angle_step, slew_toward,
     };
     #[cfg(feature = "math")]
     use crate::Frequency;
@@ -303,6 +350,20 @@ mod tests {
         assert_eq!(state.target, AngleDegrees::from_degrees(3.0));
         assert!((state.ramped_step.as_degrees() - 0.012).abs() <= f32::EPSILON);
         assert_eq!(state.setpoint, state.ramped_step);
+    }
+
+    #[test]
+    fn smoothed_angle_slew_keeps_fixed_state_and_custom_center_window() {
+        let mut state = SmoothedAngleSlew::default();
+        let output = state.advance(
+            AngleDegrees::from_degrees(1.0),
+            AngleDegrees::from_degrees(0.25),
+            Ratio::from_ratio_const(0.02),
+            AngleDegrees::from_degrees(2.0),
+        );
+
+        assert_eq!(core::mem::size_of::<SmoothedAngleSlew>(), 8);
+        assert_eq!(output.as_degrees().to_bits(), 0.0025_f32.to_bits());
     }
 
     #[test]
