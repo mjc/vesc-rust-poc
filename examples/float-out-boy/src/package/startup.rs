@@ -20,7 +20,7 @@ fn allocate_float_out_boy_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     start.install_runtime_state(FloatOutBoyPackageState::new(
-        FloatOutBoyAllDataPayloads::source_startup(),
+        FloatOutBoyAllDataPayloads::default(),
     ))?;
     #[cfg(target_arch = "arm")]
     {

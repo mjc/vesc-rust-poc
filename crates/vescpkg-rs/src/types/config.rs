@@ -32,6 +32,12 @@ impl WireByte {
         Self::new(value >> 4)
     }
 
+    /// Split one protocol byte into its low and high nibbles.
+    #[must_use]
+    pub const fn nibbles(value: u8) -> (Self, Self) {
+        (Self::low_nibble(value), Self::high_nibble(value))
+    }
+
     /// Apply a wire scale and offset directly through a semantic constructor.
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
@@ -1437,6 +1443,10 @@ mod tests {
 
     #[test]
     fn wire_byte_extracts_protocol_nibbles() {
+        assert_eq!(
+            super::WireByte::nibbles(0xab),
+            (super::WireByte::new(0x0b), super::WireByte::new(0x0a))
+        );
         assert_eq!(super::WireByte::low_nibble(0xab).as_u8(), 0x0b);
         assert_eq!(super::WireByte::high_nibble(0xab).as_u8(), 0x0a);
         assert_eq!(

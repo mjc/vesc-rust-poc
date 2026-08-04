@@ -8,6 +8,9 @@ description = "Float Out Boy-specific no_std host/device protocol types and enco
 [lints]
 workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 bitflags = { version = "2.13.1", default-features = false }
 vesc-protocol = { path = "../vesc-protocol" }
