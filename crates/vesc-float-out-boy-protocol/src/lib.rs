@@ -50,7 +50,7 @@ pub use self::all_data::{
 };
 pub use self::app_data::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand, FloatOutBoyAppDataCommandError,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand,
 };
 pub use self::footpad::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};
 pub use self::metadata::{

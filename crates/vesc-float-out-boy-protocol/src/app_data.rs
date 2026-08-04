@@ -87,35 +87,6 @@ vesc_protocol::wire_enum! {
     }
 }
 
-impl FloatOutBoyAppDataCommand {
-    /// Parse a Float Out Boy app-data command ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`FloatOutBoyAppDataCommandError`] when `id` is not one of the
-    /// command bytes defined by Float Out Boy.
-    pub const fn try_from_id(id: u8) -> Result<Self, FloatOutBoyAppDataCommandError> {
-        match Self::try_from_wire_id(id) {
-            Ok(command) => Ok(command),
-            Err(value) => Err(FloatOutBoyAppDataCommandError { value }),
-        }
-    }
-}
-
-/// Error returned when a Float Out Boy app-data command ID is unknown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyAppDataCommandError {
-    value: u8,
-}
-
-impl FloatOutBoyAppDataCommandError {
-    /// Return the rejected command ID.
-    #[must_use]
-    pub const fn value(self) -> u8 {
-        self.value
-    }
-}
-
 vesc_protocol::typed_newtype! {
     /// Float Out Boy all-data request mode byte.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
