@@ -1259,11 +1259,7 @@ impl FloatOutBoyLedStripFrame {
 
         for index in 0..len {
             let index_float = f32::from(u8::try_from(index).unwrap_or_default());
-            let distance = if index_float < len_float * 0.5 {
-                index_float - offset + 1.0
-            } else {
-                len_float - offset - index_float
-            };
+            let distance = (index_float - offset + 1.0).min(len_float - offset - index_float);
             let target = FloatOutBoyLedPixel::blend(
                 FloatOutBoyLedPixel::default(),
                 confirm,
@@ -1487,11 +1483,9 @@ impl FloatOutBoyLedStripFrame {
         let fade = if time < ratio { time / ratio } else { 1.0 };
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let index = f32::from(u8::try_from(index).unwrap_or_default());
-            let distance_from_start = index - offset + 1.0;
-            let distance_from_end = len_float - offset - index;
-            let start = (distance_from_start / feather).clamp(0.0, 1.0);
-            let end = (distance_from_end / feather).clamp(0.0, 1.0);
-            let target = FloatOutBoyLedPixel::blend(secondary, primary, start.min(end) * fade);
+            let distance = (index - offset + 1.0).min(len_float - offset - index);
+            let blend = (distance / feather).clamp(0.0, 1.0) * fade;
+            let target = FloatOutBoyLedPixel::blend(secondary, primary, blend);
             *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
         }
     }
@@ -1513,28 +1507,18 @@ impl FloatOutBoyLedStripFrame {
 
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let index = f32::from(u8::try_from(index).unwrap_or_default());
-            let mut first_blend = backlight;
-            let first_distance = (first - index).abs();
-            if index <= first {
-                if first_distance <= tail {
-                    first_blend = (tail - first_distance) / tail;
+            let trail_blend = |position, direction| {
+                let distance = direction * (position - index);
+                if (0.0..=tail).contains(&distance) {
+                    (tail - distance) / tail
+                } else if distance > -1.0 {
+                    distance + 1.0
+                } else {
+                    backlight
                 }
-            } else if index < first + 1.0 {
-                first_blend = first - vescpkg_rs::floor(first);
-            }
-
-            let mut second_blend = backlight;
-            let second_distance = (second - index).abs();
-            if index >= second {
-                if second_distance <= tail {
-                    second_blend = (tail - second_distance) / tail;
-                }
-            } else if index > second - 1.0 {
-                second_blend = 1.0 - second + vescpkg_rs::floor(second);
-            }
-
-            let target =
-                FloatOutBoyLedPixel::blend(secondary, primary, first_blend.max(second_blend));
+            };
+            let blend = trail_blend(first, 1.0_f32).max(trail_blend(second, -1.0));
+            let target = FloatOutBoyLedPixel::blend(secondary, primary, blend);
             *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
         }
     }
