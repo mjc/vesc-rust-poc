@@ -1,13 +1,25 @@
-use super::*;
+#![expect(missing_docs, reason = "compact FOB LED data construction API")]
+
+#[cfg(any(test, feature = "test-support"))]
+use super::FloatOutBoyLedStatusUpdate;
+use super::{
+    FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
+    FloatOutBoyLedColorOrder, FloatOutBoyLedPixel, FloatOutBoyLedRenderer,
+    FloatOutBoyLedRuntimeStatus, FloatOutBoyLedStripConfig, FloatOutBoyLedStripFrame,
+    FloatOutBoyLedStripOrder, FloatOutBoyLedTransition, FloatOutBoyLedUpdate,
+    FloatOutBoyLedsConfig, FloatOutBoyLiftedLedsConfig, FloatOutBoyStatusBarConfig, Ratio,
+};
 
 impl FloatOutBoyLedPixel {
-    pub(crate) const fn channels(self) -> [u8; 4] {
+    #[must_use]
+    pub const fn channels(self) -> [u8; 4] {
         self.channels
     }
 }
 
 impl FloatOutBoyLedBarConfig {
-    pub(crate) const fn new(
+    #[must_use]
+    pub const fn new(
         brightness: Ratio,
         primary_color: FloatOutBoyLedColor,
         secondary_color: FloatOutBoyLedColor,
@@ -23,29 +35,35 @@ impl FloatOutBoyLedBarConfig {
         }
     }
 
-    pub(crate) const fn brightness(self) -> Ratio {
+    #[must_use]
+    pub const fn brightness(self) -> Ratio {
         self.brightness
     }
 
-    pub(crate) const fn primary_color(self) -> FloatOutBoyLedColor {
+    #[must_use]
+    pub const fn primary_color(self) -> FloatOutBoyLedColor {
         self.primary_color
     }
 
-    pub(crate) const fn secondary_color(self) -> FloatOutBoyLedColor {
+    #[must_use]
+    pub const fn secondary_color(self) -> FloatOutBoyLedColor {
         self.secondary_color
     }
 
-    pub(crate) const fn animation_mode(self) -> FloatOutBoyLedAnimationMode {
+    #[must_use]
+    pub const fn animation_mode(self) -> FloatOutBoyLedAnimationMode {
         self.animation_mode
     }
 
-    pub(crate) const fn animation_speed(self) -> f32 {
+    #[must_use]
+    pub const fn animation_speed(self) -> f32 {
         self.animation_speed
     }
 }
 
 impl FloatOutBoyStatusBarConfig {
-    pub(crate) const fn new(
+    #[must_use]
+    pub const fn new(
         idle_timeout: u16,
         duty_threshold: Ratio,
         red_bar_percentage: Ratio,
@@ -62,38 +80,46 @@ impl FloatOutBoyStatusBarConfig {
         }
     }
 
-    pub(crate) const fn showing_sensors_while_running(mut self) -> Self {
+    #[must_use]
+    pub const fn showing_sensors_while_running(mut self) -> Self {
         self.show_sensors_while_running = true;
         self
     }
 
-    pub(crate) const fn idle_timeout(self) -> u16 {
+    #[must_use]
+    pub const fn idle_timeout(self) -> u16 {
         self.idle_timeout
     }
 
-    pub(crate) const fn duty_threshold(self) -> Ratio {
+    #[must_use]
+    pub const fn duty_threshold(self) -> Ratio {
         self.duty_threshold
     }
 
-    pub(crate) const fn red_bar_percentage(self) -> Ratio {
+    #[must_use]
+    pub const fn red_bar_percentage(self) -> Ratio {
         self.red_bar_percentage
     }
 
-    pub(crate) const fn shows_sensors_while_running(self) -> bool {
+    #[must_use]
+    pub const fn shows_sensors_while_running(self) -> bool {
         self.show_sensors_while_running
     }
 
-    pub(crate) const fn brightness_headlights_on(self) -> Ratio {
+    #[must_use]
+    pub const fn brightness_headlights_on(self) -> Ratio {
         self.brightness_headlights_on
     }
 
-    pub(crate) const fn brightness_headlights_off(self) -> Ratio {
+    #[must_use]
+    pub const fn brightness_headlights_off(self) -> Ratio {
         self.brightness_headlights_off
     }
 }
 
 impl FloatOutBoyLedsConfig {
-    pub(crate) const fn new(
+    #[must_use]
+    pub const fn new(
         headlights: FloatOutBoyLedBarConfig,
         taillights: FloatOutBoyLedBarConfig,
         front: FloatOutBoyLedBarConfig,
@@ -119,17 +145,20 @@ impl FloatOutBoyLedsConfig {
         }
     }
 
-    pub(crate) const fn enabled(mut self) -> Self {
+    #[must_use]
+    pub const fn enabled(mut self) -> Self {
         self.on = true;
         self
     }
 
-    pub(crate) const fn with_headlights_on(mut self) -> Self {
+    #[must_use]
+    pub const fn with_headlights_on(mut self) -> Self {
         self.headlights_on = true;
         self
     }
 
-    pub(crate) const fn with_headlights_transition(
+    #[must_use]
+    pub const fn with_headlights_transition(
         mut self,
         transition: FloatOutBoyLedTransition,
     ) -> Self {
@@ -137,75 +166,88 @@ impl FloatOutBoyLedsConfig {
         self
     }
 
-    pub(crate) const fn with_direction_transition(
-        mut self,
-        transition: FloatOutBoyLedTransition,
-    ) -> Self {
+    #[must_use]
+    pub const fn with_direction_transition(mut self, transition: FloatOutBoyLedTransition) -> Self {
         self.direction_transition = transition;
         self
     }
 
-    pub(crate) const fn lights_off_when_lifted(mut self) -> Self {
+    #[must_use]
+    pub const fn lights_off_when_lifted(mut self) -> Self {
         self.lifted.lights_off = true;
         self
     }
 
-    pub(crate) const fn status_on_front_when_lifted(mut self) -> Self {
+    #[must_use]
+    pub const fn status_on_front_when_lifted(mut self) -> Self {
         self.lifted.status_on_front = true;
         self
     }
 
-    pub(crate) const fn is_enabled(self) -> bool {
+    #[must_use]
+    pub const fn is_enabled(self) -> bool {
         self.on
     }
 
-    pub(crate) const fn are_headlights_on(self) -> bool {
+    #[must_use]
+    pub const fn are_headlights_on(self) -> bool {
         self.headlights_on
     }
 
-    pub(crate) const fn headlights_transition(self) -> FloatOutBoyLedTransition {
+    #[must_use]
+    pub const fn headlights_transition(self) -> FloatOutBoyLedTransition {
         self.headlights_transition
     }
 
-    pub(crate) const fn direction_transition(self) -> FloatOutBoyLedTransition {
+    #[must_use]
+    pub const fn direction_transition(self) -> FloatOutBoyLedTransition {
         self.direction_transition
     }
 
-    pub(crate) const fn turns_lights_off_when_lifted(self) -> bool {
+    #[must_use]
+    pub const fn turns_lights_off_when_lifted(self) -> bool {
         self.lifted.lights_off
     }
 
-    pub(crate) const fn shows_status_on_front_when_lifted(self) -> bool {
+    #[must_use]
+    pub const fn shows_status_on_front_when_lifted(self) -> bool {
         self.lifted.status_on_front
     }
 
-    pub(crate) const fn headlights(self) -> FloatOutBoyLedBarConfig {
+    #[must_use]
+    pub const fn headlights(self) -> FloatOutBoyLedBarConfig {
         self.headlights
     }
 
-    pub(crate) const fn taillights(self) -> FloatOutBoyLedBarConfig {
+    #[must_use]
+    pub const fn taillights(self) -> FloatOutBoyLedBarConfig {
         self.taillights
     }
 
-    pub(crate) const fn front(self) -> FloatOutBoyLedBarConfig {
+    #[must_use]
+    pub const fn front(self) -> FloatOutBoyLedBarConfig {
         self.front
     }
 
-    pub(crate) const fn rear(self) -> FloatOutBoyLedBarConfig {
+    #[must_use]
+    pub const fn rear(self) -> FloatOutBoyLedBarConfig {
         self.rear
     }
 
-    pub(crate) const fn status(self) -> FloatOutBoyStatusBarConfig {
+    #[must_use]
+    pub const fn status(self) -> FloatOutBoyStatusBarConfig {
         self.status
     }
 
-    pub(crate) const fn status_idle(self) -> FloatOutBoyLedBarConfig {
+    #[must_use]
+    pub const fn status_idle(self) -> FloatOutBoyLedBarConfig {
         self.status_idle
     }
 }
 
 impl FloatOutBoyLedStripConfig {
-    pub(crate) const fn new(
+    #[must_use]
+    pub const fn new(
         order: FloatOutBoyLedStripOrder,
         count: u8,
         color_order: FloatOutBoyLedColorOrder,
@@ -218,36 +260,44 @@ impl FloatOutBoyLedStripConfig {
         }
     }
 
-    pub(crate) const fn with_reverse(mut self, reverse: bool) -> Self {
+    #[must_use]
+    pub const fn with_reverse(mut self, reverse: bool) -> Self {
         self.reverse = reverse;
         self
     }
 
-    pub(crate) const fn order(self) -> FloatOutBoyLedStripOrder {
+    #[must_use]
+    pub const fn order(self) -> FloatOutBoyLedStripOrder {
         self.order
     }
 
-    pub(crate) const fn count(self) -> u8 {
+    #[must_use]
+    pub const fn count(self) -> u8 {
         self.count
     }
 
-    pub(crate) const fn color_order(self) -> FloatOutBoyLedColorOrder {
+    #[must_use]
+    pub const fn color_order(self) -> FloatOutBoyLedColorOrder {
         self.color_order
     }
 
-    pub(crate) const fn is_reversed(self) -> bool {
+    #[must_use]
+    pub const fn is_reversed(self) -> bool {
         self.reverse
     }
 }
 
 impl FloatOutBoyLedRuntimeStatus {
-    pub(crate) const fn headlights_enabled(self) -> bool {
+    #[must_use]
+    pub const fn headlights_enabled(self) -> bool {
         self.headlights_enabled
     }
 }
 
 impl FloatOutBoyLedUpdate {
-    pub(crate) const fn with_status(
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub const fn with_status(
         ride: FloatOutBoyLedUpdate,
         status: FloatOutBoyLedStatusUpdate,
     ) -> Self {
@@ -261,25 +311,30 @@ impl FloatOutBoyLedUpdate {
 }
 
 impl FloatOutBoyLedRenderer {
-    pub(crate) const fn confirmation_start_for_test(self) -> f32 {
+    #[must_use]
+    pub const fn confirmation_start_for_test(self) -> f32 {
         self.confirmation_start
     }
 
-    pub(crate) const fn status(&self) -> &FloatOutBoyLedStripFrame {
+    #[must_use]
+    pub const fn status(&self) -> &FloatOutBoyLedStripFrame {
         &self.status
     }
 
-    pub(crate) const fn front(&self) -> &FloatOutBoyLedStripFrame {
+    #[must_use]
+    pub const fn front(&self) -> &FloatOutBoyLedStripFrame {
         &self.front
     }
 
-    pub(crate) const fn rear(&self) -> &FloatOutBoyLedStripFrame {
+    #[must_use]
+    pub const fn rear(&self) -> &FloatOutBoyLedStripFrame {
         &self.rear
     }
 }
 
 impl FloatOutBoyLedStripFrame {
-    pub(crate) fn set_logical_pixel(&mut self, index: usize, pixel: FloatOutBoyLedPixel) -> bool {
+    #[must_use]
+    pub fn set_logical_pixel(&mut self, index: usize, pixel: FloatOutBoyLedPixel) -> bool {
         if index >= usize::from(self.config.count) {
             return false;
         }

@@ -330,7 +330,7 @@ impl RideModifierState {
         if input.darkride {
             return;
         }
-        if matches!(input.wheelslip, FloatOutBoyWheelSlipState::Detected) {
+        if input.wheelslip == FloatOutBoyWheelSlipState::Detected {
             self.wind_down_for_wheelslip();
             return;
         }

@@ -96,7 +96,6 @@ mod audio;
 mod bindings;
 mod capabilities;
 mod data_recorder;
-mod declaration_macros;
 mod eeprom;
 mod encoder;
 mod extension;
@@ -233,6 +232,9 @@ pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
+pub use vesc_protocol::{
+    const_field_builders, const_field_getters, typed_fields, typed_newtype, wire_enum,
+};
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
