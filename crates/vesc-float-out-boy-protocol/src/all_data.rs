@@ -45,32 +45,21 @@ pub fn encode_float_out_boy_all_data_fault_response(
     response
 }
 
-vescpkg_rs::typed_fields! {
+vescpkg_rs::typed_field_groups! {
+    attributes { #[derive(Debug, Default, Clone, Copy, PartialEq)] }
     /// Float Out Boy compact all-data attitude fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataAttitude {
         balance_pitch: FloatOutBoyRealtimeBalancePitch => balance_pitch,
         roll: ImuRoll => roll,
         pitch: ImuPitch => pitch,
     }
-}
-
-#[cfg(test)]
-#[path = "all_data/tests.rs"]
-mod tests;
-
-vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data status fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    #[derive(Eq)]
     pub struct FloatOutBoyAllDataStatus {
         ride_state: FloatOutBoyRideState => ride_state,
         beep_reason: FloatOutBoyBeepReason => beep_reason,
     }
-}
-
-vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data motor fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMotorPayload {
         battery_voltage: BatteryVoltage => battery_voltage => with_battery_voltage,
         electrical_speed: ElectricalSpeed => electrical_speed,
@@ -79,7 +68,48 @@ vescpkg_rs::typed_fields! {
         duty_cycle: DutyCycle => duty_cycle => with_duty_cycle,
         foc_id_current: Option<MotorCurrent> => foc_id_current,
     }
+    /// Float Out Boy compact all-data base payload fields.
+    pub struct FloatOutBoyAllDataBasePayload {
+        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current => with_balance_current,
+        attitude: FloatOutBoyAllDataAttitude => attitude => with_attitude,
+        status: FloatOutBoyAllDataStatus => status => with_status,
+        footpad: FloatOutBoyFootpadSample => footpad => with_footpad,
+        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints => with_setpoints,
+        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current => with_booster_current,
+        motor: FloatOutBoyAllDataMotorPayload => motor => with_motor,
+    }
+    /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
+    pub struct FloatOutBoyAllDataPayloads {
+        base: FloatOutBoyAllDataBasePayload => base => with_base,
+        mode2: FloatOutBoyAllDataMode2Payload => mode2,
+        mode3: FloatOutBoyAllDataMode3Payload => mode3 => with_mode3_ride_totals,
+        mode4: FloatOutBoyAllDataMode4Payload => mode4 => with_mode4_charging,
+    }
+    /// Float Out Boy all-data mode 2 extension fields.
+    pub struct FloatOutBoyAllDataMode2Payload {
+        distance_abs: TripDistance => distance_abs => with_distance_abs,
+        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures => with_temperatures,
+        battery_temperature: Option<Temperature> => battery_temperature,
+    }
+    /// Float Out Boy all-data mode 3 extension fields.
+    pub struct FloatOutBoyAllDataMode3Payload {
+        odometer: OdometerMeters => odometer,
+        discharged_charge: AmpHoursDischarged => discharged_charge,
+        charged_charge: AmpHoursCharged => charged_charge,
+        discharged_energy: WattHoursDischarged => discharged_energy,
+        charged_energy: WattHoursCharged => charged_energy,
+        battery_level: BatteryLevel => battery_level,
+    }
+    /// Float Out Boy all-data mode 4 extension fields.
+    pub struct FloatOutBoyAllDataMode4Payload {
+        current: BatteryCurrent => current,
+        voltage: BatteryVoltage => voltage,
+    }
 }
+
+#[cfg(test)]
+#[path = "all_data/tests.rs"]
+mod tests;
 
 impl FloatOutBoyAllDataMotorPayload {
     vescpkg_rs::const_forward_getters! {
@@ -91,20 +121,6 @@ impl FloatOutBoyAllDataMotorPayload {
         pub fn filtered_motor_current -> FloatOutBoyRealtimeFilteredMotorCurrent = currents.filtered();
         /// Return battery current.
         pub fn battery_current -> BatteryCurrent = currents.battery();
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy compact all-data base payload fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyAllDataBasePayload {
-        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current => with_balance_current,
-        attitude: FloatOutBoyAllDataAttitude => attitude => with_attitude,
-        status: FloatOutBoyAllDataStatus => status => with_status,
-        footpad: FloatOutBoyFootpadSample => footpad,
-        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints => with_setpoints,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current => with_booster_current,
-        motor: FloatOutBoyAllDataMotorPayload => motor => with_motor,
     }
 }
 
@@ -197,17 +213,6 @@ impl FloatOutBoyAllDataBasePayload {
     }
 }
 
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyAllDataPayloads {
-        base: FloatOutBoyAllDataBasePayload => base => with_base,
-        mode2: FloatOutBoyAllDataMode2Payload => mode2,
-        mode3: FloatOutBoyAllDataMode3Payload => mode3 => with_mode3_ride_totals,
-        mode4: FloatOutBoyAllDataMode4Payload => mode4 => with_mode4_charging,
-    }
-}
-
 impl FloatOutBoyAllDataPayloads {
     /// Build the default startup snapshot for host-side fixtures.
     #[cfg(any(test, feature = "test-support"))]
@@ -269,37 +274,5 @@ impl FloatOutBoyAllDataPayloads {
             mode2: self.mode2.with_temperatures(temperatures),
             ..self
         }
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy all-data mode 2 extension fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyAllDataMode2Payload {
-        distance_abs: TripDistance => distance_abs => with_distance_abs,
-        temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures => with_temperatures,
-        battery_temperature: Option<Temperature> => battery_temperature,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy all-data mode 3 extension fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyAllDataMode3Payload {
-        odometer: OdometerMeters => odometer,
-        discharged_charge: AmpHoursDischarged => discharged_charge,
-        charged_charge: AmpHoursCharged => charged_charge,
-        discharged_energy: WattHoursDischarged => discharged_energy,
-        charged_energy: WattHoursCharged => charged_energy,
-        battery_level: BatteryLevel => battery_level,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy all-data mode 4 extension fields.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyAllDataMode4Payload {
-        current: BatteryCurrent => current,
-        voltage: BatteryVoltage => voltage,
     }
 }

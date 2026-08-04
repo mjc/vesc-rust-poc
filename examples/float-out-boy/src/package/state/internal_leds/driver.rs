@@ -35,6 +35,7 @@ fn ordered_strips(
 }
 
 const WS2812_ZERO: u16 = 31;
+#[cfg(test)]
 const WS2812_ONE: u16 = 72;
 const WS2812_RESET: u16 = 0;
 const MAX_STRIP_PIXELS: usize = 30;
@@ -168,7 +169,11 @@ impl FloatOutBoyInternalLedDriver {
                 };
                 let (channels, channel_count) = pixel.physical_channels(strip.color_order);
                 for channel in channels.into_iter().take(channel_count) {
-                    if !encode_byte(pulses, &mut pulse_index, channel) {
+                    if !vescpkg_rs::stm32::float_out_boy_ws2812::encode_byte(
+                        pulses,
+                        &mut pulse_index,
+                        channel,
+                    ) {
                         return false;
                     }
                 }
@@ -192,22 +197,6 @@ fn frame_for(
         FloatOutBoyLedStripRole::Front => &renderer.front,
         FloatOutBoyLedStripRole::Rear => &renderer.rear,
     }
-}
-
-fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
-    for bit in (0..8).rev() {
-        let mask = 1_u8.wrapping_shl(bit);
-        let Some(pulse) = pulses.get_mut(*index) else {
-            return false;
-        };
-        *pulse = if byte & mask == 0 {
-            WS2812_ZERO
-        } else {
-            WS2812_ONE
-        };
-        *index = index.saturating_add(1);
-    }
-    true
 }
 
 const fn bits_per_pixel(order: FloatOutBoyLedColorOrder) -> usize {

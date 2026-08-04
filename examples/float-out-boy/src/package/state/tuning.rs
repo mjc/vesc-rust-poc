@@ -86,15 +86,7 @@ fn update_active_config(
     updated
 }
 
-fn all_updated<const N: usize>(updates: [bool; N]) -> bool {
-    updates.into_iter().all(core::convert::identity)
-}
-
-macro_rules! write_fields {
-    ($config:ident; $($field:path => $value:expr),+ $(,)?) => {
-        all_updated([$($config.set($field, $value)),+])
-    };
-}
+use vescpkg_rs::set_custom_config_fields as write_fields;
 
 fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
     let [
@@ -248,11 +240,10 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
         }
         updated
     });
-    if !updated {
-        return false;
+    if updated {
+        state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
-    true
+    updated
 }
 
 pub(super) fn handle_other_tune_packet(
@@ -379,11 +370,10 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
             B::BRAKE_BOOSTER_CURRENT_FIELD => tune_booster_current(brake_current),
         )
     });
-    if !updated {
-        return false;
+    if updated {
+        state.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
-    true
+    updated
 }
 
 #[cfg(test)]

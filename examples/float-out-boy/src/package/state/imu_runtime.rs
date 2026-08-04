@@ -184,7 +184,7 @@ struct FaultEvaluation {
 
 #[expect(
     clippy::too_many_lines,
-    reason = "one fault pass is smaller than a private one-use switch-fault handoff"
+    reason = "one fault pass avoids one-use handoffs"
 )]
 fn evaluate_faults(
     state: &FloatOutBoyPackageState,
@@ -345,7 +345,7 @@ const DIRTY_LANDING_PITCH_MARGIN_DEGREES: u8 = 10;
 
 #[expect(
     clippy::too_many_lines,
-    reason = "one transition pass avoids four private one-use handoff structs"
+    reason = "one transition pass avoids one-use handoffs"
 )]
 fn evaluate_transition_phase(
     state: &mut FloatOutBoyPackageState,
@@ -686,7 +686,7 @@ fn directional_angle(angle: AngleDegrees, motor_erpm: Rpm) -> AngleDegrees {
 
 #[expect(
     clippy::too_many_lines,
-    reason = "one ordered dispatcher preserves priority without seven one-use boolean helpers"
+    reason = "one dispatcher preserves source priority"
 )]
 fn apply_protective_setpoint(
     state: &FloatOutBoyPackageState,
@@ -831,7 +831,7 @@ fn apply_protective_setpoint(
 
 #[expect(
     clippy::too_many_lines,
-    reason = "one ordered control pass is smaller than three private one-use handoffs"
+    reason = "one control pass avoids one-use handoffs"
 )]
 fn advance_running_control(
     state: &mut FloatOutBoyPackageState,
@@ -1102,9 +1102,8 @@ pub(super) fn refresh(
             phase.beep_reason,
         ));
     state.all_data_payloads = payloads.with_base(base);
-    {
-        phase.ready_flywheel_stop
-    }
+    #[cfg(any(test, target_arch = "arm"))]
+    return phase.ready_flywheel_stop;
     #[cfg(not(any(test, target_arch = "arm")))]
     {
         false

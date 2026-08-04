@@ -921,6 +921,16 @@ macro_rules! generated_custom_config_field {
     };
 }
 
+/// Write a batch of generated custom-config fields and report whether all succeeded.
+#[macro_export]
+macro_rules! set_custom_config_fields {
+    ($editor:ident; $($field:expr => $value:expr),+ $(,)?) => {
+        [$($editor.set($field, $value)),+]
+            .into_iter()
+            .all(core::convert::identity)
+    };
+}
+
 /// Define a typed borrowed view over generated custom-config fields.
 ///
 /// The package keeps its field names, semantic types, offsets, scales, and any
@@ -1616,6 +1626,37 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn field_batch_reports_whether_every_generated_write_succeeded() {
+        let first = crate::generated_custom_config_field!(
+            CustomConfigFlagField,
+            len: 2,
+            offset: 0
+        );
+        let second = crate::generated_custom_config_field!(
+            CustomConfigFlagField,
+            len: 2,
+            offset: 1
+        );
+        let invalid = crate::generated_custom_config_field!(
+            CustomConfigFlagField,
+            len: 2,
+            offset: 2
+        );
+        let mut image = CustomConfigImage::new([0; 2]);
+        let mut editor = image.editor();
+
+        assert!(crate::set_custom_config_fields!(editor;
+            first => true,
+            second => true,
+        ));
+        assert!(!crate::set_custom_config_fields!(editor;
+            first => false,
+            invalid => true,
+        ));
+        assert_eq!(image.as_bytes(), &[0, 1]);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::float_out_boy_command_payload;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads,
-    FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
+    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
+    FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
 };
 use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::TimestampTicks;
@@ -63,18 +63,12 @@ pub(super) fn handle_packet(
         0 => FloatOutBoyChargingState::NotCharging,
         _ => FloatOutBoyChargingState::Charging,
     });
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(ride_state, status.beep_reason()),
-        base.footpad(),
-        base.setpoints(),
-        base.booster_current(),
-        base.motor(),
-    );
-
     Some(
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+        payloads
+            .with_base(base.with_status(FloatOutBoyAllDataStatus::new(
+                ride_state,
+                status.beep_reason(),
+            )))
             .with_mode4_charging(FloatOutBoyAllDataMode4Payload::new(current, voltage)),
     )
 }
@@ -93,19 +87,10 @@ pub(super) fn timeout(
         return payloads;
     }
 
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(
-            ride_state.with_charging(FloatOutBoyChargingState::NotCharging),
-            status.beep_reason(),
-        ),
-        base.footpad(),
-        base.setpoints(),
-        base.booster_current(),
-        base.motor(),
-    );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    payloads.with_base(base.with_status(FloatOutBoyAllDataStatus::new(
+        ride_state.with_charging(FloatOutBoyChargingState::NotCharging),
+        status.beep_reason(),
+    )))
 }
 
 #[cfg(test)]

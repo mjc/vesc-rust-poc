@@ -126,22 +126,59 @@ realtime_data_items! {
     }
 }
 
-vescpkg_rs::typed_newtype! {
+vescpkg_rs::typed_newtypes! {
+    attributes {
+        #[derive(Debug, Default, Clone, Copy, PartialEq)]
+        #[repr(transparent)]
+    }
     /// Float Out Boy `motor.filt_current` realtime value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
-    new(current);
-    current;
+    pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent) => new(current), current;
+    /// Float Out Boy `imu.balance_pitch` realtime value.
+    pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians) => new(angle), angle;
+    /// Float Out Boy `remote.input` realtime value.
+    pub struct FloatOutBoyRealtimeRemoteInput(SignedRatio) => new(ratio), ratio;
+    /// Float Out Boy runtime setpoint angle value.
+    pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees) => new(angle), angle;
+    /// Float Out Boy `balance_current` runtime realtime value.
+    pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent) => new(current), current;
+    /// Float Out Boy `booster.current` runtime realtime value.
+    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent) => new(current), current;
 }
 
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `imu.balance_pitch` realtime value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
-    new(angle);
-    angle;
+vescpkg_rs::typed_field_groups! {
+    attributes { #[derive(Debug, Clone, Copy, PartialEq)] }
+    /// Float Out Boy realtime motor-current values that are always sent.
+    #[derive(Default)]
+    pub struct FloatOutBoyRealtimeMotorCurrents {
+        motor: MotorCurrent => motor,
+        directional: DirectionalMotorCurrent => directional,
+        filtered: FloatOutBoyRealtimeFilteredMotorCurrent => filtered,
+        battery: BatteryCurrent => battery,
+    }
+    /// Float Out Boy realtime motor-temperature values that are always sent.
+    pub struct FloatOutBoyRealtimeMotorTemperatures {
+        mosfet: MosfetTemperature => mosfet,
+        motor: MotorTemperature => motor,
+    }
+    /// Float Out Boy runtime setpoint values sent only while running.
+    #[derive(Default)]
+    pub struct FloatOutBoyRealtimeRuntimeSetpoints {
+        board: FloatOutBoyRealtimeRuntimeSetpoint => board => with_board,
+        atr: FloatOutBoyRealtimeRuntimeSetpoint => atr,
+        brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint => brake_tilt,
+        torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint => torque_tilt,
+        turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint => turn_tilt,
+        remote: FloatOutBoyRealtimeRuntimeSetpoint => remote,
+    }
+    /// Float Out Boy realtime tail fields appended after conditional payload values.
+    ///
+    /// Source map: upstream appends active-alert mask, reserved flags, and firmware
+    /// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
+    #[derive(Eq)]
+    pub struct FloatOutBoyRealtimeTail {
+        firmware_fault_active: bool => firmware_fault_active,
+        firmware_fault_code: FirmwareFaultWireCode => firmware_fault_code,
+    }
 }
 
 impl FloatOutBoyRealtimeBalancePitch {
@@ -152,91 +189,10 @@ impl FloatOutBoyRealtimeBalancePitch {
     }
 }
 
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `remote.input` realtime value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeRemoteInput(SignedRatio);
-    new(ratio);
-    ratio;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime motor-current values that are always sent.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeMotorCurrents {
-        motor: MotorCurrent => motor,
-        directional: DirectionalMotorCurrent => directional,
-        filtered: FloatOutBoyRealtimeFilteredMotorCurrent => filtered,
-        battery: BatteryCurrent => battery,
-    }
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime motor-temperature values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeMotorTemperatures {
-        mosfet: MosfetTemperature => mosfet,
-        motor: MotorTemperature => motor,
-    }
-}
-
 impl Default for FloatOutBoyRealtimeMotorTemperatures {
     fn default() -> Self {
         let zero = vescpkg_rs::Temperature::from_degrees_celsius(0.0);
         Self::new(MosfetTemperature::new(zero), MotorTemperature::new(zero))
-    }
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy runtime setpoint angle value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees);
-    new(angle);
-    angle;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy runtime setpoint values sent only while running.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    pub struct FloatOutBoyRealtimeRuntimeSetpoints {
-        board: FloatOutBoyRealtimeRuntimeSetpoint => board => with_board,
-        atr: FloatOutBoyRealtimeRuntimeSetpoint => atr,
-        brake_tilt: FloatOutBoyRealtimeRuntimeSetpoint => brake_tilt,
-        torque_tilt: FloatOutBoyRealtimeRuntimeSetpoint => torque_tilt,
-        turn_tilt: FloatOutBoyRealtimeRuntimeSetpoint => turn_tilt,
-        remote: FloatOutBoyRealtimeRuntimeSetpoint => remote,
-    }
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `balance_current` runtime realtime value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent);
-    new(current);
-    current;
-}
-
-vescpkg_rs::typed_newtype! {
-    /// Float Out Boy `booster.current` runtime realtime value.
-    #[derive(Debug, Default, Clone, Copy, PartialEq)]
-    #[repr(transparent)]
-    pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
-    new(current);
-    current;
-}
-
-vescpkg_rs::typed_fields! {
-    /// Float Out Boy realtime tail fields appended after conditional payload values.
-    ///
-    /// Source map: upstream appends active-alert mask, reserved flags, and firmware
-    /// fault code at `third_party/float-out-boy/src/main.c:1956-1958`.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct FloatOutBoyRealtimeTail {
-        firmware_fault_active: bool => firmware_fault_active,
-        firmware_fault_code: FirmwareFaultWireCode => firmware_fault_code,
     }
 }
 
