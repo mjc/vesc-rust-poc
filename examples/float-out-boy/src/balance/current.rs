@@ -98,7 +98,10 @@ impl RequestedCurrent {
 impl LoopInput {
     #[inline]
     pub(super) fn current_limit(self) -> MotorCurrentLimit {
-        let braking = Branch::from_motor_current(self.motor_current).is_braking();
+        let braking = matches!(
+            Branch::from_motor_current(self.motor_current),
+            Branch::Brake
+        );
 
         match self.mode {
             FloatOutBoyMode::HandTest => {

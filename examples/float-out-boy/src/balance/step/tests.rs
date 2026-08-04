@@ -442,17 +442,29 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
 }
 
 #[test]
-fn balance_loop_unit_booster_proportional_subtracts_brake_tilt_like_float_out_boy_main_loop() {
-    let proportional = LoopInput {
-        setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
-        brake_tilt_setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
-        ..base_input()
-    }
-    .booster_proportional();
+fn balance_loop_unit_booster_proportional_subtracts_raw_pitch_like_float_out_boy_main_loop() {
+    let output = advance_loop(
+        LoopConfig {
+            booster_angle: AngleDegrees::ZERO,
+            booster_ramp: AngleDegrees::from_degrees(1.0),
+            booster_current: motor_current(Current::from_amps(20.0)),
+            ..base_config()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+            brake_tilt_setpoint: setpoint(AngleDegrees::from_degrees(2.0)),
+            raw_pitch: AngleDegrees::from_degrees(3.0),
+            ..base_input()
+        },
+        base_state(),
+    );
 
-    // Upstream subtracts brake tilt from booster proportional before
+    // Upstream subtracts brake tilt and raw pitch from booster proportional before
     // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-    assert_f32_eq!(proportional.as_degrees(), 0.0);
+    assert_current(
+        output.state.booster_current,
+        motor_current(Current::from_amps(0.0)),
+    );
 }
 
 #[test]
