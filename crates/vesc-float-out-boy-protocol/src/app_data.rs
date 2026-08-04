@@ -87,12 +87,13 @@ vesc_protocol::wire_enum! {
     }
 }
 
-vesc_protocol::typed_newtype! {
+vesc_protocol::typed_newtypes! {
+    attributes { #[derive(Debug, Clone, Copy, PartialEq, Eq)] }
     /// Float Out Boy all-data request mode byte.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct FloatOutBoyAllDataMode(u8);
-    from_source_id(source_id);
-    source_id;
+    #[derive(PartialOrd, Ord, Hash)]
+    pub struct FloatOutBoyAllDataMode(u8) => from_source_id(source_id), source_id;
+    /// Float Out Boy all-data request.
+    pub struct FloatOutBoyAllDataRequest(FloatOutBoyAllDataMode) => new(mode), mode;
 }
 
 impl FloatOutBoyAllDataMode {
@@ -113,14 +114,6 @@ impl FloatOutBoyAllDataMode {
     pub const fn includes_mode4(self) -> bool {
         self.source_id() >= 4
     }
-}
-
-vesc_protocol::typed_newtype! {
-    /// Float Out Boy all-data request.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct FloatOutBoyAllDataRequest(FloatOutBoyAllDataMode);
-    new(mode);
-    mode;
 }
 
 impl FloatOutBoyAllDataRequest {

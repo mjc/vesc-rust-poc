@@ -1,8 +1,5 @@
 use super::FloatOutBoyPackageState;
-use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyRideState,
-    FloatOutBoyRunState,
-};
+use crate::domain::{FloatOutBoyAllDataStatus, FloatOutBoyRunState};
 
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     state
@@ -31,25 +28,9 @@ pub(super) fn refresh_disabled_state(state: &mut FloatOutBoyPackageState) {
         return;
     }
 
-    let ride_state = FloatOutBoyRideState::new(
-        run_state,
-        ride_state.mode(),
-        ride_state.setpoint_adjustment(),
-        ride_state.stop_condition(),
-    )
-    .with_charging(ride_state.charging())
-    .with_wheelslip(ride_state.wheelslip())
-    .with_darkride(ride_state.darkride());
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(ride_state, status.beep_reason()),
-        base.footpad(),
-        base.setpoints(),
-        base.booster_current(),
-        base.motor(),
-    );
-    state.all_data_payloads = payloads.with_base(base);
+    let status =
+        FloatOutBoyAllDataStatus::new(ride_state.with_run_state(run_state), status.beep_reason());
+    state.all_data_payloads = payloads.with_base(base.with_status(status));
 }
 
 pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {

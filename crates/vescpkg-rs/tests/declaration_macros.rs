@@ -1,8 +1,8 @@
 //! Public declaration-macro behavior.
 
 use vescpkg_rs::{
-    const_field_builders, const_field_getters, const_forward_getters, typed_fields, typed_newtype,
-    wire_enum,
+    const_field_builders, const_field_getters, const_forward_getters, typed_field_groups,
+    typed_fields, typed_newtype, typed_newtypes, wire_enum,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +50,27 @@ typed_newtype! {
     get;
 }
 
+typed_newtypes! {
+    attributes {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[repr(transparent)]
+    }
+    struct Count(u8) => new(value), get;
+    struct Limit(u16) => new(value), get;
+}
+
+typed_field_groups! {
+    attributes { #[derive(Debug, Clone, Copy, PartialEq, Eq)] }
+    struct Window {
+        start: u8 => start,
+        end: u8 => end,
+    }
+    struct Position {
+        line: u16 => line,
+        column: u16 => column,
+    }
+}
+
 wire_enum! {
     enum WireMode {
         First = 3,
@@ -63,11 +84,18 @@ fn declaration_macros_generate_const_value_apis() {
     const NESTED_PAIR: NestedPair = NestedPair { pair: PAIR };
     const FIELDS: Fields = Fields::new(4, true).with_count(7);
     const TOKEN: Token = Token::new(42);
+    const COUNT: Count = Count::new(7);
+    const LIMIT: Limit = Limit::new(900);
+    const WINDOW: Window = Window::new(3, 9);
+    const POSITION: Position = Position::new(12, 34);
 
     assert_eq!((PAIR.left(), PAIR.right()), (3, 4));
     assert_eq!((NESTED_PAIR.left(), NESTED_PAIR.right()), (3, 4));
     assert_eq!((FIELDS.count(), FIELDS.enabled()), (7, true));
     assert_eq!(TOKEN.get(), 42);
+    assert_eq!((COUNT.get(), LIMIT.get()), (7, 900));
+    assert_eq!((WINDOW.start(), WINDOW.end()), (3, 9));
+    assert_eq!((POSITION.line(), POSITION.column()), (12, 34));
 }
 
 #[test]

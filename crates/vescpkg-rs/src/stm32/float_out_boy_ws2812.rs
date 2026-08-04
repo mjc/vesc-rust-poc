@@ -12,75 +12,48 @@
 //! the current safe owner: it keeps the DMA source buffer live, serializes CPU
 //! mutation behind quiescence, and retains state when teardown cannot stop DMA.
 
-/// Refloat v1.2.1's selectable WS2812 output pin.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Pin {
-    /// STM32 pin B6, TIM4 channel 1, DMA1 stream 0/channel 2.
-    B6 = 0,
-    /// STM32 pin B7, TIM4 channel 2, DMA1 stream 3/channel 2.
-    B7 = 1,
-    /// STM32 pin C9, TIM3 channel 4, DMA1 stream 2/channel 5.
-    C9 = 2,
-}
-
-impl Pin {
-    /// Return the Refloat v1.2.1 configuration ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the Refloat configuration value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
+crate::wire_enum! {
+    /// Refloat v1.2.1's selectable WS2812 output pin.
+    pub enum Pin {
+        /// STM32 pin B6, TIM4 channel 1, DMA1 stream 0/channel 2.
+        B6 = 0,
+        /// STM32 pin B7, TIM4 channel 2, DMA1 stream 3/channel 2.
+        B7 = 1,
+        /// STM32 pin C9, TIM3 channel 4, DMA1 stream 2/channel 5.
+        C9 = 2,
     }
 }
 
-impl TryFrom<u8> for Pin {
-    type Error = u8;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::B6),
-            1 => Ok(Self::B7),
-            2 => Ok(Self::C9),
-            _ => Err(value),
-        }
+crate::wire_enum! {
+    /// Refloat v1.2.1's WS2812 output pull-up configuration.
+    pub enum PinConfig {
+        /// Configure an open-drain output for an external 5 V pull-up.
+        PullupTo5v = 0,
+        /// Configure the alternate-function output without open drain.
+        NoPullup = 1,
     }
 }
 
-/// Refloat v1.2.1's WS2812 output pull-up configuration.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PinConfig {
-    /// Configure an open-drain output for an external 5 V pull-up.
-    PullupTo5v = 0,
-    /// Configure the alternate-function output without open drain.
-    NoPullup = 1,
-}
+const WS2812_ZERO: u16 = 31;
+const WS2812_ONE: u16 = 72;
 
-impl PinConfig {
-    /// Return the Refloat v1.2.1 configuration ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the Refloat configuration value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
+/// Encode one byte with Refloat v1.2.1's exact WS2812 PWM duty values.
+#[must_use]
+pub fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
+    let Some(output) = pulses.get_mut(*index..) else {
+        return false;
+    };
+    let mut written = 0_usize;
+    for (pulse, bit) in output.iter_mut().zip((0..8).rev()) {
+        *pulse = if byte & 1_u8.wrapping_shl(bit) == 0 {
+            WS2812_ZERO
+        } else {
+            WS2812_ONE
+        };
+        written = written.saturating_add(1);
     }
-}
-
-impl TryFrom<u8> for PinConfig {
-    type Error = u8;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::PullupTo5v),
-            1 => Ok(Self::NoPullup),
-            _ => Err(value),
-        }
-    }
+    *index = index.saturating_add(written);
+    written == 8
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -260,7 +233,32 @@ pub unsafe fn teardown(pin: Pin) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{DMA1_BASE, Pin, PinConfig, PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4};
+    use super::{
+        DMA1_BASE, Pin, PinConfig, PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4, encode_byte,
+    };
+
+    #[test]
+    fn every_byte_maps_to_refloats_exact_ws2812_pulses() {
+        let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
+
+        for byte in 0_u8..=u8::MAX {
+            let mut pulses = [0_u16; 8];
+            let mut index = 0;
+            assert!(encode_byte(&mut pulses, &mut index, byte));
+            assert_eq!(index, 8);
+            assert_eq!(
+                pulses,
+                masks.map(|mask| if byte & mask == 0 { 31 } else { 72 }),
+                "wrong pulses for byte {byte:#04x}"
+            );
+        }
+
+        let mut short = [0_u16; 7];
+        let mut index = 0;
+        assert!(!encode_byte(&mut short, &mut index, u8::MAX));
+        assert_eq!(index, short.len());
+        assert_eq!(short, [72; 7]);
+    }
 
     #[test]
     fn refloat_pin_ids_round_trip_and_reject_unknown_values() {

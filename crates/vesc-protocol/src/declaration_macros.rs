@@ -83,6 +83,36 @@ macro_rules! typed_fields {
     (@with $field:ident: $field_type:ty) => {};
 }
 
+/// Declare multiple typed field groups with shared attributes.
+#[macro_export]
+macro_rules! typed_field_groups {
+    (
+        attributes { $(#[$common_attribute:meta])* }
+        $($groups:tt)+
+    ) => {
+        $crate::typed_field_groups!(@emit [$(#[$common_attribute])*] $($groups)+);
+    };
+
+    (@emit [$($common_attribute:tt)*]) => {};
+
+    (@emit [$($common_attribute:tt)*]
+        $(#[$type_attribute:meta])*
+        $visibility:vis struct $name:ident {
+            $( $field:ident: $field_type:ty => $getter:ident $(=> $with:ident)?, )+
+        }
+        $($remaining:tt)*
+    ) => {
+        $crate::typed_fields! {
+            $($common_attribute)*
+            $(#[$type_attribute])*
+            $visibility struct $name {
+                $( $field: $field_type => $getter $(=> $with)?, )+
+            }
+        }
+        $crate::typed_field_groups!(@emit [$($common_attribute)*] $($remaining)*);
+    };
+}
+
 /// Declare a typed newtype with a const constructor and getter.
 #[macro_export]
 macro_rules! typed_newtype {
@@ -108,6 +138,35 @@ macro_rules! typed_newtype {
                 self.0
             }
         }
+    };
+}
+
+/// Declare multiple typed newtypes with shared attributes.
+#[macro_export]
+macro_rules! typed_newtypes {
+    (
+        attributes { $(#[$common_attribute:meta])* }
+        $($types:tt)+
+    ) => {
+        $crate::typed_newtypes!(@emit [$(#[$common_attribute])*] $($types)+);
+    };
+
+    (@emit [$($common_attribute:tt)*]) => {};
+
+    (@emit [$($common_attribute:tt)*]
+        $(#[$type_attribute:meta])*
+        $visibility:vis struct $name:ident($inner:ty)
+            => $constructor:ident($value:ident), $getter:ident;
+        $($remaining:tt)*
+    ) => {
+        $crate::typed_newtype! {
+            $($common_attribute)*
+            $(#[$type_attribute])*
+            $visibility struct $name($inner);
+            $constructor($value);
+            $getter;
+        }
+        $crate::typed_newtypes!(@emit [$($common_attribute)*] $($remaining)*);
     };
 }
 

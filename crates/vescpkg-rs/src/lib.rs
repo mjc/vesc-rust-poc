@@ -238,8 +238,8 @@ pub use data_recorder::{
 pub use vesc_protocol::app_data as protocol_app_data;
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vesc_protocol::{
-    const_field_builders, const_field_getters, const_forward_getters, typed_fields, typed_newtype,
-    wire_enum,
+    const_field_builders, const_field_getters, const_forward_getters, typed_field_groups,
+    typed_fields, typed_newtype, typed_newtypes, wire_enum,
 };
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
