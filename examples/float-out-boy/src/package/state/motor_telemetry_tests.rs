@@ -156,7 +156,7 @@ fn base_all_data_does_not_refresh_distance_or_temperatures() {
             &mut state,
             app_data,
             telemetry,
-            FloatOutBoyAllDataMode::base().source_id(),
+            FloatOutBoyAllDataMode::from_source_id(1).source_id(),
         )
         .unwrap()
         .len(),
@@ -177,7 +177,7 @@ fn base_battery_voltage_refreshes_from_motor_telemetry() {
         &mut state,
         app_data,
         telemetry,
-        FloatOutBoyAllDataMode::base().source_id(),
+        FloatOutBoyAllDataMode::from_source_id(1).source_id(),
     )
     .unwrap();
     assert_eq!(packet.len(), 34);
