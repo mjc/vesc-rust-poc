@@ -434,8 +434,9 @@ impl FloatOutBoyPackageState {
     pub(super) fn refresh_balance_filter_config(&mut self) {
         // C map: `reconfigure(d)` refreshes Mahony filter gains through
         // `balance_filter_configure` at `third_party/float-out-boy/src/main.c:154-160`.
+        let filter = self.serialized_config.filter();
         self.balance_filter
-            .configure_from(self.serialized_config.filter());
+            .configure(filter.mahony_kp(), filter.mahony_kp_roll());
     }
 
     #[cfg(any(test, target_arch = "arm"))]
