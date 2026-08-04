@@ -1,11 +1,10 @@
-use super::{
-    FloatOutBoyPackageState, finish_startup, stop, stop_with, time::float_out_boy_ticks_elapsed,
-};
+use super::{FloatOutBoyPackageState, finish_startup, stop, stop_with};
 use crate::{
     domain::FloatOutBoyAllDataPayloads, package::test_support::default_float_out_boy_config_bytes,
 };
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::test_support::FirmwareTest;
+use vescpkg_rs::timer_older_whole_seconds as float_out_boy_ticks_elapsed;
 
 #[test]
 fn float_out_boy_ticks_elapsed_matches_timer_older_strict_boundary() {
