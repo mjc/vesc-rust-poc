@@ -43,6 +43,10 @@ impl FloatOutBoyRideState {
     }
 
     vesc_protocol::const_field_builders! {
+        /// Return this state with the requested top-level run state.
+        pub fn with_run_state(run_state: FloatOutBoyRunState) => run_state;
+        /// Return this state with the requested runtime mode.
+        pub fn with_mode(mode: FloatOutBoyMode) => mode;
         /// Return this state with the requested charging state.
         pub fn with_charging(charging: FloatOutBoyChargingState) => charging;
         /// Return this state with the requested wheel-slip state.
@@ -51,6 +55,8 @@ impl FloatOutBoyRideState {
         pub fn with_darkride(darkride: FloatOutBoyDarkRideState) => darkride;
         /// Return this state with the requested setpoint adjustment.
         pub fn with_setpoint_adjustment(setpoint_adjustment: FloatOutBoySetpointAdjustment) => setpoint_adjustment;
+        /// Return this state with the requested stop condition.
+        pub fn with_stop_condition(stop_condition: FloatOutBoyStopCondition) => stop_condition;
     }
 
     vesc_protocol::const_field_getters! {
