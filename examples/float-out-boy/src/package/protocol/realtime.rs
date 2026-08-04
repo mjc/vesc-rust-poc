@@ -9,7 +9,9 @@ use crate::domain::{
 };
 use crate::wire::FloatOutBoyPacket;
 #[cfg(test)]
-use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
+pub(in crate::package) use test_support::{
+    encode_float_out_boy_get_realtime_data_response, encode_float_out_boy_realtime_data_response,
+};
 
 // Float Out Boy v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/float-out-boy/src/main.c:1267-1269`.
@@ -22,20 +24,6 @@ const FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY: usize = 77;
 /// `third_party/float-out-boy/src/main.c:1904-1960`.
 pub(in crate::package) type FloatOutBoyRealtimeDataResponse =
     FloatOutBoyPacket<FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY>;
-
-#[inline(never)]
-#[cfg(test)]
-pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response(
-    payloads: &FloatOutBoyAllDataPayloads,
-) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
-    encode_float_out_boy_get_realtime_data_response_with_remote(
-        payloads,
-        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-        ),
-        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
-    )
-}
 
 #[inline(never)]
 pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_remote(
@@ -98,29 +86,6 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     packet.push_float32_auto(remote_input.ratio().as_ratio());
 
     packet.into_bytes()
-}
-
-#[inline(never)]
-#[cfg(test)]
-pub(in crate::package) fn encode_float_out_boy_realtime_data_response(
-    payloads: &FloatOutBoyAllDataPayloads,
-    system_timestamp: TimestampTicks,
-) -> FloatOutBoyRealtimeDataResponse {
-    encode_float_out_boy_realtime_data_response_with_runtime(
-        payloads,
-        FloatOutBoyRealtimeDataHeader::new(
-            system_timestamp,
-            payloads.base().status().ride_state(),
-            payloads.base().footpad().state(),
-            payloads.base().status().beep_reason(),
-        ),
-        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
-        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-        ),
-        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
-        FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
-    )
 }
 
 #[inline(never)]
@@ -265,5 +230,7 @@ pub(in crate::package) fn realtime_value(
     }
 }
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

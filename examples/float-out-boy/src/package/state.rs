@@ -56,6 +56,8 @@ mod remote_control;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
+#[cfg(test)]
+mod test_support;
 mod transition;
 #[cfg(test)]
 mod transition_tests;
@@ -269,18 +271,6 @@ impl FloatOutBoyPackageState {
             ));
     }
 
-    /// Build startup state and apply the config persisted by firmware.
-    ///
-    /// Upstream `data_init` reads EEPROM and falls back to generated defaults
-    /// at `third_party/float-out-boy/src/main.c:1160-1185`.
-    #[cfg(test)]
-    pub(super) fn from_persisted_config() -> Self {
-        let mut state = Self::default();
-        state.load_persisted_config_on_main_thread(vescpkg_rs::FirmwareClock::current_timestamp());
-        state.configure_loaded_config_on_main_thread();
-        state
-    }
-
     /// Seed the auxiliary backup threshold from the firmware odometer at startup.
     pub(crate) fn initialize_aux_odometer(&mut self, odometer: OdometerMeters) {
         self.aux_odometer = odometer;
@@ -325,11 +315,6 @@ impl FloatOutBoyPackageState {
             self.refresh_motor_config_runtime_state(telemetry);
             self.aux_motor_config_refresh_ticks = now;
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn aux_backup_failures(&self) -> u32 {
-        self.aux_backup_failures
     }
 
     pub(crate) fn record_firmware_version(&mut self, version: FirmwareVersion) {
@@ -384,21 +369,6 @@ impl FloatOutBoyPackageState {
         self.bms.refresh(bms.integration(), system_time_ticks);
     }
 
-    #[cfg(test)]
-    pub(crate) const fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
-        self.bms.sample()
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
-        self.bms.faults()
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn recorded_firmware_version(&self) -> Option<FirmwareVersion> {
-        self.firmware_version
-    }
-
     /// Return the current all-data payload snapshot.
     #[must_use]
     pub const fn all_data_payloads(&self) -> FloatOutBoyAllDataPayloads {
@@ -416,14 +386,6 @@ impl FloatOutBoyPackageState {
         let startup = self.serialized_config.startup();
         self.motor_control
             .play_click(startup.click_current(), startup.sample_rate());
-    }
-
-    /// Apply and clear a pending motor-current request.
-    #[cfg(test)]
-    pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
-        self.motor_control
-            .apply_requested_current(motor)
-            .unwrap_or(false)
     }
 
     /// Apply motor control for the current run state.
@@ -460,23 +422,6 @@ impl FloatOutBoyPackageState {
             .configure_from(self.serialized_config.filter());
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_balance_filter_for_test(&mut self, balance_filter: BalanceFilter) {
-        self.balance_filter = balance_filter;
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn configured_mahony_gains_for_test(
-        &self,
-    ) -> (vescpkg_rs::MahonyPitchGain, vescpkg_rs::MahonyRollGain) {
-        self.balance_filter.configured_gains()
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> u8 {
-        self.lcm.hardware_mode()
-    }
-
     pub(super) fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
         self.idle_ticks = now;
     }
@@ -493,16 +438,6 @@ impl FloatOutBoyPackageState {
         self.disengage_ticks = float_out_boy_expire_timer(now, 60);
         self.idle_ticks = now;
         self.bms.initialize_start_epoch(now);
-    }
-
-    #[cfg(test)]
-    pub(super) fn replace_idle_epoch_for_test(&mut self, now: TimestampTicks) {
-        self.idle_ticks = now;
-    }
-
-    #[cfg(test)]
-    pub(super) const fn idle_epoch_for_test(&self) -> TimestampTicks {
-        self.idle_ticks
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -565,32 +500,6 @@ impl FloatOutBoyPackageState {
         let _ = imu;
 
         self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
-    }
-
-    /// Refresh the source-backed runtime slices that Float Out Boy updates near the
-    /// top of `float_out_boy_thd`.
-    ///
-    /// C map: Float Out Boy v1.2.1 `imu_ref_callback` starts at `third_party/float-out-boy/src/main.c:760`.
-    ///
-    /// Upstream applies `configure(d)` before runtime work at
-    /// `third_party/float-out-boy/src/main.c:184-191`, updates IMU at `third_party/float-out-boy/src/main.c:775`, motor data at
-    /// `third_party/float-out-boy/src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
-    /// gate at `third_party/float-out-boy/src/main.c:833-838`.
-    #[cfg(not(target_arch = "arm"))]
-    pub(crate) fn refresh_runtime_state(
-        &mut self,
-        telemetry: &impl MotorTelemetry,
-        imu: &impl Imu,
-        system_time_ticks: TimestampTicks,
-    ) {
-        self.refresh_config_runtime_state();
-        self.refresh_motor_runtime_state(telemetry);
-        self.alert_tracker.update_firmware_fault(
-            telemetry.firmware_fault(),
-            system_time_ticks,
-            self.serialized_config.persistent_fatal_error(),
-        );
-        let _ = self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
     pub(crate) fn refresh_main_loop_runtime_state(
@@ -755,107 +664,6 @@ impl FloatOutBoyPackageState {
             || self.handle_tuning_packet(now, bytes)
             || self.handle_query_packet(telemetry, now, reply, bytes)
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
-    }
-
-    #[cfg(test)]
-    fn handle_effectful_packet_for_test(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> Option<bool> {
-        let [package_id, command, payload @ ..] = bytes else {
-            return None;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
-            return None;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
-            return None;
-        };
-
-        match command {
-            FloatOutBoyAppDataCommand::ConfigSave => {
-                let config = self.active_config_image();
-                let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-                    store_persisted_config(effects, &config)
-                });
-                if stored {
-                    self.acknowledge_command_config_write(now());
-                }
-                Some(true)
-            }
-            FloatOutBoyAppDataCommand::ConfigRestore => {
-                let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                self.begin_restore_persisted_config(&loaded, now());
-                let migration = vescpkg_rs::test_support::with_firmware_effects(
-                    migrate_legacy_firmware_imu_settings,
-                );
-                self.finish_configure_active(migration);
-                Some(true)
-            }
-            FloatOutBoyAppDataCommand::Lock => {
-                let Some(disabled) = payload.first() else {
-                    return Some(false);
-                };
-                if !self.is_running() {
-                    let loaded =
-                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                    if let Some(config) =
-                        self.apply_lock_from_persisted(&loaded, *disabled != 0, now())
-                    {
-                        let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-                            store_persisted_config(effects, &config)
-                        });
-                        if stored {
-                            self.acknowledge_command_config_write(now());
-                        }
-                        let migration = vescpkg_rs::test_support::with_firmware_effects(
-                            migrate_legacy_firmware_imu_settings,
-                        );
-                        self.finish_configure_active(migration);
-                    }
-                }
-                Some(true)
-            }
-            FloatOutBoyAppDataCommand::HandTest => {
-                let Some(restore) = self.prepare_handtest_packet(bytes) else {
-                    return Some(false);
-                };
-                if restore {
-                    let loaded =
-                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                    if self.commit_handtest_restore(
-                        &loaded,
-                        vescpkg_rs::FirmwareClock::current_timestamp(),
-                    ) {
-                        let migration = vescpkg_rs::test_support::with_firmware_effects(
-                            migrate_legacy_firmware_imu_settings,
-                        );
-                        self.finish_configure_active(migration);
-                    }
-                }
-                Some(true)
-            }
-            FloatOutBoyAppDataCommand::Flywheel => {
-                let Some(restore) = self.prepare_flywheel_packet(bytes) else {
-                    return Some(false);
-                };
-                if restore {
-                    let loaded =
-                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-                    self.commit_flywheel_restore(
-                        &loaded,
-                        vescpkg_rs::FirmwareClock::current_timestamp(),
-                    );
-                    let migration = vescpkg_rs::test_support::with_firmware_effects(
-                        migrate_legacy_firmware_imu_settings,
-                    );
-                    self.finish_configure_active(migration);
-                }
-                Some(true)
-            }
-            _ => None,
-        }
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

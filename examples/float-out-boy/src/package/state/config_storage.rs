@@ -119,11 +119,6 @@ impl FloatOutBoyEepromImage {
         &self.0
     }
 
-    #[cfg(test)]
-    pub(super) const fn into_bytes(self) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
-        self.0
-    }
-
     fn load(effects: &FirmwareEffects) -> Result<Self, vescpkg_rs::EepromError> {
         vescpkg_rs::CustomEeprom::new()
             .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects)
@@ -338,23 +333,6 @@ impl FloatOutBoyPackageState {
         self.startup_configured = true;
     }
 
-    #[cfg(test)]
-    pub(in crate::package) fn load_persisted_config_on_main_thread(&mut self, now: TimestampTicks) {
-        let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-        self.apply_persisted_config(&loaded);
-        self.initialize_time_epochs(now);
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn configure_loaded_config_on_main_thread(&mut self) {
-        self.refresh_balance_filter_config();
-        super::config_runtime::refresh_led_effects(self);
-        self.refresh_config_runtime_state();
-        let migration =
-            vescpkg_rs::test_support::with_firmware_effects(migrate_legacy_firmware_imu_settings);
-        self.finish_startup_configure(migration);
-    }
-
     pub(in crate::package) const fn startup_configured(&self) -> bool {
         self.startup_configured
     }
@@ -427,39 +405,6 @@ impl FloatOutBoyPackageState {
         self.serialized_config.as_bytes()
     }
 
-    #[cfg(test)]
-    pub(in crate::package) fn replace_serialized_config_for_test(
-        &mut self,
-        config: &crate::config::FloatOutBoyConfigImage,
-    ) {
-        self.serialized_config = *config;
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn balance_config_for_test(
-        &self,
-    ) -> crate::config::FloatOutBoyBalanceConfig<'_> {
-        self.serialized_config.balance()
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn store_serialized_config(&mut self, config: &[u8]) -> bool {
-        let Some(config) = self.prepare_serialized_config(config) else {
-            return false;
-        };
-        let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-            store_persisted_config(effects, &config)
-        });
-        if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
-        }
-        self.replace_active_config(&config);
-        let migration =
-            vescpkg_rs::test_support::with_firmware_effects(migrate_legacy_firmware_imu_settings);
-        self.finish_configure_active(migration);
-        true
-    }
-
     pub(super) fn refresh_balance_filter_config(&mut self) {
         // C map: `reconfigure(d)` refreshes Mahony filter gains through
         // `balance_filter_configure` at `third_party/float-out-boy/src/main.c:154-160`.
@@ -474,15 +419,5 @@ impl FloatOutBoyPackageState {
         // Target Rust must not panic if config bytes are corrupt, so keep the
         // startup default instead of dividing by zero.
         self.serialized_config.startup().loop_time_us()
-    }
-
-    #[cfg(test)]
-    pub(super) const fn firmware_imu_migration_for_test(&self) -> FirmwareImuMigration {
-        self.firmware_imu_migration
-    }
-
-    #[cfg(test)]
-    pub(super) const fn config_load_outcome_for_test(&self) -> FloatOutBoyConfigLoadOutcome {
-        self.config_load_outcome
     }
 }
