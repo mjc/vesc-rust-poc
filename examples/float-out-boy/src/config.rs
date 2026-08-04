@@ -282,7 +282,6 @@ impl FloatOutBoyConfigImage {
 vescpkg_rs::generated_custom_config_view! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct FloatOutBoyHapticConfig<'a>(&'a FloatOutBoyConfigImage);
-    impl_attributes { #[cfg(any(test, target_arch = "arm"))] }
     len: FLOAT_OUT_BOY_CONFIG_LEN;
     fields {
         DUTY_FREQUENCY_FIELD: CustomConfigFrequencyField => duty_frequency -> AudioFrequency, offset: 244, scale: 1.0, map: AudioFrequency::new;
@@ -562,7 +561,6 @@ impl FloatOutBoyMetadataConfig<'_> {
 vescpkg_rs::generated_custom_config_view! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct FloatOutBoyBmsConfig<'a>(&'a FloatOutBoyConfigImage);
-    impl_attributes { #[cfg(any(test, target_arch = "arm"))] }
     len: FLOAT_OUT_BOY_CONFIG_LEN;
     fields {
         ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 265;

@@ -19,8 +19,6 @@ const TEST_SAMPLE_CAPACITY: usize = 24;
 type DataRecorderStorage = Option<[u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]>;
 #[cfg(all(not(test), target_arch = "arm"))]
 type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
-#[cfg(all(not(test), not(target_arch = "arm")))]
-type DataRecorderStorage = Option<[u8; 0]>;
 
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]

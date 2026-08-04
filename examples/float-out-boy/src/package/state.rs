@@ -573,9 +573,6 @@ impl FloatOutBoyPackageState {
         // Device callbacks keep the IMU parameter for one stable packet API;
         // the device's dedicated IMU callback already refreshed state.
         let _ = imu;
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        self.refresh_runtime_state(telemetry, imu, now());
-
         self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
     }
 
@@ -588,7 +585,7 @@ impl FloatOutBoyPackageState {
     /// `third_party/float-out-boy/src/main.c:184-191`, updates IMU at `third_party/float-out-boy/src/main.c:775`, motor data at
     /// `third_party/float-out-boy/src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
     /// gate at `third_party/float-out-boy/src/main.c:833-838`.
-    #[cfg(not(target_arch = "arm"))]
+    #[cfg(test)]
     pub(crate) fn refresh_runtime_state(
         &mut self,
         telemetry: &impl MotorTelemetry,

@@ -53,11 +53,6 @@ fn stop_with(
     }
 }
 
-#[cfg(all(not(test), not(target_arch = "arm")))]
-pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
-    vescpkg_rs::PackageStopDisposition::Drop
-}
-
 #[cfg(test)]
 pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,

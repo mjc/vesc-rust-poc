@@ -12,6 +12,20 @@ macro_rules! const_field_getters {
     };
 }
 
+/// Generate copy-value getters forwarded through a named field.
+#[macro_export]
+macro_rules! const_forward_getters {
+    ($( $(#[$attribute:meta])* $visibility:vis fn $name:ident -> $output:ty = $field:ident.$getter:ident(); )+) => {
+        $(
+            $(#[$attribute])*
+            #[must_use]
+            $visibility const fn $name(self) -> $output {
+                self.$field.$getter()
+            }
+        )+
+    };
+}
+
 /// Generate const copy-value builders for named fields.
 #[macro_export]
 macro_rules! const_field_builders {
