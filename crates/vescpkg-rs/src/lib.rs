@@ -229,7 +229,8 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
+    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    FirmwareDataRecorderDescriptorError, RingCursor,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vesc_protocol::{
