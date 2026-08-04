@@ -231,9 +231,10 @@ impl FloatOutBoyDataRecorderFlags {
 }
 
 /// Float Out Boy fatal-error state for realtime-data extra flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyFatalErrorState {
     /// No fatal error is active.
+    #[default]
     None,
     /// Fatal error is active.
     Present,
