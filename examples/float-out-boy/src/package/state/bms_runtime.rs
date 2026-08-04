@@ -1,6 +1,9 @@
-use super::super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
 use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
 use vescpkg_rs::{TimestampTicks, VescSeconds};
+use vescpkg_rs::{
+    timer_older as float_out_boy_ticks_elapsed_seconds,
+    timer_older_whole_seconds as float_out_boy_ticks_elapsed,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BmsReadyAlertFault {

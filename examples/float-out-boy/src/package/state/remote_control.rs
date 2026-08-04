@@ -1,10 +1,10 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
-use crate::package::time::float_out_boy_ticks_elapsed_seconds;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, TimestampTicks,
 };
+use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
 
 fn zero_motor_current() -> MotorCurrent {
     // C map: `reset_runtime_vars` and the RC-move idle branches clear current

@@ -1,6 +1,7 @@
 //! Compatibility namespace for shared FOB protocol wire primitives.
 
+#[cfg(any(test, target_arch = "arm"))]
+pub(crate) use vesc_float_out_boy_protocol::saturating_trunc_f32_to_u32;
 pub(crate) use vesc_float_out_boy_protocol::{
-    FloatOutBoyPacket, degrees, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
-    truncating_u64_to_u32,
+    FloatOutBoyPacket, degrees, saturating_trunc_f32_to_u8, truncating_u64_to_u32,
 };

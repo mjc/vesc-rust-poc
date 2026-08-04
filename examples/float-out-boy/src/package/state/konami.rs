@@ -5,9 +5,9 @@
 //! allocation-free in the package image.
 
 use crate::domain::FloatOutBoyFootpadState;
-use crate::package::time::float_out_boy_ticks_elapsed_seconds;
 use vescpkg_rs::ImuPitch;
 use vescpkg_rs::prelude::{AngleRadians, TimestampTicks, VescSeconds};
+use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
 
 const STEP_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.15);
 const SEQUENCE_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.5);
