@@ -185,9 +185,8 @@ fn feedback_type(
         | FloatOutBoySetpointAdjustment::PushbackError => return HapticFeedbackType::ErrorVoltage,
         _ => {}
     }
-    if config.current_threshold().as_ratio() > 0.0
-        && input.current_saturation > config.current_threshold()
-    {
+    let current_threshold = config.current_threshold();
+    if !current_threshold.is_zero() && input.current_saturation > current_threshold {
         HapticFeedbackType::DutyContinuous
     } else {
         HapticFeedbackType::None
