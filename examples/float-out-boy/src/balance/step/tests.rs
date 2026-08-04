@@ -144,6 +144,91 @@ fn balance_loop_unit_persists_pid_integral_across_ticks_like_float_out_boy_pid()
 }
 
 #[test]
+fn balance_loop_preserves_multisample_pid_trajectory() {
+    let config = LoopConfig {
+        kp: AngleCurrentGain::new(1.25),
+        kp2: RateCurrentGain::new(0.35),
+        ki: IntegralCurrentGain::new(0.075),
+        kp_brake: PidScale::new(1.8),
+        kp2_brake: PidScale::new(0.65),
+        ki_limit: motor_current_limit(Current::from_amps(50.0)),
+        ..base_config()
+    };
+    let inputs = [
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(4.25)),
+            balance_pitch: AngleDegrees::from_degrees(1.5),
+            roll: roll(AngleRadians::from_radians(0.3)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(12.5),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(-4.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(1_200.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-2.0)),
+            balance_pitch: AngleDegrees::from_degrees(0.75),
+            roll: roll(AngleRadians::from_radians(-0.4)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(-6.0),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(8.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(-1_500.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            balance_pitch: AngleDegrees::from_degrees(-0.25),
+            roll: roll(AngleRadians::from_radians(0.7)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(3.0),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(9.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(250.0)),
+            ..base_input()
+        },
+    ];
+    let mut state = base_state();
+    let actual = inputs.map(|input| {
+        let output = advance_loop(config, input, state);
+        state = output.state;
+        [
+            output.requested_current.current().as_amps(),
+            state.pid.integral_current.current().as_amps(),
+            state.pid.kp_brake_scale.value(),
+            state.pid.kp2_brake_scale.value(),
+            state.pid.kp_accel_scale.value(),
+            state.pid.kp2_accel_scale.value(),
+        ]
+    });
+
+    assert_eq!(
+        actual.map(|sample| sample.map(f32::to_bits)),
+        [
+            [
+                1_008_139_520,
+                1_045_639_988,
+                1_065_420_325,
+                1_065_294_496,
+                1_065_353_216,
+                1_065_353_216,
+            ],
+            [
+                3_187_903_201,
+                0,
+                1_065_419_654,
+                1_065_295_083,
+                1_065_420_325,
+                1_065_294_496,
+            ],
+            [
+                3_192_756_513,
+                1_035_993_088,
+                1_065_418_990,
+                1_065_295_664,
+                1_065_419_654,
+                1_065_295_083,
+            ],
+        ],
+    );
+}
+
+#[test]
 fn balance_loop_unit_zero_ki_limit_keeps_integrating_like_float_out_boy_pid() {
     let config = LoopConfig {
         ki: IntegralCurrentGain::new(1.0),
