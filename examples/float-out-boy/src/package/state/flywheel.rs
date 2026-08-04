@@ -43,7 +43,7 @@ impl FloatOutBoyFlywheelOffsets {
         pitch: AngleDegrees,
         roll: AngleDegrees,
     ) -> (AngleDegrees, AngleDegrees) {
-        if !matches!(mode, FloatOutBoyMode::Flywheel) {
+        if mode != FloatOutBoyMode::Flywheel {
             return (pitch, roll);
         }
 
@@ -198,8 +198,8 @@ impl FloatOutBoyFlywheelRequest {
         if !matches!(
             ride_state.mode(),
             FloatOutBoyMode::Normal | FloatOutBoyMode::Flywheel
-        ) || !matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
-            && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+        ) || ride_state.run_state() != FloatOutBoyRunState::Ready
+            && ride_state.mode() != FloatOutBoyMode::Flywheel
         {
             return false;
         }

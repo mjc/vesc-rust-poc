@@ -7,7 +7,7 @@
 use super::{
     FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload,
 };
-use crate::wire::FloatOutBoyPacket;
+use crate::packet::FloatOutBoyPacket;
 use vescpkg_rs::prelude::AngleRadians;
 
 pub(super) fn float_out_boy_append_all_data_mode2<const N: usize>(
@@ -44,7 +44,7 @@ pub(super) fn float_out_boy_append_all_data_mode3<const N: usize>(
 ) {
     // C map: mode >= 3 appends odometer, Ah/Wh totals, and battery level at
     // `third_party/float-out-boy/src/main.c:1381-1389`.
-    packet.push_u32(crate::wire::truncating_u64_to_u32(
+    packet.push_u32(crate::packet::truncating_u64_to_u32(
         mode3.odometer().as_meters(),
     ));
     packet.push_scaled_i16(mode3.discharged_charge().charge().as_amp_hours(), 10.0);
@@ -70,13 +70,13 @@ pub(super) fn float_out_boy_append_all_data_mode4<const N: usize>(
 pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
     // C map: compact realtime/all-data packets emit angles in degrees at
     // `third_party/float-out-boy/src/main.c:1328-1399` and `third_party/float-out-boy/src/main.c:1881-1930`.
-    crate::wire::degrees(angle)
+    crate::packet::degrees(angle)
 }
 
 pub(super) fn float_out_boy_scaled_u8(value: f32, scale: f32) -> u8 {
     // C map: packet helpers use direct scale/cast encoding for compact
     // integer fields at `third_party/float-out-boy/src/main.c:1328-1399`.
-    crate::wire::saturating_trunc_f32_to_u8(value * scale)
+    crate::packet::saturating_trunc_f32_to_u8(value * scale)
 }
 
 fn float_out_boy_nonnegative_scaled_u8(value: f32, scale: f32) -> u8 {
@@ -88,5 +88,5 @@ fn float_out_boy_nonnegative_scaled_u8(value: f32, scale: f32) -> u8 {
 pub(super) fn float_out_boy_offset_scaled_u8(value: f32, scale: f32, offset: f32) -> u8 {
     // C map: compact packet helpers add a fixed offset before the integer cast
     // at `third_party/float-out-boy/src/main.c:1241-1399`.
-    crate::wire::saturating_trunc_f32_to_u8(value * scale + offset)
+    crate::packet::saturating_trunc_f32_to_u8(value * scale + offset)
 }

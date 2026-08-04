@@ -1,13 +1,12 @@
-mod metadata;
+#[cfg(test)]
 mod realtime;
-pub(in crate::package) mod wire;
 
-pub(in crate::package) use self::metadata::{
+#[cfg(any(test, target_arch = "arm"))]
+pub(in crate::package) use vesc_float_out_boy_protocol::realtime_value;
+pub(super) use vesc_float_out_boy_protocol::{
+    encode_float_out_boy_get_realtime_data_response_with_remote,
+    encode_float_out_boy_realtime_data_response_with_runtime,
+};
+pub(in crate::package) use vesc_float_out_boy_protocol::{
     encode_float_out_boy_info_response, encode_float_out_boy_realtime_data_ids_response,
 };
-#[cfg(test)]
-pub(super) use self::realtime::encode_float_out_boy_get_realtime_data_response;
-pub(super) use self::realtime::encode_float_out_boy_get_realtime_data_response_with_remote;
-pub(super) use self::realtime::encode_float_out_boy_realtime_data_response_with_runtime;
-#[cfg(any(test, target_arch = "arm"))]
-pub(in crate::package) use self::realtime::realtime_value;

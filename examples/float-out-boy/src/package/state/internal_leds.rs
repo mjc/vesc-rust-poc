@@ -204,7 +204,7 @@ impl FloatOutBoyPackageState {
         let frame = FloatOutBoyLedUpdate {
             run_state: ride_state.run_state(),
             mode: ride_state.mode(),
-            darkride: matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active),
+            darkride: ride_state.darkride() == FloatOutBoyDarkRideState::Active,
             footpad: base.footpad().state(),
             pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
             distance: telemetry.signed_trip_distance().distance().as_meters(),

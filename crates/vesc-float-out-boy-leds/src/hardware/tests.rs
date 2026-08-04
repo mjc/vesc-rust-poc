@@ -1,5 +1,5 @@
 use super::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
-use crate::leds::{
+use crate::{
     FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
     FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
 };

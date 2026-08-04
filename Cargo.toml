@@ -5,6 +5,8 @@ members = [
     "crates/vescpkg-build-support",
     "crates/vescpkg-rs",
     "crates/vesc-protocol",
+    "crates/vesc-float-out-boy-protocol",
+    "crates/vesc-float-out-boy-leds",
     "crates/cargo-vescpkg",
     "examples/loopback",
     "examples/alloc-smoke",

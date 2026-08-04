@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::FloatOutBoyAllDataPayloads;
+use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyRunState};
 use std::vec::Vec;
 use vescpkg_rs::test_support::FirmwareTest;
 

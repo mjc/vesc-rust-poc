@@ -1,0 +1,16 @@
+[package]
+name = "vesc-float-out-boy-leds"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Float Out Boy-specific no_std LED configuration and rendering."
+
+[lints]
+workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+vesc-float-out-boy-protocol = { path = "../vesc-float-out-boy-protocol" }
+vescpkg-rs = { path = "../vescpkg-rs", features = ["math"] }

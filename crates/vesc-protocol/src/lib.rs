@@ -46,6 +46,7 @@ pub mod ble_loopback;
 pub mod buffer;
 /// No-actuation control-loop probe and package wire helpers.
 pub mod control_loop;
+mod declaration_macros;
 
 /// Version tag carried by the shared loopback wire frame.
 ///

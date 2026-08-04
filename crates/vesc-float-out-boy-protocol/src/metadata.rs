@@ -1,13 +1,15 @@
-use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
-use crate::wire::FloatOutBoyPacket;
+use crate::packet::FloatOutBoyPacket;
+use crate::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use vescpkg_rs::prelude::SYSTEM_TICK_RATE_HZ;
 
 // Float Out Boy v1.2.1 `cmd_info` writes this version-2 response shape at
 // `third_party/float-out-boy/src/main.c:2070-2139`.
-pub(super) const FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN: usize = 60;
+/// Length of the FOB version-2 package-info response.
+pub const FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN: usize = 60;
 // Float Out Boy v1.2.1 `cmd_realtime_data_ids` writes the counted ID-list packet at
 // `third_party/float-out-boy/src/main.c:1876-1901`.
-pub(super) const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
+/// Length of the FOB realtime-data ID-list response.
+pub const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
 
 const FLOAT_OUT_BOY_PACKAGE_NAME: &[u8] = b"Float Out Boy";
 const FLOAT_OUT_BOY_VERSION_SUFFIX: &[u8] = b"";
@@ -17,7 +19,7 @@ const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 0;
 const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 0;
 const FLOAT_OUT_BOY_GIT_HASH: u32 = 0x0ef6_e99d;
 const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 =
-    crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
+    crate::packet::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
 
 // Float Out Boy C builds this exact packet in `third_party/float-out-boy/src/main.c:1876-1901`, using the ID
 // order from `third_party/float-out-boy/src/rt_data.h:38-66` and counted-string framing from
@@ -60,10 +62,12 @@ vescpkg_rs::firmware_section_static!(
             \x0fbooster.current"
 );
 
-pub(in crate::package) type FloatOutBoyInfoResponse =
-    FloatOutBoyPacket<FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN>;
+/// Fixed-capacity FOB package-info response.
+pub type FloatOutBoyInfoResponse = FloatOutBoyPacket<FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN>;
 
-pub(in crate::package) fn encode_float_out_boy_info_response(
+/// Encode FOB's legacy or version-2 package-info response.
+#[must_use]
+pub fn encode_float_out_boy_info_response(
     request_payload: &[u8],
     hardware_led_mode: u8,
     internal_leds_operational: bool,
@@ -114,7 +118,9 @@ pub(in crate::package) fn encode_float_out_boy_info_response(
 }
 
 #[inline(never)]
-pub(in crate::package) fn encode_float_out_boy_realtime_data_ids_response()
+/// Return FOB's counted realtime-data identifier lists.
+#[must_use]
+pub fn encode_float_out_boy_realtime_data_ids_response()
 -> [u8; FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN] {
     // C map: `cmd_realtime_data_ids` builds a local `uint8_t buffer[bufsize]`
     // and sends it with `SEND_APP_DATA` at `third_party/float-out-boy/src/main.c:1876-1901`.
