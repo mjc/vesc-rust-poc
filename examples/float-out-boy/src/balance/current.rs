@@ -1,6 +1,5 @@
 use super::booster::Branch;
 use super::loop_io::LoopInput;
-use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
 use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
 
@@ -9,46 +8,6 @@ use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
 const HANDTEST_CURRENT_LIMIT_AMPS: f32 = 7.0;
 const FLYWHEEL_CURRENT_LIMIT_AMPS: f32 = 40.0;
 const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct PitchBasedDemand(MotorCurrent);
-
-impl PitchBasedDemand {
-    #[inline]
-    fn from_terms(rate_p: MotorCurrent, booster: MotorCurrent) -> Self {
-        // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
-        // booster terms before soft-start and current limiting.
-        Self(rate_p + booster)
-    }
-
-    #[inline]
-    fn with_softstart(
-        self,
-        softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
-    ) -> PitchBasedCurrent {
-        if softstart_pid_limit.current() < motor_current_max.current() {
-            PitchBasedCurrent {
-                // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only
-                // magnitude; sign remains the requested direction.
-                current: MotorCurrentLimit::new(softstart_pid_limit.current()).clamp(self.0),
-                // C map: `third_party/float-out-boy/src/main.c:927-929` advances the
-                // soft-start current limit at 100 A/s.
-                softstart_pid_limit: softstart_pid_limit
-                    + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
-                    )),
-            }
-        } else {
-            PitchBasedCurrent {
-                current: self.0,
-                softstart_pid_limit,
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PitchBasedCurrent {
@@ -67,11 +26,27 @@ impl PitchBasedCurrent {
         motor_current_max: MotorCurrentLimit,
         hertz: SampleRate,
     ) -> Self {
-        PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
-            softstart_pid_limit,
-            motor_current_max,
-            hertz,
-        )
+        // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
+        // booster terms before soft-start and current limiting.
+        let demand = rate_p + booster;
+        if softstart_pid_limit.current() < motor_current_max.current() {
+            Self {
+                // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only
+                // magnitude; sign remains the requested direction.
+                current: MotorCurrentLimit::new(softstart_pid_limit.current()).clamp(demand),
+                // C map: `third_party/float-out-boy/src/main.c:927-929` advances the
+                // soft-start current limit at 100 A/s.
+                softstart_pid_limit: softstart_pid_limit
+                    + MotorCurrent::new(Current::from_amps(
+                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
+                    )),
+            }
+        } else {
+            Self {
+                current: demand,
+                softstart_pid_limit,
+            }
+        }
     }
 }
 
@@ -134,29 +109,6 @@ impl LoopInput {
             }
             FloatOutBoyMode::Normal if braking => self.motor_current_min,
             FloatOutBoyMode::Normal => self.motor_current_max,
-        }
-    }
-}
-
-impl LoopState {
-    #[inline]
-    pub(super) fn with_booster_current_and_softstart_limit(
-        self,
-        booster_current: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
-    ) -> Self {
-        Self {
-            booster_current,
-            softstart_pid_limit,
-            ..self
-        }
-    }
-
-    #[inline]
-    pub(super) fn with_balance_current(self, balance_current: MotorCurrent) -> Self {
-        Self {
-            balance_current,
-            ..self
         }
     }
 }
