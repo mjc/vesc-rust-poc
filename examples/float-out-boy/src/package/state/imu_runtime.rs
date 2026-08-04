@@ -30,21 +30,6 @@ use vescpkg_rs::prelude::{
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
-fn rate_limit_angle(
-    current: AngleDegrees,
-    target: AngleDegrees,
-    step: AngleDegrees,
-) -> AngleDegrees {
-    let difference = target - current;
-    if difference.abs() < step {
-        target
-    } else if difference > AngleDegrees::ZERO {
-        current + step
-    } else {
-        current - step
-    }
-}
-
 fn pack_voltage_threshold(
     configured: Voltage,
     battery_cell_count: Option<BatteryCellCount>,
@@ -798,7 +783,7 @@ fn apply_protective_setpoint(
         if phase.ride_state.mode() != FloatOutBoyMode::Flywheel {
             phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackDuty);
         }
-        *board_setpoint = rate_limit_angle(
+        *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             directional_angle(state.runtime_duty_pushback_angle(), phase.motor_erpm),
             state.runtime_duty_pushback_step(),
@@ -913,14 +898,14 @@ fn apply_protective_setpoint(
             -state.runtime_duty_pushback_angle()
         };
         *board_setpoint =
-            rate_limit_angle(*board_setpoint, target, state.runtime_duty_pushback_step());
+            vescpkg_rs::slew_toward(*board_setpoint, target, state.runtime_duty_pushback_step());
         return;
     }
     if phase.ride_state.setpoint_adjustment().is_pushback() {
         phase.set_adjustment(FloatOutBoySetpointAdjustment::None);
     }
     if !board_setpoint.is_zero() {
-        *board_setpoint = rate_limit_angle(
+        *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             AngleDegrees::ZERO,
             state.runtime_tiltback_return_step(),

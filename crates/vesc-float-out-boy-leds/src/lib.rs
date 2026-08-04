@@ -517,7 +517,8 @@ impl FloatOutBoyLedDynamics {
             self.run_state = run_state;
             return false;
         }
-        self.on_off_fade = rate_limit(self.on_off_fade, f32::from(u8::from(config.on)), 3.0 / 30.0);
+        self.on_off_fade =
+            vescpkg_rs::slew_toward(self.on_off_fade, f32::from(u8::from(config.on)), 3.0 / 30.0);
 
         if !self.board_is_upright && pitch_degrees > 60.0 {
             self.board_is_upright = true;
@@ -545,8 +546,10 @@ impl FloatOutBoyLedDynamics {
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
         let right =
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
-        self.left_sensor = rate_limit(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
-        self.right_sensor = rate_limit(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
+        self.left_sensor =
+            vescpkg_rs::slew_toward(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
+        self.right_sensor =
+            vescpkg_rs::slew_toward(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
 
         let headlights_should = run_state == crate::FloatOutBoyRunState::Running
             && mode != crate::FloatOutBoyMode::Flywheel
@@ -641,16 +644,6 @@ impl FloatOutBoyLedDynamics {
     }
 }
 
-fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
-    if (target - value).abs() < step {
-        target
-    } else if target > value {
-        value + step
-    } else {
-        value - step
-    }
-}
-
 #[cfg(any(test, feature = "test-support"))]
 /// Test-only split status input retained for compact renderer fixtures.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -719,7 +712,8 @@ impl FloatOutBoyStatusDynamics {
                     .min(config.status_idle.brightness.as_ratio()),
             );
         }
-        self.brightness = rate_limit(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
+        self.brightness =
+            vescpkg_rs::slew_toward(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
         Ratio::clamped(self.brightness)
     }
 
@@ -751,7 +745,8 @@ impl FloatOutBoyStatusDynamics {
         } else {
             self.duty_blend
         };
-        self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
+        self.duty_blend =
+            vescpkg_rs::slew_toward(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
         if sensors.0.as_ratio() >= 1.0 || sensors.1.as_ratio() >= 1.0 {
             self.idle_blend = 0.0;
@@ -765,7 +760,8 @@ impl FloatOutBoyStatusDynamics {
         } else {
             0.0
         };
-        self.idle_blend = rate_limit(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
+        self.idle_blend =
+            vescpkg_rs::slew_toward(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
         if input.moving {
             self.idle_time = current_time;
         }
@@ -871,9 +867,11 @@ impl FloatOutBoyLedRenderer {
         } else {
             self.rear_bar.brightness.as_ratio()
         };
-        self.front_brightness = rate_limit(self.front_brightness, front_target, 3.0 / 30.0);
-        self.rear_brightness = rate_limit(self.rear_brightness, rear_target, 3.0 / 30.0);
-        self.status_on_front_blend = rate_limit(
+        self.front_brightness =
+            vescpkg_rs::slew_toward(self.front_brightness, front_target, 3.0 / 30.0);
+        self.rear_brightness =
+            vescpkg_rs::slew_toward(self.rear_brightness, rear_target, 3.0 / 30.0);
+        self.status_on_front_blend = vescpkg_rs::slew_toward(
             self.status_on_front_blend,
             f32::from(u8::from(status_on_front)),
             3.0 / 30.0,
@@ -892,7 +890,7 @@ impl FloatOutBoyLedRenderer {
         if config.lifted.status_on_front && self.status_on_front_blend > 0.0 {
             let front_idle =
                 config.lifted.lights_off && current_time - self.status_on_front_idle_time > 3.0;
-            self.status_on_front_idle_blend = rate_limit(
+            self.status_on_front_idle_blend = vescpkg_rs::slew_toward(
                 self.status_on_front_idle_blend,
                 f32::from(u8::from(front_idle)),
                 3.0 / 30.0,
