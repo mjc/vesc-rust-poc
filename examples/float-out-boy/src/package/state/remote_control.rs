@@ -2,7 +2,8 @@ use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, Rpm, SampleRate, TimestampTicks,
+    AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Ratio, Rpm, SampleRate,
+    TimestampTicks,
 };
 use vescpkg_rs::{SmoothedAngleSlew, WrappingTimer};
 
@@ -13,58 +14,15 @@ fn zero_motor_current() -> MotorCurrent {
     MotorCurrent::new(Current::ZERO)
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct RemoteCurrentTarget(i16);
-
-impl RemoteCurrentTarget {
-    const ZERO: Self = Self(0);
-
-    const fn new(deciamps: i16) -> Self {
-        Self(deciamps)
-    }
-
-    #[cfg(test)]
-    const fn deciamps(self) -> i16 {
-        self.0
-    }
-
-    fn motor_current(self) -> MotorCurrent {
-        // C map: `cmd_rc_move` stores packet current as deciamps at
-        // `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` requests amps.
-        MotorCurrent::new(Current::from_amps(f32::from(self.0) * 0.1))
-    }
-
-    const fn is_zero(self) -> bool {
-        // C map: `cmd_rc_move` treats zero target current as the idle step.
-        self.0 == 0
-    }
-
-    const fn exceeds_packet_limit(self) -> bool {
-        // C map: `cmd_rc_move` clamps packet targets above 20 deciamps.
-        self.0 > 80
-    }
-
-    const fn should_halve_mid_move(self) -> bool {
-        // C map: `do_rc_move` halves targets above 2A after 500 steps.
-        self.0 > 20
-    }
-
-    fn halve(&mut self) {
-        // C map: `do_rc_move` halves large RC moves after 500 steps at
-        // `third_party/float-out-boy/src/main.c:281-284`.
-        self.0 /= 2;
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RemoteMove {
-    target: RemoteCurrentTarget,
+    target: DeciampCurrent,
     duration_steps: u16,
 }
 
 impl RemoteMove {
     const ZERO_CURRENT_STEP: Self = Self {
-        target: RemoteCurrentTarget::ZERO,
+        target: DeciampCurrent::from_deciamps(0),
         duration_steps: 1,
     };
 
@@ -83,23 +41,23 @@ impl RemoteMove {
         };
 
         let target = match direction {
-            0 => RemoteCurrentTarget::new(i16::from(current).saturating_neg()),
-            _ => RemoteCurrentTarget::new(i16::from(current)),
+            0 => DeciampCurrent::from_deciamps(i16::from(current).saturating_neg()),
+            _ => DeciampCurrent::from_deciamps(i16::from(current)),
         };
 
         Self::new(target, time)
     }
 
-    fn new(target: RemoteCurrentTarget, time: u8) -> Self {
+    fn new(target: DeciampCurrent, time: u8) -> Self {
         // C map: `cmd_rc_move` keeps zero requests idle, clamps oversized
         // targets, and stores duration as `time * 100` at
         // `third_party/float-out-boy/src/main.c:1735-1758`.
         match target {
-            target if target.is_zero() => Self::ZERO_CURRENT_STEP,
-            target if target.exceeds_packet_limit() => Self {
+            target if target.as_deciamps() == 0 => Self::ZERO_CURRENT_STEP,
+            target if target.as_deciamps() > 80 => Self {
                 // C map: oversized positive targets are clamped to 20 deciamps
                 // at `third_party/float-out-boy/src/main.c:1753-1757`.
-                target: RemoteCurrentTarget::new(20),
+                target: DeciampCurrent::from_deciamps(20),
                 duration_steps: u16::from(time) * 100,
             },
             target => Self {
@@ -140,7 +98,7 @@ pub(super) struct RemoteControlState {
     current: MotorCurrent,
     steps: u16,
     counter: u16,
-    target: RemoteCurrentTarget,
+    target: DeciampCurrent,
 }
 
 impl Default for RemoteControlState {
@@ -155,7 +113,7 @@ impl Default for RemoteControlState {
             current: zero_motor_current(),
             steps: 0,
             counter: 0,
-            target: RemoteCurrentTarget::ZERO,
+            target: DeciampCurrent::from_deciamps(0),
         }
     }
 }
@@ -214,7 +172,7 @@ impl RemoteControlState {
         self.target = remote_move.target;
         self.steps = remote_move.duration_steps;
 
-        if self.target.is_zero() {
+        if self.target.as_deciamps() == 0 {
             self.current = zero_motor_current();
         }
     }
@@ -245,14 +203,14 @@ impl RemoteControlState {
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where active RC move steps
         // filter/request `rc_current` at `third_party/float-out-boy/src/main.c:276-286`.
-        self.filter_current(self.target.motor_current());
+        self.filter_current(MotorCurrent::new(self.target.as_current()));
         if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
             self.current = zero_motor_current();
         }
         self.steps = self.steps.saturating_sub(1);
         self.counter = self.counter.saturating_add(1);
-        if self.counter == 500 && self.target.should_halve_mid_move() {
-            self.target.halve();
+        if self.counter == 500 && self.target.as_deciamps() > 20 {
+            self.target = DeciampCurrent::from_deciamps(self.target.as_deciamps() / 2);
         }
         Some(self.current)
     }
@@ -301,7 +259,7 @@ impl RemoteControlState {
 
     #[cfg(test)]
     pub(super) const fn target_deciamps_for_test(self) -> i16 {
-        self.target.deciamps()
+        self.target.as_deciamps()
     }
 
     #[cfg(test)]
