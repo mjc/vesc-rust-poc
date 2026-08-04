@@ -22,7 +22,7 @@ use super::{
     float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds,
 };
 #[cfg(any(test, target_arch = "arm"))]
-use crate::bms::FloatOutBoyBmsFault;
+use crate::bms::FloatOutBoyBmsFaults;
 use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
 use crate::wire::saturating_trunc_f32_to_u8;
 use vescpkg_rs::prelude::{
@@ -718,22 +718,28 @@ fn protection_signals(
     base: &FloatOutBoyAllDataBasePayload,
 ) -> ProtectionSignals {
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFault::CellOverVoltage);
+    let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_OVER_VOLTAGE);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_over_voltage = false;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFault::Connection);
+    let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFaults::CONNECTION);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_connection_fault = false;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_temperature_reason = if state.bms.contains(FloatOutBoyBmsFault::CellOverTemperature) {
+    let bms_temperature_reason = if state
+        .bms
+        .contains(FloatOutBoyBmsFaults::CELL_OVER_TEMPERATURE)
+    {
         Some(FloatOutBoyBeepReason::CellOverTemperature)
     } else if state
         .bms
-        .contains(FloatOutBoyBmsFault::CellUnderTemperature)
+        .contains(FloatOutBoyBmsFaults::CELL_UNDER_TEMPERATURE)
     {
         Some(FloatOutBoyBeepReason::CellUnderTemperature)
-    } else if state.bms.contains(FloatOutBoyBmsFault::BmsOverTemperature) {
+    } else if state
+        .bms
+        .contains(FloatOutBoyBmsFaults::BMS_OVER_TEMPERATURE)
+    {
         Some(FloatOutBoyBeepReason::BmsOverTemperature)
     } else {
         None
@@ -741,7 +747,7 @@ fn protection_signals(
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_temperature_reason = None;
     #[cfg(any(test, target_arch = "arm"))]
-    let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFault::CellUnderVoltage);
+    let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_under_voltage = false;
     let warning_margin = Temperature::from_degrees_celsius(3.0);
