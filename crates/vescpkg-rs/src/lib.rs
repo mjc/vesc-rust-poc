@@ -99,6 +99,7 @@ mod data_recorder;
 mod eeprom;
 mod encoder;
 mod extension;
+mod fault_history;
 mod firmware;
 mod gnss;
 mod lifecycle_core;
@@ -262,6 +263,7 @@ pub use extension::{
     LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue,
     StatefulLbmExtension,
 };
+pub use fault_history::{FirmwareFaultHistory, FirmwareFaultRecord};
 #[allow(deprecated)]
 pub use input::{ControllerInput, RemoteInput};
 pub use inputs::{
