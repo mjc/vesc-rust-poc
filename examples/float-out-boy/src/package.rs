@@ -9,12 +9,16 @@
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
 //! config, BMS, threads, and stop cleanup.
 
+#[cfg(any(test, target_arch = "arm"))]
 mod callbacks;
 mod custom_config;
+#[cfg(any(test, target_arch = "arm"))]
 mod imu_callback;
 mod protocol;
+#[cfg(any(test, target_arch = "arm"))]
 mod startup;
 mod state;
+#[cfg(any(test, target_arch = "arm"))]
 mod threads;
 
 pub use self::custom_config::FloatOutBoyCustomConfig;

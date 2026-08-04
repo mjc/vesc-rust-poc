@@ -86,9 +86,11 @@ static FIRMWARE_ALLOCATOR: vescpkg_rs::VescAllocator = vescpkg_rs::VescAllocator
 
 mod balance;
 mod beeper;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod bms;
 mod config;
 pub mod domain;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod extensions;
 pub use domain::{FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState};
 pub mod lcm;
