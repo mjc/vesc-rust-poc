@@ -28,4 +28,5 @@ vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
 
 [dev-dependencies]
 vesc-float-out-boy-leds = { path = "../../crates/vesc-float-out-boy-leds", features = ["test-support"] }
+vesc-float-out-boy-protocol = { path = "../../crates/vesc-float-out-boy-protocol", features = ["test-support"] }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc", "math", "test-support"] }
