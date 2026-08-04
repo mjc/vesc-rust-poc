@@ -88,6 +88,77 @@ impl<const N: usize> MotorKinematics<N> {
     }
 }
 
+/// Fixed-state angular motion tracker with degree-wrap correction.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct WrappedAngleMotion {
+    last: AngleDegrees,
+    change: AngleDegrees,
+    aggregate: AngleDegrees,
+}
+
+impl WrappedAngleMotion {
+    /// Build an explicit motion state for host-side fixtures.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub const fn from_parts(
+        last: AngleDegrees,
+        change: AngleDegrees,
+        aggregate: AngleDegrees,
+    ) -> Self {
+        Self {
+            last,
+            change,
+            aggregate,
+        }
+    }
+
+    /// Observe an angle, low-pass its wrapped delta, and aggregate sustained motion.
+    pub fn observe(
+        &mut self,
+        angle: AngleDegrees,
+        delta_limit: AngleDegrees,
+        smoothing: Ratio,
+        aggregate_threshold: AngleDegrees,
+    ) {
+        let mut delta = angle - self.last;
+        self.last = angle;
+        if delta < AngleDegrees::from_degrees(-180.0) {
+            delta = delta + AngleDegrees::from_degrees(360.0);
+        } else if delta > AngleDegrees::from_degrees(180.0) {
+            delta = delta - AngleDegrees::from_degrees(360.0);
+        }
+        let limit = delta_limit.abs().as_degrees();
+        let limited = AngleDegrees::from_degrees(delta.as_degrees().clamp(-limit, limit));
+        self.change =
+            self.change * smoothing.complement().as_ratio() + limited * smoothing.as_ratio();
+        if self.change.is_negative() != self.aggregate.is_negative() {
+            self.aggregate = AngleDegrees::ZERO;
+        }
+        if self.change.abs() > aggregate_threshold {
+            self.aggregate = self.aggregate + self.change;
+        }
+    }
+
+    /// Return the filtered wrapped delta.
+    #[must_use]
+    pub const fn change(&self) -> AngleDegrees {
+        self.change
+    }
+
+    /// Return the same-direction accumulated delta.
+    #[must_use]
+    pub const fn aggregate(&self) -> AngleDegrees {
+        self.aggregate
+    }
+
+    /// Clear filtered and aggregated motion while retaining the last angle.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn clear_motion(&mut self) {
+        self.change = AngleDegrees::ZERO;
+        self.aggregate = AngleDegrees::ZERO;
+    }
+}
+
 /// Move `value` toward `target` by at most `step`.
 ///
 /// `step` is expected to be non-negative. The generic bounds keep this usable
@@ -159,7 +230,9 @@ impl SmoothAngle {
 
 #[cfg(test)]
 mod tests {
-    use super::{FixedRingIndex, MotorKinematics, SmoothAngle, angle_step, slew_toward};
+    use super::{
+        FixedRingIndex, MotorKinematics, SmoothAngle, WrappedAngleMotion, angle_step, slew_toward,
+    };
     use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
 
     #[test]
@@ -259,5 +332,77 @@ mod tests {
             Ratio::from_ratio_const(0.5),
         );
         assert_eq!(tracker.average(), Rpm::from_revolutions_per_minute(5.0));
+    }
+
+    #[test]
+    fn wrapped_angle_motion_filters_boundary_crossings_and_aggregates_motion() {
+        let mut motion = WrappedAngleMotion::default();
+        let limit = AngleDegrees::from_degrees(0.1);
+        let smoothing = Ratio::from_ratio_const(0.2);
+        let threshold = AngleDegrees::from_degrees(0.01);
+
+        motion.observe(
+            AngleDegrees::from_degrees(179.95),
+            limit,
+            smoothing,
+            threshold,
+        );
+        motion.observe(
+            AngleDegrees::from_degrees(-179.95),
+            limit,
+            smoothing,
+            threshold,
+        );
+
+        assert!(motion.change().is_positive());
+        assert!(motion.aggregate().is_positive());
+        assert!(motion.change() <= limit);
+    }
+
+    #[test]
+    fn wrapped_angle_motion_clears_aggregate_when_filtered_direction_reverses() {
+        let mut motion = WrappedAngleMotion::default();
+        let limit = AngleDegrees::from_degrees(1.0);
+        let smoothing = Ratio::from_ratio_const(1.0);
+        let threshold = AngleDegrees::from_degrees(0.01);
+
+        motion.observe(AngleDegrees::from_degrees(1.0), limit, smoothing, threshold);
+        motion.observe(AngleDegrees::ZERO, limit, smoothing, threshold);
+
+        assert!(motion.change().is_negative());
+        assert_eq!(motion.aggregate(), motion.change());
+    }
+
+    #[test]
+    fn wrapped_angle_motion_preserves_layout_wrap_and_zero_delta_filtering() {
+        assert_eq!(core::mem::size_of::<WrappedAngleMotion>(), 12);
+        let limit = AngleDegrees::from_degrees(0.1);
+        let smoothing = Ratio::from_ratio_const(0.2);
+        let threshold = AngleDegrees::from_degrees(0.04);
+        let mut wrapped = WrappedAngleMotion::from_parts(
+            AngleDegrees::from_degrees(179.95),
+            AngleDegrees::ZERO,
+            AngleDegrees::ZERO,
+        );
+        wrapped.observe(
+            AngleDegrees::from_degrees(-179.95),
+            limit,
+            smoothing,
+            threshold,
+        );
+        assert!((wrapped.change().as_degrees() - 0.02).abs() < 0.000_01);
+
+        let mut stationary = WrappedAngleMotion::from_parts(
+            AngleDegrees::from_degrees(10.0),
+            AngleDegrees::from_degrees(0.1),
+            AngleDegrees::ZERO,
+        );
+        stationary.observe(
+            AngleDegrees::from_degrees(10.0),
+            limit,
+            smoothing,
+            threshold,
+        );
+        assert!((stationary.change().as_degrees() - 0.08).abs() < 0.000_01);
     }
 }

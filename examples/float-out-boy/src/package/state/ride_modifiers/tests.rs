@@ -39,37 +39,6 @@ fn turn_tilt_uses_filtered_yaw_and_erpm_direction_like_float_out_boy() {
 }
 
 #[test]
-fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
-    let mut turn = TurnTiltState {
-        yaw: YawMotion {
-            last: AngleDegrees::from_degrees(179.95),
-            ..YawMotion::default()
-        },
-        ..TurnTiltState::default()
-    };
-
-    turn.yaw.observe(AngleDegrees::from_degrees(-179.95));
-
-    assert!((turn.yaw.change.as_degrees() - 0.02).abs() < 0.000_01);
-}
-
-#[test]
-fn turn_tilt_filters_zero_yaw_change_instead_of_replaying_stale_motion() {
-    let mut turn = TurnTiltState {
-        yaw: YawMotion {
-            last: AngleDegrees::from_degrees(10.0),
-            change: AngleDegrees::from_degrees(0.1),
-            ..YawMotion::default()
-        },
-        ..TurnTiltState::default()
-    };
-
-    turn.yaw.observe(AngleDegrees::from_degrees(10.0));
-
-    assert!((turn.yaw.change.as_degrees() - 0.08).abs() < 0.000_01);
-}
-
-#[test]
 fn disabling_turn_tilt_winds_down_an_existing_setpoint() {
     let mut config = FloatOutBoyConfigImage::defaults();
     let mut editor = config.editor();
@@ -434,11 +403,11 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     let balance = config.balance();
     let mut state = RideModifierState {
         turn: TurnTiltState {
-            yaw: YawMotion {
-                aggregate: AngleDegrees::from_degrees(20.0),
-                change: AngleDegrees::from_degrees(0.1),
-                ..YawMotion::default()
-            },
+            yaw: WrappedAngleMotion::from_parts(
+                AngleDegrees::ZERO,
+                AngleDegrees::from_degrees(0.1),
+                AngleDegrees::from_degrees(20.0),
+            ),
             ..TurnTiltState::default()
         },
         ..RideModifierState::default()
@@ -508,8 +477,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
     );
     let active_turn = state.turn.angle.setpoint;
     assert!(active_turn.is_positive());
-    state.turn.yaw.aggregate = AngleDegrees::ZERO;
-    state.turn.yaw.change = AngleDegrees::ZERO;
+    state.turn.yaw.clear_motion();
     state.update_turn(
         balance,
         Rpm::from_revolutions_per_minute(3_000.0),
