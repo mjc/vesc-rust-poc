@@ -976,11 +976,13 @@ macro_rules! generated_custom_config_image_fields {
         len: $len:expr;
         visibility: $visibility:vis,
         $(
+            $(#[$field_attribute:meta])*
             $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
-            offset: $offset:expr $(, scale: $scale:expr)?;
+            offset: $offset:expr $(, scale: $scale:expr)? $(, map: $map:expr)?;
         )*
     ) => {
         $(
+            $(#[$field_attribute])*
             $visibility const $field: $field_type = $crate::generated_custom_config_field!(
                 $field_type,
                 len: $len,
@@ -988,8 +990,11 @@ macro_rules! generated_custom_config_image_fields {
                 $(, scale: $scale)?
             );
 
+            $(#[$field_attribute])*
             $visibility fn $getter(&self) -> $value_type {
-                Self::$field.read(self).unwrap_or_default()
+                let value = Self::$field.read(self).unwrap_or_default();
+                $(let value = ($map)(value);)?
+                value
             }
         )*
     };
@@ -1280,6 +1285,9 @@ mod tests {
             ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 0;
             ANGLE_FIELD: CustomConfigAngleField => angle -> crate::AngleDegrees,
                 offset: 1, scale: 10.0;
+            #[cfg(test)]
+            BYTE_FIELD: CustomConfigWireByteField => byte -> u8, offset: 2,
+                map: WireByte::as_u8;
         }
     }
 
@@ -1298,6 +1306,7 @@ mod tests {
 
         assert!(image.enabled());
         assert_eq!(image.angle(), crate::AngleDegrees::from_degrees(2.5));
+        assert_eq!(image.byte(), 25);
     }
 
     #[test]
