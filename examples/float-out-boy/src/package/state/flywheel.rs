@@ -68,51 +68,12 @@ pub(super) struct FloatOutBoyFlywheelRuntime {
 }
 
 impl FloatOutBoyFlywheelRuntime {
-    #[cfg(any(test, target_arch = "arm"))]
-    fn needs_calibration(self) -> bool {
-        self.offsets.needs_calibration()
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    const fn is_active(self) -> bool {
-        self.config.is_some()
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn calibrate(&mut self, pitch: AngleDegrees, roll: AngleDegrees) {
-        self.offsets = FloatOutBoyFlywheelOffsets::calibrated(pitch, roll);
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn activate(&mut self, config: FloatOutBoyFlywheelConfig) {
-        self.config = Some(config);
-        self.abort = false;
-    }
-
-    fn deactivate(&mut self) {
-        self.config = None;
-        self.abort = false;
-    }
-
     pub(super) fn latch_abort(&mut self, abort: bool) {
         self.abort |= abort;
     }
 
     pub(super) const fn should_stop(self, footpad_pressed: bool) -> bool {
         self.abort || footpad_pressed
-    }
-
-    const fn config(self) -> Option<FloatOutBoyFlywheelConfig> {
-        self.config
-    }
-
-    fn apply_attitude(
-        self,
-        mode: FloatOutBoyMode,
-        pitch: AngleDegrees,
-        roll: AngleDegrees,
-    ) -> (AngleDegrees, AngleDegrees) {
-        self.offsets.apply(mode, pitch, roll)
     }
 }
 
@@ -239,19 +200,21 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> Option<bool> {
-        if self.flywheel.needs_calibration() || recalibrate {
+        if self.flywheel.offsets.needs_calibration() || recalibrate {
             let attitude = self.all_data_payloads.base().attitude();
             let pitch = AngleDegrees::from(attitude.pitch().angle());
             if pitch.abs() < AngleDegrees::from_degrees(70.0) {
-                if self.flywheel.is_active() {
+                if self.flywheel.config.is_some() {
                     self.prepare_flywheel_restore();
                     return Some(true);
                 }
                 self.set_ride_mode(FloatOutBoyMode::Normal);
                 return Some(false);
             }
-            self.flywheel
-                .calibrate(pitch, AngleDegrees::from(attitude.roll().angle()));
+            self.flywheel.offsets = FloatOutBoyFlywheelOffsets::calibrated(
+                pitch,
+                AngleDegrees::from(attitude.roll().angle()),
+            );
             self.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
         } else {
             self.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
@@ -275,14 +238,16 @@ impl FloatOutBoyPackageState {
             return true;
         }
         self.replace_active_config(&config);
-        self.flywheel.activate(start.config);
+        self.flywheel.config = Some(start.config);
+        self.flywheel.abort = false;
         false
     }
 
     pub(super) fn prepare_flywheel_restore(&mut self) {
         self.force_beeper_on();
         self.set_ride_mode(FloatOutBoyMode::Normal);
-        self.flywheel.deactivate();
+        self.flywheel.config = None;
+        self.flywheel.abort = false;
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -296,21 +261,21 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn runtime_duty_pushback_threshold(&self) -> Ratio {
-        self.flywheel.config().map_or_else(
+        self.flywheel.config.map_or_else(
             || self.serialized_config.duty_pushback_threshold(),
             |config| config.duty_threshold,
         )
     }
 
     pub(super) fn runtime_duty_pushback_angle(&self) -> AngleDegrees {
-        self.flywheel.config().map_or_else(
+        self.flywheel.config.map_or_else(
             || self.serialized_config.duty_pushback_angle(),
             |config| config.duty_angle,
         )
     }
 
     pub(super) fn runtime_duty_pushback_step(&self) -> AngleDegrees {
-        let speed = self.flywheel.config().map_or_else(
+        let speed = self.flywheel.config.map_or_else(
             || self.serialized_config.duty_pushback_speed(),
             |config| config.duty_speed,
         );
@@ -318,7 +283,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn runtime_tiltback_return_step(&self) -> AngleDegrees {
-        let speed = self.flywheel.config().map_or_else(
+        let speed = self.flywheel.config.map_or_else(
             || self.serialized_config.tiltback_return_speed(),
             |config| config.duty_speed,
         );
@@ -337,7 +302,7 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn runtime_balance_loop_config(&self) -> LoopConfig {
         let mut config = self.serialized_config.balance_loop_config();
-        if let Some(flywheel) = self.flywheel.config() {
+        if let Some(flywheel) = self.flywheel.config {
             config.kp = flywheel.kp;
             config.kp2 = flywheel.kp2;
         }
@@ -350,6 +315,6 @@ impl FloatOutBoyPackageState {
         pitch: AngleDegrees,
         roll: AngleDegrees,
     ) -> (AngleDegrees, AngleDegrees) {
-        self.flywheel.apply_attitude(mode, pitch, roll)
+        self.flywheel.offsets.apply(mode, pitch, roll)
     }
 }

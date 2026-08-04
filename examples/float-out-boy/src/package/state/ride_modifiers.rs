@@ -271,12 +271,6 @@ impl YawMotion {
     }
 }
 
-impl TurnTiltState {
-    fn aggregate(&mut self, yaw: AngleDegrees) {
-        self.yaw.observe(yaw);
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct RideModifierState {
     nose: AngleDegrees,
@@ -305,7 +299,7 @@ impl RideModifierState {
     }
 
     pub(super) fn aggregate_yaw(&mut self, yaw: AngleDegrees) {
-        self.turn.aggregate(yaw);
+        self.turn.yaw.observe(yaw);
     }
 
     pub(super) fn advance(

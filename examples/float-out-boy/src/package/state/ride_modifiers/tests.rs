@@ -48,7 +48,7 @@ fn turn_tilt_preserves_yaw_direction_across_positive_to_negative_wrap() {
         ..TurnTiltState::default()
     };
 
-    turn.aggregate(AngleDegrees::from_degrees(-179.95));
+    turn.yaw.observe(AngleDegrees::from_degrees(-179.95));
 
     assert!((turn.yaw.change.as_degrees() - 0.02).abs() < 0.000_01);
 }
@@ -64,7 +64,7 @@ fn turn_tilt_filters_zero_yaw_change_instead_of_replaying_stale_motion() {
         ..TurnTiltState::default()
     };
 
-    turn.aggregate(AngleDegrees::from_degrees(10.0));
+    turn.yaw.observe(AngleDegrees::from_degrees(10.0));
 
     assert!((turn.yaw.change.as_degrees() - 0.08).abs() < 0.000_01);
 }
