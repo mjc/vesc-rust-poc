@@ -249,7 +249,7 @@ pub use vescpkg_rs_units::{
 };
 
 #[cfg(feature = "alloc")]
-pub use alloc::VescAllocator;
+pub use alloc::{FallibleBox, VescAllocator};
 pub use can_bus::{
     CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanReceiverHandler,
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
