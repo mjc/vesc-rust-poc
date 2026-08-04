@@ -121,6 +121,7 @@ mod sync;
 mod terminal;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
+mod timer;
 mod uart;
 
 pub use firmware_str::FirmwareStr;
@@ -307,6 +308,7 @@ pub use thread::{
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
+pub use timer::{expire_timer_whole_seconds, timer_older, timer_older_whole_seconds};
 pub use uart::{Uart, UartError, UartSession};
 
 /// CAN transport and status snapshot helpers for package code.

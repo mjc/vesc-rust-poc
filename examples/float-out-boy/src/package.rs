@@ -16,7 +16,6 @@ mod protocol;
 mod startup;
 mod state;
 mod threads;
-mod time;
 
 pub use self::custom_config::FloatOutBoyCustomConfig;
 #[cfg(test)]
