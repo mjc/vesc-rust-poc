@@ -1,23 +1,9 @@
-use super::{AccelerationHistoryIndex, MotorKinematicsTracker, WINDOW, WINDOW_U8};
+use super::{MotorKinematicsTracker, WINDOW_U8};
 use vescpkg_rs::prelude::Rpm;
 
 #[test]
-fn acceleration_history_index_wraps_inside_float_out_boy_window() {
-    let mut index = AccelerationHistoryIndex::START;
-
-    for _ in 0..WINDOW {
-        index = index.next();
-    }
-
-    assert_eq!(index, AccelerationHistoryIndex::START);
-}
-
-#[test]
-fn invalid_history_index_wraps_to_start_instead_of_panicking() {
-    assert_eq!(
-        AccelerationHistoryIndex(u8::MAX).next(),
-        AccelerationHistoryIndex::START
-    );
+fn tracker_layout_fits_the_existing_package_state_slot() {
+    assert_eq!(core::mem::size_of::<MotorKinematicsTracker>(), 176);
 }
 
 #[test]

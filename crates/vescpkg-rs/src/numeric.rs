@@ -2,6 +2,30 @@ use core::ops::{Add, Sub};
 
 use crate::{AngleDegrees, AngularVelocity, SampleRate};
 
+/// Cursor for replacing the oldest value in a small fixed-size ring.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct FixedRingIndex<const N: usize>(u8);
+
+impl<const N: usize> FixedRingIndex<N> {
+    const VALID_LENGTH: () = assert!(N > 0 && N <= 256);
+
+    /// Replace the current slot, advance with wraparound, and return its old value.
+    pub fn replace_and_advance<T: Copy>(&mut self, values: &mut [T; N], value: T) -> T {
+        let () = Self::VALID_LENGTH;
+        let index = usize::from(self.0);
+        let Some(slot) = values.get_mut(index) else {
+            return value;
+        };
+        let previous = core::mem::replace(slot, value);
+        self.0 = if index.saturating_add(1) == N {
+            0
+        } else {
+            self.0.saturating_add(1)
+        };
+        previous
+    }
+}
+
 /// Move `value` toward `target` by at most `step`.
 ///
 /// `step` is expected to be non-negative. The generic bounds keep this usable
@@ -73,7 +97,7 @@ impl SmoothAngle {
 
 #[cfg(test)]
 mod tests {
-    use super::{SmoothAngle, angle_step, slew_toward};
+    use super::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
     use crate::{AngleDegrees, AngularVelocity, SampleRate};
 
     #[test]
@@ -119,5 +143,17 @@ mod tests {
     fn preserves_source_nan_behavior() {
         assert_eq!(slew_toward(1.0_f32, f32::NAN, 0.5), 0.5);
         assert!(slew_toward(f32::NAN, 1.0, 0.5).is_nan());
+    }
+
+    #[test]
+    fn fixed_ring_index_replaces_the_oldest_slot_and_wraps() {
+        let mut values = [0; 3];
+        let mut index = FixedRingIndex::default();
+
+        assert_eq!(index.replace_and_advance(&mut values, 1), 0);
+        assert_eq!(index.replace_and_advance(&mut values, 2), 0);
+        assert_eq!(index.replace_and_advance(&mut values, 3), 0);
+        assert_eq!(index.replace_and_advance(&mut values, 4), 1);
+        assert_eq!(values, [4, 2, 3]);
     }
 }
