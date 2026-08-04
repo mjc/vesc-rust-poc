@@ -48,9 +48,10 @@ macro_rules! assert_f32_eq {
     }};
 }
 
-mod api;
 mod hardware;
 mod mode;
+#[cfg(any(test, feature = "test-support"))]
+mod test_support;
 
 pub use self::hardware::FloatOutBoyHardwareLedsConfig;
 pub use self::mode::FloatOutBoyLedMode;

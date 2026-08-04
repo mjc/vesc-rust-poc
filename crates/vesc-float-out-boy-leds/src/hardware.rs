@@ -27,7 +27,8 @@ pub struct FloatOutBoyHardwareLedsConfig {
     pub rear: FloatOutBoyLedStripConfig,
 }
 
-mod api;
+#[cfg(any(test, feature = "test-support"))]
+mod test_support;
 
 #[cfg(test)]
 mod tests;
