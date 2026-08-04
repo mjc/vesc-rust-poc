@@ -9,6 +9,66 @@ const DATA_RECORDER_ALIGNMENT: u32 = 4;
 #[cfg(target_arch = "arm")]
 const DATA_RECORDER_DESCRIPTOR_ADDRESS: usize = 0x1000_fff4;
 
+/// Storage-agnostic cursor for a fixed-capacity circular buffer.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RingCursor {
+    next: usize,
+    len: usize,
+}
+
+fn advance_ring_index(index: usize, capacity: usize) -> usize {
+    index
+        .checked_add(1)
+        .filter(|next| *next < capacity)
+        .unwrap_or(0)
+}
+
+impl RingCursor {
+    /// Forget all committed slots.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Return the slot for the next write, or `None` when capacity is zero.
+    #[must_use]
+    pub fn write_slot(self, capacity: usize) -> Option<usize> {
+        (capacity > 0).then_some(self.next)
+    }
+
+    /// Commit a successful write and advance the cursor.
+    pub fn commit_write(&mut self, capacity: usize) {
+        self.next = advance_ring_index(self.next, capacity);
+        self.len = self.len.saturating_add(1).min(capacity);
+    }
+
+    /// Return the number of committed slots available at this capacity.
+    #[must_use]
+    pub fn len(self, capacity: usize) -> usize {
+        self.len.min(capacity)
+    }
+
+    /// Return whether no committed slots are available at this capacity.
+    #[must_use]
+    pub fn is_empty(self, capacity: usize) -> bool {
+        self.len(capacity) == 0
+    }
+
+    /// Resolve an oldest-first logical index to a physical storage slot.
+    #[must_use]
+    pub fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
+        let len = self.len(capacity);
+        if index >= len || capacity == 0 {
+            return None;
+        }
+        let oldest = self
+            .next
+            .checked_add(capacity)?
+            .checked_sub(len)?
+            .checked_rem(capacity)?;
+        oldest.checked_add(index)?.checked_rem(capacity)
+    }
+}
+
 /// A validated recorder-buffer descriptor from Refloat's special VESC 6.05 firmware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareDataRecorderDescriptor {
@@ -212,6 +272,33 @@ impl FirmwareDataRecorderBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_ring_cursor_is_empty() {
+        assert_eq!(RingCursor::default().len(24), 0);
+    }
+
+    #[test]
+    fn ring_cursor_preserves_newest_slots_across_capacities_and_wraps() {
+        for capacity in 0_usize..=32 {
+            for writes in 0..=capacity.saturating_mul(3).saturating_add(1) {
+                let mut ring = RingCursor::default();
+                for _ in 0..writes {
+                    if ring.write_slot(capacity).is_some() {
+                        ring.commit_write(capacity);
+                    }
+                }
+
+                let len = writes.min(capacity);
+                assert_eq!(ring.len(capacity), len);
+                for index in 0..len {
+                    let expected = writes.saturating_sub(len).saturating_add(index) % capacity;
+                    assert_eq!(ring.slot_at(index, capacity), Some(expected));
+                }
+                assert_eq!(ring.slot_at(len, capacity), None);
+            }
+        }
+    }
 
     #[test]
     fn recorder_buffer_reads_and_writes_only_checked_ranges() {
