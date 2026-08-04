@@ -13,6 +13,7 @@ const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
 const HEADER_RESPONSE_LEN: usize = 172;
 const DATA_RESPONSE_CAPACITY: usize = 511;
 const DEFAULT_SAMPLE_RATE_HZ: u16 = 620;
+const TARGET_RECORDING_SECONDS: u16 = 10;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
@@ -25,10 +26,7 @@ type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     flags: FloatOutBoyDataRecorderFlags,
-    records: vescpkg_rs::FixedRecordRing<DataRecorderStorage, SAMPLE_SIZE>,
-    decimation: u8,
-    decimation_counter: u8,
-    sample_rate_hz: u16,
+    records: vescpkg_rs::DecimatedRecordRing<DataRecorderStorage, SAMPLE_SIZE>,
     last_timestamp: TimestampTicks,
 }
 
@@ -37,14 +35,12 @@ impl Default for DataRecorderState {
         Self {
             flags: FloatOutBoyDataRecorderFlags::AUTOSTART | FloatOutBoyDataRecorderFlags::AUTOSTOP,
             #[cfg(test)]
-            records: vescpkg_rs::FixedRecordRing::new(Some(
-                [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-            )),
+            records: vescpkg_rs::DecimatedRecordRing::new(
+                Some([0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]),
+                DEFAULT_SAMPLE_RATE_HZ,
+            ),
             #[cfg(not(test))]
-            records: vescpkg_rs::FixedRecordRing::new(None),
-            decimation: 1,
-            decimation_counter: 0,
-            sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+            records: vescpkg_rs::DecimatedRecordRing::new(None, DEFAULT_SAMPLE_RATE_HZ),
             last_timestamp: TimestampTicks::from_ticks(0),
         }
     }
@@ -56,7 +52,8 @@ impl DataRecorderState {
         self.records
             .replace_storage(buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE));
         self.stop();
-        self.recalculate_decimation();
+        self.records
+            .recalculate_decimation(TARGET_RECORDING_SECONDS);
     }
 
     pub(super) fn has_capability(&self) -> bool {
@@ -83,8 +80,7 @@ impl DataRecorderState {
     }
 
     fn start(&mut self) {
-        self.records.clear();
-        self.decimation_counter = 0;
+        self.records.reset();
         self.last_timestamp = TimestampTicks::from_ticks(0);
         self.flags.set(
             FloatOutBoyDataRecorderFlags::RECORDING,
@@ -105,11 +101,9 @@ impl DataRecorderState {
         if !self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
             return;
         }
-        self.decimation_counter = self.decimation_counter.wrapping_add(1);
-        if self.decimation_counter < self.decimation {
+        if !self.records.sample_due() {
             return;
         }
-        self.decimation_counter = 0;
         let timestamp = u32::from_be_bytes(sample[..4].try_into().unwrap_or_default());
         let timestamp = if timestamp <= self.last_timestamp.as_ticks() {
             self.last_timestamp.as_ticks().wrapping_add(1)
@@ -121,56 +115,20 @@ impl DataRecorderState {
         let _ = self.records.push(&sample);
     }
 
-    fn sample_count(&self) -> usize {
-        self.records.len()
-    }
-
-    fn sample_at(&self, index: usize) -> Option<[u8; SAMPLE_SIZE]> {
-        self.records.get(index)
-    }
-
-    fn configure_sample_rate(&mut self, sample_rate: SampleRate, recalculate_decimation: bool) {
-        let rate = crate::wire::saturating_trunc_f32_to_u32(sample_rate.as_hertz()).max(1);
-        self.sample_rate_hz = u16::try_from(rate).unwrap_or(u16::MAX);
-        if recalculate_decimation {
-            self.recalculate_decimation();
-        }
-    }
-
-    fn recalculate_decimation(&mut self) {
-        let sample_count = u32::try_from(self.records.capacity())
-            .unwrap_or(u32::MAX)
-            .max(1);
-        let value = u32::from(self.sample_rate_hz)
-            .saturating_mul(10)
-            .checked_div(sample_count)
-            .unwrap_or(0)
-            .max(1);
-        let [wire_value, ..] = value.to_le_bytes();
-        self.decimation = wire_value;
-    }
-
-    fn recording_duration_centiseconds(&self) -> u16 {
-        #[cfg(test)]
-        let capacity = TEST_SAMPLE_CAPACITY;
-        #[cfg(not(test))]
-        let capacity = self.records.capacity();
-        let capacity = u32::try_from(capacity).unwrap_or(u32::MAX);
-        let duration = capacity
-            .saturating_mul(100)
-            .checked_div(u32::from(self.sample_rate_hz))
-            .unwrap_or(0);
-        u16::try_from(duration).unwrap_or(u16::MAX)
-    }
-
     fn status_response(&self) -> [u8; 7] {
-        let duration = self.recording_duration_centiseconds().to_be_bytes();
+        #[cfg(test)]
+        let duration = self
+            .records
+            .recording_duration_centiseconds_at_capacity(TEST_SAMPLE_CAPACITY);
+        #[cfg(not(test))]
+        let duration = self.records.recording_duration_centiseconds();
+        let duration = duration.to_be_bytes();
         [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::DataRecordRequest.id(),
             u8::from(self.has_capability()),
             self.flags.bits(),
-            self.decimation,
+            self.records.decimation(),
             duration[0],
             duration[1],
         ]
@@ -198,12 +156,16 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn initialize_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
-        self.data_recorder.configure_sample_rate(sample_rate, true);
+        self.data_recorder
+            .records
+            .configure_sample_rate(sample_rate, Some(TARGET_RECORDING_SECONDS));
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn refresh_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
-        self.data_recorder.configure_sample_rate(sample_rate, false);
+        self.data_recorder
+            .records
+            .configure_sample_rate(sample_rate, None);
     }
 
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
@@ -265,13 +227,13 @@ impl FloatOutBoyPackageState {
                 .data_recorder
                 .flags
                 .set(FloatOutBoyDataRecorderFlags::AUTOSTOP, *value > 0),
-            [1, 4, value, ..] => self.data_recorder.decimation = (*value).max(1),
+            [1, 4, value, ..] => self.data_recorder.records.set_decimation(*value),
             [1, 0, ..] | [1, _, _, ..] => {}
             [2, 1, ..] => {
                 self.data_recorder.stop();
                 let mut response = DATA_RECORD_HEADER_BYTES;
                 response[1] = FloatOutBoyAppDataCommand::DataRecordHeader.id();
-                let count = u32::try_from(self.data_recorder.sample_count()).unwrap_or(u32::MAX);
+                let count = u32::try_from(self.data_recorder.records.len()).unwrap_or(u32::MAX);
                 response[2..6].copy_from_slice(&count.to_be_bytes());
                 let _ = reply(&response);
                 return true;
@@ -284,13 +246,13 @@ impl FloatOutBoyPackageState {
                 response.push_u32(offset);
                 let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);
                 while response.remaining() >= SAMPLE_SIZE {
-                    let Some(sample) = self.data_recorder.sample_at(sample_index) else {
+                    let Some(sample) = self.data_recorder.records.get(sample_index) else {
                         break;
                     };
                     response.extend(&sample);
                     sample_index = sample_index.saturating_add(1);
                 }
-                if self.data_recorder.sample_count() > 0 {
+                if !self.data_recorder.records.is_empty() {
                     let _ = reply(response.as_bytes());
                 }
                 return true;
