@@ -5,7 +5,7 @@ use crate::units::{Charge, Current, Energy, Voltage};
 macro_rules! current_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Current);
 
@@ -26,7 +26,7 @@ macro_rules! current_type {
 macro_rules! voltage_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Voltage);
 
@@ -47,7 +47,7 @@ macro_rules! voltage_type {
 macro_rules! energy_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Energy);
 
@@ -68,7 +68,7 @@ macro_rules! energy_type {
 macro_rules! charge_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Charge);
 
@@ -102,7 +102,7 @@ charge_type!(AmpHoursCharged, "Charged amp-hours.");
 /// VESC can report values above `1.0` when the measured voltage exceeds the
 /// configured full-voltage threshold, so this is intentionally not a bounded
 /// [`crate::Ratio`].
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct BatteryLevel(f32);
 

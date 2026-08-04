@@ -8,10 +8,12 @@
 // C map: IDs mirror `third_party/float-out-boy/src/state.h:23-58`.
 vescpkg_rs::wire_enum! {
     /// Float Out Boy top-level run state.
+    #[derive(Default)]
     pub enum FloatOutBoyRunState {
         /// Package is disabled.
         Disabled = 0,
         /// Package is starting up.
+        #[default]
         Startup = 1,
         /// Package is ready but not actively balancing.
         Ready = 2,
@@ -22,8 +24,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy runtime mode.
+    #[derive(Default)]
     pub enum FloatOutBoyMode {
         /// Normal ride mode.
+        #[default]
         Normal = 0,
         /// Hand-test mode.
         HandTest = 1,
@@ -34,8 +38,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy stop reason.
+    #[derive(Default)]
     pub enum FloatOutBoyStopCondition {
         /// No stop condition is active.
+        #[default]
         None = 0,
         /// Pitch angle fault.
         Pitch = 1,
@@ -54,8 +60,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy setpoint adjustment or pushback reason.
+    #[derive(Default)]
     pub enum FloatOutBoySetpointAdjustment {
         /// No adjustment.
+        #[default]
         None = 0,
         /// Centering adjustment.
         Centering = 1,
@@ -89,18 +97,20 @@ impl FloatOutBoySetpointAdjustment {
 }
 
 /// Float Out Boy charging state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyChargingState {
     /// Not charging.
+    #[default]
     NotCharging,
     /// Charging is active.
     Charging,
 }
 
 /// Float Out Boy wheel-slip state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyWheelSlipState {
     /// No wheel slip detected.
+    #[default]
     None,
     /// Wheel slip detected.
     Detected,
@@ -117,9 +127,10 @@ pub enum FloatOutBoyTractionControlState {
 }
 
 /// Float Out Boy darkride/upside-down state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyDarkRideState {
     /// Board is upright.
+    #[default]
     Upright,
     /// Darkride/upside-down state is active.
     Active,
@@ -128,8 +139,10 @@ pub enum FloatOutBoyDarkRideState {
 // C map: IDs mirror `third_party/float-out-boy/src/main.c:61-80`.
 vescpkg_rs::wire_enum! {
     /// Float Out Boy beeper reason.
+    #[derive(Default)]
     pub enum FloatOutBoyBeepReason {
         /// No beep reason.
+        #[default]
         None = 0,
         /// Low-voltage warning.
         LowVoltage = 1,
