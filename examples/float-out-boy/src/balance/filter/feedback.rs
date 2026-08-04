@@ -46,31 +46,11 @@ pub(super) struct AccelConfidenceFilter {
     magnitude: AccelerationG,
 }
 
-impl Default for AccelConfidenceFilter {
-    fn default() -> Self {
-        // C map: startup initializes accelerometer magnitude confidence to gravity.
-        Self {
-            magnitude: AccelerationG::from_g(1.0),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MahonyFeedbackConfig {
     pitch: PitchFeedbackGain,
     roll: RollFeedbackGain,
     yaw: YawFeedbackGain,
-}
-
-impl Default for MahonyFeedbackConfig {
-    fn default() -> Self {
-        // Generated Float Out Boy defaults consumed by `balance_filter.c:64-70`.
-        Self {
-            pitch: PitchFeedbackGain::new(2.0),
-            roll: RollFeedbackGain::new(1.4),
-            yaw: YawFeedbackGain::new(1.7),
-        }
-    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -129,6 +109,14 @@ impl MahonyFeedbackGains {
 }
 
 impl AccelConfidenceFilter {
+    pub(super) const fn source_startup() -> Self {
+        // C map: `third_party/float-out-boy/src/balance_filter.c:53-62` initializes
+        // accelerometer magnitude confidence state to gravity.
+        Self {
+            magnitude: AccelerationG::from_g(1.0),
+        }
+    }
+
     #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn confidence(&mut self, new_acc_mag: AccelerationG) -> AccelConfidence {
         // C map: `third_party/float-out-boy/src/balance_filter.c:42-50` filters
@@ -139,6 +127,16 @@ impl AccelConfidenceFilter {
 }
 
 impl MahonyFeedbackConfig {
+    pub(super) const fn source_startup() -> Self {
+        // Source startup mirrors generated Float Out Boy defaults consumed by
+        // `third_party/float-out-boy/src/balance_filter.c:64-70`.
+        Self {
+            pitch: PitchFeedbackGain::new(2.0),
+            roll: RollFeedbackGain::new(1.4),
+            yaw: YawFeedbackGain::new(1.7),
+        }
+    }
+
     pub(super) const fn from_pitch_roll(
         mahony_pitch: MahonyPitchGain,
         mahony_roll: MahonyRollGain,

@@ -47,19 +47,6 @@ struct OrientationVector {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct EstimatedOrientation([f32; 4]);
 
-impl Default for EstimatedOrientation {
-    fn default() -> Self {
-        Self::new(
-            OrientationScalar::new(1.0),
-            OrientationVector::new(
-                OrientationBodyX::new(0.0),
-                OrientationBodyY::new(0.0),
-                OrientationBodyZ::new(0.0),
-            ),
-        )
-    }
-}
-
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OrientationChange([f32; 4]);
@@ -75,6 +62,17 @@ impl EstimatedOrientation {
     #[inline]
     const fn new(scalar: OrientationScalar, vector: OrientationVector) -> Self {
         Self([scalar.0, vector.x.0, vector.y.0, vector.z.0])
+    }
+
+    pub(super) const fn source_startup() -> Self {
+        Self::new(
+            OrientationScalar::new(1.0),
+            OrientationVector::new(
+                OrientationBodyX::new(0.0),
+                OrientationBodyY::new(0.0),
+                OrientationBodyZ::new(0.0),
+            ),
+        )
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -170,7 +168,7 @@ impl EstimatedOrientation {
     pub(super) fn normalize(&mut self) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:38-40` uses
         // `1.0 / sqrtf(x)` to renormalize the quaternion.
-        let recip_norm = 1.0 / sqrt(self.length_squared());
+        let recip_norm = sqrt(self.length_squared()).recip();
         self.0[0] *= recip_norm;
         self.0[1] *= recip_norm;
         self.0[2] *= recip_norm;
