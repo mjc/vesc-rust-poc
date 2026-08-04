@@ -32,12 +32,10 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn request_internal_led_refresh(&mut self) {
         self.internal_led_refresh_pending = true;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn apply_pending_internal_led_refresh(&mut self) {
         if !core::mem::take(&mut self.internal_led_refresh_pending) {
             return;
@@ -55,7 +53,6 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
-        #[cfg(any(test, target_arch = "arm"))]
         if self.internal_led_refresh_pending {
             self.internal_led_confirmation_pending
                 .get_or_insert(system_time_ticks);

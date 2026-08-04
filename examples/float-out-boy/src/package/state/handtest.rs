@@ -1,21 +1,16 @@
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use super::float_out_boy_command_payload;
-#[cfg(any(test, target_arch = "arm"))]
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyMode, FloatOutBoyRideState,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct FloatOutBoyHandtestSafetyConfig(FloatOutBoyConfigImage);
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestSafetyConfig {
     fn from_config(mut config: FloatOutBoyConfigImage) -> Option<Self> {
         // C map: `cmd_handtest` applies temporary safety overrides only in
@@ -32,14 +27,12 @@ impl FloatOutBoyHandtestSafetyConfig {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyHandtestRequest {
     Enable,
     Disable,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestRequest {
     fn from_packet(bytes: &[u8]) -> Option<Self> {
         // C map: `COMMAND_HANDTEST` uses the first payload byte as the on/off
@@ -127,7 +120,6 @@ fn float_out_boy_payloads_with_ride_state(
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
@@ -166,7 +158,6 @@ impl FloatOutBoyPackageState {
         );
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn apply_handtest_safety_config(&mut self) {
         // C map: enabling HANDTEST applies temporary safety overrides at
@@ -176,7 +167,6 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn commit_handtest_restore(
         &mut self,
         loaded: &super::FloatOutBoyPersistedConfig,
@@ -193,7 +183,6 @@ impl FloatOutBoyPackageState {
         true
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn handtest_safety_config(config: &FloatOutBoyConfigImage) -> Option<FloatOutBoyConfigImage> {
         // Float Out Boy C applies temporary HANDTEST safety config at
         // `third_party/float-out-boy/src/main.c:1431-1446` and restores from EEPROM on off at

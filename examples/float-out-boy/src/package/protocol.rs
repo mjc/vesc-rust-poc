@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod realtime_tests;
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(in crate::package) use vesc_float_out_boy_protocol::realtime_value;
 pub(in crate::package) use vesc_float_out_boy_protocol::{
     encode_float_out_boy_all_data_fault_response, encode_float_out_boy_info_response,

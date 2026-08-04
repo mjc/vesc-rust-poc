@@ -3,7 +3,6 @@
     reason = "independent runtime facts are flatter than private one-use wrapper structs"
 )]
 
-#[cfg(any(test, target_arch = "arm"))]
 use super::BatteryVoltage;
 use super::limits::{
     MOVING_FAULT_ROLL, REMOTE_SETPOINT_FAULT_ANGLE, darkride, push_start, quick_stop, reverse_stop,
@@ -20,7 +19,6 @@ use super::{
     FloatOutBoyWheelSlipState, Imu, LoopInput, MotorCurrent, RideModifierInput, Rpm,
     TimestampTicks, float_out_boy_first_stop_event, float_out_boy_state_transition,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFaults;
 use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
 use crate::wire::saturating_trunc_f32_to_u8;
@@ -88,7 +86,6 @@ fn refresh_darkride_state(
     )
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn refresh_ready_alert(
     state: &mut FloatOutBoyPackageState,
     base: FloatOutBoyAllDataBasePayload,
@@ -143,7 +140,6 @@ struct TransitionPhase {
     startup_became_ready: bool,
     state_engage: bool,
     state_stop_fault: bool,
-    #[cfg(any(test, target_arch = "arm"))]
     ready_flywheel_stop: bool,
     balance_pitch: FloatOutBoyRealtimeBalancePitch,
     pitch_degrees: AngleDegrees,
@@ -587,7 +583,6 @@ fn evaluate_transition_phase(
         startup_became_ready,
         state_engage,
         state_stop_fault: transition.state_stopped,
-        #[cfg(any(test, target_arch = "arm"))]
         ready_flywheel_stop,
         balance_pitch,
         pitch_degrees,
@@ -617,15 +612,12 @@ fn protection_signals(
     state: &FloatOutBoyPackageState,
     base: &FloatOutBoyAllDataBasePayload,
 ) -> ProtectionSignals {
-    #[cfg(any(test, target_arch = "arm"))]
     let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_OVER_VOLTAGE);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_over_voltage = false;
-    #[cfg(any(test, target_arch = "arm"))]
     let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFaults::CONNECTION);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_connection_fault = false;
-    #[cfg(any(test, target_arch = "arm"))]
     let bms_temperature_reason = if state
         .bms
         .contains(FloatOutBoyBmsFaults::CELL_OVER_TEMPERATURE)
@@ -646,7 +638,6 @@ fn protection_signals(
     };
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_temperature_reason = None;
-    #[cfg(any(test, target_arch = "arm"))]
     let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE);
     #[cfg(not(any(test, target_arch = "arm")))]
     let bms_cell_under_voltage = false;
@@ -1083,7 +1074,6 @@ pub(super) fn refresh(
         state.request_motor_current(current);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     if let Some((reason, alert)) = refresh_ready_alert(
         state,
         base,
@@ -1112,7 +1102,6 @@ pub(super) fn refresh(
             phase.beep_reason,
         ));
     state.all_data_payloads = payloads.with_base(base);
-    #[cfg(any(test, target_arch = "arm"))]
     {
         phase.ready_flywheel_stop
     }

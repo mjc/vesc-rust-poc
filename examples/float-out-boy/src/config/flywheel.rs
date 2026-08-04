@@ -1,5 +1,4 @@
 use super::FloatOutBoyConfigEditor;
-#[cfg(any(test, target_arch = "arm"))]
 use super::{
     FloatOutBoyBalanceConfig as B, FloatOutBoyConfigImage as C, FloatOutBoyFaultConfig as F,
     FloatOutBoyMotorControlConfig as M, FloatOutBoyStartupConfig as S,
@@ -7,7 +6,6 @@ use super::{
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{Current, MotorCurrent};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,7 +19,6 @@ pub(crate) struct FloatOutBoyFlywheelConfig {
 }
 
 impl FloatOutBoyConfigEditor<'_> {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn apply_flywheel_overrides(&mut self, config: FloatOutBoyFlywheelConfig) -> bool {
         self.apply_handtest_safety_overrides()
             && self.set(S::PITCH_TOLERANCE_FIELD, AngleDegrees::from_degrees(0.2))

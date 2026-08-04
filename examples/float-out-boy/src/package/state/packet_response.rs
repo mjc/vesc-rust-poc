@@ -22,7 +22,6 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         if let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Info)
         {
-            #[cfg(any(test, target_arch = "arm"))]
             let internal_leds_operational = self.internal_leds_operational();
             #[cfg(all(not(test), not(target_arch = "arm")))]
             let internal_leds_operational = false;
