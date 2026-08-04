@@ -1365,8 +1365,7 @@ name = "vesc-example-float-out-boy"
 version = "0.1.0"
 dependencies = [
  "bitflags",
- "vesc-float-out-boy-leds",
- "vesc-float-out-boy-protocol",
+ "vesc-protocol",
  "vescpkg-build-support",
  "vescpkg-rs",
 ]
@@ -1377,23 +1376,6 @@ version = "0.1.0"
 dependencies = [
  "vesc-protocol",
  "vescpkg-build-support",
- "vescpkg-rs",
-]
-
-[[package]]
-name = "vesc-float-out-boy-leds"
-version = "0.1.0"
-dependencies = [
- "vesc-float-out-boy-protocol",
- "vescpkg-rs",
-]
-
-[[package]]
-name = "vesc-float-out-boy-protocol"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "vesc-protocol",
  "vescpkg-rs",
 ]
 

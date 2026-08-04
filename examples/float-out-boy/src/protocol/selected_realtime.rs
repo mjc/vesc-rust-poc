@@ -1,6 +1,6 @@
-//! Cutoff command 33 mask-selected realtime encoding.
+//! Float Out Boy cutoff command 33 mask-selected realtime encoding.
 
-use crate::{
+use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyPacket, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeLiveValues, FloatOutBoyRealtimeMask1, FloatOutBoyRealtimeMask2,
@@ -134,7 +134,7 @@ fn append_mask2(
     gnss: Option<GnssSnapshot>,
 ) {
     if mask.selects(MASK2_ODOMETER) {
-        packet.push_u32(crate::truncating_u64_to_u32(
+        packet.push_u32(super::truncating_u64_to_u32(
             payloads.mode3().odometer().as_meters(),
         ));
     }

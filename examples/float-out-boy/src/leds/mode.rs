@@ -1,4 +1,4 @@
-//! Float Out Boy hardware LED mode.
+//! Hardware LED mode owned by Float Out Boy.
 //!
 //! C map: `third_party/float-out-boy/src/conf/datatypes.h:36-60`.
 

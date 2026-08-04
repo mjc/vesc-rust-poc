@@ -70,7 +70,7 @@ fn encode_float_out_boy_get_realtime_data_response(
 fn encode_float_out_boy_realtime_data_response(
     payloads: &FloatOutBoyAllDataPayloads,
     timestamp: TimestampTicks,
-) -> vesc_float_out_boy_protocol::FloatOutBoyRealtimeDataResponse {
+) -> crate::protocol::FloatOutBoyRealtimeDataResponse {
     encode_float_out_boy_realtime_data_response_with_runtime(
         payloads,
         FloatOutBoyRealtimeDataHeader::new(

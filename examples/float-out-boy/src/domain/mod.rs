@@ -10,4 +10,4 @@
 //! - `third_party/float-out-boy/src/main.c:1876-1901` defines realtime-data ID-list packet layout.
 //! - `third_party/float-out-boy/src/main.c:1190-1205` defines startup `Data` initialization order.
 
-pub use vesc_float_out_boy_protocol::*;
+pub use crate::protocol::*;

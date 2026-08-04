@@ -1,5 +1,5 @@
-use crate::packet::FloatOutBoyPacket;
-use crate::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use super::packet::FloatOutBoyPacket;
+use super::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use vescpkg_rs::prelude::SYSTEM_TICK_RATE_HZ;
 
 // Float Out Boy v1.2.1 `cmd_info` writes this version-2 response shape at
@@ -18,7 +18,7 @@ const FLOAT_OUT_BOY_PATCH_VERSION: u8 = 0;
 const FLOAT_OUT_BOY_BUILD_NUMBER: u8 = 0;
 const FLOAT_OUT_BOY_GIT_HASH: u32 = 0x0ef6_e99d;
 const FLOAT_OUT_BOY_SYSTEM_TICK_RATE_HZ: u32 =
-    crate::packet::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
+    super::packet::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ);
 
 // Float Out Boy C builds this exact packet in `third_party/float-out-boy/src/main.c:1876-1901`, using the ID
 // order from `third_party/float-out-boy/src/rt_data.h:38-66` and counted-string framing from
