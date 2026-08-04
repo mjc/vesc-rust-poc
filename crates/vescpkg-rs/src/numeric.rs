@@ -1,6 +1,6 @@
 use core::ops::{Add, Sub};
 
-use crate::{AngleDegrees, AngularVelocity, SampleRate};
+use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
 
 /// Cursor for replacing the oldest value in a small fixed-size ring.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +23,68 @@ impl<const N: usize> FixedRingIndex<N> {
             self.0.saturating_add(1)
         };
         previous
+    }
+}
+
+/// Fixed-storage motor speed and acceleration tracker.
+///
+/// The acceleration value is the rolling average of successive ERPM deltas;
+/// absolute ERPM is independently smoothed with the caller's chosen ratio.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MotorKinematics<const N: usize> {
+    last_erpm: Rpm,
+    smoothed_abs_erpm: Rpm,
+    average: Rpm,
+    history: [Rpm; N],
+    next: FixedRingIndex<N>,
+}
+
+impl<const N: usize> Default for MotorKinematics<N> {
+    fn default() -> Self {
+        Self {
+            last_erpm: Rpm::ZERO,
+            smoothed_abs_erpm: Rpm::ZERO,
+            average: Rpm::ZERO,
+            history: [Rpm::ZERO; N],
+            next: FixedRingIndex::default(),
+        }
+    }
+}
+
+impl<const N: usize> MotorKinematics<N> {
+    /// Record one electrical motor-speed sample.
+    pub fn record(&mut self, motor_erpm: Rpm, absolute_speed_smoothing: Ratio) {
+        let previous_abs_erpm = self.smoothed_abs_erpm.as_revolutions_per_minute();
+        let current_abs_erpm = motor_erpm.abs().as_revolutions_per_minute();
+        self.smoothed_abs_erpm = Rpm::from_revolutions_per_minute(
+            previous_abs_erpm
+                + absolute_speed_smoothing.as_ratio() * (current_abs_erpm - previous_abs_erpm),
+        );
+
+        let current = motor_erpm - self.last_erpm;
+        let previous = self.next.replace_and_advance(&mut self.history, current);
+        let divisor = f32::from(u16::try_from(N).unwrap_or(u16::MAX));
+        self.average = self.average + (current - previous) / divisor;
+        self.last_erpm = motor_erpm;
+    }
+
+    /// Clear acceleration history while retaining speed smoothing state.
+    pub fn reset_acceleration(&mut self) {
+        self.average = Rpm::ZERO;
+        self.history = [Rpm::ZERO; N];
+        self.next = FixedRingIndex::default();
+    }
+
+    /// Return the rolling average ERPM delta.
+    #[must_use]
+    pub const fn average(&self) -> Rpm {
+        self.average
+    }
+
+    /// Return the smoothed absolute ERPM.
+    #[must_use]
+    pub const fn smoothed_abs_erpm(&self) -> Rpm {
+        self.smoothed_abs_erpm
     }
 }
 
@@ -97,8 +159,8 @@ impl SmoothAngle {
 
 #[cfg(test)]
 mod tests {
-    use super::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
-    use crate::{AngleDegrees, AngularVelocity, SampleRate};
+    use super::{FixedRingIndex, MotorKinematics, SmoothAngle, angle_step, slew_toward};
+    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
 
     #[test]
     fn typed_angle_ramp_preserves_centering_and_per_sample_step() {
@@ -155,5 +217,47 @@ mod tests {
         assert_eq!(index.replace_and_advance(&mut values, 3), 0);
         assert_eq!(index.replace_and_advance(&mut values, 4), 1);
         assert_eq!(values, [4, 2, 3]);
+    }
+
+    #[test]
+    fn motor_kinematics_tracks_smoothed_speed_and_rolling_delta_average() {
+        let mut tracker = MotorKinematics::<3>::default();
+        let smoothing = Ratio::from_ratio_const(0.1);
+
+        tracker.record(Rpm::from_revolutions_per_minute(-10.0), smoothing);
+        tracker.record(Rpm::from_revolutions_per_minute(20.0), smoothing);
+        tracker.record(Rpm::from_revolutions_per_minute(50.0), smoothing);
+
+        assert_f32_eq!(
+            tracker.smoothed_abs_erpm().as_revolutions_per_minute(),
+            7.61
+        );
+        let average = tracker.average().as_revolutions_per_minute();
+        assert!((average - 50.0 / 3.0).abs() <= f32::EPSILON * average.abs());
+
+        tracker.record(Rpm::from_revolutions_per_minute(110.0), smoothing);
+        assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 40.0);
+    }
+
+    #[test]
+    fn motor_kinematics_resets_only_acceleration_history() {
+        let mut tracker = MotorKinematics::<2>::default();
+        tracker.record(
+            Rpm::from_revolutions_per_minute(100.0),
+            Ratio::from_ratio_const(0.5),
+        );
+
+        tracker.reset_acceleration();
+
+        assert_eq!(tracker.average(), Rpm::ZERO);
+        assert_eq!(
+            tracker.smoothed_abs_erpm(),
+            Rpm::from_revolutions_per_minute(50.0),
+        );
+        tracker.record(
+            Rpm::from_revolutions_per_minute(110.0),
+            Ratio::from_ratio_const(0.5),
+        );
+        assert_eq!(tracker.average(), Rpm::from_revolutions_per_minute(5.0));
     }
 }
