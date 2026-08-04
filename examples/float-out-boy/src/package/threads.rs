@@ -3,36 +3,26 @@
 //! Source oracle: Float Out Boy v1.2.1 `third_party/float-out-boy/src/main.c:2439-2449`
 //! spawns the main and aux threads after loader metadata setup and before the registration tail.
 
-#[cfg(any(test, target_arch = "arm"))]
 use super::state::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use core::time::Duration;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::ThreadWorkingAreaSize;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
-#[cfg(any(test, target_arch = "arm"))]
 // C map: `LEDS_REFRESH_RATE` is `30` at `third_party/float-out-boy/src/leds.h:26`;
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
 const FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ: u32 = 30;
-#[cfg(any(test, target_arch = "arm"))]
 const FLOAT_OUT_BOY_AUX_LOOP_TIME_US: u32 = 1_000_000 / FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ;
 
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AdcVoltage;
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyRuntimeThread {
     Main,
     Aux,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyRuntimeThread {
     const fn stack_bytes(self) -> usize {
         match self {
@@ -40,7 +30,6 @@ impl FloatOutBoyRuntimeThread {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     const fn working_area_size(
         self,
     ) -> Result<ThreadWorkingAreaSize, vescpkg_rs::ThreadWorkingAreaSizeError> {
@@ -105,14 +94,12 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyMainThreadTick {
     sleep_us: u32,
     beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyMainThreadTick {
     const fn new(sleep_us: u32, beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>) -> Self {
         Self {
@@ -131,14 +118,12 @@ impl FloatOutBoyMainThreadTick {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Clone, Copy)]
 struct FloatOutBoyMainThreadPrepare {
     alert_level: Option<crate::beeper::FloatOutBoyBeeperLevel>,
     restore_flywheel_config: bool,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn prepare_float_out_boy_main_thread_tick(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -168,7 +153,6 @@ fn prepare_float_out_boy_main_thread_tick(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn finish_float_out_boy_main_thread_tick(
     state: &mut FloatOutBoyPackageState,
     motor: &impl MotorOutput,
@@ -250,7 +234,6 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
 /// `aux_thd` renders LEDs, conditionally stores the backup, then refreshes motor
 /// configuration after a strict half-second interval at
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn tick_float_out_boy_aux_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -280,7 +263,6 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
 /// Upstream performs this between loader metadata setup
 /// (third_party/float-out-boy/src/main.c:2431-2432) and callback registration
 /// (third_party/float-out-boy/src/main.c:2455-2459).
-#[cfg(any(test, target_arch = "arm"))]
 fn initialize_float_out_boy_runtime_state(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,

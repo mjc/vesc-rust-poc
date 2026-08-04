@@ -1,12 +1,9 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::gravity::{HalfGravity, HalfGravityX, HalfGravityY, HalfGravityZ};
-#[cfg(any(test, target_arch = "arm"))]
 use super::rate::AngularRateHalfStep;
 use super::scalar::AxisScalar;
 use crate::domain::FloatOutBoyRealtimeBalancePitch;
 use vescpkg_rs::asin;
 use vescpkg_rs::prelude::AngleRadians;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ImuOrientation;
 
 enum OrientationScalarTag {}
@@ -19,22 +16,14 @@ type OrientationBodyX = AxisScalar<OrientationBodyXTag>;
 type OrientationBodyY = AxisScalar<OrientationBodyYTag>;
 type OrientationBodyZ = AxisScalar<OrientationBodyZTag>;
 
-#[cfg(any(test, target_arch = "arm"))]
 enum OrientationChangeScalarTag {}
-#[cfg(any(test, target_arch = "arm"))]
 enum OrientationChangeBodyXTag {}
-#[cfg(any(test, target_arch = "arm"))]
 enum OrientationChangeBodyYTag {}
-#[cfg(any(test, target_arch = "arm"))]
 enum OrientationChangeBodyZTag {}
 
-#[cfg(any(test, target_arch = "arm"))]
 type OrientationChangeScalar = AxisScalar<OrientationChangeScalarTag>;
-#[cfg(any(test, target_arch = "arm"))]
 type OrientationChangeBodyX = AxisScalar<OrientationChangeBodyXTag>;
-#[cfg(any(test, target_arch = "arm"))]
 type OrientationChangeBodyY = AxisScalar<OrientationChangeBodyYTag>;
-#[cfg(any(test, target_arch = "arm"))]
 type OrientationChangeBodyZ = AxisScalar<OrientationChangeBodyZTag>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -47,7 +36,6 @@ struct OrientationVector {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct EstimatedOrientation([f32; 4]);
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OrientationChange([f32; 4]);
 
@@ -75,7 +63,6 @@ impl EstimatedOrientation {
         )
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn from_orientation(orientation: ImuOrientation) -> Self {
         let quaternion = orientation.quaternion();
         Self::new(
@@ -103,7 +90,6 @@ impl EstimatedOrientation {
         -2.0 * (body_x * body_z - scalar * body_y)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     #[inline]
     fn length_squared(self) -> f32 {
         // C map: `third_party/float-out-boy/src/balance_filter.c:126-133` normalizes
@@ -113,7 +99,6 @@ impl EstimatedOrientation {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:98-101`.
-    #[cfg(any(test, target_arch = "arm"))]
     #[inline]
     pub(super) fn estimated_half_gravity(self) -> HalfGravity {
         let [scalar, body_x, body_y, body_z] = self.0;
@@ -125,7 +110,6 @@ impl EstimatedOrientation {
     }
 
     /// C map: `third_party/float-out-boy/src/balance_filter.c:118-124`.
-    #[cfg(any(test, target_arch = "arm"))]
     #[inline]
     pub(super) fn change_from_angular_rate(
         self,
@@ -151,7 +135,6 @@ impl EstimatedOrientation {
         )
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     #[inline]
     pub(super) fn apply_change(&mut self, change: OrientationChange) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:118-124` adds the
@@ -163,7 +146,6 @@ impl EstimatedOrientation {
         self.0[3] += dq3;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     #[inline]
     pub(super) fn normalize(&mut self) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:38-40` uses
@@ -181,7 +163,6 @@ impl EstimatedOrientation {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl OrientationChange {
     #[inline]
     const fn new(
@@ -201,7 +182,6 @@ impl OrientationChange {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::sqrt;
 
 #[cfg(test)]

@@ -3,14 +3,10 @@
 //! C map: package init stores loader ARG/stop handlers and registers app-data
 //! callbacks at `third_party/float-out-boy/src/main.c:2419-2461`.
 
-#[cfg(any(test, target_arch = "arm"))]
 use super::state::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{Imu, MotorTelemetry};
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn handle_float_out_boy_app_data_packet(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -22,10 +18,8 @@ pub(crate) fn handle_float_out_boy_app_data_packet(
     state.handle_packet_with_runtime(telemetry, imu, now, reply, packet.as_bytes())
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) struct FloatOutBoyAppData;
 
-#[cfg(any(test, target_arch = "arm"))]
 fn float_out_boy_command(bytes: &[u8]) -> Option<(FloatOutBoyAppDataCommand, &[u8])> {
     let [package_id, command, payload @ ..] = bytes else {
         return None;
@@ -38,7 +32,6 @@ fn float_out_boy_command(bytes: &[u8]) -> Option<(FloatOutBoyAppDataCommand, &[u
         .map(|command| (command, payload))
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn finish_restored_config(
     context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
     committed: bool,
@@ -49,7 +42,6 @@ fn finish_restored_config(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[cfg_attr(target_arch = "arm", inline(never))]
 fn handle_effectful_float_out_boy_packet(
     context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
@@ -130,7 +122,6 @@ fn handle_effectful_float_out_boy_packet(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
     type State = FloatOutBoyPackageState;
 

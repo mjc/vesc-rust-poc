@@ -6,22 +6,17 @@
 //! `third_party/float-out-boy/src/main.c:2458-2459`. The Lisp loader calls them immediately
 //! after native load in `third_party/float-out-boy/lisp/package.lisp:4-17`.
 
-#[cfg(any(test, target_arch = "arm"))]
 use crate::bms::ExtBms;
-#[cfg(any(test, target_arch = "arm"))]
 use crate::package::FloatOutBoyPackageState;
 
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{ExtensionDescriptor, FirmwareVersion, LispArgs, LispValue};
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyLoaderExtension {
     SetFwVersion,
     Bms,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyLoaderExtension {
     const ALL: [Self; 2] = [Self::SetFwVersion, Self::Bms];
 
@@ -45,10 +40,8 @@ impl FloatOutBoyLoaderExtension {
 /// Upstream stores these components into `Data` at `third_party/float-out-boy/src/main.c:2305-2311`.
 /// The loader-only Rust candidate has no upstream `Data` allocation/`ARG`
 /// install from `third_party/float-out-boy/src/main.c:2419-2432`, so it stores only this narrow state.
-#[cfg(any(test, target_arch = "arm"))]
 struct ExtSetFwVersion;
 
-#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
     type State = FloatOutBoyPackageState;
 
@@ -67,7 +60,6 @@ impl vescpkg_rs::StatefulLbmExtension for ExtSetFwVersion {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn record_float_out_boy_firmware_version(
     state: &mut FloatOutBoyPackageState,
     args: &[i32],
@@ -84,7 +76,6 @@ fn record_float_out_boy_firmware_version(
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
-#[cfg(any(test, target_arch = "arm"))]
 fn package_extension_descriptors() -> [ExtensionDescriptor; FloatOutBoyLoaderExtension::ALL.len()] {
     FloatOutBoyLoaderExtension::ALL.map(FloatOutBoyLoaderExtension::descriptor)
 }

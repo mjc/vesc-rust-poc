@@ -1,5 +1,4 @@
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use super::limits::TractionLossLimits;
 use crate::domain::{
     FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
@@ -66,7 +65,6 @@ impl FloatOutBoyMotorCurrentFilter {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     state.duty_max_with_margin = telemetry
         .duty_cycle_limit()

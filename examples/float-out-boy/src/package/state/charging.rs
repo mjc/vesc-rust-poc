@@ -3,10 +3,8 @@ use crate::domain::{
     FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::timer_older_whole_seconds as float_out_boy_ticks_elapsed;
 
 const CHARGING_WIRE_SCALE: f32 = 10.0;
@@ -75,7 +73,6 @@ pub(super) fn handle_packet(
     )
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(super) fn timeout(
     payloads: FloatOutBoyAllDataPayloads,
     now: TimestampTicks,

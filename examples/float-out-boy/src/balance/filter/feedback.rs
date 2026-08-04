@@ -1,17 +1,12 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::gravity::{PitchGravityError, RollGravityError, YawGravityError};
 use super::scalar::AxisScalar;
 use vescpkg_rs::prelude::AccelerationG;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AngularVelocity;
 pub(crate) use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
-#[cfg(any(test, target_arch = "arm"))]
 enum AccelConfidenceTag {}
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct AccelConfidence(AxisScalar<AccelConfidenceTag>);
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MahonyFeedbackGains {
     roll: RollAccelCorrectionGain,
@@ -19,25 +14,19 @@ pub(super) struct MahonyFeedbackGains {
     yaw: YawAccelCorrectionGain,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 enum PitchAccelCorrectionGainTag {}
 enum PitchFeedbackGainTag {}
-#[cfg(any(test, target_arch = "arm"))]
 enum RollAccelCorrectionGainTag {}
 enum RollFeedbackGainTag {}
-#[cfg(any(test, target_arch = "arm"))]
 enum YawAccelCorrectionGainTag {}
 enum YawFeedbackGainTag {}
 
 // C map: upstream balance_filter keeps Mahony pitch/roll KP as scalar config
 // inputs and uses accel confidence as a scalar feedback weight.
-#[cfg(any(test, target_arch = "arm"))]
 type PitchAccelCorrectionGain = AxisScalar<PitchAccelCorrectionGainTag>;
 type PitchFeedbackGain = AxisScalar<PitchFeedbackGainTag>;
-#[cfg(any(test, target_arch = "arm"))]
 type RollAccelCorrectionGain = AxisScalar<RollAccelCorrectionGainTag>;
 type RollFeedbackGain = AxisScalar<RollFeedbackGainTag>;
-#[cfg(any(test, target_arch = "arm"))]
 type YawAccelCorrectionGain = AxisScalar<YawAccelCorrectionGainTag>;
 type YawFeedbackGain = AxisScalar<YawFeedbackGainTag>;
 
@@ -53,7 +42,6 @@ pub(super) struct MahonyFeedbackConfig {
     yaw: YawFeedbackGain,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl AccelConfidence {
     #[inline]
     pub(super) const fn new(confidence: f32) -> Self {
@@ -84,7 +72,6 @@ impl AccelConfidence {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl MahonyFeedbackGains {
     #[inline]
     pub(super) fn roll_correction(self, error: RollGravityError) -> AngularVelocity {
@@ -117,7 +104,6 @@ impl AccelConfidenceFilter {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn confidence(&mut self, new_acc_mag: AccelerationG) -> AccelConfidence {
         // C map: `third_party/float-out-boy/src/balance_filter.c:42-50` filters
         // accelerometer magnitude and clamps the confidence at zero.
@@ -157,7 +143,6 @@ impl MahonyFeedbackConfig {
         )
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn accel_correction_gains(self, confidence: AccelConfidence) -> MahonyFeedbackGains {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` scales the
         // per-axis correction gains by accelerometer confidence.
@@ -168,5 +153,4 @@ impl MahonyFeedbackConfig {
         }
     }
 }
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::sqrt;

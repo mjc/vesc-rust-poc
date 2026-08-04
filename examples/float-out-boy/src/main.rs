@@ -84,21 +84,36 @@ static HOST_ALLOCATOR: std::alloc::System = std::alloc::System;
 #[global_allocator]
 static FIRMWARE_ALLOCATOR: vescpkg_rs::VescAllocator = vescpkg_rs::VescAllocator;
 
+#[cfg(any(test, target_arch = "arm"))]
 mod balance;
+#[cfg(any(test, target_arch = "arm"))]
 mod beeper;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod bms;
+#[cfg(any(test, target_arch = "arm"))]
 mod config;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod domain;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod extensions;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod footpad;
+#[cfg(any(test, target_arch = "arm"))]
 pub use domain::{FloatOutBoyMode, FloatOutBoyRunState};
+#[cfg(any(test, target_arch = "arm"))]
 pub use footpad::FloatOutBoyFootpadState;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod lcm;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod leds;
+#[cfg(any(test, target_arch = "arm"))]
 mod motor_control;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod package;
+#[cfg(any(test, target_arch = "arm"))]
 mod wire;
 
+#[cfg(any(test, target_arch = "arm"))]
 vescpkg_rs::package_start!(
     crate::package::start,
     crate::package::FloatOutBoyPackageState,

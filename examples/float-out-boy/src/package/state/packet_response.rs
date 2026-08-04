@@ -21,10 +21,7 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         if let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Info)
         {
-            #[cfg(any(test, target_arch = "arm"))]
             let internal_leds_operational = self.internal_leds_operational();
-            #[cfg(all(not(test), not(target_arch = "arm")))]
-            let internal_leds_operational = false;
             // C map: `on_command_received` dispatches COMMAND_INFO at
             // `third_party/float-out-boy/src/main.c:2158-2160`; `cmd_info` writes
             // the requested v1 or v2 metadata shape at

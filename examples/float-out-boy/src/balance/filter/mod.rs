@@ -1,25 +1,18 @@
 use crate::config::FloatOutBoyFilterConfig;
 use crate::domain::FloatOutBoyRealtimeBalancePitch;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::ImuOrientation;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AccelerationG, ImuAcceleration, ImuReadSample};
 
 mod feedback;
-#[cfg(any(test, target_arch = "arm"))]
 mod gravity;
 mod orientation;
-#[cfg(any(test, target_arch = "arm"))]
 mod rate;
 mod scalar;
 
-#[cfg(any(test, target_arch = "arm"))]
 use feedback::{AccelConfidence, MahonyFeedbackGains};
 use feedback::{AccelConfidenceFilter, MahonyFeedbackConfig};
-#[cfg(any(test, target_arch = "arm"))]
 use gravity::{GravityError, MeasuredGravity};
 use orientation::EstimatedOrientation;
-#[cfg(any(test, target_arch = "arm"))]
 use rate::{CorrectedAngularRate, MeasuredAngularRate};
 use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
 
@@ -51,7 +44,6 @@ impl BalanceFilter {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn from_orientation(orientation: ImuOrientation) -> Self {
         Self {
             orientation: EstimatedOrientation::from_orientation(orientation),
@@ -74,7 +66,6 @@ impl BalanceFilter {
         self.feedback.configured_gains()
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn update(&mut self, sample: ImuReadSample) {
         // Float Out Boy's callback feeds gyro first, accel second at
         // `third_party/float-out-boy/src/main.c:760-765`; the Mahony update itself is
@@ -95,7 +86,6 @@ impl BalanceFilter {
         self.orientation
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn gyro_with_accel_correction(
         &mut self,
         gyro: MeasuredAngularRate,
@@ -115,14 +105,12 @@ impl BalanceFilter {
         )
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn measured_gravity(acceleration: ImuAcceleration) -> Option<(AccelerationG, MeasuredGravity)> {
         // C map: `third_party/float-out-boy/src/balance_filter.c:82-96` enters
         // feedback only when accel norm is above 0.01, then normalizes it.
         MeasuredGravity::from_acceleration(acceleration)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn accel_error(&self, accel: MeasuredGravity) -> GravityError {
         // C map: `third_party/float-out-boy/src/balance_filter.c:98-101` projects
         // the current estimated orientation into a gravity half-vector.
@@ -133,7 +121,6 @@ impl BalanceFilter {
         accel.error_against(estimated_gravity)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn integrate_gyro(&mut self, gyro: CorrectedAngularRate, dt: vescpkg_rs::prelude::VescSeconds) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:114-117`
         // pre-multiplies gyro by half the tick duration.
@@ -145,21 +132,18 @@ impl BalanceFilter {
         self.orientation.apply_change(orientation_change);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn normalize_quaternion(&mut self) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:126-133` keeps the
         // integrated orientation on the unit-quaternion sphere.
         self.orientation.normalize();
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn accel_confidence(&mut self, new_acc_mag: AccelerationG) -> AccelConfidence {
         // C map: `third_party/float-out-boy/src/balance_filter.c:42-50` filters the
         // accelerometer magnitude and decays confidence toward zero.
         self.accel_confidence.confidence(new_acc_mag)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn feedback_gains(&self, confidence: AccelConfidence) -> MahonyFeedbackGains {
         // C map: `third_party/float-out-boy/src/balance_filter.c:87-90` scales the
         // Mahony feedback gains by the current accelerometer confidence.

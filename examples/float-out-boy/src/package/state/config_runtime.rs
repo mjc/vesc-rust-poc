@@ -40,14 +40,12 @@ pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
     if let Some((_, config)) = state.effective_led_config() {
         state.lcm.configure(config);
     }
-    #[cfg(any(test, target_arch = "arm"))]
     state.request_internal_led_refresh();
 }
 
 pub(super) fn refresh_led_effects(state: &mut FloatOutBoyPackageState) {
     if let Some((_, config)) = state.effective_led_config() {
         state.lcm.configure(config);
-        #[cfg(any(test, target_arch = "arm"))]
         state.update_internal_led_config(config);
     }
 }
