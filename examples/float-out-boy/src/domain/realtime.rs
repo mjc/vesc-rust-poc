@@ -242,7 +242,7 @@ impl FloatOutBoyRealtimeDataHeader {
             footpad_state,
             beep_reason,
             fatal_error: FloatOutBoyFatalErrorState::None,
-            data_recorder: FloatOutBoyDataRecorderFlags::inactive(),
+            data_recorder: FloatOutBoyDataRecorderFlags::empty(),
         }
     }
 

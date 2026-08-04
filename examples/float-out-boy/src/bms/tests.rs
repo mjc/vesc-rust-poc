@@ -1,6 +1,6 @@
 use super::{
-    ExtBms, FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample,
-    FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds,
+    ExtBms, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
+    FloatOutBoyBmsThresholds,
 };
 use crate::config::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
 use crate::package::test_support::sample_all_data_payloads;
@@ -99,7 +99,7 @@ fn bms_thresholds_decode_exact_generated_offsets_and_signed_temperatures() {
 fn disabled_bms_clears_every_fault_like_float_out_boy_bms_update() {
     let faults = FloatOutBoyBmsFaults::evaluate(false, sample(), thresholds(), true);
 
-    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+    assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
 
 #[test]
@@ -115,10 +115,7 @@ fn stale_bms_after_startup_timeout_reports_connection_only() {
 
     let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), true);
 
-    assert_eq!(
-        faults,
-        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
-    );
+    assert_eq!(faults, FloatOutBoyBmsFaults::CONNECTION);
 }
 
 #[test]
@@ -134,7 +131,7 @@ fn stale_bms_during_startup_grace_does_not_report_connection() {
 
     let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), false);
 
-    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+    assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
 
 #[test]
@@ -150,7 +147,7 @@ fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
 
     let faults = FloatOutBoyBmsFaults::evaluate(true, at_timeout, thresholds(), true);
 
-    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+    assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
 
 #[test]
@@ -167,16 +164,17 @@ fn bms_threshold_crossings_set_every_float_out_boy_fault() {
     let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds(), false);
 
     for fault in [
-        FloatOutBoyBmsFault::BmsOverTemperature,
-        FloatOutBoyBmsFault::CellOverVoltage,
-        FloatOutBoyBmsFault::CellUnderVoltage,
-        FloatOutBoyBmsFault::CellOverTemperature,
-        FloatOutBoyBmsFault::CellUnderTemperature,
-        FloatOutBoyBmsFault::CellBalance,
+        FloatOutBoyBmsFaults::BMS_OVER_TEMPERATURE,
+        FloatOutBoyBmsFaults::CELL_OVER_VOLTAGE,
+        FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE,
+        FloatOutBoyBmsFaults::CELL_OVER_TEMPERATURE,
+        FloatOutBoyBmsFaults::CELL_UNDER_TEMPERATURE,
+        FloatOutBoyBmsFaults::CELL_BALANCE,
     ] {
         assert!(faults.contains(fault));
     }
-    assert!(!faults.contains(FloatOutBoyBmsFault::Connection));
+    assert!(!faults.contains(FloatOutBoyBmsFaults::CONNECTION));
+    assert_eq!(FloatOutBoyBmsFaults::all().bits(), 0x7f);
 }
 
 #[test]
@@ -200,7 +198,7 @@ fn equal_or_disabled_bms_thresholds_do_not_fault() {
 
     let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds, false);
 
-    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+    assert_eq!(faults, FloatOutBoyBmsFaults::empty());
 }
 
 #[test]
@@ -384,19 +382,19 @@ fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
     assert!(
         !state
             .bms_faults_for_test()
-            .contains(FloatOutBoyBmsFault::Connection)
+            .contains(FloatOutBoyBmsFaults::CONNECTION)
     );
 
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_000));
     assert!(
         !state
             .bms_faults_for_test()
-            .contains(FloatOutBoyBmsFault::Connection)
+            .contains(FloatOutBoyBmsFaults::CONNECTION)
     );
 
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(60_001));
     assert_eq!(
         state.bms_faults_for_test(),
-        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
+        FloatOutBoyBmsFaults::CONNECTION
     );
 }

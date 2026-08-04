@@ -45,7 +45,7 @@ fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
 
     assert_eq!(
         state.bms_faults_for_test(),
-        crate::bms::FloatOutBoyBmsFaults::from_fault(crate::bms::FloatOutBoyBmsFault::Connection)
+        crate::bms::FloatOutBoyBmsFaults::CONNECTION
     );
 }
 
