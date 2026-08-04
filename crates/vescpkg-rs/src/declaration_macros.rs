@@ -12,6 +12,21 @@ macro_rules! const_field_getters {
     };
 }
 
+/// Generate const copy-value builders for named fields.
+#[macro_export]
+macro_rules! const_field_builders {
+    ($( $(#[$attribute:meta])* $visibility:vis fn $name:ident($value:ident: $value_type:ty) => $field:ident; )+) => {
+        $(
+            $(#[$attribute])*
+            #[must_use]
+            $visibility const fn $name(mut self, $value: $value_type) -> Self {
+                self.$field = $value;
+                self
+            }
+        )+
+    };
+}
+
 /// Declare a typed field group with a const constructor, getters, and optional builders.
 #[macro_export]
 macro_rules! typed_fields {
@@ -45,11 +60,9 @@ macro_rules! typed_fields {
     };
 
     (@with $field:ident: $field_type:ty => $with:ident) => {
-        #[doc = concat!("Return this field group with a new `", stringify!($field), "` field.")]
-        #[must_use]
-        pub const fn $with(mut self, $field: $field_type) -> Self {
-            self.$field = $field;
-            self
+        $crate::const_field_builders! {
+            #[doc = concat!("Return this field group with a new `", stringify!($field), "` field.")]
+            pub fn $with($field: $field_type) => $field;
         }
     };
 
