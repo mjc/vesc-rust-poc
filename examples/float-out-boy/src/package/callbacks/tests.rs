@@ -116,12 +116,11 @@ fn app_data_callback_dispatches_legacy_realtime_data_like_float_out_boy() {
     let telemetry = FirmwareTest::new();
     let imu = telemetry.imu();
     let payloads = sample_all_data_payloads();
-    let expected =
-        vesc_float_out_boy_protocol::encode_float_out_boy_get_realtime_data_response_with_remote(
-            &payloads,
-            FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
-            0.0,
-        );
+    let expected = crate::protocol::encode_float_out_boy_get_realtime_data_response_with_remote(
+        &payloads,
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+    );
     let mut state = FloatOutBoyPackageState::new(payloads);
     let request = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,

@@ -1,4 +1,4 @@
-//! Float Out Boy app-data protocol types.
+//! App-data protocol types owned by Float Out Boy.
 //!
 //! These types own the protocol-shaped command IDs and all-data request
 //! parsing, while `domain.rs` keeps the semantic payload types and wire helpers.

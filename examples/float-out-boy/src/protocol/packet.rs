@@ -1,4 +1,4 @@
-//! Shared Float Out Boy wire-format primitives.
+//! Float Out Boy wire-format primitives.
 //!
 //! C map: Float Out Boy packet encoders forward through `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 

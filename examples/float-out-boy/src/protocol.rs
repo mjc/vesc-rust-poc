@@ -1,35 +1,8 @@
-//! Float Out Boy-specific `no_std` host/device protocol.
+//! Float Out Boy-specific host/device protocol.
 //!
-//! This crate deliberately owns only FOB wire IDs, compatibility mappings,
+//! This module deliberately owns only FOB wire IDs, compatibility mappings,
 //! payload types, and fixed-buffer encoding. It is not a generic VESC protocol
 //! and does not own balance control, LEDs, package lifecycle, or allocation.
-
-#![no_std]
-#![deny(warnings, clippy::pedantic)]
-#![forbid(unused_extern_crates)]
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::allow_attributes,
-        clippy::allow_attributes_without_reason,
-        clippy::arithmetic_side_effects,
-        clippy::as_conversions,
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::mem_forget,
-        clippy::missing_safety_doc,
-        clippy::multiple_unsafe_ops_per_block,
-        clippy::panic,
-        clippy::todo,
-        clippy::undocumented_unsafe_blocks,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
-
-#[cfg(test)]
-extern crate std;
 
 mod all_data;
 mod all_data_wire;
