@@ -80,6 +80,7 @@ fn is_tune_default_byte(index: usize) -> bool {
     )
 }
 
+#[cfg(test)]
 fn generated_field<T: Default>(value: Option<T>) -> T {
     // Generated offsets should always fit the fixed-size configuration image.
     // If the generated layout and image ever disagree, use the field type's
@@ -161,30 +162,22 @@ impl FloatOutBoyConfigImage {
         BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
         LEDS_ON_FIELD: CustomConfigFlagField => leds_enabled -> bool, offset: 175;
         LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField => headlights_enabled -> bool, offset: 176;
+        #[cfg(test)]
+        LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField => lights_off_when_lifted -> bool, offset: 179;
+        INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField => input_tilt_remote_type -> u8, offset: 79, map: WireByte::as_u8;
+        #[cfg(any(test, target_arch = "arm"))]
+        INPUT_TILT_INVERT_FIELD: CustomConfigFlagField => input_tilt_inverted -> bool, offset: 84;
+        #[cfg(any(test, target_arch = "arm"))]
+        INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField => input_tilt_deadband -> Ratio, offset: 85, scale: 10000.0;
+        SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField => speed_pushback_threshold -> Speed, offset: 63, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
+        HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 227, map: WireByte::as_u8;
     }
-    #[cfg(test)]
-    const LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 179);
-    #[cfg(test)]
-    pub(crate) fn lights_off_when_lifted(&self) -> bool {
-        generated_field(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD.read(self))
-    }
-    pub(crate) const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
-    #[cfg(any(test, target_arch = "arm"))]
-    const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 84);
-    #[cfg(any(test, target_arch = "arm"))]
-    const INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField = vescpkg_rs::generated_custom_config_field!(CustomConfigRatioField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 85, scale: 10000.0);
-    const SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 63);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
 
     // Generated `hardware.leds.mode` follows the 52-byte `leds` block beginning
     // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
-    const HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigEnumField<FloatOutBoyHardwareLedMode>,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 227
-    );
     // These fields immediately follow `braketilt_lingering` in the generated
     // `SerOrder` at `third_party/float-out-boy/src/conf/settings.xml:4134-4140`.
     // The generated default image confirms the bytes at 175, 176, and 179 as
@@ -235,12 +228,6 @@ impl FloatOutBoyConfigImage {
             }
         }
         self.0 = CustomConfigImage::new(bytes);
-    }
-
-    pub(crate) fn hardware_led_mode_id(&self) -> u8 {
-        Self::HARDWARE_LED_MODE_FIELD
-            .read(&self.0)
-            .map_or(0, WireByte::as_u8)
     }
 
     pub(crate) fn led_configs(
@@ -295,29 +282,6 @@ impl FloatOutBoyConfigImage {
         }
     }
 
-    pub(crate) fn speed_pushback_threshold(&self) -> Speed {
-        generated_field(Self::SPEED_PUSHBACK_THRESHOLD_FIELD.read(self)).scaled(
-            1.0,
-            0.0,
-            Speed::from_kilometers_per_hour,
-        )
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn input_tilt_remote_type(&self) -> u8 {
-        generated_field(Self::INPUT_TILT_REMOTE_TYPE_FIELD.read(self)).as_u8()
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn input_tilt_inverted(&self) -> bool {
-        generated_field(Self::INPUT_TILT_INVERT_FIELD.read(self))
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(crate) fn input_tilt_deadband(&self) -> Ratio {
-        generated_field(Self::INPUT_TILT_DEADBAND_FIELD.read(self))
-    }
-
     pub(crate) fn editor(&mut self) -> FloatOutBoyConfigEditor<'_> {
         FloatOutBoyConfigEditor(self.0.editor())
     }
@@ -340,19 +304,7 @@ vescpkg_rs::generated_custom_config_view! {
         CURRENT_THRESHOLD_FIELD: CustomConfigRatioField => current_threshold -> Ratio, offset: 258, scale: 10000.0;
         MIN_STRENGTH_FIELD: CustomConfigRatioField => min_strength -> Ratio, offset: 260, scale: 10000.0;
         STRENGTH_CURVATURE_FIELD: CustomConfigRatioField => strength_curvature -> Ratio, offset: 263, scale: 1000.0;
-    }
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl FloatOutBoyHapticConfig<'_> {
-    const MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 262);
-
-    pub(crate) fn max_strength_speed(self) -> Speed {
-        generated_field(Self::MAX_STRENGTH_SPEED_FIELD.read(self.0)).scaled(
-            1.0,
-            0.0,
-            Speed::from_kilometers_per_hour,
-        )
+        MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField => max_strength_speed -> Speed, offset: 262, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
     }
 }
 
@@ -655,8 +607,9 @@ impl FloatOutBoyBmsConfig<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FloatOutBoyParkingBrakeMode {
+    #[default]
     Always,
     Idle,
     Never,
@@ -681,20 +634,8 @@ vescpkg_rs::generated_custom_config_view! {
     pub(crate) struct FloatOutBoyMotorControlConfig<'a>(&'a FloatOutBoyConfigImage);
     len: FLOAT_OUT_BOY_CONFIG_LEN;
     fields {
+        PARKING_BRAKE_MODE_FIELD: CustomConfigEnumField<FloatOutBoyParkingBrakeMode> => parking_brake_mode -> FloatOutBoyParkingBrakeMode, offset: 101;
         BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_current -> MotorCurrent, offset: 102, scale: 100.0;
-    }
-}
-
-impl FloatOutBoyMotorControlConfig<'_> {
-    const PARKING_BRAKE_MODE_FIELD: CustomConfigEnumField<FloatOutBoyParkingBrakeMode> = vescpkg_rs::generated_custom_config_field!(
-        CustomConfigEnumField<FloatOutBoyParkingBrakeMode>,
-        len: FLOAT_OUT_BOY_CONFIG_LEN,
-        offset: 101
-    );
-    pub(crate) fn parking_brake_mode(self) -> FloatOutBoyParkingBrakeMode {
-        Self::PARKING_BRAKE_MODE_FIELD
-            .read(self.0)
-            .unwrap_or(FloatOutBoyParkingBrakeMode::Always)
     }
 }
 
@@ -750,27 +691,15 @@ vescpkg_rs::generated_custom_config_view! {
         SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
         SIMPLESTART_FIELD: CustomConfigFlagField => simplestart_enabled -> bool, offset: 98;
         PUSHSTART_FIELD: CustomConfigFlagField => pushstart_enabled -> bool, offset: 99;
+        CLICK_CURRENT_FIELD: CustomConfigWireByteField => click_current -> WireByte, offset: 97;
+        DIRTY_LANDINGS_FIELD: CustomConfigFlagField => dirty_landings_enabled -> bool, offset: 100;
     }
 }
 
 impl FloatOutBoyStartupConfig<'_> {
-    pub(crate) const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
-    const DIRTY_LANDINGS_OFFSET: usize = 100;
-    pub(crate) const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
-
-    #[expect(clippy::inline_always, reason = "keeps the linked ARM image compact")]
-    #[inline(always)]
-    pub(crate) fn click_current(self) -> WireByte {
-        WireByte::new(self.0.as_bytes()[97])
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn loop_time_us(self) -> u32 {
         crate::wire::saturating_trunc_f32_to_u32(1_000_000.0 / self.sample_rate().as_hertz())
-    }
-
-    pub(crate) const fn dirty_landings_enabled(self) -> bool {
-        self.0.as_bytes()[Self::DIRTY_LANDINGS_OFFSET] != 0
     }
 
     pub(crate) fn centering_step(self) -> AngleDegrees {
@@ -825,29 +754,15 @@ vescpkg_rs::generated_custom_config_view! {
         ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
         BRAKE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => brake_tilt_strength -> PidScale, offset: 171, scale: 100.0;
         BRAKE_TILT_LINGERING_FIELD: CustomConfigPidScaleField => brake_tilt_lingering -> PidScale, offset: 173, scale: 1000.0;
+        KI_LIMIT_FIELD: CustomConfigMotorCurrentField => ki_limit -> MotorCurrentLimit, offset: 104, scale: 10.0, map: |value: MotorCurrent| MotorCurrentLimit::new(value.current());
+        TURN_TILT_START_ERPM_BOOST_END_FIELD: CustomConfigElectricalSpeedField => turn_tilt_erpm_boost_end -> Rpm, offset: 142, map: ElectricalSpeed::rpm;
+        TURN_TILT_YAW_AGGREGATE_FIELD: CustomConfigWireByteField => turn_tilt_yaw_aggregate -> AngleDegrees, offset: 144, map: |value: WireByte| value.scaled(1.0, 0.0, AngleDegrees::from_degrees);
     }
 }
 
 impl FloatOutBoyBalanceConfig<'_> {
-    pub(crate) const KI_LIMIT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 104, scale: 10.0);
-
-    pub(crate) fn ki_limit(self) -> MotorCurrentLimit {
-        MotorCurrentLimit::new(generated_field(Self::KI_LIMIT_FIELD.read(self.0)).current())
-    }
-
     pub(crate) fn turn_tilt_erpm_boost(self) -> u16 {
         u16::from_be_bytes([self.0.as_bytes()[140], self.0.as_bytes()[141]])
-    }
-
-    pub(crate) fn turn_tilt_erpm_boost_end(self) -> Rpm {
-        Rpm::from_revolutions_per_minute(f32::from(u16::from_be_bytes([
-            self.0.as_bytes()[142],
-            self.0.as_bytes()[143],
-        ])))
-    }
-
-    pub(crate) fn turn_tilt_yaw_aggregate(self) -> AngleDegrees {
-        AngleDegrees::from_degrees(f32::from(self.0.as_bytes()[144]))
     }
 }
 
