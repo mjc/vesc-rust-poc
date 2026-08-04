@@ -27,23 +27,26 @@ impl LoopState {
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
         let (pid_currents, state) = self.update_pid(config, input);
         let booster_current = input.filtered_booster_current(config, state.booster_current);
-        let pitch_based = pid_currents.pitch_based_current(
+        let pitch_based = super::current::PitchBasedCurrent::from_rate_and_booster(
+            pid_currents.rate_damping,
             booster_current,
             state.softstart_pid_limit,
             input.motor_current_max,
             config.hertz,
         );
-        let state = state.with_booster_current_and_softstart_limit(
-            booster_current,
-            pitch_based.softstart_pid_limit,
-        );
 
-        let balance_current = pid_currents
-            .requested_with_pitch_based(pitch_based)
-            .clamped_to(input.current_limit())
-            .adjusted_for_darkride(input.darkride)
-            .filtered_from(state.balance_current, input.traction_control);
-        let state = state.with_balance_current(balance_current);
+        let balance_current = super::current::RequestedCurrent(
+            pid_currents.angle_proportional + pid_currents.integral + pitch_based.current,
+        )
+        .clamped_to(input.current_limit())
+        .adjusted_for_darkride(input.darkride)
+        .filtered_from(state.balance_current, input.traction_control);
+        let state = LoopState {
+            balance_current,
+            booster_current,
+            softstart_pid_limit: pitch_based.softstart_pid_limit,
+            ..state
+        };
 
         LoopOutput {
             requested_current: state.balance_current,
