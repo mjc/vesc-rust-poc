@@ -1,6 +1,6 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopOutput, LoopState};
 
-use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
+use super::booster::Phase as BoosterPhase;
 
 #[cfg(test)]
 use super::{
@@ -31,7 +31,7 @@ impl LoopState {
     /// `third_party/float-out-boy/src/imu.c:43-53`.
     #[inline]
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
-        let (pid_currents, state) = PidPhase::from_step(config, input).update_state(self);
+        let (pid_currents, state) = self.update_pid(config, input);
         let booster_current =
             BoosterPhase::from_step(config, input).filtered_current(state.booster_current);
         let pitch_based = pid_currents.pitch_based_current(

@@ -1,91 +1,18 @@
 use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
-use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyRealtimeRuntimeSetpoint};
-use vescpkg_rs::prelude::SampleRate;
+use crate::domain::FloatOutBoyDarkRideState;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit,
+    AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit, PidScale,
+    SampleRate,
 };
-use vescpkg_rs::{AngleCurrentGain, IntegralCurrentGain, PidScale, RateCurrentGain, Rpm};
+use vescpkg_rs::{Rpm, cos, sin};
 
-/// Board setpoint error used by Float Out Boy PID P/I terms.
-///
-/// Source map: upstream computes `setpoint - imu->balance_pitch` at
-/// `third_party/float-out-boy/src/pid.c:40`.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub(super) struct SetpointError(AngleDegrees);
-
-impl SetpointError {
-    #[inline]
-    const fn new(angle: AngleDegrees) -> Self {
-        Self(angle)
-    }
-
-    #[inline]
-    pub(super) fn from_input(
-        setpoint: FloatOutBoyRealtimeRuntimeSetpoint,
-        balance_pitch: AngleDegrees,
-    ) -> Self {
-        Self::new(setpoint.angle() - balance_pitch)
-    }
-
-    #[inline]
-    const fn angle(self) -> AngleDegrees {
-        self.0
-    }
-
-    #[inline]
-    pub(super) fn integral_current(
-        self,
-        integral: MotorCurrent,
-        ki: IntegralCurrentGain,
-        limit: MotorCurrentLimit,
-    ) -> MotorCurrent {
-        // C map: `third_party/float-out-boy/src/pid.c:40-46` integrates `p * ki`, then
-        // clamps by a positive `ki_limit` while preserving sign. Zero is the
-        // disabled-limit sentinel exposed at
-        // `third_party/float-out-boy/src/conf/settings.xml:1679-1707`.
-        let next = integral + self.angle() * ki;
-        if limit.current().is_positive() {
-            limit.clamp(next)
-        } else {
-            next
-        }
-    }
-
-    #[inline]
-    pub(super) fn angle_proportional_current(
-        self,
-        kp: AngleCurrentGain,
-        accel_scale: PidScale,
-        brake_scale: PidScale,
-    ) -> MotorCurrent {
-        // C map: `third_party/float-out-boy/src/pid.c:69` applies KP and selects the
-        // accel/brake scale from the sign of the setpoint error.
-        let scale = ScaleSide::from_setpoint_error(self).scale(accel_scale, brake_scale);
-        self.angle() * kp.scaled_by(scale)
-    }
-}
-
-/// Float Out Boy pitch-rate value after roll/yaw mixing and darkride sign handling.
-///
-/// Source map: upstream computes `imu->pitch_rate` at
-/// `third_party/float-out-boy/src/imu.c:46-53`.
+/// Float Out Boy pitch rate after roll/yaw mixing and darkride sign handling.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(super) struct PitchRate(AngularVelocity);
 
 impl PitchRate {
-    #[inline]
-    fn from_roll_corrected(rate: AngularVelocity, darkride: FloatOutBoyDarkRideState) -> Self {
-        // C map: `imu_update` flips pitch rate when darkride is active at
-        // `third_party/float-out-boy/src/imu.c:52-54`.
-        Self(match darkride {
-            FloatOutBoyDarkRideState::Active => -rate,
-            FloatOutBoyDarkRideState::Upright => rate,
-        })
-    }
-
     #[inline]
     pub(super) fn from_imu(
         roll: ImuRoll,
@@ -93,206 +20,21 @@ impl PitchRate {
         gyro_yaw: AngularVelocity,
         darkride: FloatOutBoyDarkRideState,
     ) -> Self {
-        let pitch_rate = RollProjection::from_roll(roll).pitch_rate(gyro_pitch, gyro_yaw);
-
-        Self::from_roll_corrected(pitch_rate, darkride)
+        // C map: `imu_update` projects yaw through roll at `imu.c:46-51`, then
+        // flips pitch rate for darkride at `imu.c:52-54`.
+        let roll = roll.angle().as_radians();
+        let sin = sin(roll);
+        let cos = cos(roll);
+        let rate = gyro_pitch * (cos * cos) + gyro_yaw * (sin * cos);
+        Self(match darkride {
+            FloatOutBoyDarkRideState::Active => -rate,
+            FloatOutBoyDarkRideState::Upright => rate,
+        })
     }
 
     #[inline]
     pub(super) const fn rate(self) -> AngularVelocity {
         self.0
-    }
-
-    #[inline]
-    fn damping_current(self, kp2: RateCurrentGain) -> MotorCurrent {
-        // C map: `third_party/float-out-boy/src/pid.c:71` negates pitch rate before
-        // multiplying by the rate gain.
-        self.rate() * -kp2
-    }
-
-    #[inline]
-    pub(super) fn rate_proportional_current(
-        self,
-        kp2: RateCurrentGain,
-        accel_scale: PidScale,
-        brake_scale: PidScale,
-    ) -> MotorCurrent {
-        let rate_p = self.damping_current(kp2);
-        // C map: `third_party/float-out-boy/src/pid.c:72` picks accel/brake scale
-        // from the sign of `rate_p`.
-        let scale = ScaleSide::from_current(rate_p).scale(accel_scale, brake_scale);
-
-        rate_p.scaled_by(scale)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct RollProjection {
-    sin: f32,
-    cos: f32,
-}
-
-impl RollProjection {
-    #[inline]
-    fn from_roll(roll: ImuRoll) -> Self {
-        // C map: `imu_update` uses raw roll radians for the pitch-rate yaw
-        // projection at `third_party/float-out-boy/src/imu.c:46-51`.
-        let roll_radians = roll.angle().as_radians();
-        Self {
-            sin: sin(roll_radians),
-            cos: cos(roll_radians),
-        }
-    }
-
-    #[inline]
-    fn pitch_rate(self, gyro_pitch: AngularVelocity, gyro_yaw: AngularVelocity) -> AngularVelocity {
-        // C map: `third_party/float-out-boy/src/imu.c:49-51` damps yaw influence
-        // on pitch-rate while the board is rolled.
-        let Self { sin, cos } = self;
-        gyro_pitch * (cos * cos) + gyro_yaw * (sin * cos)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScaleDirection {
-    Coasting,
-    Forward,
-    Reverse,
-}
-
-impl ScaleDirection {
-    #[inline]
-    fn from_motor_erpm(motor_erpm: ElectricalSpeed) -> Self {
-        // C map: PID scale smoothing returns to unity below 500 ERPM, then
-        // chooses forward/reverse scaling at `third_party/float-out-boy/src/pid.c:48-67`.
-        let erpm = motor_erpm.rpm();
-        if erpm.abs() < Rpm::from_revolutions_per_minute(500.0) {
-            Self::Coasting
-        } else if erpm.is_positive() {
-            Self::Forward
-        } else {
-            Self::Reverse
-        }
-    }
-
-    #[inline]
-    const fn targets(self, config: LoopConfig) -> ScaleTargets {
-        match self {
-            Self::Coasting => ScaleTargets::UNITY,
-            Self::Forward => ScaleTargets {
-                brake: ScalePair::new(config.kp_brake, config.kp2_brake),
-                accel: ScalePair::UNITY,
-            },
-            Self::Reverse => ScaleTargets {
-                brake: ScalePair::UNITY,
-                accel: ScalePair::new(config.kp_brake, config.kp2_brake),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ScalePair {
-    angle_proportional: PidScale,
-    rate_damping: PidScale,
-}
-
-impl ScalePair {
-    const UNITY: Self = Self {
-        angle_proportional: PidScale::new(1.0),
-        rate_damping: PidScale::new(1.0),
-    };
-
-    #[inline]
-    const fn new(angle_proportional: PidScale, rate_damping: PidScale) -> Self {
-        Self {
-            angle_proportional,
-            rate_damping,
-        }
-    }
-
-    #[inline]
-    fn smoothed_angle_proportional(self, current: PidScale) -> PidScale {
-        // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
-        // previous one-pole filter for all PID scale coefficients.
-        current.lerp(self.angle_proportional, 0.01)
-    }
-
-    #[inline]
-    fn smoothed_rate_damping(self, current: PidScale) -> PidScale {
-        // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
-        // filter for angle-P and rate-P scale coefficients.
-        current.lerp(self.rate_damping, 0.01)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ScaleTargets {
-    brake: ScalePair,
-    accel: ScalePair,
-}
-
-impl ScaleTargets {
-    const UNITY: Self = Self {
-        brake: ScalePair::UNITY,
-        accel: ScalePair::UNITY,
-    };
-
-    #[inline]
-    fn smoothed_into(self, state: LoopState) -> PidState {
-        // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
-        // PID scale pairs back into the stored loop state.
-        PidState {
-            kp_brake_scale: self
-                .brake
-                .smoothed_angle_proportional(state.pid.kp_brake_scale),
-            kp2_brake_scale: self.brake.smoothed_rate_damping(state.pid.kp2_brake_scale),
-            kp_accel_scale: self
-                .accel
-                .smoothed_angle_proportional(state.pid.kp_accel_scale),
-            kp2_accel_scale: self.accel.smoothed_rate_damping(state.pid.kp2_accel_scale),
-            ..state.pid
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScaleSide {
-    Accel,
-    Brake,
-}
-
-impl ScaleSide {
-    #[inline]
-    fn from_setpoint_error(error: SetpointError) -> Self {
-        // C map: `third_party/float-out-boy/src/pid.c:69` picks accel vs brake scale
-        // from the sign of the setpoint error.
-        if error.angle().is_positive() {
-            Self::Accel
-        } else {
-            Self::Brake
-        }
-    }
-
-    #[inline]
-    fn from_current(current: MotorCurrent) -> Self {
-        // C map: `third_party/float-out-boy/src/pid.c:72` picks accel vs brake scale
-        // from the sign of the rate-P current contribution.
-        if current.is_positive() {
-            Self::Accel
-        } else {
-            Self::Brake
-        }
-    }
-
-    #[inline]
-    const fn scale(self, accel_scale: PidScale, brake_scale: PidScale) -> PidScale {
-        // C map: `third_party/float-out-boy/src/pid.c:69-72` chooses between the
-        // accel and brake scale coefficients after the sign check.
-        match self {
-            Self::Accel => accel_scale,
-            Self::Brake => brake_scale,
-        }
     }
 }
 
@@ -330,98 +72,12 @@ impl Currents {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SideScale {
-    accel: PidScale,
-    brake: PidScale,
-}
-
-impl SideScale {
-    #[inline]
-    const fn new(accel: PidScale, brake: PidScale) -> Self {
-        Self { accel, brake }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct CurrentScales {
-    angle_proportional: SideScale,
-    rate_damping: SideScale,
-}
-
-impl CurrentScales {
-    #[inline]
-    const fn from_state(state: LoopState) -> Self {
-        // C map: `third_party/float-out-boy/src/pid.c:51-66` keeps separate accel
-        // and brake PID scale pairs for angle-P and rate-P smoothing.
-        Self {
-            angle_proportional: SideScale::new(state.pid.kp_accel_scale, state.pid.kp_brake_scale),
-            rate_damping: SideScale::new(state.pid.kp2_accel_scale, state.pid.kp2_brake_scale),
-        }
-    }
-
-    #[inline]
-    fn angle_proportional_current(
-        self,
-        error: SetpointError,
-        kp: AngleCurrentGain,
-    ) -> MotorCurrent {
-        error.angle_proportional_current(
-            kp,
-            self.angle_proportional.accel,
-            self.angle_proportional.brake,
-        )
-    }
-
-    #[inline]
-    fn rate_damping_current(self, pitch_rate: PitchRate, kp2: RateCurrentGain) -> MotorCurrent {
-        pitch_rate.rate_proportional_current(kp2, self.rate_damping.accel, self.rate_damping.brake)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct Phase {
-    config: LoopConfig,
-    input: LoopInput,
-}
-
-impl Phase {
-    #[inline]
-    pub(super) const fn from_step(config: LoopConfig, input: LoopInput) -> Self {
-        Self { config, input }
-    }
-
-    #[inline]
-    pub(super) fn update_state(self, state: LoopState) -> (Currents, LoopState) {
-        // C map: `third_party/float-out-boy/src/pid.c:37-73` updates P/I/rate-P before
-        // smoothing the accel/brake scale coefficients for the next tick.
-        let config = self.config;
-        let current_scales = CurrentScales::from_state(state);
-        let setpoint_error = self.input.setpoint_error();
-        let pitch_rate = self.input.pitch_rate();
-        let currents = Currents {
-            angle_proportional: current_scales
-                .angle_proportional_current(setpoint_error, config.kp),
-            rate_damping: current_scales.rate_damping_current(pitch_rate, config.kp2),
-            integral: setpoint_error.integral_current(
-                state.pid.integral_current,
-                config.ki,
-                config.ki_limit,
-            ),
-        };
-        let state =
-            state.with_updated_pid_state(self.config, self.input.motor_erpm, currents.integral);
-
-        (currents, state)
-    }
+#[inline]
+const fn selected_scale(positive: bool, accel: PidScale, brake: PidScale) -> PidScale {
+    if positive { accel } else { brake }
 }
 
 impl LoopInput {
-    #[inline]
-    pub(super) fn setpoint_error(&self) -> SetpointError {
-        SetpointError::from_input(self.setpoint, self.balance_pitch)
-    }
-
     #[inline]
     pub(super) fn pitch_rate(&self) -> PitchRate {
         PitchRate::from_imu(self.roll, self.gyro_pitch, self.gyro_yaw, self.darkride)
@@ -429,8 +85,46 @@ impl LoopInput {
 }
 
 impl LoopState {
-    /// Source map: upstream stores integral current and smooths PID scales at
-    /// `third_party/float-out-boy/src/pid.c:40-67`.
+    /// Update Float Out Boy's P/I/rate-P currents and scale state for one tick.
+    #[inline]
+    pub(super) fn update_pid(self, config: LoopConfig, input: LoopInput) -> (Currents, Self) {
+        // C map: `pid.c:37-73` computes currents from the old scales, then smooths
+        // the direction-dependent scale targets for the next tick.
+        let error = input.setpoint.angle() - input.balance_pitch;
+        let angle_scale = selected_scale(
+            error.is_positive(),
+            self.pid.kp_accel_scale,
+            self.pid.kp_brake_scale,
+        );
+        let angle_proportional = error * config.kp.scaled_by(angle_scale);
+
+        let rate_damping = input.pitch_rate().rate() * -config.kp2;
+        let rate_scale = selected_scale(
+            rate_damping.is_positive(),
+            self.pid.kp2_accel_scale,
+            self.pid.kp2_brake_scale,
+        );
+        let rate_damping = rate_damping.scaled_by(rate_scale);
+
+        let integral = self.pid.integral_current + error * config.ki;
+        let integral = if config.ki_limit.current().is_positive() {
+            config.ki_limit.clamp(integral)
+        } else {
+            integral
+        };
+        let currents = Currents {
+            angle_proportional,
+            rate_damping,
+            integral,
+        };
+
+        (
+            currents,
+            self.with_updated_pid_state(config, input.motor_erpm, integral),
+        )
+    }
+
+    /// Store integral current and smooth PID scales like upstream `pid_update`.
     #[inline]
     pub(super) fn with_updated_pid_state(
         self,
@@ -438,15 +132,25 @@ impl LoopState {
         motor_erpm: ElectricalSpeed,
         integral: MotorCurrent,
     ) -> Self {
+        let unity = PidScale::new(1.0);
+        let erpm = motor_erpm.rpm();
+        let ((brake_angle_target, brake_rate_target), (accel_angle_target, accel_rate_target)) =
+            if erpm.abs() < Rpm::from_revolutions_per_minute(500.0) {
+                ((unity, unity), (unity, unity))
+            } else if erpm.is_positive() {
+                ((config.kp_brake, config.kp2_brake), (unity, unity))
+            } else {
+                ((unity, unity), (config.kp_brake, config.kp2_brake))
+            };
         Self {
             pid: PidState {
                 integral_current: integral,
-                ..ScaleDirection::from_motor_erpm(motor_erpm)
-                    .targets(config)
-                    .smoothed_into(self)
+                kp_brake_scale: self.pid.kp_brake_scale.lerp(brake_angle_target, 0.01),
+                kp2_brake_scale: self.pid.kp2_brake_scale.lerp(brake_rate_target, 0.01),
+                kp_accel_scale: self.pid.kp_accel_scale.lerp(accel_angle_target, 0.01),
+                kp2_accel_scale: self.pid.kp2_accel_scale.lerp(accel_rate_target, 0.01),
             },
             ..self
         }
     }
 }
-use vescpkg_rs::{cos, sin};
