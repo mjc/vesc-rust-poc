@@ -274,7 +274,8 @@ pub use logging::{FirmwareLog, LogError};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
 pub use numeric::{
-    FixedRingIndex, MotorKinematics, SmoothAngle, WrappedAngleMotion, angle_step, slew_toward,
+    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+    angle_step, slew_toward,
 };
 
 // Exported macros need public implementation hooks after downstream expansion.
