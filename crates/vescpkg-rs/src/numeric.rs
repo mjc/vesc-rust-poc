@@ -1,5 +1,7 @@
 use core::ops::{Add, Sub};
 
+#[cfg(feature = "math")]
+use crate::Frequency;
 use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
 
 /// Cursor for replacing the oldest value in a small fixed-size ring.
@@ -23,6 +25,55 @@ impl<const N: usize> FixedRingIndex<N> {
             self.0.saturating_add(1)
         };
         previous
+    }
+}
+
+/// Allocation-free direct-form biquad low-pass filter.
+#[cfg(feature = "math")]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct BiquadLowPass {
+    a0: f32,
+    a1: f32,
+    a2: f32,
+    b1: f32,
+    b2: f32,
+    z1: f32,
+    z2: f32,
+    enabled: bool,
+}
+
+#[cfg(feature = "math")]
+impl BiquadLowPass {
+    /// Configure the cutoff, sample rate, and quality factor.
+    pub fn configure(&mut self, frequency: Frequency, sample_rate: SampleRate, quality: f32) {
+        self.enabled = frequency.is_positive();
+        if !self.enabled {
+            return;
+        }
+        let k = crate::tan(core::f32::consts::PI * frequency.as_hertz() / sample_rate.as_hertz());
+        let norm = 1.0 / (1.0 + k / quality + k * k);
+        self.a0 = k * k * norm;
+        self.a1 = 2.0 * self.a0;
+        self.a2 = self.a0;
+        self.b1 = 2.0 * (k * k - 1.0) * norm;
+        self.b2 = (1.0 - k / quality + k * k) * norm;
+    }
+
+    /// Filter one sample, or return it unchanged while disabled.
+    pub fn process(&mut self, input: f32) -> f32 {
+        if !self.enabled {
+            return input;
+        }
+        let output = input * self.a0 + self.z1;
+        self.z1 = input * self.a1 + self.z2 - self.b1 * output;
+        self.z2 = input * self.a2 - self.b2 * output;
+        output
+    }
+
+    /// Clear filter history without changing its configuration.
+    pub fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
     }
 }
 
@@ -230,9 +281,13 @@ impl SmoothAngle {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "math")]
+    use super::BiquadLowPass;
     use super::{
         FixedRingIndex, MotorKinematics, SmoothAngle, WrappedAngleMotion, angle_step, slew_toward,
     };
+    #[cfg(feature = "math")]
+    use crate::Frequency;
     use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate};
 
     #[test]
@@ -332,6 +387,35 @@ mod tests {
             Ratio::from_ratio_const(0.5),
         );
         assert_eq!(tracker.average(), Rpm::from_revolutions_per_minute(5.0));
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn biquad_low_pass_preserves_disabled_samples_and_layout() {
+        let mut filter = BiquadLowPass::default();
+
+        filter.configure(Frequency::ZERO, SampleRate::from_hertz(500.0), 0.707);
+
+        assert_eq!(filter.process(-6.75), -6.75);
+        assert_eq!(core::mem::size_of::<BiquadLowPass>(), 32);
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn biquad_low_pass_filters_and_resets_direct_form_history() {
+        let mut filter = BiquadLowPass::default();
+        filter.configure(
+            Frequency::from_hertz(10.0),
+            SampleRate::from_hertz(500.0),
+            0.707,
+        );
+
+        let first = filter.process(20.0);
+        assert!((first - 0.072_432_75).abs() < 0.000_001);
+        assert!(filter.process(20.0) > first);
+
+        filter.reset();
+        assert_eq!(filter.process(0.0), 0.0);
     }
 
     #[test]

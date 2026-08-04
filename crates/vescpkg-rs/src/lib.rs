@@ -271,6 +271,8 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
+#[cfg(feature = "math")]
+pub use numeric::BiquadLowPass;
 pub use numeric::{
     FixedRingIndex, MotorKinematics, SmoothAngle, WrappedAngleMotion, angle_step, slew_toward,
 };
