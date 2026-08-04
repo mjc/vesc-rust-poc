@@ -5,7 +5,6 @@
 
 use super::state::FloatOutBoyPackageState;
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
-use core::fmt::Write;
 use vescpkg_rs::{Imu, MotorTelemetry};
 
 pub(crate) fn handle_float_out_boy_app_data_packet(
@@ -47,14 +46,34 @@ fn log_float_out_boy_command_header_error(
     error: FloatOutBoyCommandHeaderError,
 ) {
     let mut log = vescpkg_rs::FirmwareLog::<64>::new();
-    let _ = match error {
-        FloatOutBoyCommandHeaderError::Truncated(length) => {
-            write!(log, "Received command data too short: {length} bytes.")
+    match error {
+        FloatOutBoyCommandHeaderError::Truncated(0) => {
+            log.write_bytes(b"Received command data too short: 0 bytes.");
+        }
+        FloatOutBoyCommandHeaderError::Truncated(_) => {
+            log.write_bytes(b"Received command data too short: 1 bytes.");
         }
         FloatOutBoyCommandHeaderError::InvalidPackageId(package_id) => {
-            write!(log, "Invalid Package ID: {package_id}")
+            log.write_bytes(b"Invalid Package ID: ");
+            let digit = |value| {
+                b"0123456789"
+                    .get(usize::from(value))
+                    .copied()
+                    .unwrap_or(b'0')
+            };
+            let digits = [
+                digit(package_id / 100),
+                digit(package_id / 10 % 10),
+                digit(package_id % 10),
+            ];
+            let first = match package_id {
+                0..=9 => 2,
+                10..=99 => 1,
+                _ => 0,
+            };
+            log.write_bytes(digits.get(first..).unwrap_or_default());
         }
-    };
+    }
     let _ = log.flush(effects);
 }
 

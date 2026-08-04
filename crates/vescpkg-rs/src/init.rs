@@ -343,18 +343,68 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
-        self.install_runtime_state_using(state_value, |state, allocation| {
-            #[cfg(not(target_arch = "arm"))]
-            {
-                // SAFETY: this allocation owns `state` until package stop.
-                unsafe { T::runtime_store().install_owned(state, allocation) }
-            }
-            #[cfg(target_arch = "arm")]
-            {
-                // SAFETY: this allocation owns `state` until package stop.
-                unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
-            }
-        })
+        self.install_runtime_state_using(
+            |state| {
+                state.write(state_value);
+            },
+            |state, allocation| {
+                #[cfg(not(target_arch = "arm"))]
+                {
+                    // SAFETY: this allocation owns `state` until package stop.
+                    unsafe { T::runtime_store().install_owned(state, allocation) }
+                }
+                #[cfg(target_arch = "arm")]
+                {
+                    // SAFETY: this allocation owns `state` until package stop.
+                    unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
+                }
+            },
+        )
+    }
+
+    /// Allocate and initialize package state directly in its final storage.
+    ///
+    /// Use this for state too large to materialize on the loader's stack. The
+    /// initializer writes one field at a time into the firmware allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PackageStartError`] when loader validation, allocation, or
+    /// state installation fails.
+    #[cfg(all(
+        feature = "in-place-init",
+        any(test, feature = "test-support", target_arch = "arm")
+    ))]
+    pub fn install_runtime_state_in_place<T, I>(&mut self, init: I) -> Result<(), PackageStartError>
+    where
+        T: crate::PackageRuntimeState + Unpin,
+        I: pin_init::Init<T, core::convert::Infallible>,
+    {
+        self.install_runtime_state_using(
+            |state| {
+                // SAFETY: both allocation paths keep this slot stable until
+                // initialization completes, and `T: Unpin` ends the temporary
+                // pin before the state is exposed through the runtime store.
+                let state = unsafe { pin_init::PinUninit::new(state) };
+                let ready = match state.init(init) {
+                    Ok(ready) => ready,
+                    Err(error) => match error.into_inner() {},
+                };
+                let _ = core::pin::Pin::into_inner(ready.into_inner());
+            },
+            |state, allocation| {
+                #[cfg(not(target_arch = "arm"))]
+                {
+                    // SAFETY: this allocation owns `state` until package stop.
+                    unsafe { T::runtime_store().install_owned(state, allocation) }
+                }
+                #[cfg(target_arch = "arm")]
+                {
+                    // SAFETY: this allocation owns `state` until package stop.
+                    unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
+                }
+            },
+        )
     }
 
     /// Allocate loader-owned package state, publish it, then initialize it in place.
@@ -376,7 +426,7 @@ impl<'info> PackageStart<'info> {
     #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     fn install_runtime_state_using<T: crate::PackageRuntimeState>(
         &mut self,
-        state_value: T,
+        initialize: impl FnOnce(&mut core::mem::MaybeUninit<T>),
         install: impl FnOnce(&mut T, core::ptr::NonNull<core::ffi::c_void>) -> bool,
     ) -> Result<(), PackageStartError> {
         let info = self
@@ -394,8 +444,9 @@ impl<'info> PackageStart<'info> {
             let allocation = core::ptr::NonNull::new(call_vesc_ffi!(vesc_malloc(bytes)))
                 .ok_or(PackageStartError::AllocationFailed)?;
             let state = align_state_pointer::<T>(allocation);
-            // SAFETY: the aligned allocation has space for one `T` and is not initialized yet.
-            unsafe { state.as_ptr().write(state_value) };
+            // SAFETY: the aligned allocation has space for one uninitialized `T`.
+            let slot = unsafe { state.cast::<core::mem::MaybeUninit<T>>().as_mut() };
+            initialize(slot);
             (state, allocation)
         };
         #[cfg(target_arch = "arm")]
@@ -403,7 +454,19 @@ impl<'info> PackageStart<'info> {
         let state = unsafe { state_ptr.as_mut() };
 
         #[cfg(not(target_arch = "arm"))]
-        let mut owned_state = crate::rust_alloc::boxed::Box::new(state_value);
+        let mut owned_state = {
+            // A user-provided in-place initializer may panic after initializing
+            // pinned fields. Leak the allocation during unwinding so their drop
+            // guarantee is not violated; device panics already do not unwind.
+            let mut state =
+                core::mem::ManuallyDrop::new(crate::rust_alloc::boxed::Box::<T>::new_uninit());
+            initialize(&mut state);
+            // SAFETY: initialization completed, so ownership can leave the
+            // unwind guard and become a normal initialized box.
+            let state = unsafe { core::mem::ManuallyDrop::take(&mut state) };
+            // SAFETY: every internal initializer writes one complete `T`.
+            unsafe { state.assume_init() }
+        };
         #[cfg(not(target_arch = "arm"))]
         let state = owned_state.as_mut();
         #[cfg(not(target_arch = "arm"))]
@@ -973,6 +1036,7 @@ mod tests {
     static RELOAD_STATE: crate::PackageStateStore<ReloadState> = crate::PackageStateStore::new();
     static SPAWN_STATE: crate::PackageStateStore<SpawnState> = crate::PackageStateStore::new();
 
+    #[cfg_attr(feature = "in-place-init", pin_init::pin_init)]
     struct OwnedState(u32);
     struct RetainedState;
     struct FailedState;
@@ -1197,6 +1261,28 @@ mod tests {
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
     }
 
+    #[cfg(feature = "in-place-init")]
+    #[test]
+    fn runtime_state_initializer_writes_final_storage() {
+        let mut info = ffi::LibInfo {
+            stop_fun: None,
+            arg: core::ptr::null_mut(),
+            base_addr: 0,
+        };
+        let mut start = super::PackageStart::from_lib_info(&mut info);
+
+        assert_eq!(
+            start.install_runtime_state_in_place(pin_init::init_pin!(OwnedState(41))),
+            Ok(())
+        );
+        assert_eq!(
+            start.with_runtime_state::<OwnedState, _>(|state| state.0),
+            Some(41)
+        );
+
+        assert!(!start.finish_start(false));
+    }
+
     #[test]
     fn package_stop_can_retain_state_when_hardware_cannot_quiesce() {
         RETAINED_STATE_DROPS.store(0, Ordering::Relaxed);
@@ -1295,7 +1381,12 @@ mod tests {
         };
         let mut start = super::PackageStart::from_lib_info(&mut info);
 
-        let result = start.install_runtime_state_using(FailedState, |_, _| false);
+        let result = start.install_runtime_state_using(
+            |state| {
+                state.write(FailedState);
+            },
+            |_, _| false,
+        );
 
         assert_eq!(result, Err(PackageStartError::StateAlreadyInstalled));
         assert_eq!(FAILED_STATE_DROPS.load(Ordering::Relaxed), 1);
