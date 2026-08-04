@@ -642,19 +642,29 @@ impl FloatOutBoyPackageState {
         self.frequency_trackers.main = frequency_tracker::FrequencyTracker::new(
             self.serialized_config.startup().sample_rate(),
             now,
+            frequency_tracker::TRACKING_POLICY,
         );
         self.frequency_trackers.imu = frequency_tracker::FrequencyTracker::new(
             frequency_tracker::imu_start_frequency(imu_frequency),
             now,
+            frequency_tracker::TRACKING_POLICY,
         );
         self.initialize_data_recorder_sample_rate(imu_frequency);
     }
 
     pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
-        if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
+        if let Some(frequency) =
+            self.frequency_trackers
+                .main
+                .check(running, now, frequency_tracker::TRACKING_POLICY)
+        {
             motor_runtime::reconfigure_filters(self, frequency);
         }
-        if let Some(frequency) = self.frequency_trackers.imu.check(running, now) {
+        if let Some(frequency) =
+            self.frequency_trackers
+                .imu
+                .check(running, now, frequency_tracker::TRACKING_POLICY)
+        {
             self.refresh_data_recorder_sample_rate(frequency);
         }
     }
