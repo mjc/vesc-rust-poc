@@ -355,6 +355,20 @@ fn bounded_units_clamp_without_panicking() {
 }
 
 #[test]
+fn ratios_keep_closed_arithmetic_and_bound_predicates_typed() {
+    let quarter = Ratio::from_ratio_const(0.25);
+    let half = Ratio::from_ratio_const(0.5);
+
+    assert_eq!(quarter * half, Ratio::from_ratio_const(0.125));
+    assert_eq!(quarter.complement(), Ratio::from_ratio_const(0.75));
+    assert_eq!(quarter.min(half), quarter);
+    assert_eq!(quarter.max(half), half);
+    assert_eq!(quarter.lerp(half, 0.5), Ratio::from_ratio_const(0.375));
+    assert!(Ratio::default().is_zero());
+    assert!(Ratio::from_ratio_const(1.0).is_full());
+}
+
+#[test]
 fn fugit_timer_aliases_model_vesc_system_ticks() {
     let ticks = SystemTicks::from_ticks(10_000);
 

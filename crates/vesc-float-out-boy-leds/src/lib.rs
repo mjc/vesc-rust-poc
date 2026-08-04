@@ -692,7 +692,7 @@ impl FloatOutBoyStatusDynamics {
         self.duty_blend =
             vescpkg_rs::slew_toward(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
-        if sensors.0.as_ratio() >= 1.0 || sensors.1.as_ratio() >= 1.0 {
+        if sensors.0.is_full() || sensors.1.is_full() {
             self.idle_blend = 0.0;
         }
         let idle_timeout = f32::from(status_config.idle_timeout);
@@ -954,7 +954,7 @@ impl FloatOutBoyLedRenderer {
         mut layers: FloatOutBoyStatusLayers,
     ) {
         let blend = Ratio::clamped(self.status_on_front_blend);
-        if !config.lifted.status_on_front || blend.as_ratio() <= 0.0 {
+        if !config.lifted.status_on_front || blend.is_zero() {
             return;
         }
         layers.brightness = Ratio::clamped(self.front_brightness);
@@ -1002,6 +1002,12 @@ struct FloatOutBoyLedOverlay {
     strip_brightness: Ratio,
     on_off_fade: Ratio,
     blend: Ratio,
+}
+
+impl FloatOutBoyLedOverlay {
+    fn brightness(self, dim: f32) -> Ratio {
+        Ratio::clamped((self.strip_brightness * self.on_off_fade).as_ratio() * dim)
+    }
 }
 
 impl FloatOutBoyLedStripFrame {
@@ -1071,10 +1077,7 @@ impl FloatOutBoyLedStripFrame {
                 };
                 dim = dim.max(right_dim);
             }
-            let brightness = Ratio::clamped(
-                overlay.strip_brightness.as_ratio() * dim * overlay.on_off_fade.as_ratio(),
-            );
-            self.render_pixel_blended(index, color, brightness, blend);
+            self.render_pixel_blended(index, color, overlay.brightness(dim), blend);
         }
     }
 
@@ -1094,17 +1097,15 @@ impl FloatOutBoyLedStripFrame {
             confirmation_progress,
         } = layers;
 
-        if idle_blend.as_ratio() > 0.0 {
+        if !idle_blend.is_zero() {
             match idle {
                 FloatOutBoyStatusIdleLayer::Animate(mut bar, time) => {
                     bar.brightness = brightness;
                     self.render_bar(bar, fade, time);
                 }
-                FloatOutBoyStatusIdleLayer::Black => self.render_target(
-                    FloatOutBoyLedPixel::default(),
-                    Ratio::clamped(brightness.as_ratio() * fade.as_ratio()),
-                    blend,
-                ),
+                FloatOutBoyStatusIdleLayer::Black => {
+                    self.render_target(FloatOutBoyLedPixel::default(), brightness * fade, blend);
+                }
             }
         }
 
@@ -1113,18 +1114,16 @@ impl FloatOutBoyLedStripFrame {
             on_off_fade: fade,
             blend: amount,
         };
-        if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() < 1.0 {
+        if !idle_blend.is_full() && !duty_blend.is_full() {
             self.render_status_progress(
                 battery,
                 FloatOutBoyStatusProgress::Battery,
                 red_percentage,
                 reverse,
-                overlay(Ratio::clamped(
-                    blend.as_ratio().min(1.0 - idle_blend.as_ratio()),
-                )),
+                overlay(blend.min(idle_blend.complement())),
             );
         }
-        if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() > 0.0 {
+        if !idle_blend.is_full() && !duty_blend.is_zero() {
             self.render_status_progress(
                 duty,
                 FloatOutBoyStatusProgress::Duty,
@@ -1133,7 +1132,7 @@ impl FloatOutBoyLedStripFrame {
                 overlay(duty_blend),
             );
         }
-        if idle_blend.as_ratio() < 1.0 && (left.as_ratio() > 0.0 || right.as_ratio() > 0.0) {
+        if !idle_blend.is_full() && (!left.is_zero() || !right.is_zero()) {
             self.render_footpads(left, right, reverse, overlay(blend));
         }
         if (0.0..=1.0).contains(&confirmation_progress) {
@@ -1193,10 +1192,12 @@ impl FloatOutBoyLedStripFrame {
             } else {
                 index
             };
-            let brightness = Ratio::clamped(
-                overlay.strip_brightness.as_ratio() * dim * overlay.on_off_fade.as_ratio(),
+            self.render_pixel_blended(
+                physical_index,
+                target,
+                overlay.brightness(dim),
+                overlay.blend,
             );
-            self.render_pixel_blended(physical_index, target, brightness, overlay.blend);
         }
     }
 
@@ -1205,7 +1206,7 @@ impl FloatOutBoyLedStripFrame {
         let red = FloatOutBoyLedPixel {
             channels: [0xff, 0, 0, 0],
         };
-        let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = strip_brightness * on_off_fade;
         self.render_pulse_shape(
             red,
             FloatOutBoyLedPixel::default(),
@@ -1254,7 +1255,7 @@ impl FloatOutBoyLedStripFrame {
         let confirm = FloatOutBoyLedPixel {
             channels: [0xa0, 0x40, 0xff, 0],
         };
-        let brightness = Ratio::clamped(strip_brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = strip_brightness * on_off_fade;
 
         for index in 0..len {
             let index_float = f32::from(u8::try_from(index).unwrap_or_default());
@@ -1311,7 +1312,7 @@ impl FloatOutBoyLedStripFrame {
                 FloatOutBoyLedPixel::from_named(color)
             }
         };
-        let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = bar.brightness * on_off_fade;
         self.render_target(target, brightness, FULL_RATIO);
     }
 
@@ -1328,12 +1329,10 @@ impl FloatOutBoyLedStripFrame {
         match transition {
             FloatOutBoyLedTransition::Fade => {
                 let blend = Ratio::clamped(progress.midpoint(1.0));
-                let brightness = Ratio::clamped(
-                    (from_bar.brightness.as_ratio()
-                        + (to_bar.brightness.as_ratio() - from_bar.brightness.as_ratio())
-                            * blend.as_ratio())
-                        * on_off_fade.as_ratio(),
-                );
+                let brightness = from_bar
+                    .brightness
+                    .lerp(to_bar.brightness, blend.as_ratio())
+                    * on_off_fade;
                 self.render_target(transition_target(to_bar), brightness, blend);
             }
             FloatOutBoyLedTransition::FadeOutIn => {
@@ -1366,12 +1365,7 @@ impl FloatOutBoyLedStripFrame {
                 progress,
             )
         };
-        let brightness = Ratio::clamped(
-            (from_brightness.as_ratio()
-                + (to_bar.brightness.as_ratio() - from_brightness.as_ratio())
-                    * brightness_progress)
-                * on_off_fade.as_ratio(),
-        );
+        let brightness = from_brightness.lerp(to_bar.brightness, brightness_progress) * on_off_fade;
         self.render_target(target, brightness, blend);
     }
 
@@ -1407,15 +1401,8 @@ impl FloatOutBoyLedStripFrame {
         let len_i16 = i16::try_from(len).unwrap_or_default();
         let stop = crate::wire::saturating_trunc_f32_to_i16(progress * f32::from(len_i16));
         let target = transition_target(to_bar);
-        let mid_brightness = Ratio::clamped(
-            from_bar
-                .brightness
-                .as_ratio()
-                .midpoint(to_bar.brightness.as_ratio())
-                * on_off_fade.as_ratio(),
-        );
-        let target_brightness =
-            Ratio::clamped(to_bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let mid_brightness = from_bar.brightness.lerp(to_bar.brightness, 0.5) * on_off_fade;
+        let target_brightness = to_bar.brightness * on_off_fade;
 
         for index in 1_i16.saturating_sub(len_i16)..=stop {
             if index <= 0 {
@@ -1475,7 +1462,7 @@ impl FloatOutBoyLedStripFrame {
     fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
-        let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = bar.brightness * on_off_fade;
         self.render_pulse_shape(primary, secondary, brightness, time, 5.0);
     }
 
@@ -1522,7 +1509,7 @@ impl FloatOutBoyLedStripFrame {
         let second = 1.5 * len_float - len_float * vescpkg_rs::remainder(time - 1.0, 2.0);
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
-        let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = bar.brightness * on_off_fade;
 
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let index = f32::from(u8::try_from(index).unwrap_or_default());
@@ -1560,7 +1547,7 @@ impl FloatOutBoyLedStripFrame {
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
         let black = FloatOutBoyLedPixel::default();
-        let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = bar.brightness * on_off_fade;
 
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let target = if phase < 0.05 {
@@ -1579,7 +1566,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
-        let brightness = Ratio::clamped(bar.brightness.as_ratio() * on_off_fade.as_ratio());
+        let brightness = bar.brightness * on_off_fade;
         let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::RainbowCycle => {
                 let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0)
