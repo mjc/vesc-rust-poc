@@ -459,6 +459,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Apply and clear a pending motor-current request.
+    #[cfg(test)]
     pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.motor_control.apply_requested_current(motor)
     }

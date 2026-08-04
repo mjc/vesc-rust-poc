@@ -58,7 +58,7 @@ fn handler_rejects_empty_and_sends_valid_packets() {
     let request = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
-        FloatOutBoyAllDataMode::base().source_id(),
+        FloatOutBoyAllDataMode::from_source_id(1).source_id(),
     ];
     let packet = AppDataPacket::from_bytes(&request);
     assert!(handle_packet(
