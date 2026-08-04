@@ -443,15 +443,16 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
 
 #[test]
 fn balance_loop_unit_booster_proportional_subtracts_brake_tilt_like_float_out_boy_main_loop() {
-    let proportional = Proportional::from_input(
-        setpoint(AngleDegrees::from_degrees(5.0)),
-        setpoint(AngleDegrees::from_degrees(5.0)),
-        AngleDegrees::from_degrees(0.0),
-    );
+    let proportional = LoopInput {
+        setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+        brake_tilt_setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+        ..base_input()
+    }
+    .booster_proportional();
 
     // Upstream subtracts brake tilt from booster proportional before
     // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
-    assert_f32_eq!(proportional.angle().as_degrees(), 0.0);
+    assert_f32_eq!(proportional.as_degrees(), 0.0);
 }
 
 #[test]
@@ -492,27 +493,72 @@ fn balance_loop_unit_booster_subtracts_brake_tilt_like_float_out_boy_main_loop()
 
 #[test]
 fn booster_profile_deadbands_ramps_and_saturates_like_float_out_boy_booster() {
-    let profile = Profile {
-        current: motor_current(Current::from_amps(20.0)),
-        angle: AngleDegrees::from_degrees(1.0),
-        ramp: AngleDegrees::from_degrees(2.0),
+    let config = LoopConfig {
+        booster_current: motor_current(Current::from_amps(20.0)),
+        booster_angle: AngleDegrees::from_degrees(1.0),
+        booster_ramp: AngleDegrees::from_degrees(2.0),
+        ..base_config()
+    };
+    let target = |angle| {
+        Branch::Accel.target_current(
+            config,
+            electrical_speed(Rpm::ZERO),
+            AngleDegrees::from_degrees(angle),
+        )
     };
 
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(0.5))),
-        motor_current(Current::from_amps(0.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(2.0))),
-        motor_current(Current::from_amps(10.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(-2.0))),
-        motor_current(Current::from_amps(-10.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(4.0))),
-        motor_current(Current::from_amps(20.0)),
+    assert_current(target(0.5), motor_current(Current::from_amps(0.0)));
+    assert_current(target(2.0), motor_current(Current::from_amps(10.0)));
+    assert_current(target(-2.0), motor_current(Current::from_amps(-10.0)));
+    assert_current(target(4.0), motor_current(Current::from_amps(20.0)));
+}
+
+#[test]
+fn balance_loop_preserves_multisample_booster_trajectory() {
+    let config = LoopConfig {
+        booster_angle: AngleDegrees::from_degrees(2.0),
+        booster_ramp: AngleDegrees::from_degrees(4.0),
+        booster_current: motor_current(Current::from_amps(20.0)),
+        brkbooster_angle: AngleDegrees::from_degrees(3.0),
+        brkbooster_ramp: AngleDegrees::from_degrees(5.0),
+        brkbooster_current: motor_current(Current::from_amps(15.0)),
+        ..base_config()
+    };
+    let inputs = [
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(3.0)),
+            motor_current: motor_current(Current::from_amps(1.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+            motor_current: motor_current(Current::from_amps(1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(8_000.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-5.0)),
+            motor_current: motor_current(Current::from_amps(-1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(8_000.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-10.0)),
+            motor_current: motor_current(Current::from_amps(-1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(15_000.0)),
+            ..base_input()
+        },
+    ];
+    let mut state = base_state();
+    let actual = inputs.map(|input| {
+        let output = advance_loop(config, input, state);
+        state = output.state;
+        state.booster_current.current().as_amps().to_bits()
+    });
+
+    assert_eq!(
+        actual,
+        [1_028_443_340, 1_047_423_964, 1_041_227_914, 3_190_080_251]
     );
 }
 
