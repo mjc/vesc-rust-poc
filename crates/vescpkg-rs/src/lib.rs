@@ -232,7 +232,8 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
+    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};

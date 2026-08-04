@@ -20,68 +20,17 @@ const DATA_RESPONSE_CAPACITY: usize = 511;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
-#[cfg(any(test, target_arch = "arm"))]
-fn advance_ring_index(index: usize, capacity: usize) -> usize {
-    index
-        .checked_add(1)
-        .filter(|next| *next < capacity)
-        .unwrap_or(0)
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct DataRecorderRing {
-    next: usize,
-    len: usize,
-}
-
-impl DataRecorderRing {
-    fn clear(&mut self) {
-        *self = Self::default();
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn write_slot(self, capacity: usize) -> Option<usize> {
-        (capacity > 0).then_some(self.next)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn commit_write(&mut self, capacity: usize) {
-        self.next = advance_ring_index(self.next, capacity);
-        self.len = self.len.saturating_add(1).min(capacity);
-    }
-
-    fn len(self, capacity: usize) -> usize {
-        self.len.min(capacity)
-    }
-
-    fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
-        let len = self.len(capacity);
-        if index >= len || capacity == 0 {
-            return None;
-        }
-        let oldest = self
-            .next
-            .checked_add(capacity)?
-            .checked_sub(len)?
-            .checked_rem(capacity)?;
-        oldest.checked_add(index)?.checked_rem(capacity)
-    }
-}
-
 #[cfg(test)]
-mod ring_tests;
-
+type DataRecorderStorage = Option<[u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]>;
+#[cfg(all(not(test), target_arch = "arm"))]
+type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
+#[cfg(all(not(test), not(target_arch = "arm")))]
+type DataRecorderStorage = Option<[u8; 0]>;
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     flags: FloatOutBoyDataRecorderFlags,
-    ring: DataRecorderRing,
-    #[cfg(test)]
-    capability: Option<()>,
-    #[cfg(test)]
-    buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-    #[cfg(all(not(test), target_arch = "arm"))]
-    buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
+    records: vescpkg_rs::FixedRecordRing<DataRecorderStorage, SAMPLE_SIZE>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,13 +43,12 @@ impl Default for DataRecorderState {
     fn default() -> Self {
         Self {
             flags: FloatOutBoyDataRecorderFlags::AUTOSTART | FloatOutBoyDataRecorderFlags::AUTOSTOP,
-            ring: DataRecorderRing::default(),
             #[cfg(test)]
-            capability: Some(()),
-            #[cfg(test)]
-            buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-            #[cfg(all(not(test), target_arch = "arm"))]
-            buffer: None,
+            records: vescpkg_rs::FixedRecordRing::new(Some(
+                [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
+            )),
+            #[cfg(not(test))]
+            records: vescpkg_rs::FixedRecordRing::new(None),
         }
     }
 }
@@ -108,25 +56,13 @@ impl Default for DataRecorderState {
 impl DataRecorderState {
     #[cfg(all(not(test), target_arch = "arm"))]
     fn initialize(&mut self, buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>) {
-        self.buffer = buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE);
+        self.records
+            .replace_storage(buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE));
         self.stop();
-        self.ring.clear();
     }
 
-    pub(super) const fn has_capability(&self) -> bool {
-        #[cfg(test)]
-        {
-            self.capability.is_some()
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer.is_some()
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = self;
-            false
-        }
+    pub(super) fn has_capability(&self) -> bool {
+        self.records.capacity() > 0
     }
 
     pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
@@ -158,7 +94,7 @@ impl DataRecorderState {
     }
 
     fn start(&mut self) {
-        self.ring.clear();
+        self.records.clear();
         self.flags.set(
             FloatOutBoyDataRecorderFlags::RECORDING,
             self.has_capability(),
@@ -172,109 +108,22 @@ impl DataRecorderState {
     #[cfg(any(test, target_arch = "arm"))]
     fn shutdown(&mut self) {
         self.stop();
-        self.ring.clear();
-        #[cfg(test)]
-        {
-            self.capability = None;
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer = None;
-        }
+        self.records.replace_storage(None);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
-        if !self.has_capability() || !self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
-            return;
-        }
-        let capacity = self.capacity();
-        let Some(slot) = self.ring.write_slot(capacity) else {
-            return;
-        };
-        let Some(offset) = slot.checked_mul(SAMPLE_SIZE) else {
-            return;
-        };
-        if self.write(offset, sample) {
-            self.ring.commit_write(capacity);
+        if self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
+            let _ = self.records.push(sample);
         }
     }
 
     fn sample_count(&self) -> usize {
-        self.ring.len(self.capacity())
-    }
-
-    fn capacity(&self) -> usize {
-        #[cfg(test)]
-        {
-            let _ = self;
-            TEST_SAMPLE_CAPACITY
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .map_or(0, |buffer| buffer.len() / SAMPLE_SIZE)
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = self;
-            0
-        }
+        self.records.len()
     }
 
     fn sample_at(&self, index: usize) -> Option<[u8; SAMPLE_SIZE]> {
-        let capacity = self.capacity();
-        let slot = self.ring.slot_at(index, capacity)?;
-        let offset = slot.checked_mul(SAMPLE_SIZE)?;
-        let mut bytes = [0; SAMPLE_SIZE];
-        self.read(offset, &mut bytes).then_some(bytes)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
-        #[cfg(test)]
-        {
-            let Some(end) = offset.checked_add(bytes.len()) else {
-                return false;
-            };
-            let Some(target) = self.buffer.get_mut(offset..end) else {
-                return false;
-            };
-            target.copy_from_slice(bytes);
-            true
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_mut()
-                .is_some_and(|buffer| buffer.write(offset, bytes))
-        }
-    }
-
-    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
-        #[cfg(test)]
-        {
-            let Some(end) = offset.checked_add(bytes.len()) else {
-                return false;
-            };
-            let Some(source) = self.buffer.get(offset..end) else {
-                return false;
-            };
-            bytes.copy_from_slice(source);
-            true
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .is_some_and(|buffer| buffer.read(offset, bytes))
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = (self, offset, bytes);
-            false
-        }
+        self.records.get(index)
     }
 }
 
@@ -294,7 +143,7 @@ impl FloatOutBoyPackageState {
 
     #[cfg(test)]
     pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.capability = None;
+        self.data_recorder.records.replace_storage(None);
         self.data_recorder.stop();
     }
 

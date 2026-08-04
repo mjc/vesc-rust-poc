@@ -9,6 +9,195 @@ const DATA_RECORDER_ALIGNMENT: u32 = 4;
 #[cfg(target_arch = "arm")]
 const DATA_RECORDER_DESCRIPTOR_ADDRESS: usize = 0x1000_fff4;
 
+/// Storage-agnostic cursor for a fixed-capacity circular buffer.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RingCursor {
+    next: usize,
+    len: usize,
+}
+
+fn advance_ring_index(index: usize, capacity: usize) -> usize {
+    index
+        .checked_add(1)
+        .filter(|next| *next < capacity)
+        .unwrap_or(0)
+}
+
+impl RingCursor {
+    /// Forget all committed slots.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Return the slot for the next write, or `None` when capacity is zero.
+    #[must_use]
+    pub fn write_slot(self, capacity: usize) -> Option<usize> {
+        (capacity > 0).then_some(self.next)
+    }
+
+    /// Commit a successful write and advance the cursor.
+    pub fn commit_write(&mut self, capacity: usize) {
+        self.next = advance_ring_index(self.next, capacity);
+        self.len = self.len.saturating_add(1).min(capacity);
+    }
+
+    /// Return the number of committed slots available at this capacity.
+    #[must_use]
+    pub fn len(self, capacity: usize) -> usize {
+        self.len.min(capacity)
+    }
+
+    /// Resolve an oldest-first logical index to a physical storage slot.
+    #[must_use]
+    pub fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
+        let len = self.len(capacity);
+        if index >= len || capacity == 0 {
+            return None;
+        }
+        let oldest = self
+            .next
+            .checked_add(capacity)?
+            .checked_sub(len)?
+            .checked_rem(capacity)?;
+        oldest.checked_add(index)?.checked_rem(capacity)
+    }
+}
+
+/// Checked byte storage for a fixed-size record ring.
+pub trait FixedRecordStorage {
+    /// Return the available byte length.
+    fn len(&self) -> usize;
+
+    /// Return whether the storage contains no bytes.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Copy a complete checked range into storage.
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool;
+
+    /// Copy a complete checked range out of storage.
+    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool;
+}
+
+impl<const N: usize> FixedRecordStorage for [u8; N] {
+    fn len(&self) -> usize {
+        N
+    }
+
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
+        let Some(target) = offset
+            .checked_add(bytes.len())
+            .and_then(|end| self.get_mut(offset..end))
+        else {
+            return false;
+        };
+        target.copy_from_slice(bytes);
+        true
+    }
+
+    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
+        let Some(source) = offset
+            .checked_add(bytes.len())
+            .and_then(|end| self.get(offset..end))
+        else {
+            return false;
+        };
+        bytes.copy_from_slice(source);
+        true
+    }
+}
+
+impl<T: FixedRecordStorage> FixedRecordStorage for Option<T> {
+    fn len(&self) -> usize {
+        self.as_ref().map_or(0, FixedRecordStorage::len)
+    }
+
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
+        self.as_mut()
+            .is_some_and(|storage| storage.write(offset, bytes))
+    }
+
+    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
+        self.as_ref()
+            .is_some_and(|storage| storage.read(offset, bytes))
+    }
+}
+
+/// A checked oldest-first ring over fixed-size records in caller-owned storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedRecordRing<S, const RECORD_SIZE: usize> {
+    cursor: RingCursor,
+    storage: S,
+}
+
+impl<S: FixedRecordStorage, const RECORD_SIZE: usize> FixedRecordRing<S, RECORD_SIZE> {
+    /// Build an empty record ring over `storage`.
+    pub const fn new(storage: S) -> Self {
+        Self {
+            cursor: RingCursor { next: 0, len: 0 },
+            storage,
+        }
+    }
+
+    /// Replace the backing storage and forget all prior records.
+    pub fn replace_storage(&mut self, storage: S) {
+        self.storage = storage;
+        self.clear();
+    }
+
+    /// Forget all committed records without modifying storage bytes.
+    pub fn clear(&mut self) {
+        self.cursor.clear();
+    }
+
+    /// Return the number of complete records the storage can retain.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.storage.len().checked_div(RECORD_SIZE).unwrap_or(0)
+    }
+
+    /// Return the number of committed records.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.cursor.len(self.capacity())
+    }
+
+    /// Return whether no records are committed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Append one record, overwriting the oldest record when full.
+    #[must_use]
+    pub fn push(&mut self, record: &[u8; RECORD_SIZE]) -> bool {
+        let capacity = self.capacity();
+        let Some(offset) = self
+            .cursor
+            .write_slot(capacity)
+            .and_then(|slot| slot.checked_mul(RECORD_SIZE))
+        else {
+            return false;
+        };
+        if !self.storage.write(offset, record) {
+            return false;
+        }
+        self.cursor.commit_write(capacity);
+        true
+    }
+
+    /// Copy one oldest-first logical record from storage.
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<[u8; RECORD_SIZE]> {
+        let capacity = self.capacity();
+        let slot = self.cursor.slot_at(index, capacity)?;
+        let offset = slot.checked_mul(RECORD_SIZE)?;
+        let mut record = [0; RECORD_SIZE];
+        self.storage.read(offset, &mut record).then_some(record)
+    }
+}
+
 /// A validated recorder-buffer descriptor from Refloat's special VESC 6.05 firmware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareDataRecorderDescriptor {
@@ -209,6 +398,20 @@ impl FirmwareDataRecorderBuffer {
     }
 }
 
+impl FixedRecordStorage for FirmwareDataRecorderBuffer {
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+
+    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
+        Self::write(self, offset, bytes)
+    }
+
+    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
+        Self::read(self, offset, bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +438,32 @@ mod tests {
         assert!(!buffer.write(31, &[5, 6]));
         assert!(!buffer.read(usize::MAX, &mut copied));
         assert_eq!(&storage[4..8], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn fixed_record_ring_keeps_latest_records_in_oldest_first_order() {
+        let mut records = FixedRecordRing::<[u8; 6], 2>::new([0; 6]);
+        for record in [[1, 2], [3, 4], [5, 6], [7, 8]] {
+            assert!(records.push(&record));
+        }
+
+        assert_eq!(records.len(), 3);
+        assert_eq!(records.get(0), Some([3, 4]));
+        assert_eq!(records.get(1), Some([5, 6]));
+        assert_eq!(records.get(2), Some([7, 8]));
+        assert_eq!(records.get(3), None);
+    }
+
+    #[test]
+    fn replacing_optional_record_storage_clears_and_disables_the_ring() {
+        let mut records = FixedRecordRing::<Option<[u8; 4]>, 2>::new(Some([0; 4]));
+        assert!(records.push(&[1, 2]));
+
+        records.replace_storage(None);
+
+        assert_eq!(records.capacity(), 0);
+        assert!(records.is_empty());
+        assert!(!records.push(&[3, 4]));
+        assert_eq!(records.get(0), None);
     }
 }
