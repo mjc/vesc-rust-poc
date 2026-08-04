@@ -1,5 +1,5 @@
 use super::FloatOutBoyPackageState;
-use super::limits::TractionLossLimits;
+use super::limits::traction_loss;
 use crate::domain::{
     FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents,
@@ -68,7 +68,7 @@ impl FloatOutBoyMotorCurrentFilter {
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     state.duty_max_with_margin = telemetry
         .duty_cycle_limit()
-        .reduced_by(TractionLossLimits::FLOAT_OUT_BOY.duty_margin);
+        .reduced_by(traction_loss::DUTY_MARGIN);
     state.motor_current_max = telemetry.drive_current_limit();
     state.motor_current_min = telemetry.brake_current_limit();
     let settings = vescpkg_rs::FirmwareSettings;
