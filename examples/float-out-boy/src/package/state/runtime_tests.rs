@@ -27,12 +27,12 @@ fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
 
     state.initialize_time_epochs(now);
 
-    assert_eq!(state.engage_ticks, now);
+    assert_eq!(state.engage_ticks.started(), now);
     assert_eq!(
-        state.disengage_ticks,
+        state.disengage_ticks.started(),
         TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(600_000))
     );
-    assert_eq!(state.idle_ticks, now);
+    assert_eq!(state.idle_ticks.started(), now);
 }
 
 #[test]
@@ -1575,12 +1575,12 @@ fn running_wheelslip_refreshes_timer_and_zeros_target_above_max_duty_like_float_
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
     state.ride_flags.traction_control = true;
-    state.wheelslip_ticks = TimestampTicks::from_ticks(1);
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(1));
     let now = TimestampTicks::from_ticks(5_000);
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
-    assert_eq!(state.wheelslip_ticks, now);
+    assert_eq!(state.wheelslip_ticks.started(), now);
     assert!(!state.ride_flags.traction_control);
     assert_eq!(
         state
@@ -1612,7 +1612,7 @@ fn running_wheelslip_exit_uses_strict_timer_and_raw_duty_thresholds_like_float_o
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(0));
 
     tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_000));
     assert_eq!(
@@ -1650,7 +1650,7 @@ fn running_wheelslip_exit_uses_strict_timer_and_raw_duty_thresholds_like_float_o
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(0));
 
     tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_001));
     assert_eq!(
@@ -1839,7 +1839,10 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_float_out_b
         base.status().beep_reason(),
         FloatOutBoyBeepReason::CellHighVoltage
     );
-    assert_eq!(state.high_voltage_ticks, TimestampTicks::from_ticks(0));
+    assert_eq!(
+        state.high_voltage_ticks.started(),
+        TimestampTicks::from_ticks(0)
+    );
     assert_eq!(first_beeper_high_tick(&mut state, 160), Some(160));
 }
 
@@ -2058,7 +2061,9 @@ fn ready_bms_cell_balance_alert_requires_disengage_and_alert_delays_like_float_o
         VescSeconds::ZERO,
     );
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
-    state.disengage_ticks = TimestampTicks::from_ticks(100_000);
+    state
+        .disengage_ticks
+        .restart(TimestampTicks::from_ticks(100_000));
 
     state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_000));
     assert_ne!(
@@ -2183,7 +2188,7 @@ fn running_low_voltage_refreshes_high_voltage_timer_before_every_selection_branc
         );
         set_protective_ride_state(&mut state, mode, adjustment, wheelslip);
         if matches!(adjustment, FloatOutBoySetpointAdjustment::ReverseStop) {
-            state.reverse_ticks = now;
+            state.reverse_ticks.restart(now);
         }
 
         tick_running_protective_pushback(&mut state, &telemetry, now);
@@ -2191,7 +2196,8 @@ fn running_low_voltage_refreshes_high_voltage_timer_before_every_selection_branc
         // Float Out Boy refreshes this timer before every setpoint-adjustment branch
         // at `third_party/float-out-boy/src/main.c:512-518`.
         assert_eq!(
-            state.high_voltage_ticks, now,
+            state.high_voltage_ticks.started(),
+            now,
             "mode={mode:?}, adjustment={adjustment:?}, wheelslip={wheelslip:?}",
         );
     }

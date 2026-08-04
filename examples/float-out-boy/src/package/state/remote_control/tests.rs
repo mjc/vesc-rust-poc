@@ -8,6 +8,7 @@ use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, editable_config_from_bytes,
     sample_all_data_payloads_with_ride_state,
 };
+use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, SignedRatio,
     TimestampTicks, VescSeconds,
@@ -59,7 +60,7 @@ fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
         .request_remote_throttle_current(
             remote_throttle,
             TimestampTicks::from_ticks(1),
-            TimestampTicks::from_ticks(0),
+            WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
         )
         .expect("remote throttle should request current");
 

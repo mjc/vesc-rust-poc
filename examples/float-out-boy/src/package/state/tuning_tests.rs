@@ -126,7 +126,7 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
 fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    state.idle_ticks = TimestampTicks::from_ticks(7);
+    state.idle_ticks.restart(TimestampTicks::from_ticks(7));
     let mut now = || TimestampTicks::from_ticks(42);
 
     assert!(state.handle_packet_with_telemetry(
@@ -139,7 +139,7 @@ fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
         ],
     ));
 
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+    assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
 }
 
 #[test]
@@ -170,14 +170,14 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
 
     for packet in packets {
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
             &mut |_| true,
             packet,
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
     }
 }
 
@@ -206,14 +206,14 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
 
     for packet in packets {
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
             &mut |_| true,
             packet,
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(7));
     }
 }
 
