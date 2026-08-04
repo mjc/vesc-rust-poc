@@ -49,9 +49,15 @@ fn package_start_installs_float_out_boy_state_before_callbacks_like_float_out_bo
     let _runtime_state = lock_float_out_boy_runtime_state();
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
-    let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-    assert_eq!(start.install_runtime_state(state), Ok(()));
+    assert_eq!(
+        super::install_float_out_boy_package_state(&mut start),
+        Ok(())
+    );
+    assert_eq!(
+        start.with_runtime_state::<FloatOutBoyPackageState, _>(|state| *state),
+        Some(FloatOutBoyPackageState::default())
+    );
     // Upstream sets `info->stop_fun` and `info->arg` at `third_party/float-out-boy/src/main.c:2431-2432`,
     // before registering custom config/app-data/extensions at `third_party/float-out-boy/src/main.c:2455-2459`.
     assert!(start.finish_start(true));

@@ -852,6 +852,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pin-init"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c7fdda986f792147b31c456ec52c713694d7d5e80ce497a93d1a2f79b5a4614"
+dependencies = [
+ "pin-init-internal",
+]
+
+[[package]]
+name = "pin-init-internal"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a150a3ac84c78ea6522bd117ce123fc0258024bcf55c1be039d49a92f16f3158"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1161,6 +1181,17 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
@@ -1365,6 +1396,7 @@ name = "vesc-example-float-out-boy"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "pin-init",
  "vesc-protocol",
  "vescpkg-build-support",
  "vescpkg-rs",
@@ -1395,6 +1427,7 @@ name = "vescpkg-rs"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "pin-init",
  "rstest",
  "vesc-protocol",
  "vescpkg-rs-sys",

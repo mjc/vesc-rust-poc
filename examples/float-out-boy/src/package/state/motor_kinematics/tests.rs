@@ -1,4 +1,13 @@
 use super::*;
+use pin_init::PtrPinWith;
+
+#[test]
+fn in_place_default_matches_the_regular_default() {
+    let actual =
+        Box::pin_with(MotorKinematicsTracker::default_in_place()).expect("infallible initializer");
+
+    assert_eq!(*actual, MotorKinematicsTracker::default());
+}
 
 #[test]
 fn tracker_layout_covers_the_valid_config_range_without_unbounded_storage() {
