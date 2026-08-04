@@ -22,7 +22,7 @@ mod hardware;
 
 use driver::FloatOutBoyInternalLedDriver;
 #[cfg(target_arch = "arm")]
-pub(super) use hardware::RuntimeAllocation;
+pub(super) type RuntimeAllocation = vescpkg_rs::FallibleBox<FloatOutBoyInternalLedRuntime>;
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
@@ -66,10 +66,7 @@ impl FloatOutBoyPackageState {
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
-        let runtime = self
-            .internal_leds
-            .as_mut()
-            .map(RuntimeAllocation::runtime_mut);
+        let runtime = self.internal_leds.as_deref_mut();
         if let Some(runtime) = runtime {
             runtime.renderer.start_confirmation(current_time);
         }
@@ -82,14 +79,16 @@ impl FloatOutBoyPackageState {
         hardware: FloatOutBoyHardwareLedsConfig,
         config: FloatOutBoyLedsConfig,
     ) {
-        #[cfg(target_arch = "arm")]
-        let Some(allocation) = RuntimeAllocation::allocate() else {
-            return;
-        };
-        let mut runtime = FloatOutBoyInternalLedRuntime {
+        let runtime = FloatOutBoyInternalLedRuntime {
             renderer: FloatOutBoyLedRenderer::new(hardware, config, 0.0),
             config,
             driver: FloatOutBoyInternalLedDriver::new(hardware),
+        };
+        #[cfg(test)]
+        let mut runtime = runtime;
+        #[cfg(target_arch = "arm")]
+        let Ok(mut runtime) = vescpkg_rs::FallibleBox::try_new(runtime) else {
+            return;
         };
         if runtime.driver.setup(hardware::setup, |pin| {
             let _ = hardware::teardown(pin);
@@ -100,11 +99,8 @@ impl FloatOutBoyPackageState {
             }
             #[cfg(target_arch = "arm")]
             {
-                self.internal_leds = Some(allocation.initialize(runtime));
+                self.internal_leds = Some(runtime);
             }
-        } else {
-            #[cfg(target_arch = "arm")]
-            allocation.release_uninitialized();
         }
     }
 
@@ -127,10 +123,7 @@ impl FloatOutBoyPackageState {
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
-        let runtime = self
-            .internal_leds
-            .as_mut()
-            .map(RuntimeAllocation::runtime_mut);
+        let runtime = self.internal_leds.as_deref_mut();
         if let Some(runtime) = runtime {
             runtime.config = config;
         }
@@ -152,18 +145,11 @@ impl FloatOutBoyPackageState {
         #[cfg(target_arch = "arm")]
         let destroyed = self
             .internal_leds
-            .as_mut()
-            .is_none_or(|runtime| runtime.runtime_mut().driver.destroy(teardown));
+            .as_deref_mut()
+            .is_none_or(|runtime| runtime.driver.destroy(teardown));
 
         if destroyed {
-            #[cfg(test)]
-            {
-                self.internal_leds = None;
-            }
-            #[cfg(target_arch = "arm")]
-            if let Some(runtime) = self.internal_leds.take() {
-                runtime.release();
-            }
+            self.internal_leds = None;
         }
         destroyed
     }
@@ -172,7 +158,7 @@ impl FloatOutBoyPackageState {
         #[cfg(test)]
         let runtime = self.internal_leds.as_ref();
         #[cfg(target_arch = "arm")]
-        let runtime = self.internal_leds.as_ref().map(RuntimeAllocation::runtime);
+        let runtime = self.internal_leds.as_deref();
         runtime.is_some_and(|runtime| runtime.driver.is_operational())
     }
 
@@ -224,10 +210,7 @@ impl FloatOutBoyPackageState {
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
-        let runtime = self
-            .internal_leds
-            .as_mut()
-            .map(RuntimeAllocation::runtime_mut);
+        let runtime = self.internal_leds.as_deref_mut();
         if let Some(runtime) = runtime {
             if runtime.renderer.update(runtime.config, frame, current_time)
                 && runtime
