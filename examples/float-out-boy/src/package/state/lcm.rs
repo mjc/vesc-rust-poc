@@ -62,6 +62,15 @@ pub(super) struct LcmState {
     payload_size: usize,
 }
 
+impl Default for LcmState {
+    fn default() -> Self {
+        Self::new(
+            crate::config::FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE,
+            crate::config::FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED,
+        )
+    }
+}
+
 impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.

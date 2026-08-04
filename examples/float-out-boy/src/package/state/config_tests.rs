@@ -112,6 +112,13 @@ fn assert_live_only_firmware_imu_migration(firmware: &FirmwareTest, float_writes
 }
 
 #[test]
+fn package_default_is_the_complete_source_startup_state() {
+    let source = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert_eq!(FloatOutBoyPackageState::default(), source);
+}
+
+#[test]
 fn configured_loop_time_uses_float_out_boy_hertz_config() {
     let _firmware = FirmwareTest::new();
     let mut incoming = default_float_out_boy_config_bytes();
