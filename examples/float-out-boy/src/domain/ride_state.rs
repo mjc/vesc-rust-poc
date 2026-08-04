@@ -11,7 +11,7 @@ use super::{
 };
 
 /// Float Out Boy ride state as typed package-domain values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyRideState {
     run_state: FloatOutBoyRunState,
     mode: FloatOutBoyMode,

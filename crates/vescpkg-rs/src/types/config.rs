@@ -20,6 +20,18 @@ impl WireByte {
         self.0
     }
 
+    /// Keep the low four bits of one protocol byte.
+    #[must_use]
+    pub const fn low_nibble(value: u8) -> Self {
+        Self::new(value & 0x0f)
+    }
+
+    /// Keep the high four bits of one protocol byte.
+    #[must_use]
+    pub const fn high_nibble(value: u8) -> Self {
+        Self::new(value >> 4)
+    }
+
     /// Apply a wire scale and offset directly through a semantic constructor.
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
@@ -41,6 +53,11 @@ impl WireByte {
         } else {
             constructor(0.0)
         }
+    }
+
+    /// Divide this byte by a wire scale, add an offset, and construct a semantic value.
+    pub fn divided<T>(self, denominator: f32, offset: f32, constructor: fn(f32) -> T) -> T {
+        self.scaled_ratio(1.0, denominator, offset, constructor)
     }
 }
 
@@ -1333,6 +1350,17 @@ mod tests {
         assert_eq!(
             byte.scaled_ratio(1.0, 2.0, -1.0, crate::AngleDegrees::from_degrees),
             crate::AngleDegrees::from_degrees(20.0)
+        );
+    }
+
+    #[test]
+    fn wire_byte_extracts_protocol_nibbles() {
+        assert_eq!(super::WireByte::low_nibble(0xab).as_u8(), 0x0b);
+        assert_eq!(super::WireByte::high_nibble(0xab).as_u8(), 0x0a);
+        assert_eq!(
+            super::WireByte::low_nibble(0xab)
+                .divided(2.0, -1.0, crate::AngleDegrees::from_degrees,),
+            crate::AngleDegrees::from_degrees(4.5),
         );
     }
 
