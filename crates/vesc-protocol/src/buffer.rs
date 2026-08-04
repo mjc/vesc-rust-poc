@@ -70,6 +70,12 @@ impl<const N: usize> FixedBuffer<N> {
         self.push_u32(float32_auto_bits(value));
     }
 
+    /// Append VESC's automatic 16-bit float representation.
+    #[inline]
+    pub fn push_float16_auto(&mut self, value: f32) {
+        self.push_u16(float16_auto_bits(value));
+    }
+
     /// Append a scaled, truncating, saturating signed 16-bit value.
     #[inline]
     pub fn push_scaled_i16(&mut self, value: f32, scale: f32) {
@@ -212,6 +218,31 @@ pub fn float32_auto_bits(value: f32) -> u32 {
     value.to_bits()
 }
 
+/// Convert a float to VESC's automatic 16-bit wire representation.
+#[must_use]
+pub fn float16_auto_bits(value: f32) -> u16 {
+    let bits = value.to_bits().wrapping_add(0x0000_1000);
+    let exponent = (bits & 0x7f80_0000) >> 23;
+    let mantissa = bits & 0x007f_ffff;
+    let normalized = if exponent > 112 {
+        ((exponent.saturating_sub(112) << 10) & 0x7c00) | (mantissa >> 13)
+    } else {
+        0
+    };
+    let denormalized = if exponent < 113 && exponent > 101 {
+        (0x007f_f000_u32
+            .saturating_add(mantissa)
+            .wrapping_shr(125_u32.saturating_sub(exponent))
+            .saturating_add(1))
+            >> 1
+    } else {
+        0
+    };
+    let saturated = if exponent > 143 { 0x7fff } else { 0 };
+    let encoded = ((bits & 0x8000_0000) >> 16) | normalized | denormalized | saturated;
+    u16::try_from(encoded).unwrap_or(u16::MAX)
+}
+
 /// Convert a float using Rust's truncating, saturating unsigned semantics
 /// without linking the comparatively large Cortex-M float-cast runtime helper.
 #[must_use]
@@ -277,9 +308,9 @@ pub fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        FixedBuffer, append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto,
-        read_i32, read_u32, saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8,
-        saturating_trunc_f32_to_u32,
+        FixedBuffer, append_float32_auto, append_i16, append_i32, append_u32, float16_auto_bits,
+        read_float32_auto, read_i32, read_u32, saturating_trunc_f32_to_i16,
+        saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
     };
 
     #[test]
@@ -301,6 +332,30 @@ mod tests {
         packet.push_i16(0x1234);
 
         assert_eq!(packet.into_bytes(), [0xff, 0x85, 0, 0, 0, 0, 0x12, 0x34]);
+    }
+
+    #[test]
+    fn fixed_buffer_encodes_vesc_float16_values() {
+        for (value, expected) in [
+            (0.0, 0x0000),
+            (-0.0, 0x8000),
+            (1.0, 0x3c00),
+            (-1.0, 0xbc00),
+            (5.960_464_5e-8, 0x0001),
+            (0.000_061_035_156, 0x0400),
+            (131_008.0, 0x7fff),
+            (f32::INFINITY, 0x7fff),
+            (f32::NEG_INFINITY, 0xffff),
+        ] {
+            assert_eq!(float16_auto_bits(value), expected);
+        }
+
+        let mut packet = FixedBuffer::<6>::new();
+        packet.push_float16_auto(1.0);
+        packet.push_float16_auto(-1.0);
+        packet.push_float16_auto(f32::INFINITY);
+
+        assert_eq!(packet.into_bytes(), [0x3c, 0, 0xbc, 0, 0x7f, 0xff]);
     }
 
     #[test]

@@ -9,8 +9,6 @@ use crate::domain::{
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
 #[cfg(any(test, target_arch = "arm"))]
-use vesc_float_out_boy_protocol::encode_float_out_boy_float16;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
@@ -143,7 +141,7 @@ impl FloatOutBoyPackageState {
             | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
             | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
-            encode_float_out_boy_float16(realtime_value(
+            vescpkg_rs::protocol_buffer::float16_auto_bits(realtime_value(
                 &payloads,
                 item,
                 self.remote_control.input(),

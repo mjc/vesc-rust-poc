@@ -5,7 +5,7 @@ use crate::{
     FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeTail, FloatOutBoyRunState,
 };
-use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees, push_float_out_boy_float16};
+use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees};
 
 // Float Out Boy v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/float-out-boy/src/main.c:1267-1269`.
@@ -117,34 +117,28 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     packet.push(header.beep_reason_compat());
 
     for item in FLOAT_OUT_BOY_REALTIME_DATA_ITEMS {
-        push_float_out_boy_float16(
-            &mut packet,
-            realtime_value(
+        packet.push_float16_auto(realtime_value(
+            payloads,
+            item,
+            remote_input,
+            atr_accel_diff,
+            atr_speed_boost,
+        ));
+    }
+    if running {
+        for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
+            packet.push_float16_auto(realtime_value(
                 payloads,
                 item,
                 remote_input,
                 atr_accel_diff,
                 atr_speed_boost,
-            ),
-        );
-    }
-    if running {
-        for item in FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS {
-            push_float_out_boy_float16(
-                &mut packet,
-                realtime_value(
-                    payloads,
-                    item,
-                    remote_input,
-                    atr_accel_diff,
-                    atr_speed_boost,
-                ),
-            );
+            ));
         }
     }
     if charging {
-        push_float_out_boy_float16(&mut packet, payloads.mode4().current().current().as_amps());
-        push_float_out_boy_float16(&mut packet, payloads.mode4().voltage().voltage().as_volts());
+        packet.push_float16_auto(payloads.mode4().current().current().as_amps());
+        packet.push_float16_auto(payloads.mode4().voltage().voltage().as_volts());
     }
 
     packet.push_u32(u32::from(tail.firmware_fault_active()));
