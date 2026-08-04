@@ -626,7 +626,7 @@ impl FloatOutBoyPackageState {
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
-        self.alert_tracker.update_firmware_fault(
+        self.alert_tracker.update(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
@@ -649,7 +649,7 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
-        self.alert_tracker.update_firmware_fault(
+        self.alert_tracker.update(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
@@ -769,10 +769,7 @@ impl FloatOutBoyPackageState {
                 ),
                 speed: base.motor().vehicle_speed().speed(),
                 current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
-                fatal_error: matches!(
-                    self.alert_tracker.fatal_error(),
-                    crate::domain::FloatOutBoyFatalErrorState::Present
-                ),
+                fatal_error: self.alert_tracker.fatal_error(),
             },
             motor,
             &mut self.motor_control,
