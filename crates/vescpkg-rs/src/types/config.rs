@@ -921,6 +921,80 @@ macro_rules! generated_custom_config_field {
     };
 }
 
+/// Define a typed borrowed view over generated custom-config fields.
+///
+/// The package keeps its field names, semantic types, offsets, scales, and any
+/// final value mapping in one declarative list. Invalid generated offsets read
+/// as the semantic type's default, matching inert field descriptors.
+#[macro_export]
+macro_rules! generated_custom_config_view {
+    (
+        $(#[$attribute:meta])*
+        $visibility:vis struct $view:ident<$lifetime:lifetime>(
+            &$reference_lifetime:lifetime $image:ty
+        );
+        $(impl_attributes { $(#[$impl_attribute:meta])* })?
+        len: $len:expr;
+        fields {
+            $(
+                $(#[$field_attribute:meta])*
+                $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+                offset: $offset:expr $(, scale: $scale:expr)? $(, map: $map:expr)?;
+            )*
+        }
+    ) => {
+        $(#[$attribute])*
+        #[repr(transparent)]
+        $visibility struct $view<$lifetime>(&$reference_lifetime $image);
+
+        $($(#[$impl_attribute])*)?
+        impl $view<'_> {
+            $(
+                $(#[$field_attribute])*
+                $visibility const $field: $field_type = $crate::generated_custom_config_field!(
+                    $field_type,
+                    len: $len,
+                    offset: $offset
+                    $(, scale: $scale)?
+                );
+
+                $(#[$field_attribute])*
+                $visibility fn $getter(self) -> $value_type {
+                    let value = Self::$field.read(self.0).unwrap_or_default();
+                    $(let value = ($map)(value);)?
+                    value
+                }
+            )*
+        }
+    };
+}
+
+/// Define typed generated fields inside an existing custom-config image impl.
+#[macro_export]
+macro_rules! generated_custom_config_image_fields {
+    (
+        len: $len:expr;
+        visibility: $visibility:vis,
+        $(
+            $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+            offset: $offset:expr $(, scale: $scale:expr)?;
+        )*
+    ) => {
+        $(
+            $visibility const $field: $field_type = $crate::generated_custom_config_field!(
+                $field_type,
+                len: $len,
+                offset: $offset
+                $(, scale: $scale)?
+            );
+
+            $visibility fn $getter(&self) -> $value_type {
+                Self::$field.read(self).unwrap_or_default()
+            }
+        )*
+    };
+}
+
 semantic_scaled_config_field!(
     CustomConfigMotorCurrentField,
     crate::MotorCurrent,
@@ -1177,6 +1251,54 @@ mod tests {
     use crate::{ElectricalSpeed, Frequency, Rpm, SampleRate, VescSeconds, Voltage};
 
     const SIGNATURE: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
+
+    crate::generated_custom_config_view! {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        struct TestConfigView<'a>(&'a CustomConfigImage<3>);
+        len: 3;
+        fields {
+            ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 0;
+            ANGLE_FIELD: CustomConfigAngleField => angle -> crate::AngleDegrees,
+                offset: 1, scale: 10.0;
+        }
+    }
+
+    struct TestConfigImage(CustomConfigImage<3>);
+
+    impl core::ops::Deref for TestConfigImage {
+        type Target = CustomConfigImage<3>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl TestConfigImage {
+        crate::generated_custom_config_image_fields! {
+            len: 3;
+            visibility: pub(super),
+            ENABLED_FIELD: CustomConfigFlagField => enabled -> bool, offset: 0;
+            ANGLE_FIELD: CustomConfigAngleField => angle -> crate::AngleDegrees,
+                offset: 1, scale: 10.0;
+        }
+    }
+
+    #[test]
+    fn generated_config_view_owns_typed_fields_and_default_fallbacks() {
+        let image = CustomConfigImage::new([1, 0, 25]);
+        let view = TestConfigView(&image);
+
+        assert!(view.enabled());
+        assert_eq!(view.angle(), crate::AngleDegrees::from_degrees(2.5));
+    }
+
+    #[test]
+    fn generated_config_image_fields_read_through_typed_wrapper() {
+        let image = TestConfigImage(CustomConfigImage::new([1, 0, 25]));
+
+        assert!(image.enabled());
+        assert_eq!(image.angle(), crate::AngleDegrees::from_degrees(2.5));
+    }
 
     #[test]
     fn config_cursor_decodes_sequential_generated_values() {
