@@ -15,8 +15,8 @@ use super::realtime::{
     FloatOutBoyRealtimeRuntimeSetpoints,
 };
 use super::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
-    FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyRideState,
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataRequest, FloatOutBoyAppDataCommand,
+    FloatOutBoyFootpadSample, FloatOutBoyRideState,
 };
 use super::{FloatOutBoyBeepReason, FloatOutBoyMode};
 use crate::packet::FloatOutBoyPacket;
@@ -140,12 +140,6 @@ vescpkg_rs::typed_fields! {
 }
 
 impl FloatOutBoyAllDataBasePayload {
-    /// Return the Float Out Boy app-data command this payload belongs to.
-    #[must_use]
-    pub const fn command(self) -> FloatOutBoyAppDataCommand {
-        FloatOutBoyAppDataCommand::GetAllData
-    }
-
     /// Encode the compact all-data base response bytes.
     ///
     /// C map: `cmd_all_data` writes degree-valued IMU fields with scale 10 at
@@ -156,7 +150,7 @@ impl FloatOutBoyAllDataBasePayload {
         let mut packet = FloatOutBoyPacket::new();
 
         packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
-        packet.push(self.command().id());
+        packet.push(FloatOutBoyAppDataCommand::GetAllData.id());
         packet.push(mode);
         packet.push_scaled_i16(self.balance_current.current().current().as_amps(), 10.0);
         packet.push_scaled_i16(
@@ -232,55 +226,25 @@ impl FloatOutBoyAllDataBasePayload {
         mode3: FloatOutBoyAllDataMode3Payload,
         mode4: FloatOutBoyAllDataMode4Payload,
     ) -> [u8; 58] {
-        self.encode_mode4_response_for_mode(4, mode2, mode3, mode4)
+        self.encode_extended(4, mode2, Some(mode3), Some(mode4))
     }
 
-    /// Encode the compact all-data mode 2 response bytes.
-    #[must_use]
-    pub fn encode_mode2_response(
-        &self,
-        mode: FloatOutBoyAllDataMode,
-        mode2: FloatOutBoyAllDataMode2Payload,
-    ) -> [u8; 41] {
-        let mut packet = FloatOutBoyPacket::new();
-        let base = self.encode_base_response(mode.source_id());
-        packet.extend(&base);
-        float_out_boy_append_all_data_mode2(&mut packet, mode2);
-
-        packet.into_bytes()
-    }
-
-    /// Encode the compact all-data mode 3 response bytes.
-    #[must_use]
-    pub fn encode_mode3_response(
-        &self,
-        mode: FloatOutBoyAllDataMode,
-        mode2: FloatOutBoyAllDataMode2Payload,
-        mode3: FloatOutBoyAllDataMode3Payload,
-    ) -> [u8; 54] {
-        let mut packet = FloatOutBoyPacket::new();
-        let base = self.encode_base_response(mode.source_id());
-        packet.extend(&base);
-        float_out_boy_append_all_data_mode2(&mut packet, mode2);
-        float_out_boy_append_all_data_mode3(&mut packet, mode3);
-
-        packet.into_bytes()
-    }
-
-    fn encode_mode4_response_for_mode(
+    fn encode_extended<const N: usize>(
         &self,
         mode: u8,
         mode2: FloatOutBoyAllDataMode2Payload,
-        mode3: FloatOutBoyAllDataMode3Payload,
-        mode4: FloatOutBoyAllDataMode4Payload,
-    ) -> [u8; 58] {
+        mode3: Option<FloatOutBoyAllDataMode3Payload>,
+        mode4: Option<FloatOutBoyAllDataMode4Payload>,
+    ) -> [u8; N] {
         let mut packet = FloatOutBoyPacket::new();
-        let base = self.encode_base_response(mode);
-        packet.extend(&base);
+        packet.extend(&self.encode_base_response(mode));
         float_out_boy_append_all_data_mode2(&mut packet, mode2);
-        float_out_boy_append_all_data_mode3(&mut packet, mode3);
-        float_out_boy_append_all_data_mode4(&mut packet, mode4);
-
+        if let Some(mode3) = mode3 {
+            float_out_boy_append_all_data_mode3(&mut packet, mode3);
+        }
+        if let Some(mode4) = mode4 {
+            float_out_boy_append_all_data_mode4(&mut packet, mode4);
+        }
         packet.into_bytes()
     }
 
@@ -306,10 +270,8 @@ vescpkg_rs::typed_fields! {
 }
 
 impl FloatOutBoyAllDataPayloads {
-    /// Build the Float Out Boy `v1.2.1` startup all-data snapshot after `data_init`.
-    ///
-    /// Upstream zeroes and initializes `Data` in `third_party/float-out-boy/src/main.c:1190-1205`; this
-    /// Rust snapshot is a test/default model, not proof of hardware state.
+    /// Build the default startup snapshot for host-side fixtures.
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn source_startup() -> Self {
         Self::default()
@@ -327,19 +289,26 @@ impl FloatOutBoyAllDataPayloads {
     ) -> FloatOutBoyAllDataResponse {
         let mode = request.mode();
         if mode.includes_mode4() {
-            FloatOutBoyAllDataResponse::Mode4(self.base.encode_mode4_response_for_mode(
+            FloatOutBoyAllDataResponse::Mode4(self.base.encode_extended(
                 mode.source_id(),
                 self.mode2,
-                self.mode3,
-                self.mode4,
+                Some(self.mode3),
+                Some(self.mode4),
             ))
         } else if mode.includes_mode3() {
-            FloatOutBoyAllDataResponse::Mode3(
-                self.base
-                    .encode_mode3_response(mode, self.mode2, self.mode3),
-            )
+            FloatOutBoyAllDataResponse::Mode3(self.base.encode_extended(
+                mode.source_id(),
+                self.mode2,
+                Some(self.mode3),
+                None,
+            ))
         } else if mode.includes_mode2() {
-            FloatOutBoyAllDataResponse::Mode2(self.base.encode_mode2_response(mode, self.mode2))
+            FloatOutBoyAllDataResponse::Mode2(self.base.encode_extended(
+                mode.source_id(),
+                self.mode2,
+                None,
+                None,
+            ))
         } else {
             FloatOutBoyAllDataResponse::Base(self.base.encode_base_response(mode.source_id()))
         }
