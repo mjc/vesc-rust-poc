@@ -7,12 +7,9 @@ use super::realtime::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
+    FloatOutBoyRealtimeRuntimeSetpoints,
 };
-use super::state::{
-    FloatOutBoyBeepReason, FloatOutBoyMode, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
-    FloatOutBoyStopCondition,
-};
+use super::state::{FloatOutBoyBeepReason, FloatOutBoyMode};
 use super::wire::{
     float_out_boy_append_all_data_mode2, float_out_boy_append_all_data_mode3,
     float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
@@ -20,16 +17,14 @@ use super::wire::{
 };
 use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
-    FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
-    FloatOutBoyRideState,
+    FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyRideState,
 };
 use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::prelude::{
-    AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AngleRadians, BatteryCurrent, BatteryLevel,
-    BatteryVoltage, Charge, Current, DirectionalMotorCurrent, Distance, DutyCycle, ElectricalSpeed,
-    Energy, FirmwareFaultWireCode, ImuPitch, ImuRoll, MosfetTemperature, MotorCurrent,
-    MotorTemperature, OdometerMeters, Rpm, SignedRatio, Speed, Temperature, TripDistance,
-    VehicleSpeed, Voltage, WattHoursCharged, WattHoursDischarged,
+    AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage,
+    DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll,
+    MotorCurrent, OdometerMeters, Temperature, TripDistance, VehicleSpeed, WattHoursCharged,
+    WattHoursDischarged,
 };
 
 /// Fixed-size Float Out Boy all-data response bytes.
@@ -74,7 +69,7 @@ impl FloatOutBoyAllDataResponse {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data attitude fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataAttitude {
         balance_pitch: FloatOutBoyRealtimeBalancePitch => balance_pitch,
         roll: ImuRoll => roll,
@@ -84,7 +79,7 @@ vescpkg_rs::typed_fields! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data status fields.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct FloatOutBoyAllDataStatus {
         ride_state: FloatOutBoyRideState => ride_state,
         beep_reason: FloatOutBoyBeepReason => beep_reason,
@@ -93,7 +88,7 @@ vescpkg_rs::typed_fields! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data motor fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMotorPayload {
         battery_voltage: BatteryVoltage => battery_voltage => with_battery_voltage,
         electrical_speed: ElectricalSpeed => electrical_speed,
@@ -132,7 +127,7 @@ impl FloatOutBoyAllDataMotorPayload {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data base payload fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataBasePayload {
         balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
         attitude: FloatOutBoyAllDataAttitude => attitude,
@@ -301,7 +296,7 @@ impl FloatOutBoyAllDataBasePayload {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data payload snapshot used to answer compact all-data requests.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataPayloads {
         base: FloatOutBoyAllDataBasePayload => base => with_base,
         mode2: FloatOutBoyAllDataMode2Payload => mode2,
@@ -316,71 +311,8 @@ impl FloatOutBoyAllDataPayloads {
     /// Upstream zeroes and initializes `Data` in `third_party/float-out-boy/src/main.c:1190-1205`; this
     /// Rust snapshot is a test/default model, not proof of hardware state.
     #[must_use]
-    pub const fn source_startup() -> Self {
-        let zero_current = Current::from_amps(0.0);
-        let zero_angle = AngleRadians::from_radians(0.0);
-        let zero_motor_current = MotorCurrent::new(zero_current);
-        let zero_battery_current = BatteryCurrent::new(zero_current);
-        let zero_voltage = BatteryVoltage::new(Voltage::from_volts(0.0));
-        let ride_state = FloatOutBoyRideState::new(
-            FloatOutBoyRunState::Startup,
-            FloatOutBoyMode::Normal,
-            FloatOutBoySetpointAdjustment::None,
-            FloatOutBoyStopCondition::None,
-        );
-        let setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0));
-        Self::new(
-            FloatOutBoyAllDataBasePayload::new(
-                FloatOutBoyRealtimeBalanceCurrent::new(zero_motor_current),
-                FloatOutBoyAllDataAttitude::new(
-                    FloatOutBoyRealtimeBalancePitch::new(zero_angle),
-                    ImuRoll::new(zero_angle),
-                    ImuPitch::new(zero_angle),
-                ),
-                FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::None),
-                FloatOutBoyFootpadSample::new(
-                    Voltage::from_volts(0.0),
-                    Voltage::from_volts(0.0),
-                    FloatOutBoyFootpadState::None,
-                ),
-                FloatOutBoyRealtimeRuntimeSetpoints::new(
-                    setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
-                ),
-                FloatOutBoyRealtimeBoosterCurrent::new(zero_motor_current),
-                FloatOutBoyAllDataMotorPayload::new(
-                    zero_voltage,
-                    ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
-                    VehicleSpeed::new(Speed::from_meters_per_second(0.0)),
-                    FloatOutBoyRealtimeMotorCurrents::new(
-                        zero_motor_current,
-                        DirectionalMotorCurrent::new(zero_motor_current.current()),
-                        FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-                            zero_motor_current.current(),
-                        )),
-                        zero_battery_current,
-                    ),
-                    DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-                    None,
-                ),
-            ),
-            FloatOutBoyAllDataMode2Payload::new(
-                TripDistance::new(Distance::from_meters(0.0)),
-                FloatOutBoyRealtimeMotorTemperatures::new(
-                    MosfetTemperature::new(Temperature::from_degrees_celsius(0.0)),
-                    MotorTemperature::new(Temperature::from_degrees_celsius(0.0)),
-                ),
-                None,
-            ),
-            FloatOutBoyAllDataMode3Payload::new(
-                OdometerMeters::from_meters(0),
-                AmpHoursDischarged::new(Charge::from_amp_hours(0.0)),
-                AmpHoursCharged::new(Charge::from_amp_hours(0.0)),
-                WattHoursDischarged::new(Energy::from_watt_hours(0.0)),
-                WattHoursCharged::new(Energy::from_watt_hours(0.0)),
-                BatteryLevel::from_fraction(0.0),
-            ),
-            FloatOutBoyAllDataMode4Payload::new(zero_battery_current, zero_voltage),
-        )
+    pub fn source_startup() -> Self {
+        Self::default()
     }
 
     /// Encode the source-compatible response for a parsed all-data request.
@@ -446,7 +378,7 @@ impl FloatOutBoyAllDataPayloads {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 2 extension fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode2Payload {
         distance_abs: TripDistance => distance_abs => with_distance_abs,
         temperatures: FloatOutBoyRealtimeMotorTemperatures => temperatures => with_temperatures,
@@ -456,7 +388,7 @@ vescpkg_rs::typed_fields! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 3 extension fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode3Payload {
         odometer: OdometerMeters => odometer,
         discharged_charge: AmpHoursDischarged => discharged_charge,
@@ -469,7 +401,7 @@ vescpkg_rs::typed_fields! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy all-data mode 4 extension fields.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataMode4Payload {
         current: BatteryCurrent => current,
         voltage: BatteryVoltage => voltage,
