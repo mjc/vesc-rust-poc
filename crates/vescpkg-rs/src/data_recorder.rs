@@ -2,6 +2,8 @@
 
 use core::ptr::NonNull;
 
+use crate::SampleRate;
+
 const DATA_RECORDER_MAGIC_BASE: u32 = 0xcafe_1000;
 const DATA_RECORDER_REQUIRED_MAJOR: u8 = 1;
 const DATA_RECORDER_REQUIRED_MINOR: u8 = 1;
@@ -203,6 +205,132 @@ impl<S: FixedRecordStorage, const RECORD_SIZE: usize> FixedRecordRing<S, RECORD_
         let offset = slot.checked_mul(RECORD_SIZE)?;
         let mut record = [0; RECORD_SIZE];
         self.storage.read(offset, &mut record).then_some(record)
+    }
+}
+
+/// Fixed-record storage with sample-rate bookkeeping and every-N decimation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecimatedRecordRing<S, const RECORD_SIZE: usize> {
+    records: FixedRecordRing<S, RECORD_SIZE>,
+    decimation: u8,
+    decimation_counter: u8,
+    sample_rate_hz: u16,
+}
+
+impl<S: FixedRecordStorage, const RECORD_SIZE: usize> DecimatedRecordRing<S, RECORD_SIZE> {
+    /// Build an empty recorder at the given whole-Hz sample rate.
+    pub const fn new(storage: S, sample_rate_hz: u16) -> Self {
+        Self {
+            records: FixedRecordRing::new(storage),
+            decimation: 1,
+            decimation_counter: 0,
+            sample_rate_hz: if sample_rate_hz == 0 {
+                1
+            } else {
+                sample_rate_hz
+            },
+        }
+    }
+
+    /// Replace the backing storage and forget all prior records.
+    pub fn replace_storage(&mut self, storage: S) {
+        self.records.replace_storage(storage);
+    }
+
+    /// Forget prior records and restart the every-N sample counter.
+    pub fn reset(&mut self) {
+        self.records.clear();
+        self.decimation_counter = 0;
+    }
+
+    /// Return whether the current input sample should be recorded.
+    pub fn sample_due(&mut self) -> bool {
+        self.decimation_counter = self.decimation_counter.wrapping_add(1);
+        if self.decimation_counter < self.decimation {
+            return false;
+        }
+        self.decimation_counter = 0;
+        true
+    }
+
+    /// Set the every-N sample factor, treating zero as every sample.
+    pub const fn set_decimation(&mut self, decimation: u8) {
+        self.decimation = if decimation == 0 { 1 } else { decimation };
+    }
+
+    /// Return the every-N sample factor.
+    #[must_use]
+    pub const fn decimation(&self) -> u8 {
+        self.decimation
+    }
+
+    /// Update the live sample rate and optionally derive decimation for a target window.
+    pub fn configure_sample_rate(&mut self, sample_rate: SampleRate, target_seconds: Option<u16>) {
+        let rate =
+            crate::protocol_buffer::saturating_trunc_f32_to_u32(sample_rate.as_hertz()).max(1);
+        self.sample_rate_hz = u16::try_from(rate).unwrap_or(u16::MAX);
+        if let Some(target_seconds) = target_seconds {
+            self.recalculate_decimation(target_seconds);
+        }
+    }
+
+    /// Derive every-N decimation for a full-buffer target duration.
+    pub fn recalculate_decimation(&mut self, target_seconds: u16) {
+        let sample_count = u32::try_from(self.capacity()).unwrap_or(u32::MAX).max(1);
+        let value = u32::from(self.sample_rate_hz)
+            .saturating_mul(u32::from(target_seconds))
+            .checked_div(sample_count)
+            .unwrap_or(0)
+            .max(1);
+        let [decimation, ..] = value.to_le_bytes();
+        self.decimation = decimation;
+    }
+
+    /// Return the full-capacity recording duration in centiseconds.
+    #[must_use]
+    pub fn recording_duration_centiseconds(&self) -> u16 {
+        self.recording_duration_centiseconds_at_capacity(self.capacity())
+    }
+
+    /// Return the recording duration for an explicit logical record capacity.
+    #[must_use]
+    pub fn recording_duration_centiseconds_at_capacity(&self, capacity: usize) -> u16 {
+        let capacity = u32::try_from(capacity).unwrap_or(u32::MAX);
+        let duration = capacity
+            .saturating_mul(100)
+            .checked_div(u32::from(self.sample_rate_hz))
+            .unwrap_or(0);
+        u16::try_from(duration).unwrap_or(u16::MAX)
+    }
+
+    /// Return the number of complete records the storage can retain.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.records.capacity()
+    }
+
+    /// Return the number of committed records.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    /// Return whether no records are committed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
+    /// Append one record, overwriting the oldest record when full.
+    #[must_use]
+    pub fn push(&mut self, record: &[u8; RECORD_SIZE]) -> bool {
+        self.records.push(record)
+    }
+
+    /// Copy one oldest-first logical record from storage.
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<[u8; RECORD_SIZE]> {
+        self.records.get(index)
     }
 }
 
@@ -545,5 +673,36 @@ mod tests {
         assert!(records.is_empty());
         assert!(!records.push(&[3, 4]));
         assert_eq!(records.get(0), None);
+    }
+
+    #[test]
+    fn decimated_record_ring_records_every_nth_sample_and_reset_restarts_the_count() {
+        let mut records = DecimatedRecordRing::<[u8; 6], 2>::new([0; 6], 620);
+        records.set_decimation(3);
+
+        assert!(!records.sample_due());
+        assert!(!records.sample_due());
+        assert!(records.sample_due());
+        assert!(records.push(&[1, 2]));
+        assert_eq!(records.get(0), Some([1, 2]));
+
+        assert!(!records.sample_due());
+        records.reset();
+        assert!(!records.sample_due());
+        assert!(!records.sample_due());
+        assert!(records.sample_due());
+    }
+
+    #[test]
+    fn sample_rate_refresh_can_preserve_decimation_while_updating_duration() {
+        let mut records = DecimatedRecordRing::<[u8; 48], 2>::new([0; 48], 620);
+
+        records.configure_sample_rate(SampleRate::from_hertz(48.0), Some(10));
+        assert_eq!(records.decimation(), 20);
+        assert_eq!(records.recording_duration_centiseconds(), 50);
+
+        records.configure_sample_rate(SampleRate::from_hertz(24.0), None);
+        assert_eq!(records.decimation(), 20);
+        assert_eq!(records.recording_duration_centiseconds(), 100);
     }
 }
