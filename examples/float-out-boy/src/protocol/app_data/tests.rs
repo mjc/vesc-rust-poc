@@ -1,10 +1,10 @@
-//! FOB app-data command wire-ID characterization tests.
+//! Float Out Boy app-data command wire-ID characterization tests.
 
 use super::FloatOutBoyAppDataCommand;
 
 #[test]
 fn protocol_reference_command_table_matches_typed_discriminants() {
-    let reference = include_str!("../../../../docs/float-out-boy-protocol.md");
+    let reference = include_str!("../../../../../docs/float-out-boy-protocol.md");
     for (command, id) in [
         ("Info", FloatOutBoyAppDataCommand::Info),
         (

@@ -1,4 +1,4 @@
-//! Float Out Boy state and alert domain types.
+//! State and alert domain types owned by Float Out Boy.
 //!
 //! C maps:
 //! - `third_party/float-out-boy/src/state.h:23-68` defines the core run/mode/stop state image.

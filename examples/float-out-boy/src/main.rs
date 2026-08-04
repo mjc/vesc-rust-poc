@@ -101,13 +101,15 @@ pub use domain::{FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState};
 #[cfg(any(test, target_arch = "arm"))]
 pub mod lcm;
 #[cfg(any(test, target_arch = "arm"))]
-pub use vesc_float_out_boy_leds as leds;
+pub mod leds;
 #[cfg(any(test, target_arch = "arm"))]
 mod motor_control;
 #[cfg(any(test, target_arch = "arm"))]
 mod motor_torque;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod package;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod protocol;
 #[cfg(any(test, target_arch = "arm"))]
 mod wire;
 

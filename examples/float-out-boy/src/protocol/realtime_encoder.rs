@@ -1,11 +1,11 @@
-use crate::packet::FloatOutBoyPacket;
-use crate::{
+use super::packet::FloatOutBoyPacket;
+use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeLiveValues,
     FloatOutBoyRealtimeTail, FloatOutBoyRunState, realtime_value,
 };
-use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees};
+use super::{FloatOutBoyMode, degrees as float_out_boy_degrees};
 
 // Float Out Boy v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/float-out-boy/src/main.c:1267-1269`.
@@ -24,7 +24,7 @@ pub type FloatOutBoyRealtimeDataResponse =
 #[must_use]
 pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     payloads: &FloatOutBoyAllDataPayloads,
-    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
+    remote_input: super::FloatOutBoyRealtimeRemoteInput,
     atr_accel_diff: f32,
 ) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut packet = FloatOutBoyPacket::new();
