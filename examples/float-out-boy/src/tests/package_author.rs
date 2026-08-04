@@ -44,7 +44,7 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 fn package_author_encodes_default_all_data_payload() {
     let payloads = FloatOutBoyAllDataPayloads::default();
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
-        FloatOutBoyAllDataMode::with_mode4(),
+        FloatOutBoyAllDataMode::from_source_id(4),
     ));
 
     assert_eq!(
@@ -265,7 +265,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     ])
     .expect("all-data mode 4 request should parse");
 
-    assert_eq!(request.mode(), FloatOutBoyAllDataMode::with_mode4());
+    assert_eq!(request.mode(), FloatOutBoyAllDataMode::from_source_id(4));
     assert_eq!(request.mode().source_id(), 4);
     assert!(request.mode().includes_mode2());
     assert!(request.mode().includes_mode3());
@@ -744,7 +744,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::base()
+                FloatOutBoyAllDataMode::from_source_id(1)
             ))
             .as_bytes(),
         &[
@@ -755,7 +755,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::with_mode2()
+                FloatOutBoyAllDataMode::from_source_id(2)
             ))
             .as_bytes(),
         &[
@@ -766,7 +766,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::with_mode3()
+                FloatOutBoyAllDataMode::from_source_id(3)
             ))
             .as_bytes(),
         &[

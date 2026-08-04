@@ -144,30 +144,6 @@ vescpkg_rs::typed_newtype! {
 }
 
 impl FloatOutBoyAllDataMode {
-    /// Build a base all-data request mode.
-    #[must_use]
-    pub const fn base() -> Self {
-        Self::from_source_id(1)
-    }
-
-    /// Build a request mode that includes mode 2 fields.
-    #[must_use]
-    pub const fn with_mode2() -> Self {
-        Self::from_source_id(2)
-    }
-
-    /// Build a request mode that includes mode 2 and 3 fields.
-    #[must_use]
-    pub const fn with_mode3() -> Self {
-        Self::from_source_id(3)
-    }
-
-    /// Build a request mode that includes mode 2, 3, and 4 fields.
-    #[must_use]
-    pub const fn with_mode4() -> Self {
-        Self::from_source_id(4)
-    }
-
     /// Return whether the mode includes mode 2 extension fields.
     #[must_use]
     pub const fn includes_mode2(self) -> bool {
