@@ -2,8 +2,8 @@ use crate::packet::FloatOutBoyPacket;
 use crate::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-    FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeTail, FloatOutBoyRunState,
+    FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeTail,
+    FloatOutBoyRunState, realtime_value,
 };
 use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees};
 
@@ -146,87 +146,4 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     packet.push(tail.firmware_fault_code().wire_code());
 
     packet
-}
-
-/// Project one typed FOB realtime item to its protocol float value.
-#[must_use]
-pub fn realtime_value(
-    payloads: &FloatOutBoyAllDataPayloads,
-    item: FloatOutBoyRealtimeDataItem,
-    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
-    atr_accel_diff: f32,
-    atr_speed_boost: f32,
-) -> f32 {
-    // C map: `cmd_realtime_data` expands `RT_DATA_ITEMS` and
-    // `RT_DATA_RUNTIME_ITEMS` through `buffer_append_float16_auto` at
-    // `third_party/float-out-boy/src/main.c:1943-1948`; the ID order is the string
-    // list emitted at `third_party/float-out-boy/src/main.c:1876-1901`.
-    let base = payloads.base();
-    let motor = base.motor();
-    let attitude = base.attitude();
-    let setpoints = base.setpoints();
-    let temperatures = payloads.mode2().temperatures();
-
-    match item {
-        // Float Out Boy converts its internal m/s speed for the VESC Tool km/h
-        // consumer at `third_party/float-out-boy/src/motor_data.c:119` and
-        // `ui.qml.in:853-925`.
-        FloatOutBoyRealtimeDataItem::MotorSpeed => {
-            motor.vehicle_speed().speed().as_kilometers_per_hour()
-        }
-        FloatOutBoyRealtimeDataItem::MotorErpm => {
-            motor.electrical_speed().rpm().as_revolutions_per_minute()
-        }
-        FloatOutBoyRealtimeDataItem::MotorCurrent => motor.motor_current().current().as_amps(),
-        FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent => {
-            motor.directional_motor_current().current().as_amps()
-        }
-        FloatOutBoyRealtimeDataItem::MotorFilteredCurrent => {
-            motor.filtered_motor_current().current().current().as_amps()
-        }
-        FloatOutBoyRealtimeDataItem::MotorDutyCycle => motor.duty_cycle().ratio().as_ratio(),
-        FloatOutBoyRealtimeDataItem::MotorBatteryVoltage => {
-            motor.battery_voltage().voltage().as_volts()
-        }
-        FloatOutBoyRealtimeDataItem::MotorBatteryCurrent => {
-            motor.battery_current().current().as_amps()
-        }
-        FloatOutBoyRealtimeDataItem::MotorMosfetTemperature => {
-            temperatures.mosfet().temperature().as_degrees_celsius()
-        }
-        FloatOutBoyRealtimeDataItem::MotorTemperature => {
-            temperatures.motor().temperature().as_degrees_celsius()
-        }
-        FloatOutBoyRealtimeDataItem::ImuPitch => float_out_boy_degrees(attitude.pitch().angle()),
-        FloatOutBoyRealtimeDataItem::ImuBalancePitch => {
-            float_out_boy_degrees(attitude.balance_pitch().angle())
-        }
-        FloatOutBoyRealtimeDataItem::ImuRoll => float_out_boy_degrees(attitude.roll().angle()),
-        FloatOutBoyRealtimeDataItem::FootpadAdc1 => base.footpad().adc1_volts(),
-        FloatOutBoyRealtimeDataItem::FootpadAdc2 => base.footpad().adc2_volts(),
-        // C map: `RT_DATA_ITEMS` includes `remote.input` at
-        // `third_party/float-out-boy/src/rt_data.h:38-54`.
-        FloatOutBoyRealtimeDataItem::RemoteInput => remote_input.ratio().as_ratio(),
-        FloatOutBoyRealtimeDataItem::Setpoint => setpoints.board().angle().as_degrees(),
-        FloatOutBoyRealtimeDataItem::AtrSetpoint => setpoints.atr().angle().as_degrees(),
-        FloatOutBoyRealtimeDataItem::BrakeTiltSetpoint => {
-            setpoints.brake_tilt().angle().as_degrees()
-        }
-        FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint => {
-            setpoints.torque_tilt().angle().as_degrees()
-        }
-        FloatOutBoyRealtimeDataItem::TurnTiltSetpoint => setpoints.turn_tilt().angle().as_degrees(),
-        FloatOutBoyRealtimeDataItem::RemoteSetpoint => setpoints.remote().angle().as_degrees(),
-        FloatOutBoyRealtimeDataItem::BalanceCurrent => {
-            base.balance_current().current().current().as_amps()
-        }
-        // C map: runtime-only ATR fields are appended at
-        // `third_party/float-out-boy/src/main.c:1946-1948`; the live values come
-        // from the source-shaped `RideModifierState` refresh.
-        FloatOutBoyRealtimeDataItem::AtrAccelDiff => atr_accel_diff,
-        FloatOutBoyRealtimeDataItem::AtrSpeedBoost => atr_speed_boost,
-        FloatOutBoyRealtimeDataItem::BoosterCurrent => {
-            base.booster_current().current().current().as_amps()
-        }
-    }
 }

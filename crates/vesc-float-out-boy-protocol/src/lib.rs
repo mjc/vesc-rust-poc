@@ -72,11 +72,11 @@ pub use self::realtime::{
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
-    FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeTail, realtime_value,
 };
 pub use self::realtime_encoder::{
     FloatOutBoyRealtimeDataResponse, encode_float_out_boy_get_realtime_data_response_with_remote,
-    encode_float_out_boy_realtime_data_response_with_runtime, realtime_value,
+    encode_float_out_boy_realtime_data_response_with_runtime,
 };
 pub use self::ride_state::FloatOutBoyRideState;
 pub use self::state::{
