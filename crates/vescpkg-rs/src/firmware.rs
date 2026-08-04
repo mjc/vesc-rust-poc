@@ -296,7 +296,7 @@ fn prepare_app_data_reply<'a, T: AppDataHandler>(
     buffer.as_bytes().map(PreparedAppDataReply)
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn invoke_stateful_app_data_handler<T: AppDataHandler>(packet: &[u8]) -> bool {
     let source = crate::PackageStateAccess::runtime(
         <T::State as crate::PackageRuntimeState>::runtime_store(),
@@ -577,7 +577,7 @@ where
     })
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
 where
     T: StatefulCustomConfigCallback<LEN>,
