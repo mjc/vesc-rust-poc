@@ -245,13 +245,12 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
 
     assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), 101);
     assert!(commands.into_iter().all(|(id, command)| {
-        FloatOutBoyAppDataCommand::try_from_id(id)
+        FloatOutBoyAppDataCommand::try_from(id)
             .is_ok_and(|parsed| parsed == command && parsed.id() == id)
     }));
     assert_eq!(
-        FloatOutBoyAppDataCommand::try_from_id(200)
-            .expect_err("unstable command should stay explicit")
-            .value(),
+        FloatOutBoyAppDataCommand::try_from(200)
+            .expect_err("unstable command should stay explicit"),
         200
     );
 }

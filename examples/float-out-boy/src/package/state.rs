@@ -814,7 +814,7 @@ impl FloatOutBoyPackageState {
         if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
             return None;
         }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
             return None;
         };
 
