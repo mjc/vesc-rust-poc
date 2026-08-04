@@ -235,6 +235,7 @@ pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
     FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage, RingCursor,
 };
+pub use vesc_protocol::app_data as protocol_app_data;
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vesc_protocol::{
     const_field_builders, const_field_getters, const_forward_getters, typed_fields, typed_newtype,

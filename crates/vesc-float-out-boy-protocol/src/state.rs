@@ -217,11 +217,10 @@ impl FloatOutBoyDataRecorderFlags {
     /// Pack recorder and fatal-error bits in the FOB realtime wire layout.
     #[must_use]
     pub const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
-        let fatal = match fatal_error {
-            FloatOutBoyFatalErrorState::None => 0,
-            FloatOutBoyFatalErrorState::Present => 0x8,
-        };
-        fatal | self.bits()
+        vescpkg_rs::protocol_buffer::flag_if(
+            matches!(fatal_error, FloatOutBoyFatalErrorState::Present),
+            0x8,
+        ) | self.bits()
     }
 }
 

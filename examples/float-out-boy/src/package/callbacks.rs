@@ -21,15 +21,7 @@ pub(crate) fn handle_float_out_boy_app_data_packet(
 pub(crate) struct FloatOutBoyAppData;
 
 fn float_out_boy_command(bytes: &[u8]) -> Option<(FloatOutBoyAppDataCommand, &[u8])> {
-    let [package_id, command, payload @ ..] = bytes else {
-        return None;
-    };
-    if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-        return None;
-    }
-    FloatOutBoyAppDataCommand::try_from(*command)
-        .ok()
-        .map(|command| (command, payload))
+    vescpkg_rs::protocol_app_data::parse_app_data_command(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)
 }
 
 fn finish_restored_config(

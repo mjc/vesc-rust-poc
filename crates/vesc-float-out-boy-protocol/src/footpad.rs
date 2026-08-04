@@ -9,20 +9,22 @@
 
 use vescpkg_rs::prelude::Voltage;
 
-/// Float Out Boy footpad sensor state.
-///
-/// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyFootpadState {
-    /// No footpad sensor is active.
-    #[default]
-    None,
-    /// Left footpad sensor is active.
-    Left,
-    /// Right footpad sensor is active.
-    Right,
-    /// Both footpad sensors are active.
-    Both,
+vesc_protocol::wire_enum! {
+    /// Float Out Boy footpad sensor state.
+    ///
+    /// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.
+    #[derive(Default)]
+    pub enum FloatOutBoyFootpadState {
+        /// No footpad sensor is active.
+        #[default]
+        None = 0,
+        /// Left footpad sensor is active.
+        Left = 1,
+        /// Right footpad sensor is active.
+        Right = 2,
+        /// Both footpad sensors are active.
+        Both = 3,
+    }
 }
 
 impl FloatOutBoyFootpadState {
@@ -30,19 +32,6 @@ impl FloatOutBoyFootpadState {
     #[must_use]
     pub const fn is_pressed(self) -> bool {
         !matches!(self, Self::None)
-    }
-
-    /// Return the Float Out Boy `v1.2.1` footpad state ID.
-    ///
-    /// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.
-    #[must_use]
-    pub const fn id(self) -> u8 {
-        match self {
-            Self::None => 0,
-            Self::Left => 1,
-            Self::Right => 2,
-            Self::Both => 3,
-        }
     }
 
     /// Return the Float Out Boy app-data switch compatibility value.

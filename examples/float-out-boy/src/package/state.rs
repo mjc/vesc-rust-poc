@@ -91,14 +91,10 @@ fn float_out_boy_command_payload(
     bytes: &[u8],
     command: FloatOutBoyAppDataCommand,
 ) -> Option<&[u8]> {
-    match bytes {
-        [package_id, command_id, payload @ ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID && *command_id == command.id() =>
-        {
-            Some(payload)
-        }
-        _ => None,
-    }
+    let (actual, payload) = vescpkg_rs::protocol_app_data::parse_app_data_command::<
+        FloatOutBoyAppDataCommand,
+    >(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)?;
+    (actual == command).then_some(payload)
 }
 
 fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
