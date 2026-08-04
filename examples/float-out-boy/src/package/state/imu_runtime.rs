@@ -9,7 +9,7 @@ use super::transition::{
     float_out_boy_state_transition,
 };
 use super::{
-    AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
+    AngleRadians, BatteryCellCount, Current, DataRecorderTrigger, FloatOutBoyAllDataAttitude,
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
     FloatOutBoyBeeperCount, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyPackageState,
@@ -731,7 +731,7 @@ fn evaluate_transition_phase(
     if transition.effect.stopped() {
         state.play_motor_click();
         state.disengage_ticks = system_time_ticks;
-        state.trigger_data_recorder(false);
+        state.trigger_data_recorder(DataRecorderTrigger::Disengage);
         if matches!(stop_event, Some(FloatOutBoyStopEvent::FullSwitch)) {
             state.fault_angle_pitch_ticks = system_time_ticks;
         }
@@ -739,7 +739,7 @@ fn evaluate_transition_phase(
     } else if transition.effect.engaged() {
         state.play_motor_click();
         state.engage_ticks = system_time_ticks;
-        state.trigger_data_recorder(true);
+        state.trigger_data_recorder(DataRecorderTrigger::Engage);
     }
     if matches!(run_state, FloatOutBoyRunState::Running) && !transition.effect.stopped() {
         state.upside_down_flags.enabled = true;

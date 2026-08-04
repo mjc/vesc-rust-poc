@@ -1364,6 +1364,7 @@ dependencies = [
 name = "vesc-example-float-out-boy"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "vescpkg-build-support",
  "vescpkg-rs",
 ]

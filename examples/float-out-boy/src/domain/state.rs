@@ -185,58 +185,29 @@ vescpkg_rs::wire_enum! {
     }
 }
 
-/// Float Out Boy data-recorder status flags sent in realtime data.
-///
-/// C map: upstream packs fatal/data-recorder bits into realtime `extra_flags`
-/// at `third_party/float-out-boy/src/main.c:1927-1930`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyDataRecorderFlags {
-    recording: bool,
-    autostart: bool,
-    autostop: bool,
+bitflags::bitflags! {
+    /// Float Out Boy data-recorder status flags sent in realtime data.
+    ///
+    /// C map: upstream packs fatal/data-recorder bits into realtime `extra_flags`
+    /// at `third_party/float-out-boy/src/main.c:1927-1930`.
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub struct FloatOutBoyDataRecorderFlags: u8 {
+        /// Data recording is active.
+        const RECORDING = 1 << 0;
+        /// Recording starts automatically when the board engages.
+        const AUTOSTART = 1 << 1;
+        /// Recording stops automatically when the board disengages.
+        const AUTOSTOP = 1 << 2;
+    }
 }
 
 impl FloatOutBoyDataRecorderFlags {
-    /// Return inactive data-recorder flags.
-    #[must_use]
-    pub const fn inactive() -> Self {
-        Self {
-            recording: false,
-            autostart: false,
-            autostop: false,
-        }
-    }
-
-    /// Return flags with recording enabled.
-    #[must_use]
-    pub const fn with_recording(mut self) -> Self {
-        self.recording = true;
-        self
-    }
-
-    /// Return flags with autostart enabled.
-    #[must_use]
-    pub const fn with_autostart(mut self) -> Self {
-        self.autostart = true;
-        self
-    }
-
-    /// Return flags with autostop enabled.
-    #[must_use]
-    pub const fn with_autostop(mut self) -> Self {
-        self.autostop = true;
-        self
-    }
-
     pub(crate) const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
         let fatal = match fatal_error {
             FloatOutBoyFatalErrorState::None => 0,
             FloatOutBoyFatalErrorState::Present => 0x8,
         };
-        let autostop = if self.autostop { 0x4 } else { 0 };
-        let autostart = if self.autostart { 0x2 } else { 0 };
-        let recording = if self.recording { 0x1 } else { 0 };
-        fatal | autostop | autostart | recording
+        fatal | self.bits()
     }
 }
 

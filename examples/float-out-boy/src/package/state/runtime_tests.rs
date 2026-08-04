@@ -4,7 +4,9 @@ use super::{
     transition::FloatOutBoyStopEvent,
 };
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
-use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
+use crate::bms::{
+    FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
+};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
@@ -51,7 +53,7 @@ fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
 
     assert_eq!(
         state.bms_faults_for_test(),
-        crate::bms::FloatOutBoyBmsFaults::from_fault(crate::bms::FloatOutBoyBmsFault::Connection)
+        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
     );
 }
 

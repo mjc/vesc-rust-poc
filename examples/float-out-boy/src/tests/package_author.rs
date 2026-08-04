@@ -316,9 +316,7 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
     .with_charging(FloatOutBoyChargingState::Charging)
     .with_wheelslip(FloatOutBoyWheelSlipState::Detected)
     .with_darkride(FloatOutBoyDarkRideState::Active);
-    let recorder = FloatOutBoyDataRecorderFlags::inactive()
-        .with_recording()
-        .with_autostop();
+    let recorder = FloatOutBoyDataRecorderFlags::RECORDING | FloatOutBoyDataRecorderFlags::AUTOSTOP;
     let header = FloatOutBoyRealtimeDataHeader::new(
         TimestampTicks::from_ticks(123_456),
         ride_state,

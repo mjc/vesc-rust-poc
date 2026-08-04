@@ -79,7 +79,7 @@ pub(in crate::package) use config_storage::{
 };
 #[cfg(any(test, target_arch = "arm"))]
 pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
-use data_recorder::DataRecorderState;
+use data_recorder::{DataRecorderState, DataRecorderTrigger};
 use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
