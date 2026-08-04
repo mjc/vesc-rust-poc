@@ -9,16 +9,12 @@
 //! full `Data`; upstream shares `Data *` through `ARG` for app-data, custom
 //! config, BMS, threads, and stop cleanup.
 
-#[cfg(any(test, target_arch = "arm"))]
 mod callbacks;
 mod custom_config;
-#[cfg(any(test, target_arch = "arm"))]
 mod imu_callback;
 mod protocol;
-#[cfg(any(test, target_arch = "arm"))]
 mod startup;
 mod state;
-#[cfg(any(test, target_arch = "arm"))]
 mod threads;
 
 pub use self::custom_config::FloatOutBoyCustomConfig;
@@ -32,7 +28,6 @@ pub use self::state::FloatOutBoyPackageState;
 /// `third_party/float-out-boy/src/main.c:2419-2453`; IMU, config, app-data, and
 /// extension registration at `third_party/float-out-boy/src/main.c:2455-2459` are
 /// best-effort side effects.
-#[cfg(any(test, target_arch = "arm"))]
 fn finish_startup(
     required_setup: Result<(), vescpkg_rs::PackageStartError>,
     registrations: impl FnOnce(),
@@ -42,12 +37,10 @@ fn finish_startup(
     Ok(())
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn stop(state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
     stop_with(state, FloatOutBoyPackageState::destroy_internal_leds)
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn stop_with(
     state: &mut FloatOutBoyPackageState,
     destroy_internal_leds: impl FnOnce(&mut FloatOutBoyPackageState) -> bool,

@@ -1,14 +1,11 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::realtime_value;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
     FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
@@ -89,13 +86,11 @@ impl DataRecorderState {
         self.flags.remove(FloatOutBoyDataRecorderFlags::RECORDING);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn shutdown(&mut self) {
         self.stop();
         self.records.replace_storage(None);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
         if self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
             let _ = self.records.push(sample);
@@ -112,7 +107,6 @@ impl DataRecorderState {
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn stop_data_recorder(&mut self) {
         self.data_recorder.shutdown();
     }
@@ -131,7 +125,6 @@ impl FloatOutBoyPackageState {
         self.data_recorder.stop();
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
         let base = payloads.base();

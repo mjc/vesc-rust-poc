@@ -1,5 +1,4 @@
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use super::limits::traction_loss;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload,
@@ -14,7 +13,6 @@ use vescpkg_rs::prelude::{
 const CURRENT_FILTER_Q: f32 = 0.707;
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     state.duty_max_with_margin = telemetry
         .duty_cycle_limit()

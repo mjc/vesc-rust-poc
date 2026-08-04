@@ -87,7 +87,6 @@ pub(super) mod traction_loss {
     pub(in crate::package::state) const ACCELERATION_CLEAR: Rpm =
         Rpm::from_revolutions_per_minute(10.0);
     pub(in crate::package::state) const DUTY: SignedRatio = SignedRatio::from_ratio_const(0.3);
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package::state) const DUTY_MARGIN: Ratio = Ratio::from_ratio_const(0.05);
     pub(in crate::package::state) const CLEAR_DELAY: VescSeconds = VescSeconds::from_seconds(0.2);
     pub(in crate::package::state) const RAW_DUTY_CLEAR: Ratio = Ratio::from_ratio_const(0.85);

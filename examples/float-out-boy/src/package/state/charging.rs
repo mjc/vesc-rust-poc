@@ -3,9 +3,7 @@ use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads,
     FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::WrappingTimer;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
 
@@ -81,7 +79,6 @@ pub(super) fn handle_packet(
     )
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(super) fn timeout(
     payloads: FloatOutBoyAllDataPayloads,
     now: TimestampTicks,
