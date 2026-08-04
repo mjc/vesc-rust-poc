@@ -8,8 +8,9 @@ use vescpkg_rs::{FirmwareEffects, TimestampTicks};
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
+    #[default]
     NotAttempted,
     #[cfg(any(test, target_arch = "arm"))]
     Persisted,
@@ -53,8 +54,9 @@ fn log_config_store_result(effects: &FirmwareEffects, stored: bool) {
     log_config_message(effects, message);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FirmwareImuMigration {
+    #[default]
     Pending,
     NotRequired,
     Applied,

@@ -60,6 +60,12 @@ pub(super) struct HapticFeedbackState {
     can_change_type: bool,
 }
 
+impl Default for HapticFeedbackState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HapticFeedbackState {
     pub(super) const fn new() -> Self {
         Self {
