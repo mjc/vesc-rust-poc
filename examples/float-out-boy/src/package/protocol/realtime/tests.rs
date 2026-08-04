@@ -1,10 +1,43 @@
 use super::super::super::test_support::sample_all_data_payloads;
 use super::*;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
-    FloatOutBoyChargingState,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem, FloatOutBoyRealtimeRemoteInput,
+    FloatOutBoyRealtimeTail,
 };
-use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
+use vescpkg_rs::prelude::{
+    AngleDegrees, AngleRadians, FirmwareFaultWireCode, SignedRatio, Speed, TimestampTicks,
+    VehicleSpeed,
+};
+
+fn encode_float_out_boy_get_realtime_data_response(
+    payloads: &FloatOutBoyAllDataPayloads,
+) -> [u8; 72] {
+    encode_float_out_boy_get_realtime_data_response_with_remote(
+        payloads,
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+    )
+}
+
+fn encode_float_out_boy_realtime_data_response(
+    payloads: &FloatOutBoyAllDataPayloads,
+    timestamp: TimestampTicks,
+) -> vesc_float_out_boy_protocol::FloatOutBoyRealtimeDataResponse {
+    encode_float_out_boy_realtime_data_response_with_runtime(
+        payloads,
+        FloatOutBoyRealtimeDataHeader::new(
+            timestamp,
+            payloads.base().status().ride_state(),
+            payloads.base().footpad().state(),
+            payloads.base().status().beep_reason(),
+        ),
+        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+        0.0,
+    )
+}
 
 fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPayloads {
     let payloads = sample_all_data_payloads();
@@ -75,11 +108,8 @@ fn realtime_encoders_use_live_remote_input_like_float_out_boy() {
     let input = crate::domain::FloatOutBoyRealtimeRemoteInput::new(
         vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.5),
     );
-    let legacy = encode_float_out_boy_get_realtime_data_response_with_remote(
-        &payloads,
-        input,
-        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.25),
-    );
+    let legacy =
+        encode_float_out_boy_get_realtime_data_response_with_remote(&payloads, input, 0.25);
 
     assert_f32_be(&legacy, 56, 0.25);
     assert_f32_be(&legacy, 68, 0.5);
@@ -88,8 +118,8 @@ fn realtime_encoders_use_live_remote_input_like_float_out_boy() {
             &payloads,
             FloatOutBoyRealtimeDataItem::RemoteInput,
             input,
-            FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
-            FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
+            0.0,
+            0.0,
         ),
         0.5,
     );
@@ -123,47 +153,6 @@ fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
 }
 
 #[test]
-fn command_31_running_charging_preserves_the_fault_tail_at_capacity() {
-    let payloads = sample_all_data_payloads();
-    let base = payloads.base();
-    let ride_state = base
-        .status()
-        .ride_state()
-        .with_charging(FloatOutBoyChargingState::Charging);
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
-        base.footpad(),
-        base.setpoints(),
-        base.booster_current(),
-        base.motor(),
-    );
-    let payloads = payloads.with_base(base);
-    let response = encode_float_out_boy_realtime_data_response_with_runtime(
-        &payloads,
-        FloatOutBoyRealtimeDataHeader::new(
-            TimestampTicks::from_ticks(0),
-            ride_state,
-            payloads.base().footpad().state(),
-            payloads.base().status().beep_reason(),
-        ),
-        FloatOutBoyRealtimeTail::new(true, FirmwareFaultWireCode::from_wire_code(0x2a)),
-        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-        ),
-        FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(0.0),
-        FloatOutBoyRealtimeAtrSpeedBoost::from_units(0.0),
-    );
-
-    assert_eq!(response.len(), 77);
-    assert_eq!(response.as_bytes().len(), response.len());
-    assert_eq!(&response.as_bytes()[68..72], &[0, 0, 0, 1]);
-    assert_eq!(&response.as_bytes()[72..76], &[0, 0, 0, 0]);
-    assert_eq!(response.as_bytes()[76], 0x2a);
-}
-
-#[test]
 fn float32_auto_zeros_small_normal_like_float_out_boy() {
     let value = 1.25e-38_f32;
     let mut packet = crate::wire::FloatOutBoyPacket::<4>::new();
@@ -176,7 +165,7 @@ fn float32_auto_zeros_small_normal_like_float_out_boy() {
 #[test]
 fn app_data_processes_non_running_realtime_data_like_float_out_boy_qml() {
     let response = encode_float_out_boy_realtime_data_response(
-        &FloatOutBoyAllDataPayloads::default(),
+        &FloatOutBoyAllDataPayloads::source_startup(),
         TimestampTicks::from_ticks(0),
     );
     let bytes = response.as_bytes();

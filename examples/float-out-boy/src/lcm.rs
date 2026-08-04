@@ -3,8 +3,4 @@
 //! These types model Float Out Boy's external LCM mode and hardware configuration
 //! surface. Raw config field packing stays at package/config boundaries.
 
-mod hardware;
-mod mode;
-
-pub use self::hardware::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedStripRole};
-pub use self::mode::FloatOutBoyLedMode;
+pub use vesc_float_out_boy_leds::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};

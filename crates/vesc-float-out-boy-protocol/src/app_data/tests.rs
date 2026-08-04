@@ -1,3 +1,5 @@
+//! FOB app-data command wire-ID characterization tests.
+
 use super::FloatOutBoyAppDataCommand;
 
 #[test]

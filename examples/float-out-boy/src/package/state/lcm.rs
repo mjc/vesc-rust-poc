@@ -165,7 +165,7 @@ impl LcmState {
         packet.push(state);
         packet.push(firmware_fault_code(telemetry.firmware_fault()));
 
-        let duty_or_pitch = if matches!(ride_state.run_state(), FloatOutBoyRunState::Running) {
+        let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
         } else if self.lights_off_when_lifted {
             degrees(base.attitude().pitch().angle()).abs().min(255.0) as u8

@@ -19,10 +19,13 @@ test-support = ["vescpkg-rs/test-support"]
 
 [dependencies]
 bitflags = { version = "2.13.1", default-features = false }
+vesc-float-out-boy-leds = { path = "../../crates/vesc-float-out-boy-leds" }
+vesc-float-out-boy-protocol = { path = "../../crates/vesc-float-out-boy-protocol" }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc", "math"] }
 
 [build-dependencies]
 vescpkg-build-support = { path = "../../crates/vescpkg-build-support" }
 
 [dev-dependencies]
+vesc-float-out-boy-leds = { path = "../../crates/vesc-float-out-boy-leds", features = ["test-support"] }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc", "math", "test-support"] }

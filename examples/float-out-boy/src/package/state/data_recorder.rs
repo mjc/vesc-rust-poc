@@ -1,7 +1,5 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::realtime_value;
-#[cfg(any(test, target_arch = "arm"))]
-use super::super::protocol::wire::encode_float_out_boy_float16;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
@@ -10,6 +8,8 @@ use crate::domain::{
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
+#[cfg(any(test, target_arch = "arm"))]
+use vesc_float_out_boy_protocol::encode_float_out_boy_float16;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
@@ -305,14 +305,8 @@ impl FloatOutBoyPackageState {
         let ride_state = base.status().ride_state();
         let flags = ride_state.setpoint_adjustment().id() << 4
             | base.footpad().state().id() << 2
-            | u8::from(matches!(
-                ride_state.wheelslip(),
-                FloatOutBoyWheelSlipState::Detected
-            )) << 1
-            | u8::from(matches!(
-                ride_state.run_state(),
-                FloatOutBoyRunState::Running
-            ));
+            | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
+            | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
             encode_float_out_boy_float16(realtime_value(
                 &payloads,

@@ -3,19 +3,9 @@
 //! C map: app-data packet encoders forward through Float Out Boy buffer helpers in
 //! `third_party/float-out-boy/src/conf/buffer.c:33-145`.
 
-use crate::wire::FloatOutBoyPacket;
-use vescpkg_rs::prelude::AngleRadians;
-
-pub(super) fn float_out_boy_degrees(angle: AngleRadians) -> f32 {
-    // C map: this converts firmware `radians` telemetry into degrees before encoding
-    // payload fields in `third_party/float-out-boy/src/main.c:1267-1310`.
-    crate::wire::degrees(angle)
-}
-
-pub(super) fn push_float_out_boy_float16<const N: usize>(
-    packet: &mut FloatOutBoyPacket<N>,
-    value: f32,
-) {
+use crate::packet::FloatOutBoyPacket;
+/// Append one FOB-compatible float16 value to a fixed packet.
+pub fn push_float_out_boy_float16<const N: usize>(packet: &mut FloatOutBoyPacket<N>, value: f32) {
     // Float Out Boy forwards through `buffer_append_float16_auto` at
     // `third_party/float-out-boy/src/conf/buffer.c:143-145`, which writes `to_float16` big-endian.
     packet.push_u16(encode_float_out_boy_float16(value));
@@ -23,7 +13,8 @@ pub(super) fn push_float_out_boy_float16<const N: usize>(
 
 #[must_use]
 #[inline]
-pub(in crate::package) fn encode_float_out_boy_float16(value: f32) -> u16 {
+/// Encode one float with FOB's VESC-compatible float16 conversion.
+pub fn encode_float_out_boy_float16(value: f32) -> u16 {
     let bits = value.to_bits().wrapping_add(0x0000_1000);
     let exponent = (bits & 0x7f80_0000) >> 23;
     let mantissa = bits & 0x007f_ffff;

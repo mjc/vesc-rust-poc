@@ -3,23 +3,23 @@
 //! C map: `cmd_send_all_data` encodes these response variants at
 //! `third_party/float-out-boy/src/main.c:1313-1399`.
 
+use super::all_data_wire::{
+    float_out_boy_append_all_data_mode2, float_out_boy_append_all_data_mode3,
+    float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
+    float_out_boy_scaled_u8,
+};
 use super::realtime::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents, FloatOutBoyRealtimeMotorTemperatures,
     FloatOutBoyRealtimeRuntimeSetpoints,
 };
-use super::state::{FloatOutBoyBeepReason, FloatOutBoyMode};
-use super::wire::{
-    float_out_boy_append_all_data_mode2, float_out_boy_append_all_data_mode3,
-    float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
-    float_out_boy_scaled_u8,
-};
 use super::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
     FloatOutBoyAppDataCommand, FloatOutBoyFootpadSample, FloatOutBoyRideState,
 };
-use crate::wire::FloatOutBoyPacket;
+use super::{FloatOutBoyBeepReason, FloatOutBoyMode};
+use crate::packet::FloatOutBoyPacket;
 use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage,
     DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll,
@@ -202,7 +202,7 @@ impl FloatOutBoyAllDataBasePayload {
 
     fn encode_motor_response<const N: usize>(&self, packet: &mut FloatOutBoyPacket<N>) {
         packet.push_scaled_i16(self.motor.battery_voltage().voltage().as_volts(), 10.0);
-        packet.push_i16(crate::wire::saturating_trunc_f32_to_i16(
+        packet.push_i16(crate::packet::saturating_trunc_f32_to_i16(
             self.motor
                 .electrical_speed()
                 .rpm()

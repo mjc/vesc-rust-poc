@@ -6,7 +6,7 @@
 //! - `third_party/float-out-boy/src/main.c:1927-1930` packs fatal/data-recorder bits into realtime extra flags.
 
 // C map: IDs mirror `third_party/float-out-boy/src/state.h:23-58`.
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy top-level run state.
     #[derive(Default)]
     pub enum FloatOutBoyRunState {
@@ -22,7 +22,7 @@ vescpkg_rs::wire_enum! {
     }
 }
 
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy runtime mode.
     #[derive(Default)]
     pub enum FloatOutBoyMode {
@@ -36,7 +36,7 @@ vescpkg_rs::wire_enum! {
     }
 }
 
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy stop reason.
     #[derive(Default)]
     pub enum FloatOutBoyStopCondition {
@@ -58,7 +58,7 @@ vescpkg_rs::wire_enum! {
     }
 }
 
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy setpoint adjustment or pushback reason.
     #[derive(Default)]
     pub enum FloatOutBoySetpointAdjustment {
@@ -85,7 +85,29 @@ vescpkg_rs::wire_enum! {
 }
 
 impl FloatOutBoySetpointAdjustment {
-    pub(crate) const fn is_float_state_tiltback(self) -> bool {
+    /// Return whether centering or reverse-stop control owns the setpoint.
+    #[must_use]
+    pub const fn is_centering_or_reverse_stop(self) -> bool {
+        matches!(self, Self::Centering | Self::ReverseStop)
+    }
+
+    /// Return whether any pushback condition owns the setpoint.
+    #[must_use]
+    pub const fn is_pushback(self) -> bool {
+        matches!(
+            self,
+            Self::PushbackSpeed
+                | Self::PushbackDuty
+                | Self::PushbackError
+                | Self::PushbackHighVoltage
+                | Self::PushbackLowVoltage
+                | Self::PushbackTemperature
+        )
+    }
+
+    /// Return whether the compatibility float state reports tiltback.
+    #[must_use]
+    pub const fn is_float_state_tiltback(self) -> bool {
         matches!(
             self,
             Self::PushbackError
@@ -137,7 +159,7 @@ pub enum FloatOutBoyDarkRideState {
 }
 
 // C map: IDs mirror `third_party/float-out-boy/src/main.c:61-80`.
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy beeper reason.
     #[derive(Default)]
     pub enum FloatOutBoyBeepReason {
@@ -202,7 +224,9 @@ bitflags::bitflags! {
 }
 
 impl FloatOutBoyDataRecorderFlags {
-    pub(crate) const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
+    /// Pack recorder and fatal-error bits in the FOB realtime wire layout.
+    #[must_use]
+    pub const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
         let fatal = match fatal_error {
             FloatOutBoyFatalErrorState::None => 0,
             FloatOutBoyFatalErrorState::Present => 0x8,

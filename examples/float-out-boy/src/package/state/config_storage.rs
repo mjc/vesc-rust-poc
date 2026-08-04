@@ -236,14 +236,12 @@ impl FloatOutBoyPackageState {
     }
 
     pub(in crate::package) fn is_running(&self) -> bool {
-        matches!(
-            self.all_data_payloads
-                .base()
-                .status()
-                .ride_state()
-                .run_state(),
-            FloatOutBoyRunState::Running
-        )
+        self.all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state()
+            == FloatOutBoyRunState::Running
     }
 
     pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
@@ -296,7 +294,7 @@ impl FloatOutBoyPackageState {
         if !matches!(ride_state.mode(), FloatOutBoyMode::Normal) {
             return None;
         }
-        if matches!(ride_state.run_state(), FloatOutBoyRunState::Running) {
+        if ride_state.run_state() == FloatOutBoyRunState::Running {
             config.editor().keep_enabled_while_running();
         }
         config.editor().clear_meta_is_default();

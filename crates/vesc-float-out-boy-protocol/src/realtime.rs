@@ -1,4 +1,4 @@
-//! Float Out Boy realtime semantic domain types.
+//! Float Out Boy realtime protocol payload types.
 //!
 //! Source map: realtime ID lists and payloads mirror Float Out Boy `v1.2.1` at
 //! `third_party/float-out-boy/src/rt_data.h:38-66` and `third_party/float-out-boy/src/main.c:1876-1960`.

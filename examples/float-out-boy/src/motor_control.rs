@@ -130,12 +130,12 @@ impl FloatOutBoyMotorControl {
         let parking_brake_was_active = self.parking_brake_active;
         if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Always)
             || matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Idle)
-                && !matches!(run_state, FloatOutBoyRunState::Running)
+                && run_state != FloatOutBoyRunState::Running
                 && abs_erpm < Rpm::from_revolutions_per_minute(50.0)
         {
             self.parking_brake_active = true;
         } else if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Never)
-            || matches!(run_state, FloatOutBoyRunState::Running)
+            || run_state == FloatOutBoyRunState::Running
         {
             self.parking_brake_active = false;
         }
