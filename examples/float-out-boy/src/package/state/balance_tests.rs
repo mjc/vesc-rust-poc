@@ -123,7 +123,6 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
 
 #[test]
 fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid() {
-    let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
     telemetry.set_imu_attitude(
@@ -131,7 +130,6 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         ImuPitch::new(AngleRadians::from_radians(0.0)),
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
-    let imu = telemetry.imu();
     let bindings = telemetry.motor();
     let payloads = sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Running,
@@ -166,16 +164,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         assert!(config.set_kp2(RateCurrentGain::new(0.0)));
         assert!(config.set_ki(IntegralCurrentGain::new(0.1)));
     });
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        lifecycle,
-        telemetry.telemetry(),
-        imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
+    assert!(tick_realtime_data(&mut state, &telemetry, 0));
     assert!(state.apply_requested_motor_current(bindings));
     let first_base = state.all_data_payloads().base();
     let first_error = first_base.setpoints().board().angle().as_degrees()
@@ -198,19 +187,8 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         first_current,
         first_integral * torque_output_scale(&state) * output_alpha
     );
-
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        lifecycle,
-        telemetry.telemetry(),
-        imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
-    ));
+    assert!(tick_realtime_data(&mut state, &telemetry, 0));
     assert!(state.apply_requested_motor_current(bindings));
-
     // Upstream `pid_update` accumulates `pid->i += pid->p * config->ki`
     // and clamps it at `third_party/float-out-boy/src/pid.c:40-46`; RUNNING adds P + I before
     // smoothing balance current at `third_party/float-out-boy/src/main.c:932-954`.
