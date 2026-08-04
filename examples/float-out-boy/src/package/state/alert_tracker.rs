@@ -10,7 +10,7 @@ pub(super) struct AlertRecord {
     pub(super) code: FirmwareFaultWireCode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AlertTrackerState {
     firmware_fault_active: bool,
     firmware_fault_code: FirmwareFaultWireCode,
@@ -18,19 +18,6 @@ pub(super) struct AlertTrackerState {
     records: [Option<AlertRecord>; ALERT_RECORD_CAPACITY],
     next_record: usize,
     record_count: usize,
-}
-
-impl Default for AlertTrackerState {
-    fn default() -> Self {
-        Self {
-            firmware_fault_active: false,
-            firmware_fault_code: FirmwareFaultWireCode::from_wire_code(0),
-            fatal_error: FloatOutBoyFatalErrorState::None,
-            records: [None; ALERT_RECORD_CAPACITY],
-            next_record: 0,
-            record_count: 0,
-        }
-    }
 }
 
 impl AlertTrackerState {

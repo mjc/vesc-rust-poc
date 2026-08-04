@@ -7,10 +7,10 @@ use vescpkg_rs::{
     AverageMotorTemperature, BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative,
     Charge, Current, CurrentOffDelay, CurrentRelative, DCurrent, DirectionalMotorCurrent,
     DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy, EnergyCounterReset, FetTemperature,
-    FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
-    MotorSelection, MotorTelemetry, MotorTemperature, OdometerMeters, OpenLoopCurrent,
-    OpenLoopPhase, PeakMosfetTemperature, PeakMotorTemperature, PidPosition,
+    FirmwareFault, FirmwareFaultId, FirmwareFaultWireCode, HandbrakeCurrent, HandbrakeRelative,
+    InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorOutput,
+    MotorReleaseOutcome, MotorSelection, MotorTelemetry, MotorTemperature, OdometerMeters,
+    OpenLoopCurrent, OpenLoopPhase, PeakMosfetTemperature, PeakMotorTemperature, PidPosition,
     PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
     TachometerReset, TachometerSteps, Temperature, TemperatureLimitEnd, TemperatureLimitStart,
     TotalMotorCurrent, VehicleSpeed, VescSeconds, WattHoursRemaining,
@@ -20,6 +20,7 @@ unsafe extern "C" fn test_pwm_callback() {}
 
 #[test]
 fn motor_and_temperature_defaults_are_semantic_zeroes() {
+    assert_eq!(FirmwareFaultWireCode::default().wire_code(), 0);
     assert_eq!(MotorCurrentLimit::default().current(), Current::ZERO);
     let temperatures = [
         FetTemperature::default().temperature(),
