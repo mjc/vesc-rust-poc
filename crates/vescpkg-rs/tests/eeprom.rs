@@ -106,6 +106,38 @@ fn typed_offsets_round_trip_a_signature_prefixed_image() {
 }
 
 #[test]
+fn signature_committed_image_invalidates_before_payload_and_commits_last() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let image = [0xca, 0xfe, 0xba, 0xbe, 1, 2, 3, 4, 5];
+    let effects = firmware.effects();
+
+    assert!(
+        eeprom
+            .write_signature_committed_image(effects, &image)
+            .is_ok()
+    );
+    assert_eq!(eeprom.read_image::<9>(effects), Ok(image));
+
+    firmware.fail_eeprom_write(CustomEepromAddress::from_index(2).expect("two fits"));
+    assert_eq!(
+        eeprom.write_signature_committed_image(effects, &[1, 2, 3, 4, 5, 6, 7, 8, 9]),
+        Err(EepromError::FirmwareRejected)
+    );
+    assert_eq!(
+        eeprom.read(
+            effects,
+            CustomEepromAddress::from_index(0).expect("zero fits")
+        ),
+        Some(EepromWord::from_u32(0))
+    );
+    assert_eq!(
+        eeprom.write_signature_committed_image(effects, &[1, 2, 3]),
+        Err(EepromError::ImageTooShort)
+    );
+}
+
+#[test]
 fn fixed_size_image_reads_are_owned_and_report_missing_words() {
     let firmware = FirmwareTest::new();
     let eeprom = firmware.eeprom();

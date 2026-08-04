@@ -2,7 +2,7 @@ use super::{
     FloatOutBoyPackageState,
     config_storage::{
         FLOAT_OUT_BOY_EEPROM_LEN, FirmwareImuMigration, FloatOutBoyConfigLoadOutcome,
-        FloatOutBoyEepromImage, FloatOutBoyEepromImageError,
+        float_out_boy_config_from_eeprom, float_out_boy_eeprom_image,
     },
 };
 use crate::beeper::FloatOutBoyBeeperLevel;
@@ -394,8 +394,7 @@ fn invalid_legacy_firmware_imu_read_is_diagnosed_without_writes() {
 #[test]
 fn eeprom_image_conversion_keeps_the_fixed_tail_deterministic() {
     let config = FloatOutBoyConfigImage::defaults();
-    let image = FloatOutBoyEepromImage::from(config);
-    let bytes = image.into_bytes();
+    let bytes = float_out_boy_eeprom_image(&config);
 
     assert_eq!(&bytes[..config.as_bytes().len()], config.as_bytes());
     assert!(
@@ -403,22 +402,16 @@ fn eeprom_image_conversion_keeps_the_fixed_tail_deterministic() {
             .iter()
             .all(|byte| *byte == 0)
     );
-    assert_eq!(
-        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
-        Ok(config)
-    );
+    assert_eq!(float_out_boy_config_from_eeprom(&bytes), Some(config));
 }
 
 #[test]
 fn eeprom_image_conversion_rejects_a_bad_signature() {
     let config = FloatOutBoyConfigImage::defaults();
-    let mut bytes = FloatOutBoyEepromImage::from(config).into_bytes();
+    let mut bytes = float_out_boy_eeprom_image(&config);
     bytes[0] ^= 0xff;
 
-    assert_eq!(
-        FloatOutBoyConfigImage::try_from(FloatOutBoyEepromImage::from_bytes(&bytes)),
-        Err(FloatOutBoyEepromImageError)
-    );
+    assert_eq!(float_out_boy_config_from_eeprom(&bytes), None);
 }
 
 fn assert_restored_runtime_state(
