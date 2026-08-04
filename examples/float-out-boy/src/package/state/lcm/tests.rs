@@ -42,7 +42,7 @@ fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
             },
             &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, command_id],
         );
-        let command = FloatOutBoyAppDataCommand::try_from_id(command_id);
+        let command = FloatOutBoyAppDataCommand::try_from(command_id);
         let expected = matches!(
             command,
             Ok(FloatOutBoyAppDataCommand::LightsControl
