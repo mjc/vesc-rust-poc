@@ -90,6 +90,12 @@ fn all_updated<const N: usize>(updates: [bool; N]) -> bool {
     updates.into_iter().all(core::convert::identity)
 }
 
+macro_rules! write_fields {
+    ($config:ident; $($field:path => $value:expr),+ $(,)?) => {
+        all_updated([$($config.set($field, $value)),+])
+    };
+}
+
 fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
     let [
         pid,
@@ -127,55 +133,31 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
     };
 
     update_active_config(state, |config| {
-        all_updated([
-            B::set_kp(config, pid_low.scaled(1.0, 15.0, AngleCurrentGain::new)),
-            B::set_kp2(config, pid_high.divided(10.0, 0.0, RateCurrentGain::new)),
-            B::set_ki(config, tune_integral_gain(integral_low)),
-            config.set_ki_limit(tune_integral_limit(integral_high)),
-            B::set_booster_angle(
-                config,
-                tune_angle_from(booster_low, AngleDegrees::from_degrees(5.0)),
-            ),
-            B::set_booster_ramp(
-                config,
-                tune_angle_from(booster_high, AngleDegrees::from_degrees(2.0)),
-            ),
-            B::set_booster_current(config, tune_booster_current(booster_current)),
-            B::set_turn_tilt_strength(config, turn_strength.scaled(1.0, 0.0, PidScale::new)),
-            B::set_turn_tilt_angle_limit(
-                config,
-                WireByte::new(turn.as_u8() & 0x03).scaled(1.0, 2.0, AngleDegrees::from_degrees),
-            ),
-            B::set_turn_tilt_start_erpm(
-                config,
-                WireByte::new(turn.as_u8() >> 2).scaled(500.0, 1000.0, electrical_speed),
-            ),
-            H::set_mahony_kp(config, mahony.divided(10.0, 1.5, MahonyPitchGain::new)),
-            B::set_atr_strength_up(config, tune_atr_strength(atr_up)),
-            B::set_atr_strength_down(config, tune_atr_strength(atr_down)),
-            B::set_atr_speed_boost(
-                config,
-                atr_speed_amount.scaled_ratio(speed_boost_numerator, 100.0, 0.0, PidScale::new),
-            ),
-            B::set_atr_angle_limit(
-                config,
-                tune_angle_from(atr_angle, AngleDegrees::from_degrees(5.0)),
-            ),
-            B::set_atr_on_speed(
-                config,
-                tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
-            ),
-            B::set_atr_off_speed(
-                config,
-                tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
-            ),
-            B::set_atr_response_boost(config, response_boost.divided(10.0, 1.0, PidScale::new)),
-            B::set_atr_transition_boost(config, transition_boost.divided(5.0, 1.0, PidScale::new)),
-            B::set_atr_amps_accel_ratio(config, accel_ratio.scaled(1.0, 5.0, PidScale::new)),
-            B::set_atr_amps_decel_ratio(config, decel_ratio.scaled(1.0, 5.0, PidScale::new)),
-            B::set_brake_tilt_strength(config, brake_strength.scaled(1.0, 0.0, PidScale::new)),
-            B::set_brake_tilt_lingering(config, brake_lingering.scaled(1.0, 0.0, PidScale::new)),
-        ])
+        write_fields!(config;
+            B::KP_FIELD => pid_low.scaled(1.0, 15.0, AngleCurrentGain::new),
+            B::KP2_FIELD => pid_high.divided(10.0, 0.0, RateCurrentGain::new),
+            B::KI_FIELD => tune_integral_gain(integral_low),
+            B::KI_LIMIT_FIELD => tune_integral_limit(integral_high),
+            B::BOOSTER_ANGLE_FIELD => tune_angle_from(booster_low, AngleDegrees::from_degrees(5.0)),
+            B::BOOSTER_RAMP_FIELD => tune_angle_from(booster_high, AngleDegrees::from_degrees(2.0)),
+            B::BOOSTER_CURRENT_FIELD => tune_booster_current(booster_current),
+            B::TURN_TILT_STRENGTH_FIELD => turn_strength.scaled(1.0, 0.0, PidScale::new),
+            B::TURN_TILT_ANGLE_LIMIT_FIELD => WireByte::new(turn.as_u8() & 0x03).scaled(1.0, 2.0, AngleDegrees::from_degrees),
+            B::TURN_TILT_START_ERPM_FIELD => WireByte::new(turn.as_u8() >> 2).scaled(500.0, 1000.0, electrical_speed),
+            H::MAHONY_KP_FIELD => mahony.divided(10.0, 1.5, MahonyPitchGain::new),
+            B::ATR_STRENGTH_UP_FIELD => tune_atr_strength(atr_up),
+            B::ATR_STRENGTH_DOWN_FIELD => tune_atr_strength(atr_down),
+            B::ATR_SPEED_BOOST_FIELD => atr_speed_amount.scaled_ratio(speed_boost_numerator, 100.0, 0.0, PidScale::new),
+            B::ATR_ANGLE_LIMIT_FIELD => tune_angle_from(atr_angle, AngleDegrees::from_degrees(5.0)),
+            B::ATR_ON_SPEED_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
+            B::ATR_OFF_SPEED_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
+            B::ATR_RESPONSE_BOOST_FIELD => response_boost.divided(10.0, 1.0, PidScale::new),
+            B::ATR_TRANSITION_BOOST_FIELD => transition_boost.divided(5.0, 1.0, PidScale::new),
+            B::ATR_AMPS_ACCEL_RATIO_FIELD => accel_ratio.scaled(1.0, 5.0, PidScale::new),
+            B::ATR_AMPS_DECEL_RATIO_FIELD => decel_ratio.scaled(1.0, 5.0, PidScale::new),
+            B::BRAKE_TILT_STRENGTH_FIELD => brake_strength.scaled(1.0, 0.0, PidScale::new),
+            B::BRAKE_TILT_LINGERING_FIELD => brake_lingering.scaled(1.0, 0.0, PidScale::new),
+        )
     })
 }
 
@@ -188,34 +170,16 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
     let (torque_angle, torque_current) = WireByte::nibbles(*torque_limits);
     let (torque_on, torque_off) = WireByte::nibbles(*torque_speeds);
     update_active_config(state, |config| {
-        all_updated([
-            B::set_atr_threshold_up(
-                config,
-                threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees),
-            ),
-            B::set_atr_threshold_down(
-                config,
-                threshold_down.scaled(0.5, 0.0, AngleDegrees::from_degrees),
-            ),
-            B::set_torque_tilt_strength(config, tune_torque_tilt_strength(torque_up)),
-            B::set_torque_tilt_regen_strength(config, tune_torque_tilt_strength(torque_down)),
-            B::set_torque_tilt_angle_limit(
-                config,
-                torque_angle.scaled(0.5, 0.0, AngleDegrees::from_degrees),
-            ),
-            B::set_torque_tilt_start_current(
-                config,
-                torque_current.scaled(1.0, 15.0, motor_current),
-            ),
-            B::set_torque_tilt_on_speed(
-                config,
-                torque_on.scaled(0.5, 0.0, AngularVelocity::from_degrees_per_second),
-            ),
-            B::set_torque_tilt_off_speed(
-                config,
-                torque_off.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second),
-            ),
-        ])
+        write_fields!(config;
+            B::ATR_THRESHOLD_UP_FIELD => threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees),
+            B::ATR_THRESHOLD_DOWN_FIELD => threshold_down.scaled(0.5, 0.0, AngleDegrees::from_degrees),
+            B::TORQUE_TILT_STRENGTH_FIELD => tune_torque_tilt_strength(torque_up),
+            B::TORQUE_TILT_REGEN_STRENGTH_FIELD => tune_torque_tilt_strength(torque_down),
+            B::TORQUE_TILT_ANGLE_LIMIT_FIELD => torque_angle.scaled(0.5, 0.0, AngleDegrees::from_degrees),
+            B::TORQUE_TILT_START_CURRENT_FIELD => torque_current.scaled(1.0, 15.0, motor_current),
+            B::TORQUE_TILT_ON_SPEED_FIELD => torque_on.scaled(0.5, 0.0, AngularVelocity::from_degrees_per_second),
+            B::TORQUE_TILT_OFF_SPEED_FIELD => torque_off.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second),
+        )
     })
 }
 
@@ -225,10 +189,10 @@ fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8])
     };
     let (brake_low, brake_high) = WireByte::nibbles(*brake);
     let updated = update_active_config(state, |config| {
-        all_updated([
-            B::set_kp_brake(config, tune_brake_gain(brake_low)),
-            B::set_kp2_brake(config, brake_high.divided(10.0, 0.0, PidScale::new)),
-        ])
+        write_fields!(config;
+            B::KP_BRAKE_FIELD => tune_brake_gain(brake_low),
+            B::KP2_BRAKE_FIELD => brake_high.divided(10.0, 0.0, PidScale::new),
+        )
     });
     if updated {
         state.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
@@ -265,29 +229,15 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
     };
 
     let updated = update_active_config(state, |config| {
-        let mut updated = all_updated([
-            C::set_duty_beep_enabled(config, *flags & 0x01 != 0),
-            C::set_duty_pushback_threshold(
-                config,
-                WireByte::new(*duty).scaled_ratio(1.0, 100.0, 0.0, Ratio::from_ratio_const),
-            ),
-            C::set_duty_pushback_angle(
-                config,
-                WireByte::new(*duty_angle).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
-            ),
-            C::set_duty_pushback_speed(
-                config,
-                WireByte::new(*duty_speed).scaled_ratio(
-                    1.0,
-                    10.0,
-                    0.0,
-                    AngularVelocity::from_degrees_per_second,
-                ),
-            ),
-        ]);
+        let mut updated = write_fields!(config;
+            C::DUTY_BEEP_ENABLED_FIELD => *flags & 0x01 != 0,
+            C::DUTY_PUSHBACK_THRESHOLD_FIELD => WireByte::new(*duty).scaled_ratio(1.0, 100.0, 0.0, Ratio::from_ratio_const),
+            C::DUTY_PUSHBACK_ANGLE_FIELD => WireByte::new(*duty_angle).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
+            C::DUTY_PUSHBACK_SPEED_FIELD => WireByte::new(*duty_speed).scaled_ratio(1.0, 10.0, 0.0, AngularVelocity::from_degrees_per_second),
+        );
         if *return_speed != 0 {
-            updated &= C::set_tiltback_return_speed(
-                config,
+            updated &= config.set(
+                C::TILTBACK_RETURN_SPEED_FIELD,
                 WireByte::new(*return_speed).scaled_ratio(
                     1.0,
                     10.0,
@@ -305,10 +255,6 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
     true
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "one ordered Tune Other transaction is smaller and preserves progressive write gates"
-)]
 pub(super) fn handle_other_tune_packet(
     state: &mut FloatOutBoyPackageState,
     now: &mut impl FnMut() -> TimestampTicks,
@@ -338,77 +284,32 @@ pub(super) fn handle_other_tune_packet(
     };
 
     let updated = update_active_config(state, |config| {
-        let mut updated = all_updated([
-            C::set_beeper_enabled(config, *flags & 0x02 != 0),
-            F::set_reversestop_enabled(config, *flags & 0x04 != 0),
-            F::set_dual_switch(config, *flags & 0x08 != 0),
-            F::set_darkride_enabled(config, *flags & 0x10 != 0),
-            config.set(S::DIRTY_LANDINGS_FIELD, *flags & 0x20 != 0),
-            S::set_simplestart_enabled(config, *flags & 0x40 != 0),
-            S::set_pushstart_enabled(config, *flags & 0x80 != 0),
-            S::set_startup_speed(
-                config,
-                WireByte::new(*startup_speed).scaled(
-                    1.0,
-                    0.0,
-                    AngularVelocity::from_degrees_per_second,
-                ),
-            ),
-            S::set_startup_pitch_tolerance(
-                config,
-                WireByte::new(*pitch_tolerance).scaled_ratio(
-                    1.0,
-                    10.0,
-                    0.0,
-                    AngleDegrees::from_degrees,
-                ),
-            ),
-            S::set_startup_roll_tolerance(
-                config,
-                WireByte::new(*roll_tolerance).scaled(1.0, 0.0, AngleDegrees::from_degrees),
-            ),
-            M::set_brake_current(
-                config,
-                MotorCurrent::new(WireByte::new(*brake_current).scaled(
-                    0.5,
-                    0.0,
-                    Current::from_amps,
-                )),
-            ),
-            config.set(S::CLICK_CURRENT_FIELD, WireByte::new(*click_current)),
-        ]);
+        let mut updated = write_fields!(config;
+            C::BEEPER_ENABLED_FIELD => *flags & 0x02 != 0,
+            F::REVERSESTOP_FIELD => *flags & 0x04 != 0,
+            F::DUAL_SWITCH_FIELD => *flags & 0x08 != 0,
+            F::DARKRIDE_FIELD => *flags & 0x10 != 0,
+            S::DIRTY_LANDINGS_FIELD => *flags & 0x20 != 0,
+            S::SIMPLESTART_FIELD => *flags & 0x40 != 0,
+            S::PUSHSTART_FIELD => *flags & 0x80 != 0,
+            S::SPEED_FIELD => WireByte::new(*startup_speed).scaled(1.0, 0.0, AngularVelocity::from_degrees_per_second),
+            S::PITCH_TOLERANCE_FIELD => WireByte::new(*pitch_tolerance).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
+            S::ROLL_TOLERANCE_FIELD => WireByte::new(*roll_tolerance).scaled(1.0, 0.0, AngleDegrees::from_degrees),
+            M::BRAKE_CURRENT_FIELD => MotorCurrent::new(WireByte::new(*brake_current).scaled(0.5, 0.0, Current::from_amps)),
+            S::CLICK_CURRENT_FIELD => WireByte::new(*click_current),
+        );
 
         if updated && (80..=120).contains(tilt_constant) {
-            updated = all_updated([
-                C::set_tiltback_constant(
-                    config,
-                    WireByte::new(*tilt_constant).scaled(0.5, -50.0, AngleDegrees::from_degrees),
-                ),
-                C::set_tiltback_constant_erpm(
-                    config,
-                    WireByte::new(*constant_erpm).scaled(100.0, 0.0, electrical_speed),
-                ),
-                C::set_tiltback_variable(
-                    config,
-                    WireByte::new(*variable_rate).scaled_ratio(1.0, 100.0, 0.0, PidScale::new),
-                ),
-                C::set_tiltback_variable_max(
-                    config,
-                    WireByte::new(*variable_max).scaled_ratio(
-                        1.0,
-                        10.0,
-                        0.0,
-                        AngleDegrees::from_degrees,
-                    ),
-                ),
-                C::set_tiltback_variable_erpm(
-                    config,
-                    WireByte::new(*variable_erpm).scaled(100.0, 0.0, electrical_speed),
-                ),
-            ]);
+            updated = write_fields!(config;
+                C::TILTBACK_CONSTANT_ANGLE_FIELD => WireByte::new(*tilt_constant).scaled(0.5, -50.0, AngleDegrees::from_degrees),
+                C::TILTBACK_CONSTANT_ERPM_FIELD => WireByte::new(*constant_erpm).scaled(100.0, 0.0, electrical_speed),
+                C::TILTBACK_VARIABLE_RATE_FIELD => WireByte::new(*variable_rate).scaled_ratio(1.0, 100.0, 0.0, PidScale::new),
+                C::TILTBACK_VARIABLE_MAX_FIELD => WireByte::new(*variable_max).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
+                C::TILTBACK_VARIABLE_ERPM_FIELD => WireByte::new(*variable_erpm).scaled(100.0, 0.0, electrical_speed),
+            );
             if *nose_speed != 0 {
-                updated &= C::set_nose_angling_speed(
-                    config,
+                updated &= config.set(
+                    C::NOSE_ANGLING_SPEED_FIELD,
                     WireByte::new(*nose_speed).scaled_ratio(
                         1.0,
                         10.0,
@@ -424,12 +325,12 @@ pub(super) fn handle_other_tune_packet(
             if remote_type <= 2 {
                 updated = config.set(C::INPUT_TILT_REMOTE_TYPE_FIELD, WireByte::new(remote_type));
                 if remote_type != 0 {
-                    updated &= C::set_input_tilt_angle_limit(
-                        config,
+                    updated &= config.set(
+                        C::INPUT_TILT_ANGLE_LIMIT_FIELD,
                         WireByte::new(*input >> 2).scaled(1.0, 0.0, AngleDegrees::from_degrees),
                     );
-                    updated &= C::set_input_tilt_speed(
-                        config,
+                    updated &= config.set(
+                        C::INPUT_TILT_SPEED_FIELD,
                         WireByte::new(*input_speed).scaled(
                             1.0,
                             0.0,
@@ -469,26 +370,14 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     let (brake_angle, brake_ramp) = WireByte::nibbles(*brake_booster);
     let brake_current = WireByte::low_nibble(*brake_booster_current);
     let updated = update_active_config(state, |config| {
-        all_updated([
-            B::set_booster_angle(
-                config,
-                tune_angle_from(booster_angle, AngleDegrees::from_degrees(5.0)),
-            ),
-            B::set_booster_ramp(
-                config,
-                tune_angle_from(booster_ramp, AngleDegrees::from_degrees(2.0)),
-            ),
-            B::set_booster_current(config, tune_booster_current(booster_current)),
-            B::set_brake_booster_angle(
-                config,
-                tune_angle_from(brake_angle, AngleDegrees::from_degrees(5.0)),
-            ),
-            B::set_brake_booster_ramp(
-                config,
-                tune_angle_from(brake_ramp, AngleDegrees::from_degrees(2.0)),
-            ),
-            B::set_brake_booster_current(config, tune_booster_current(brake_current)),
-        ])
+        write_fields!(config;
+            B::BOOSTER_ANGLE_FIELD => tune_angle_from(booster_angle, AngleDegrees::from_degrees(5.0)),
+            B::BOOSTER_RAMP_FIELD => tune_angle_from(booster_ramp, AngleDegrees::from_degrees(2.0)),
+            B::BOOSTER_CURRENT_FIELD => tune_booster_current(booster_current),
+            B::BRAKE_BOOSTER_ANGLE_FIELD => tune_angle_from(brake_angle, AngleDegrees::from_degrees(5.0)),
+            B::BRAKE_BOOSTER_RAMP_FIELD => tune_angle_from(brake_ramp, AngleDegrees::from_degrees(2.0)),
+            B::BRAKE_BOOSTER_CURRENT_FIELD => tune_booster_current(brake_current),
+        )
     });
     if !updated {
         return false;
