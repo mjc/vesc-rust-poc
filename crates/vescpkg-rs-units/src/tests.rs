@@ -1,8 +1,8 @@
 use super::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount, Charge, Current,
-    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
-    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks,
-    VescSeconds, Voltage,
+    DeciampCurrent, Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude,
+    Longitude, Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature,
+    TimestampTicks, VescSeconds, Voltage,
 };
 
 macro_rules! assert_f32_eq {
@@ -53,6 +53,14 @@ fn scalar_units_round_trip_through_named_accessors() {
         AngularVelocity::from_degrees_per_second(90.0).as_degrees_per_second(),
         90.0
     );
+}
+
+#[test]
+fn signed_deciamp_current_preserves_wire_value_and_converts_to_amps() {
+    let current = DeciampCurrent::from_deciamps(-42);
+
+    assert_eq!(current.as_deciamps(), -42);
+    assert_f32_eq!(current.as_current().as_amps(), -4.200_000_3);
 }
 
 #[test]

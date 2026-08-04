@@ -1,4 +1,4 @@
-use super::{RemoteControlState, RemoteCurrentTarget, RemoteMove, handle_packet};
+use super::{RemoteControlState, RemoteMove, handle_packet};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRealtimeRemoteInput, FloatOutBoyRunState,
@@ -10,8 +10,8 @@ use crate::package::test_support::{
 };
 use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, SignedRatio,
-    TimestampTicks, VescSeconds,
+    AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Rpm, SampleRate,
+    SignedRatio, TimestampTicks, VescSeconds,
 };
 
 #[test]
@@ -77,7 +77,7 @@ fn rc_move_command_checksum_failure_becomes_zero_current_step_like_float_out_boy
     assert_eq!(
         RemoteMove::from_float_out_boy_command(1, 1, 255, 0),
         RemoteMove {
-            target: RemoteCurrentTarget::ZERO,
+            target: DeciampCurrent::from_deciamps(0),
             duration_steps: 1
         }
     );

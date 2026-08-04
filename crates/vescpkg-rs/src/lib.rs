@@ -361,10 +361,10 @@ pub mod prelude {
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
-        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
-        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+        Current, DeciampCurrent, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+        OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+        SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     #[cfg(feature = "math")]
     pub use crate::{Ahrs, Madgwick};
