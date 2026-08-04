@@ -47,6 +47,19 @@ struct OrientationVector {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct EstimatedOrientation([f32; 4]);
 
+impl Default for EstimatedOrientation {
+    fn default() -> Self {
+        Self::new(
+            OrientationScalar::new(1.0),
+            OrientationVector::new(
+                OrientationBodyX::new(0.0),
+                OrientationBodyY::new(0.0),
+                OrientationBodyZ::new(0.0),
+            ),
+        )
+    }
+}
+
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct OrientationChange([f32; 4]);
@@ -62,17 +75,6 @@ impl EstimatedOrientation {
     #[inline]
     const fn new(scalar: OrientationScalar, vector: OrientationVector) -> Self {
         Self([scalar.0, vector.x.0, vector.y.0, vector.z.0])
-    }
-
-    pub(super) const fn source_startup() -> Self {
-        Self::new(
-            OrientationScalar::new(1.0),
-            OrientationVector::new(
-                OrientationBodyX::new(0.0),
-                OrientationBodyY::new(0.0),
-                OrientationBodyZ::new(0.0),
-            ),
-        )
     }
 
     #[cfg(any(test, target_arch = "arm"))]

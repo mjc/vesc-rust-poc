@@ -8,8 +8,8 @@ use super::{
 use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-    FloatOutBoyMode, FloatOutBoyRunState,
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
+    FloatOutBoyRunState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, default_float_out_boy_config_bytes, editable_config_from_bytes,
@@ -115,7 +115,7 @@ fn assert_live_only_firmware_imu_migration(firmware: &FirmwareTest, float_writes
 fn configured_loop_time_uses_float_out_boy_hertz_config() {
     let _firmware = FirmwareTest::new();
     let mut incoming = default_float_out_boy_config_bytes();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert_eq!(state.configured_loop_time_us(), 1201);
 
@@ -134,7 +134,7 @@ fn configured_loop_time_uses_float_out_boy_hertz_config() {
 fn main_thread_config_load_defers_configure_side_effects_like_refloat() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(!state.startup_configured());
     state.load_persisted_config_on_main_thread(TimestampTicks::from_ticks(0));
@@ -150,7 +150,7 @@ fn main_thread_config_load_defers_configure_side_effects_like_refloat() {
 #[test]
 fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut persisted = state.serialized_config;
     assert!(persisted.editor().set_beeper_enabled(true));
     assert!(persisted.editor().set_disabled(true));
@@ -159,9 +159,7 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
         let _ = state.tick_beeper();
     }
 
-    let mut restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let mut restarted = FloatOutBoyPackageState::from_persisted_config();
 
     let changes: Vec<_> = (1..=560)
         .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
@@ -173,7 +171,7 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
 #[test]
 fn main_thread_configure_leaves_normal_startup_beeper_free_for_ready_alert() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut persisted = state.serialized_config;
     assert!(persisted.editor().set_beeper_enabled(true));
     assert!(persisted.editor().set_disabled(false));
@@ -182,9 +180,7 @@ fn main_thread_configure_leaves_normal_startup_beeper_free_for_ready_alert() {
         let _ = state.tick_beeper();
     }
 
-    let mut restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let mut restarted = FloatOutBoyPackageState::from_persisted_config();
 
     // Refloat 1.2.1 queues a configure beep in STARTUP, preventing the later
     // READY battery-status alert. Upstream fixed this in 37cf343.
@@ -198,7 +194,7 @@ fn main_thread_configure_leaves_normal_startup_beeper_free_for_ready_alert() {
 fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloat() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
@@ -212,7 +208,7 @@ fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloa
 #[test]
 fn accepted_config_replacement_keeps_current_firmware_imu_settings() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     for proportional_gain in [0.5, 1.0] {
         set_firmware_imu_settings(&firmware, proportional_gain, 0.25, 0.8);
@@ -232,7 +228,7 @@ fn repeated_configure_is_idempotent_after_legacy_firmware_imu_migration() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     firmware.clear_settings_write_observations();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
     assert_live_only_firmware_imu_migration(&firmware, 3);
@@ -253,14 +249,12 @@ fn package_reload_keeps_migrated_firmware_imu_settings_live_only() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     {
-        let mut first = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut first = FloatOutBoyPackageState::default();
         assert!(first.store_serialized_config(&default_float_out_boy_config_bytes()));
     }
 
     firmware.clear_settings_write_observations();
-    let mut reloaded = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let mut reloaded = FloatOutBoyPackageState::from_persisted_config();
     reloaded.configure_loaded_config_on_main_thread();
 
     assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
@@ -276,7 +270,7 @@ fn firmware_imu_migration_does_not_change_package_mahony_gains() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     firmware.clear_settings_write_observations();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
@@ -297,7 +291,7 @@ fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     firmware.fail_settings_writes();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
@@ -315,7 +309,7 @@ fn rejected_legacy_firmware_imu_writes_leave_live_settings_unchanged() {
 #[test]
 fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     for (write_results, expected_settings, expected_migration) in [
         (
@@ -366,7 +360,7 @@ fn invalid_legacy_firmware_imu_read_is_diagnosed_without_writes() {
     let firmware = FirmwareTest::new();
     set_firmware_imu_settings(&firmware, 2.0, 0.25, 0.8);
     firmware.set_raw_float_setting(FirmwareFloatSetting::ImuMahonyKp, f32::NAN);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
@@ -462,8 +456,10 @@ fn assert_restored_runtime_state(
 fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(42);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    state.idle_ticks = TimestampTicks::from_ticks(7);
+    let mut state = FloatOutBoyPackageState {
+        idle_ticks: TimestampTicks::from_ticks(7),
+        ..Default::default()
+    };
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     assert!(state.serialized_config.editor().set_disabled(true));
     assert!(
@@ -535,9 +531,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     ));
     assert_restored_runtime_state(&firmware, &state, &saved);
 
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     assert_eq!(restarted.idle_ticks, TimestampTicks::from_ticks(42));
     assert_eq!(restarted.serialized_config, saved);
     assert_eq!(
@@ -557,9 +551,7 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
     let failed_address = vescpkg_rs::CustomEepromAddress::from_index(2).expect("test address fits");
     firmware.fail_eeprom_read(failed_address);
 
-    let read_failed = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let read_failed = FloatOutBoyPackageState::from_persisted_config();
     assert_eq!(
         read_failed.config_load_outcome_for_test(),
         FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
@@ -583,9 +575,7 @@ fn startup_distinguishes_eeprom_read_failure_from_an_invalid_image() {
             })
             .is_ok()
     );
-    let invalid = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let invalid = FloatOutBoyPackageState::from_persisted_config();
     assert_eq!(
         invalid.config_load_outcome_for_test(),
         FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
@@ -604,7 +594,7 @@ fn config_save_failure_has_no_write_acknowledgement() {
     let firmware = FirmwareTest::new();
     let address = vescpkg_rs::CustomEepromAddress::from_index(0).expect("zero fits");
     firmware.fail_eeprom_write(address);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(handle_config_command(
         &firmware,
@@ -625,7 +615,7 @@ fn config_save_failure_has_no_write_acknowledgement() {
 #[test]
 fn successful_config_save_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
@@ -663,7 +653,7 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
     changed[48] = 0x55;
     changed[75] = 0x66;
     changed[118] = 0x77;
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.replace_serialized_config_for_test(
         &FloatOutBoyConfigImage::from_serialized(&changed).expect("valid test image"),
     );
@@ -688,7 +678,7 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
 #[test]
 fn lock_restores_persisted_config_then_disables_and_saves() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     assert!(
@@ -765,16 +755,14 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
         ],
     );
 
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     assert!(restarted.serialized_config.metadata().disabled());
 }
 
 #[test]
 fn successful_lock_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
@@ -818,8 +806,7 @@ fn lock_is_ignored_while_running_like_float_out_boy() {
     assert_eq!(state.serialized_config, before);
     assert_eq!(state.tick_beeper(), None);
     assert_eq!(
-        FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup())
-            .serialized_config,
+        FloatOutBoyPackageState::default().serialized_config,
         FloatOutBoyConfigImage::defaults(),
     );
 }
@@ -827,7 +814,7 @@ fn lock_is_ignored_while_running_like_float_out_boy() {
 #[test]
 fn lock_rejects_a_missing_disabled_flag() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let before = state.serialized_config;
 
     assert!(!handle_config_command(
@@ -842,7 +829,7 @@ fn lock_rejects_a_missing_disabled_flag() {
 
 #[test]
 fn default_config_decodes_pid_scales_like_float_out_boy_settings() {
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let state = FloatOutBoyPackageState::default();
 
     // Float Out Boy generated settings serialize `kp` with scale 10 at
     // `third_party/float-out-boy/src/conf/settings.xml:28-54`, `kp2` with scale
@@ -1222,7 +1209,7 @@ fn failed_config_write_still_applies_valid_custom_config_like_refloat() {
 #[test]
 fn interrupted_config_write_cannot_boot_a_mixed_image() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut old = default_float_out_boy_config_bytes();
     old.edit_float_out_boy_config(|config| {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
@@ -1239,9 +1226,7 @@ fn interrupted_config_write_cannot_boot_a_mixed_image() {
 
     assert!(state.store_serialized_config(&new));
 
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     assert_eq!(
         restarted.serialized_config,
         FloatOutBoyConfigImage::defaults(),
@@ -1250,7 +1235,7 @@ fn interrupted_config_write_cannot_boot_a_mixed_image() {
 
 fn assert_interrupted_config_write_fails_safe(successful_writes: usize) {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut old = default_float_out_boy_config_bytes();
     old.edit_float_out_boy_config(|config| {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
@@ -1265,9 +1250,7 @@ fn assert_interrupted_config_write_fails_safe(successful_writes: usize) {
     });
     assert!(state.store_serialized_config(&new));
 
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     let expected = if successful_writes == 0 {
         old
     } else {
@@ -1290,7 +1273,7 @@ fn interrupted_config_write_fails_safe_at_every_commit_phase() {
 #[test]
 fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
     bytes.edit_float_out_boy_config(|config| {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
@@ -1313,9 +1296,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
             .all(|byte| *byte == 0)
     );
 
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     assert_f32_eq!(
         restarted
             .serialized_config
@@ -1329,7 +1310,7 @@ fn store_serialized_config_persists_for_restart_like_float_out_boy_set_cfg() {
 #[test]
 fn storing_led_config_defers_internal_renderer_replacement_to_the_aux_thread() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
 
     assert!(state.internal_leds.is_none());
@@ -1349,7 +1330,7 @@ fn storing_led_config_defers_internal_renderer_replacement_to_the_aux_thread() {
 #[test]
 fn failed_internal_led_teardown_retains_runtime_for_retry() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
@@ -1381,7 +1362,7 @@ fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
 #[test]
 fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     state.serialized_config = editable_config_from_bytes(&bytes);

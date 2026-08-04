@@ -29,7 +29,7 @@ use vescpkg_rs::{MahonyPitchGain, MahonyRollGain};
 /// `third_party/float-out-boy/src/balance_filter.c:53-61`, configured at `third_party/float-out-boy/src/balance_filter.c:64-70`,
 /// updated from `imu_ref_callback` at `third_party/float-out-boy/src/main.c:760-765`, and read by
 /// `imu_update` at `third_party/float-out-boy/src/imu.c:35-41`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct BalanceFilter {
     orientation: EstimatedOrientation,
     accel_confidence: AccelConfidenceFilter,
@@ -37,19 +37,16 @@ pub(crate) struct BalanceFilter {
 }
 
 impl BalanceFilter {
-    pub(crate) const fn source_startup() -> Self {
-        Self {
-            orientation: EstimatedOrientation::source_startup(),
-            accel_confidence: AccelConfidenceFilter::source_startup(),
-            feedback: MahonyFeedbackConfig::source_startup(),
-        }
+    #[cfg(test)]
+    pub(crate) fn source_startup() -> Self {
+        Self::default()
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn from_orientation(orientation: ImuOrientation) -> Self {
         Self {
             orientation: EstimatedOrientation::from_orientation(orientation),
-            ..Self::source_startup()
+            ..Self::default()
         }
     }
 

@@ -47,7 +47,7 @@ fn packet_response(
 fn realtime_packet_response_uses_system_ticks_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0x0102_0304);
     let telemetry = FirmwareTest::new();
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let state = FloatOutBoyPackageState::default();
     let mut packet = Vec::new();
     let mut now = || app_data;
     let mut reply = |bytes: &[u8]| {
@@ -130,7 +130,7 @@ fn realtime_packet_reports_live_firmware_fault_alert_like_float_out_boy() {
     let now = TimestampTicks::from_ticks(42);
     let firmware = FirmwareTest::new()
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
     let mut packet = Vec::new();
 
@@ -155,7 +155,7 @@ fn realtime_packet_reports_live_firmware_fault_alert_like_float_out_boy() {
 #[test]
 fn alerts_list_command_returns_source_header_when_empty() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let packet = packet_response(
         &mut state,
         &firmware,
@@ -174,7 +174,7 @@ fn alerts_list_command_returns_firmware_fault_name_and_record() {
     let now = TimestampTicks::from_ticks(42);
     let firmware = FirmwareTest::new()
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
     let packet = packet_response(
         &mut state,
@@ -196,7 +196,7 @@ fn alerts_list_command_returns_firmware_fault_name_and_record() {
 
 #[test]
 fn alerts_list_uses_each_historical_fault_code_for_its_name() {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let firmware = FirmwareTest::new()
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverVoltage));
     state.refresh_runtime_state(
@@ -238,7 +238,7 @@ fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
     let now = TimestampTicks::from_ticks(42);
     let firmware = FirmwareTest::new()
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.refresh_runtime_state(firmware.telemetry(), firmware.imu(), now);
 
     assert!(state.handle_packet_with_telemetry(
@@ -273,7 +273,7 @@ fn alerts_control_clears_the_persistent_fatal_without_hiding_the_live_fault() {
 
 #[test]
 fn metadata_packet_response_defaults_to_legacy_info_like_float_out_boy() {
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let state = FloatOutBoyPackageState::default();
     let mut packet = Vec::new();
 
     assert!(state.reply_to_metadata_packet(
@@ -292,7 +292,7 @@ fn metadata_packet_response_defaults_to_legacy_info_like_float_out_boy() {
 
 #[test]
 fn metadata_packet_response_sends_realtime_ids_directly() {
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let state = FloatOutBoyPackageState::default();
     let mut packet = Vec::new();
     let mut reply = |bytes: &[u8]| {
         packet.extend_from_slice(bytes);

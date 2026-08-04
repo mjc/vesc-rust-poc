@@ -41,9 +41,8 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 }
 
 #[test]
-fn package_author_builds_source_startup_all_data_payload() {
-    let payloads = FloatOutBoyAllDataPayloads::source_startup();
-    assert_eq!(payloads, FloatOutBoyAllDataPayloads::default());
+fn package_author_encodes_default_all_data_payload() {
+    let payloads = FloatOutBoyAllDataPayloads::default();
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
         FloatOutBoyAllDataMode::with_mode4(),
     ));

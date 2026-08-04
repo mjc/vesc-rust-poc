@@ -40,6 +40,13 @@ pub(crate) struct FloatOutBoyBmsSample {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
+impl Default for FloatOutBoyBmsSample {
+    fn default() -> Self {
+        Self::source_startup()
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsSample {
     pub(crate) const fn new(
         cell_low_voltage: Voltage,

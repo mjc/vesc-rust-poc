@@ -1,8 +1,6 @@
 use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
 use crate::beeper::FloatOutBoyBeeperLevel;
-use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-};
+use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use std::vec::Vec;
 use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent, TimestampTicks};
 use vescpkg_rs::test_support::FirmwareTest;
@@ -71,7 +69,7 @@ const BOOSTER_PACKET: &[u8] = &[
 #[test]
 fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(
         state
             .serialized_config
@@ -116,17 +114,17 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     }
 
     assert_ne!(state.serialized_config, persisted_config);
-    let restarted = FloatOutBoyPackageState::from_persisted_config(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    );
+    let restarted = FloatOutBoyPackageState::from_persisted_config();
     assert_eq!(restarted.serialized_config, persisted_config);
 }
 
 #[test]
 fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    state.idle_ticks = TimestampTicks::from_ticks(7);
+    let mut state = FloatOutBoyPackageState {
+        idle_ticks: TimestampTicks::from_ticks(7),
+        ..Default::default()
+    };
     let mut now = || TimestampTicks::from_ticks(42);
 
     assert!(state.handle_packet_with_telemetry(
@@ -169,8 +167,10 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
     ];
 
     for packet in packets {
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        let mut state = FloatOutBoyPackageState {
+            idle_ticks: TimestampTicks::from_ticks(7),
+            ..Default::default()
+        };
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
@@ -205,8 +205,10 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
     ];
 
     for packet in packets {
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        let mut state = FloatOutBoyPackageState {
+            idle_ticks: TimestampTicks::from_ticks(7),
+            ..Default::default()
+        };
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
@@ -220,7 +222,7 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
 #[test]
 fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let mut now = || TimestampTicks::from_ticks(0);
@@ -269,7 +271,7 @@ fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
 #[test]
 fn booster_command_rejects_wrong_payload_length_without_alerting() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let before = state.serialized_config;
@@ -295,7 +297,7 @@ fn booster_command_rejects_wrong_payload_length_without_alerting() {
 #[test]
 fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let balance_filter_before_tune = state.balance_filter;
@@ -365,7 +367,7 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
 #[test]
 fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let original = state.serialized_config;
@@ -419,7 +421,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
 #[test]
 fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let mut now = || TimestampTicks::from_ticks(0);
@@ -455,7 +457,7 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
 #[test]
 fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;
 
@@ -487,7 +489,7 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
 #[test]
 fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let original_nose = state.serialized_config.as_bytes()[67..84].to_vec();
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;

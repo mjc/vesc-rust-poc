@@ -306,15 +306,6 @@ vescpkg_rs::typed_fields! {
 }
 
 impl FloatOutBoyAllDataPayloads {
-    /// Build the Float Out Boy `v1.2.1` startup all-data snapshot after `data_init`.
-    ///
-    /// Upstream zeroes and initializes `Data` in `third_party/float-out-boy/src/main.c:1190-1205`; this
-    /// Rust snapshot is a test/default model, not proof of hardware state.
-    #[must_use]
-    pub fn source_startup() -> Self {
-        Self::default()
-    }
-
     /// Encode the source-compatible response for a parsed all-data request.
     ///
     /// The byte order and mode gates mirror `cmd_send_all_data` in upstream

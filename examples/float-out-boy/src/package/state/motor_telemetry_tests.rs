@@ -298,7 +298,7 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
         MotorTemperature::new(Temperature::from_degrees_celsius(48.5)),
     );
     let telemetry = bindings.telemetry();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut packet = Vec::new();
     let mut now = || now;
     let mut reply = |bytes: &[u8]| {

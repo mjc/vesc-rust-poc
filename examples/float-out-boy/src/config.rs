@@ -66,6 +66,11 @@ vescpkg_rs::firmware_section_static!(
 // `third_party/float-out-boy/src/Makefile:12-29`.
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
+pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
+    FLOAT_OUT_BOY_DEFAULT_CONFIG[179] != 0;
+pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: u8 = FLOAT_OUT_BOY_DEFAULT_CONFIG[227];
+pub(crate) const FLOAT_OUT_BOY_DEFAULT_BEEPER_ENABLED: bool =
+    FLOAT_OUT_BOY_DEFAULT_CONFIG[242] != 0;
 
 fn is_tune_default_byte(index: usize) -> bool {
     matches!(
@@ -154,6 +159,12 @@ mod led_config_tests;
 #[repr(transparent)]
 pub(crate) struct FloatOutBoyConfigImage(CustomConfigImage<FLOAT_OUT_BOY_CONFIG_LEN>);
 
+impl Default for FloatOutBoyConfigImage {
+    fn default() -> Self {
+        Self::defaults()
+    }
+}
+
 impl core::ops::Deref for FloatOutBoyConfigImage {
     type Target = CustomConfigImage<FLOAT_OUT_BOY_CONFIG_LEN>;
 
@@ -187,7 +198,12 @@ impl FloatOutBoyConfigImage {
         BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
         LEDS_ON_FIELD: CustomConfigFlagField => leds_enabled -> bool, offset: 175;
         LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField => headlights_enabled -> bool, offset: 176;
-        LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField => lights_off_when_lifted -> bool, offset: 179;
+    }
+    #[cfg(test)]
+    const LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 179);
+    #[cfg(test)]
+    pub(crate) fn lights_off_when_lifted(&self) -> bool {
+        generated_field(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD.read(self))
     }
     const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
     #[cfg(any(test, target_arch = "arm"))]

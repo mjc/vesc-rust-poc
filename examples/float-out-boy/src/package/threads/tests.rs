@@ -89,7 +89,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     super::run_float_out_boy_main_thread_with(threads, || {
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
@@ -129,7 +129,7 @@ fn float_out_boy_main_thread_tick_applies_motor_control_like_float_out_boy_loop(
     telemetry.set_imu_ready(true);
     let imu = telemetry.imu();
     let bindings = telemetry.motor();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.request_motor_current(MotorCurrent::new(Current::from_amps(3.5)));
 
     super::run_float_out_boy_main_thread_with(threads, || {
@@ -216,7 +216,7 @@ fn float_out_boy_main_thread_tick_drives_duty_haptic_through_typed_motor_audio()
 fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_loop() {
     let telemetry = FirmwareTest::new();
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
     config[242] = 1;
     assert!(state.store_serialized_config(&config));
@@ -249,7 +249,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
 #[test]
 fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
     let telemetry = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
     config[242] = 1;
     assert!(state.store_serialized_config(&config));
@@ -269,7 +269,7 @@ fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
 fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
     let _firmware = FirmwareTest::new();
     for (remote_type, expected) in [(0, true), (1, true), (2, false)] {
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut state = FloatOutBoyPackageState::default();
         let mut config = default_float_out_boy_config_bytes();
         config[79] = remote_type;
         config[242] = 0;
@@ -287,7 +287,7 @@ fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
 #[test]
 fn enabling_the_beeper_after_startup_acquires_ppm_instead_of_reproducing_refloats_bug() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
     config[79] = 2;
     config[242] = 0;
@@ -487,7 +487,7 @@ fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
 
 #[test]
 fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
     state.record_aux_backup_failure();
 
@@ -580,7 +580,7 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
 #[test]
 fn aux_tick_does_not_touch_backup_before_threshold() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
     let mut stores = 0;
 

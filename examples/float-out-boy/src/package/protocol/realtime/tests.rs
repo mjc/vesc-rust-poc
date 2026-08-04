@@ -176,7 +176,7 @@ fn float32_auto_zeros_small_normal_like_float_out_boy() {
 #[test]
 fn app_data_processes_non_running_realtime_data_like_float_out_boy_qml() {
     let response = encode_float_out_boy_realtime_data_response(
-        &FloatOutBoyAllDataPayloads::source_startup(),
+        &FloatOutBoyAllDataPayloads::default(),
         TimestampTicks::from_ticks(0),
     );
     let bytes = response.as_bytes();

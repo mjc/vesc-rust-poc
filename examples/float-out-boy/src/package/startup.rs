@@ -1,8 +1,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
-use crate::domain::FloatOutBoyAllDataPayloads;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::PackageStart;
 
 /// Allocate and install source-startup Float Out Boy state through firmware memory.
@@ -10,8 +8,8 @@ use vescpkg_rs::PackageStart;
 /// Upstream uses firmware `malloc(sizeof(Data))` at `third_party/float-out-boy/src/main.c:2419`,
 /// reads config in `data_init` at `third_party/float-out-boy/src/main.c:2424`, and stores the same
 /// pointer in `info->arg` at `third_party/float-out-boy/src/main.c:2432`. Rust defers the EEPROM read
-/// to the main-thread entry because its compiled 1976-byte loader call chain leaves almost no margin
-/// in VESC's 2048-byte evaluator stack. This path
+/// to the main-thread entry so the loader call chain stays within VESC's 2048-byte evaluator stack.
+/// This path
 /// still installs the narrow `FloatOutBoyPackageState` before the registration tail at
 /// `third_party/float-out-boy/src/main.c:2455-2459`.
 ///
@@ -19,9 +17,7 @@ use vescpkg_rs::PackageStart;
 fn allocate_float_out_boy_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    start.install_runtime_state(FloatOutBoyPackageState::new(
-        FloatOutBoyAllDataPayloads::source_startup(),
-    ))?;
+    start.install_runtime_state(FloatOutBoyPackageState::default())?;
     #[cfg(target_arch = "arm")]
     {
         let buffer = start.take_data_recorder_buffer();

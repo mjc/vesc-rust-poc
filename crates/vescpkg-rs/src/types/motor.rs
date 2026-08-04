@@ -395,7 +395,7 @@ impl FirmwareFaultWireCode {
 }
 
 /// Positive motor-current limit magnitude.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MotorCurrentLimit(Current);
 

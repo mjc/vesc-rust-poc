@@ -3,18 +3,41 @@
 //! Integration coverage for typed motor handbrake commands.
 
 use vescpkg_rs::{
-    AmpHoursCharged, AmpHoursDischarged, AngleDegrees, BatteryCellCount, BatteryLevel,
-    BrakeCurrent, BrakeCurrentRelative, Charge, Current, CurrentOffDelay, CurrentRelative,
-    DCurrent, DirectionalMotorCurrent, DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy,
-    EnergyCounterReset, FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative,
-    InputCurrent, MotorCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
-    MotorSelection, MotorTelemetry, OdometerMeters, OpenLoopCurrent, OpenLoopPhase, PidPosition,
+    AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AverageMosfetTemperature,
+    AverageMotorTemperature, BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative,
+    Charge, Current, CurrentOffDelay, CurrentRelative, DCurrent, DirectionalMotorCurrent,
+    DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy, EnergyCounterReset, FetTemperature,
+    FirmwareFault, FirmwareFaultId, HandbrakeCurrent, HandbrakeRelative, InputCurrent,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorOutput, MotorReleaseOutcome,
+    MotorSelection, MotorTelemetry, MotorTemperature, OdometerMeters, OpenLoopCurrent,
+    OpenLoopPhase, PeakMosfetTemperature, PeakMotorTemperature, PidPosition,
     PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
-    TachometerReset, TachometerSteps, Temperature, TemperatureLimitStart, TotalMotorCurrent,
-    VehicleSpeed, VescSeconds, WattHoursRemaining,
+    TachometerReset, TachometerSteps, Temperature, TemperatureLimitEnd, TemperatureLimitStart,
+    TotalMotorCurrent, VehicleSpeed, VescSeconds, WattHoursRemaining,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
+
+#[test]
+fn motor_and_temperature_defaults_are_semantic_zeroes() {
+    assert_eq!(MotorCurrentLimit::default().current(), Current::ZERO);
+    let temperatures = [
+        FetTemperature::default().temperature(),
+        MotorTemperature::default().temperature(),
+        MosfetTemperature::default().temperature(),
+        AverageMosfetTemperature::default().temperature(),
+        PeakMosfetTemperature::default().temperature(),
+        AverageMotorTemperature::default().temperature(),
+        PeakMotorTemperature::default().temperature(),
+        TemperatureLimitStart::default().temperature(),
+        TemperatureLimitEnd::default().temperature(),
+    ];
+    assert!(
+        temperatures
+            .into_iter()
+            .all(|value| value == Temperature::ZERO)
+    );
+}
 
 #[test]
 #[allow(clippy::too_many_lines)]

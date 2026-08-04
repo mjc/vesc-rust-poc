@@ -19,7 +19,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 fn requested_current_applies_like_float_out_boy_motor_control() {
     let motor = FirmwareTest::new();
     let bindings = motor.motor();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     state.request_motor_current(MotorCurrent::new(Current::from_amps(6.25)));
     assert!(state.apply_requested_motor_current(bindings));
