@@ -108,76 +108,19 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FloatOutBoyEepromImage([u8; FLOAT_OUT_BOY_EEPROM_LEN]);
-
-#[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FloatOutBoyEepromImageError;
-
-impl FloatOutBoyEepromImage {
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) const fn from_bytes(bytes: &[u8; FLOAT_OUT_BOY_EEPROM_LEN]) -> Self {
-        Self(*bytes)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    pub(super) const fn as_bytes(&self) -> &[u8; FLOAT_OUT_BOY_EEPROM_LEN] {
-        &self.0
-    }
-
-    #[cfg(test)]
-    pub(super) const fn into_bytes(self) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
-        self.0
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn load(effects: &FirmwareEffects) -> Result<Self, vescpkg_rs::EepromError> {
-        vescpkg_rs::CustomEeprom::new()
-            .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects)
-            .map(|bytes| Self::from_bytes(&bytes))
-    }
-
-    fn store(self, effects: &FirmwareEffects) -> Result<(), vescpkg_rs::EepromError> {
-        let eeprom = vescpkg_rs::CustomEeprom::new();
-        let signature_offset = vescpkg_rs::EepromWordOffset::from_index(0);
-        let payload_offset = vescpkg_rs::EepromWordOffset::from_index(1);
-
-        eeprom.write_at(
-            effects,
-            signature_offset,
-            vescpkg_rs::EepromWord::from_u32(0),
-        )?;
-        eeprom.write_bytes_at_offset(effects, payload_offset, self.payload_bytes())?;
-        eeprom.write_at(effects, signature_offset, self.signature_word())
-    }
-
-    const fn signature_word(self) -> vescpkg_rs::EepromWord {
-        let [first, second, third, fourth, ..] = self.0;
-        vescpkg_rs::EepromWord::from_ne_bytes([first, second, third, fourth])
-    }
-
-    fn payload_bytes(&self) -> &[u8] {
-        &self.0[vescpkg_rs::EepromWord::BYTE_LEN..]
-    }
-}
-
-impl From<FloatOutBoyConfigImage> for FloatOutBoyEepromImage {
-    fn from(config: FloatOutBoyConfigImage) -> Self {
-        let mut bytes = [0; FLOAT_OUT_BOY_EEPROM_LEN];
-        bytes[..FLOAT_OUT_BOY_CONFIG_LEN].copy_from_slice(config.as_bytes());
-        Self(bytes)
-    }
+pub(super) fn float_out_boy_eeprom_image(
+    config: &FloatOutBoyConfigImage,
+) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
+    let mut bytes = [0; FLOAT_OUT_BOY_EEPROM_LEN];
+    bytes[..FLOAT_OUT_BOY_CONFIG_LEN].copy_from_slice(config.as_bytes());
+    bytes
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
-    type Error = FloatOutBoyEepromImageError;
-
-    fn try_from(image: FloatOutBoyEepromImage) -> Result<Self, Self::Error> {
-        Self::from_serialized(&image.as_bytes()[..FLOAT_OUT_BOY_CONFIG_LEN])
-            .ok_or(FloatOutBoyEepromImageError)
-    }
+pub(super) fn float_out_boy_config_from_eeprom(
+    image: &[u8; FLOAT_OUT_BOY_EEPROM_LEN],
+) -> Option<FloatOutBoyConfigImage> {
+    FloatOutBoyConfigImage::from_serialized(&image[..FLOAT_OUT_BOY_CONFIG_LEN])
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -191,22 +134,23 @@ pub(in crate::package) struct FloatOutBoyPersistedConfig {
 pub(in crate::package) fn load_persisted_config(
     effects: &FirmwareEffects,
 ) -> FloatOutBoyPersistedConfig {
-    let loaded = match FloatOutBoyEepromImage::load(effects) {
-        Ok(image) => match FloatOutBoyConfigImage::try_from(image) {
-            Ok(config) => FloatOutBoyPersistedConfig {
-                config,
-                outcome: FloatOutBoyConfigLoadOutcome::Persisted,
+    let loaded =
+        match vescpkg_rs::CustomEeprom::new().read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects) {
+            Ok(image) => match float_out_boy_config_from_eeprom(&image) {
+                Some(config) => FloatOutBoyPersistedConfig {
+                    config,
+                    outcome: FloatOutBoyConfigLoadOutcome::Persisted,
+                },
+                None => FloatOutBoyPersistedConfig {
+                    config: FloatOutBoyConfigImage::defaults(),
+                    outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
+                },
             },
             Err(_) => FloatOutBoyPersistedConfig {
                 config: FloatOutBoyConfigImage::defaults(),
-                outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
+                outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
             },
-        },
-        Err(_) => FloatOutBoyPersistedConfig {
-            config: FloatOutBoyConfigImage::defaults(),
-            outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
-        },
-    };
+        };
     log_config_load_fallback(effects, loaded.outcome);
     loaded
 }
@@ -215,7 +159,10 @@ pub(in crate::package) fn store_persisted_config(
     effects: &FirmwareEffects,
     config: &FloatOutBoyConfigImage,
 ) -> bool {
-    let stored = FloatOutBoyEepromImage::from(*config).store(effects).is_ok();
+    let image = float_out_boy_eeprom_image(config);
+    let stored = vescpkg_rs::CustomEeprom::new()
+        .write_signature_committed_image(effects, &image)
+        .is_ok();
     log_config_store_result(effects, stored);
     stored
 }
