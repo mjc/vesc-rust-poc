@@ -18,11 +18,6 @@ impl Branch {
         }
     }
 
-    #[inline]
-    pub(super) const fn is_braking(self) -> bool {
-        matches!(self, Self::Brake)
-    }
-
     /// Compute upstream's speed-adjusted deadband/ramp/saturated booster target.
     #[inline]
     pub(super) fn target_current(
@@ -64,38 +59,20 @@ impl Branch {
             current * proportional.signum()
         }
     }
-
-    #[inline]
-    fn filtered_current(
-        self,
-        config: LoopConfig,
-        motor_erpm: ElectricalSpeed,
-        proportional: AngleDegrees,
-        previous: MotorCurrent,
-    ) -> MotorCurrent {
-        // C map: `booster.c:74-75` uses a 1% target / 99% previous filter.
-        self.target_current(config, motor_erpm, proportional) * 0.01 + previous * 0.99
-    }
 }
 
 impl LoopInput {
-    #[inline]
-    pub(super) fn booster_proportional(self) -> AngleDegrees {
-        // C map: `main.c:921-922` subtracts brake tilt and raw pitch.
-        self.setpoint.angle() - self.brake_tilt_setpoint.angle() - self.raw_pitch
-    }
-
     #[inline]
     pub(super) fn filtered_booster_current(
         self,
         config: LoopConfig,
         previous: MotorCurrent,
     ) -> MotorCurrent {
-        Branch::from_motor_current(self.motor_current).filtered_current(
-            config,
-            self.motor_erpm,
-            self.booster_proportional(),
-            previous,
-        )
+        let branch = Branch::from_motor_current(self.motor_current);
+        // C map: `main.c:921-922` subtracts brake tilt and raw pitch.
+        let proportional =
+            self.setpoint.angle() - self.brake_tilt_setpoint.angle() - self.raw_pitch;
+        // C map: `booster.c:74-75` uses a 1% target / 99% previous filter.
+        branch.target_current(config, self.motor_erpm, proportional) * 0.01 + previous * 0.99
     }
 }
