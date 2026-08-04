@@ -285,7 +285,7 @@ pub use numeric::{
 pub mod __macro_support;
 
 #[cfg(feature = "math")]
-pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
+pub use ahrs::{Ahrs, AhrsParameterError, AxisMahony, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,

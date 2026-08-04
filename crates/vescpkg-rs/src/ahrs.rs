@@ -5,8 +5,9 @@
 )]
 
 use crate::{
-    ImuAcceleration, ImuMagneticField, ImuOrientation, ImuQuaternion, ImuQuaternionW,
-    ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample,
+    AccelerationG, AngleRadians, AngularVelocity, ImuAcceleration, ImuAngularRate,
+    ImuMagneticField, ImuOrientation, ImuQuaternion, ImuQuaternionW, ImuQuaternionX,
+    ImuQuaternionY, ImuQuaternionZ, ImuReadSample, MahonyPitchGain, MahonyRollGain, Ratio,
 };
 
 fn initial_quaternion(
@@ -64,6 +65,202 @@ fn orientation_from_quaternion(quaternion: [f32; 4]) -> ImuOrientation {
         ImuQuaternionY::new(quaternion[2]),
         ImuQuaternionZ::new(quaternion[3]),
     ))
+}
+
+/// Fixed-state Mahony filter with independent pitch and roll feedback gains.
+///
+/// Callers select their acceleration-magnitude smoothing and confidence falloff
+/// on each update, keeping product policy outside the reusable filter state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AxisMahony {
+    orientation: [f32; 4],
+    accel_magnitude: AccelerationG,
+    feedback: [f32; 3],
+}
+
+impl Default for AxisMahony {
+    fn default() -> Self {
+        Self {
+            orientation: [1.0, 0.0, 0.0, 0.0],
+            accel_magnitude: AccelerationG::from_g(1.0),
+            feedback: [2.0, 1.4, 1.7],
+        }
+    }
+}
+
+impl AxisMahony {
+    /// Build the filter from an existing firmware orientation.
+    #[must_use]
+    pub fn from_orientation(orientation: ImuOrientation) -> Self {
+        let quaternion = orientation.quaternion();
+        Self {
+            orientation: [
+                f32::from(quaternion.w()),
+                f32::from(quaternion.x()),
+                f32::from(quaternion.y()),
+                f32::from(quaternion.z()),
+            ],
+            ..Self::default()
+        }
+    }
+
+    /// Configure pitch and roll feedback; yaw uses their midpoint.
+    pub fn configure(&mut self, pitch: MahonyPitchGain, roll: MahonyRollGain) {
+        self.feedback = [
+            pitch.value(),
+            roll.value(),
+            f32::midpoint(pitch.value(), roll.value()),
+        ];
+    }
+
+    /// Return the configured pitch and roll feedback gains.
+    #[must_use]
+    pub const fn configured_gains(&self) -> (MahonyPitchGain, MahonyRollGain) {
+        (
+            MahonyPitchGain::new(self.feedback[0]),
+            MahonyRollGain::new(self.feedback[1]),
+        )
+    }
+
+    /// Return the current normalized orientation.
+    #[must_use]
+    pub fn orientation(&self) -> ImuOrientation {
+        orientation_from_quaternion(self.orientation)
+    }
+
+    /// Return pitch from the current quaternion with a bounded projection.
+    #[must_use]
+    pub fn pitch(&self) -> AngleRadians {
+        let [scalar, body_x, body_y, body_z] = self.orientation;
+        let projection = -2.0 * (body_x * body_z - scalar * body_y);
+        AngleRadians::from_radians(crate::asin(projection.clamp(-1.0, 1.0)))
+    }
+
+    /// Integrate one IMU sample with caller-owned acceleration confidence policy.
+    pub fn update(
+        &mut self,
+        sample: ImuReadSample,
+        acceleration_smoothing: Ratio,
+        confidence_falloff: f32,
+    ) {
+        let gyro = self.gyro_with_accel_correction(
+            sample.angular_rate(),
+            sample.acceleration(),
+            acceleration_smoothing,
+            confidence_falloff,
+        );
+        self.integrate_gyro(gyro, sample.period().duration());
+        self.normalize_quaternion();
+    }
+
+    fn gyro_with_accel_correction(
+        &mut self,
+        gyro: ImuAngularRate,
+        acceleration: ImuAcceleration,
+        acceleration_smoothing: Ratio,
+        confidence_falloff: f32,
+    ) -> [AngularVelocity; 3] {
+        let gyro = gyro.map_axes(|roll, pitch, yaw| {
+            [
+                roll.angular_velocity(),
+                pitch.angular_velocity(),
+                yaw.angular_velocity(),
+            ]
+        });
+        Self::measured_gravity(acceleration).map_or_else(
+            || gyro,
+            |(accel_norm, measured_gravity)| {
+                let confidence =
+                    self.accel_confidence(accel_norm, acceleration_smoothing, confidence_falloff);
+                let error = self.accel_error(measured_gravity);
+                let gains = self.feedback_gains(confidence);
+                core::array::from_fn(|axis| {
+                    gyro[axis] + AngularVelocity::from_radians_per_second(gains[axis] * error[axis])
+                })
+            },
+        )
+    }
+
+    fn measured_gravity(acceleration: ImuAcceleration) -> Option<(AccelerationG, [f32; 3])> {
+        acceleration.map_axes(|x, y, z| {
+            let measured = [
+                x.acceleration().as_g(),
+                y.acceleration().as_g(),
+                z.acceleration().as_g(),
+            ];
+            let norm = crate::sqrt(
+                measured[0] * measured[0] + measured[1] * measured[1] + measured[2] * measured[2],
+            );
+            (norm > 0.01).then(|| {
+                let reciprocal = 1.0 / norm;
+                (
+                    AccelerationG::from_g(norm),
+                    measured.map(|axis| axis * reciprocal),
+                )
+            })
+        })
+    }
+
+    fn accel_error(&self, measured: [f32; 3]) -> [f32; 3] {
+        let [scalar, body_x, body_y, body_z] = self.orientation;
+        let estimated = [
+            body_x * body_z - scalar * body_y,
+            scalar * body_x + body_y * body_z,
+            scalar * scalar - 0.5 + body_z * body_z,
+        ];
+        [
+            measured[1] * estimated[2] - measured[2] * estimated[1],
+            measured[2] * estimated[0] - measured[0] * estimated[2],
+            measured[0] * estimated[1] - measured[1] * estimated[0],
+        ]
+    }
+
+    fn integrate_gyro(&mut self, gyro: [AngularVelocity; 3], dt: crate::VescSeconds) {
+        let rotation = [
+            (gyro[0] * dt * 0.5).as_radians(),
+            (gyro[1] * dt * 0.5).as_radians(),
+            (gyro[2] * dt * 0.5).as_radians(),
+        ];
+        let [scalar, body_x, body_y, body_z] = self.orientation;
+        let [roll, pitch, yaw] = rotation;
+        let dot = body_x * roll + body_y * pitch + body_z * yaw;
+        let cross = [
+            body_y * yaw - body_z * pitch,
+            body_z * roll - body_x * yaw,
+            body_x * pitch - body_y * roll,
+        ];
+        self.orientation[0] += -dot;
+        self.orientation[1] += scalar * roll + cross[0];
+        self.orientation[2] += scalar * pitch + cross[1];
+        self.orientation[3] += scalar * yaw + cross[2];
+    }
+
+    fn normalize_quaternion(&mut self) {
+        let norm = crate::sqrt(self.orientation.iter().map(|value| value * value).sum());
+        for value in &mut self.orientation {
+            *value /= norm;
+        }
+    }
+
+    fn accel_confidence(
+        &mut self,
+        magnitude: AccelerationG,
+        smoothing: Ratio,
+        falloff: f32,
+    ) -> f32 {
+        self.accel_magnitude = self.accel_magnitude * smoothing.complement().as_ratio()
+            + magnitude * smoothing.as_ratio();
+        (1.0 - falloff * crate::sqrt((self.accel_magnitude.as_g() - 1.0).abs())).max(0.0)
+    }
+
+    fn feedback_gains(&self, confidence: f32) -> [f32; 3] {
+        let [pitch, roll, yaw] = self.feedback;
+        [
+            2.0 * roll * confidence,
+            2.0 * pitch * confidence,
+            2.0 * yaw * confidence,
+        ]
+    }
 }
 
 /// Invalid parameter returned by a package-owned AHRS configuration change.

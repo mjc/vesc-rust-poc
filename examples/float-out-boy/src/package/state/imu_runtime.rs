@@ -439,7 +439,7 @@ fn evaluate_transition_phase(
     let balance_pitch = if ride_state.mode() == FloatOutBoyMode::Flywheel {
         FloatOutBoyRealtimeBalancePitch::new(pitch)
     } else {
-        state.balance_filter.balance_pitch()
+        FloatOutBoyRealtimeBalancePitch::new(state.balance_filter.pitch())
     };
     let ready_flywheel_stop = run_state == FloatOutBoyRunState::Ready
         && ride_state.mode() == FloatOutBoyMode::Flywheel

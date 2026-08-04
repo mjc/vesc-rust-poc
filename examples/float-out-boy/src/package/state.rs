@@ -482,7 +482,8 @@ impl FloatOutBoyPackageState {
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn update_balance_filter(&mut self, sample: vescpkg_rs::prelude::ImuReadSample) {
-        self.balance_filter.update(sample);
+        self.balance_filter
+            .update(sample, Ratio::from_ratio_const(0.1), 0.02);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -492,8 +493,9 @@ impl FloatOutBoyPackageState {
         // `third_party/float-out-boy/src/main.c:1168-1171` and
         // `third_party/float-out-boy/src/balance_filter.c:53-61`.
         self.balance_filter = BalanceFilter::from_orientation(orientation);
+        let filter = self.serialized_config.filter();
         self.balance_filter
-            .configure_from(self.serialized_config.filter());
+            .configure(filter.mahony_kp(), filter.mahony_kp_roll());
     }
 
     #[cfg(test)]

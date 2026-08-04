@@ -3,12 +3,22 @@
 #![allow(missing_docs)]
 
 use vescpkg_rs::{
-    AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
-    ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll, ImuAngularRateYaw,
-    ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ, ImuQuaternionW,
-    ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ, ImuReadSample, ImuSamplePeriod,
-    MagneticFluxDensity, VescSeconds,
+    AccelerationG, AngularVelocity, AxisMahony, ImuAcceleration, ImuAccelerationX,
+    ImuAccelerationY, ImuAccelerationZ, ImuAngularRate, ImuAngularRatePitch, ImuAngularRateRoll,
+    ImuAngularRateYaw, ImuMagneticField, ImuMagneticFieldX, ImuMagneticFieldY, ImuMagneticFieldZ,
+    ImuOrientation, ImuQuaternion, ImuQuaternionW, ImuQuaternionX, ImuQuaternionY, ImuQuaternionZ,
+    ImuReadSample, ImuSamplePeriod, MagneticFluxDensity, MahonyPitchGain, MahonyRollGain, Ratio,
+    VescSeconds,
 };
+
+#[test]
+fn axis_mahony_starts_at_identity_with_fixed_state_layout() {
+    let filter = AxisMahony::default();
+
+    assert_eq!(filter.pitch().as_radians().to_bits(), (-0.0_f32).to_bits());
+    assert_eq!(core::mem::size_of::<AxisMahony>(), 32);
+    assert_eq!(core::mem::align_of::<AxisMahony>(), 4);
+}
 
 fn sample(period: f32, acceleration: [f32; 3], yaw_rate: f32) -> ImuReadSample {
     ImuReadSample::from_parts(
@@ -29,6 +39,78 @@ fn sample(period: f32, acceleration: [f32; 3], yaw_rate: f32) -> ImuReadSample {
         ),
         ImuSamplePeriod::new(VescSeconds::from_seconds(period)),
     )
+}
+
+fn axis_sample(period: f32, acceleration: [f32; 3], rate: [f32; 3]) -> ImuReadSample {
+    ImuReadSample::from_parts(
+        ImuAcceleration::from_axes(
+            ImuAccelerationX::new(AccelerationG::from_g(acceleration[0])),
+            ImuAccelerationY::new(AccelerationG::from_g(acceleration[1])),
+            ImuAccelerationZ::new(AccelerationG::from_g(acceleration[2])),
+        ),
+        ImuAngularRate::from_axes(
+            ImuAngularRateRoll::new(AngularVelocity::from_radians_per_second(rate[0])),
+            ImuAngularRatePitch::new(AngularVelocity::from_radians_per_second(rate[1])),
+            ImuAngularRateYaw::new(AngularVelocity::from_radians_per_second(rate[2])),
+        ),
+        ImuMagneticField::from_axes(
+            ImuMagneticFieldX::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldY::new(MagneticFluxDensity::from_microteslas(0.0)),
+            ImuMagneticFieldZ::new(MagneticFluxDensity::from_microteslas(0.0)),
+        ),
+        ImuSamplePeriod::new(VescSeconds::from_seconds(period)),
+    )
+}
+
+#[test]
+fn axis_mahony_preserves_refloat_projection_gains_and_trajectory() {
+    let mut filter = AxisMahony::from_orientation(ImuOrientation::from_quaternion(
+        ImuQuaternion::from_components(
+            ImuQuaternionW::new(1.0),
+            ImuQuaternionX::new(0.0),
+            ImuQuaternionY::new(1.0),
+            ImuQuaternionZ::new(0.0),
+        ),
+    ));
+    assert_eq!(
+        filter.pitch().as_radians().to_bits(),
+        core::f32::consts::FRAC_PI_2.to_bits()
+    );
+    filter.configure(MahonyPitchGain::new(4.0), MahonyRollGain::new(2.0));
+    assert_eq!(
+        filter.configured_gains(),
+        (MahonyPitchGain::new(4.0), MahonyRollGain::new(2.0))
+    );
+
+    let mut filter = AxisMahony::default();
+    for (acceleration, angular_rate, period) in [
+        ([0.2, -0.1, 0.97], [0.3, -0.2, 0.1], 0.01),
+        ([-0.4, 0.3, 0.85], [-0.6, 0.4, -0.2], 0.02),
+        ([0.05, 0.15, 1.1], [0.2, 0.7, 0.5], 0.015),
+    ] {
+        filter.update(
+            axis_sample(period, acceleration, angular_rate),
+            Ratio::from_ratio_const(0.1),
+            0.02,
+        );
+    }
+    let quaternion = filter.orientation().quaternion();
+    assert_eq!(
+        [
+            f32::from(quaternion.w()),
+            f32::from(quaternion.x()),
+            f32::from(quaternion.y()),
+            f32::from(quaternion.z()),
+        ]
+        .map(f32::to_bits),
+        [
+            0.999_904_33,
+            0.002_009_128_7,
+            0.013_503_214,
+            0.002_211_600_8,
+        ]
+        .map(f32::to_bits),
+    );
 }
 
 #[test]
