@@ -1,6 +1,53 @@
 //! Wrapping VESC system-tick timer operations.
 
-use crate::{SYSTEM_TICK_RATE_HZ, TimestampTicks, VescSeconds};
+use crate::{SYSTEM_TICK_RATE_HZ, SystemTicks, TimestampTicks, VescSeconds};
+
+/// A restartable timer backed by the wrapping VESC system clock.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct WrappingTimer(TimestampTicks);
+
+impl WrappingTimer {
+    /// Start a timer at one VESC system-clock timestamp.
+    #[must_use]
+    pub const fn started_at(started: TimestampTicks) -> Self {
+        Self(started)
+    }
+
+    /// Return when this timer was last started.
+    #[must_use]
+    pub const fn started(self) -> TimestampTicks {
+        self.0
+    }
+
+    /// Return the wrapping elapsed system ticks at one timestamp.
+    #[must_use]
+    pub const fn elapsed(self, now: TimestampTicks) -> SystemTicks {
+        now.wrapping_duration_since(self.0)
+    }
+
+    /// Restart this timer at the supplied timestamp.
+    pub fn restart(&mut self, now: TimestampTicks) {
+        self.0 = now;
+    }
+
+    /// Return whether this timer is strictly older than a typed duration.
+    #[must_use]
+    pub fn older_than(self, now: TimestampTicks, duration: VescSeconds) -> bool {
+        timer_older(now, self.0, duration)
+    }
+
+    /// Return whether this timer is strictly older than whole seconds.
+    #[must_use]
+    pub fn older_than_secs(self, now: TimestampTicks, seconds: u32) -> bool {
+        timer_older_whole_seconds(now, self.0, seconds)
+    }
+
+    /// Force this timer to be a whole duration in the past.
+    pub fn expire_whole_seconds(&mut self, now: TimestampTicks, seconds: u32) {
+        self.0 = expire_timer_whole_seconds(now, seconds);
+    }
+}
 
 /// Move a timer into the past by a whole number of seconds, with firmware wrapping.
 #[must_use]
@@ -31,7 +78,9 @@ pub fn timer_older(now: TimestampTicks, then: TimestampTicks, duration: VescSeco
 
 #[cfg(test)]
 mod tests {
-    use super::{expire_timer_whole_seconds, timer_older, timer_older_whole_seconds};
+    use super::{
+        WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
+    };
     use crate::{TimestampTicks, VescSeconds};
 
     #[test]
@@ -64,5 +113,25 @@ mod tests {
             duration
         ));
         assert!(timer_older(TimestampTicks::from_ticks(102), then, duration));
+    }
+
+    #[test]
+    fn wrapping_timer_is_timestamp_sized_and_owns_restart_and_expiry() {
+        assert_eq!(
+            core::mem::size_of::<WrappingTimer>(),
+            core::mem::size_of::<TimestampTicks>(),
+        );
+
+        let mut timer = WrappingTimer::started_at(TimestampTicks::from_ticks(u32::MAX - 5_000));
+        assert!(!timer.older_than_secs(TimestampTicks::from_ticks(4_999), 1));
+        assert!(timer.older_than_secs(TimestampTicks::from_ticks(5_000), 1));
+
+        timer.restart(TimestampTicks::from_ticks(42));
+        assert_eq!(timer.started(), TimestampTicks::from_ticks(42));
+        timer.expire_whole_seconds(TimestampTicks::from_ticks(0), 60);
+        assert_eq!(
+            timer.started(),
+            TimestampTicks::from_ticks(0_u32.wrapping_sub(600_000)),
+        );
     }
 }

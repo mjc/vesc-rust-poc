@@ -327,8 +327,12 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         payloads.mode4(),
     ));
     state.upside_down_flags.started = true;
-    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
-    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+    state
+        .upside_down_fault_ticks
+        .restart(TimestampTicks::from_ticks(0));
+    state
+        .fault_switch_ticks
+        .restart(TimestampTicks::from_ticks(10_000));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -381,8 +385,12 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         payloads.mode4(),
     ));
     state.upside_down_flags.started = true;
-    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
-    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+    state
+        .upside_down_fault_ticks
+        .restart(TimestampTicks::from_ticks(0));
+    state
+        .fault_switch_ticks
+        .restart(TimestampTicks::from_ticks(10_000));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,

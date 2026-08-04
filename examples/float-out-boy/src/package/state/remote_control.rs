@@ -1,10 +1,10 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
+use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, TimestampTicks,
 };
-use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
 
 fn zero_motor_current() -> MotorCurrent {
     // C map: `reset_runtime_vars` and the RC-move idle branches clear current
@@ -246,7 +246,7 @@ impl RemoteControlState {
         motor_erpm: Rpm,
         remote_throttle: FloatOutBoyRemoteThrottleConfig<'_>,
         system_time_ticks: TimestampTicks,
-        disengage_ticks: TimestampTicks,
+        disengage_ticks: WrappingTimer,
     ) -> Option<MotorCurrent> {
         // C map: READY falls through to `do_rc_move(d)` after startup checks at
         // `third_party/float-out-boy/src/main.c:1033-1069`.
@@ -283,7 +283,7 @@ impl RemoteControlState {
         &mut self,
         remote_throttle: FloatOutBoyRemoteThrottleConfig<'_>,
         system_time_ticks: TimestampTicks,
-        disengage_ticks: TimestampTicks,
+        disengage_ticks: WrappingTimer,
     ) -> Option<MotorCurrent> {
         // C map: READY remote throttle stays idle until the max current,
         // grace period, and deadband checks all pass at
@@ -292,11 +292,7 @@ impl RemoteControlState {
         let input = self.input.ratio().as_ratio();
         let grace_period = remote_throttle.grace_period();
         if current_max <= MotorCurrent::new(Current::ZERO)
-            || !float_out_boy_ticks_elapsed_seconds(
-                system_time_ticks,
-                disengage_ticks,
-                grace_period,
-            )
+            || !disengage_ticks.older_than(system_time_ticks, grace_period)
             || input.abs() <= 0.02
         {
             self.current = zero_motor_current();

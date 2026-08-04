@@ -433,7 +433,7 @@ fn assert_restored_runtime_state(
     saved: &FloatOutBoyConfigImage,
 ) {
     assert_eq!(&state.serialized_config, saved);
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(0));
+    assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(0));
     assert_eq!(
         state.configured_mahony_gains_for_test().0,
         MahonyPitchGain::new(2.5)
@@ -463,7 +463,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(42);
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    state.idle_ticks = TimestampTicks::from_ticks(7);
+    state.idle_ticks.restart(TimestampTicks::from_ticks(7));
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     assert!(state.serialized_config.editor().set_disabled(true));
     assert!(
@@ -538,7 +538,10 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     let restarted = FloatOutBoyPackageState::from_persisted_config(
         FloatOutBoyAllDataPayloads::source_startup(),
     );
-    assert_eq!(restarted.idle_ticks, TimestampTicks::from_ticks(42));
+    assert_eq!(
+        restarted.idle_ticks.started(),
+        TimestampTicks::from_ticks(42)
+    );
     assert_eq!(restarted.serialized_config, saved);
     assert_eq!(
         restarted

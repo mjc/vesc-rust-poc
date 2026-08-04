@@ -1,9 +1,5 @@
 use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
-use vescpkg_rs::{TimestampTicks, VescSeconds};
-use vescpkg_rs::{
-    timer_older as float_out_boy_ticks_elapsed_seconds,
-    timer_older_whole_seconds as float_out_boy_ticks_elapsed,
-};
+use vescpkg_rs::{TimestampTicks, VescSeconds, WrappingTimer, timer_older};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BmsReadyAlertFault {
@@ -16,7 +12,7 @@ pub(super) struct BmsRuntimeState {
     sample: FloatOutBoyBmsSample,
     faults: FloatOutBoyBmsFaults,
     start_ticks: Option<TimestampTicks>,
-    alert_ticks: TimestampTicks,
+    alert_ticks: WrappingTimer,
 }
 
 impl Default for BmsRuntimeState {
@@ -25,7 +21,7 @@ impl Default for BmsRuntimeState {
             sample: FloatOutBoyBmsSample::default(),
             faults: FloatOutBoyBmsFaults::empty(),
             start_ticks: None,
-            alert_ticks: TimestampTicks::from_ticks(0),
+            alert_ticks: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
         }
     }
 }
@@ -46,7 +42,7 @@ impl BmsRuntimeState {
         system_time_ticks: TimestampTicks,
     ) {
         let start_ticks = *self.start_ticks.get_or_insert(system_time_ticks);
-        let startup_timeout_elapsed = float_out_boy_ticks_elapsed_seconds(
+        let startup_timeout_elapsed = timer_older(
             system_time_ticks,
             start_ticks,
             VescSeconds::from_seconds(5.0),
@@ -62,21 +58,21 @@ impl BmsRuntimeState {
     pub(super) fn take_ready_alert_fault(
         &mut self,
         system_time_ticks: TimestampTicks,
-        disengage_ticks: TimestampTicks,
+        disengage_ticks: WrappingTimer,
     ) -> Option<BmsReadyAlertFault> {
         let connection = self.faults.contains(FloatOutBoyBmsFaults::CONNECTION);
         let balance = self.faults.contains(FloatOutBoyBmsFaults::CELL_BALANCE)
-            && float_out_boy_ticks_elapsed(system_time_ticks, disengage_ticks, 5);
-        ((connection || balance)
-            && float_out_boy_ticks_elapsed(system_time_ticks, self.alert_ticks, 15))
-        .then(|| {
-            self.alert_ticks = system_time_ticks;
-            if connection {
-                BmsReadyAlertFault::Connection
-            } else {
-                BmsReadyAlertFault::CellBalance
-            }
-        })
+            && disengage_ticks.older_than_secs(system_time_ticks, 5);
+        ((connection || balance) && self.alert_ticks.older_than_secs(system_time_ticks, 15)).then(
+            || {
+                self.alert_ticks.restart(system_time_ticks);
+                if connection {
+                    BmsReadyAlertFault::Connection
+                } else {
+                    BmsReadyAlertFault::CellBalance
+                }
+            },
+        )
     }
 
     pub(super) const fn contains(&self, fault: FloatOutBoyBmsFaults) -> bool {

@@ -111,7 +111,7 @@ fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
-    state.idle_ticks = TimestampTicks::from_ticks(7);
+    state.idle_ticks.restart(TimestampTicks::from_ticks(7));
 
     assert!(state.handle_packet_with_telemetry(
         firmware.telemetry(),
@@ -123,7 +123,7 @@ fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
             1,
         ],
     ));
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+    assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(7));
 
     assert!(state.handle_packet_with_telemetry(
         firmware.telemetry(),
@@ -135,7 +135,7 @@ fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
             0,
         ],
     ));
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+    assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
 }
 
 #[test]
