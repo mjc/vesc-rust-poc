@@ -267,24 +267,16 @@ impl FloatOutBoyRealtimeDataHeader {
         }
     }
 
-    /// Return this header with fatal-error state.
-    #[must_use]
-    pub const fn with_fatal_error(mut self, fatal_error: FloatOutBoyFatalErrorState) -> Self {
-        self.fatal_error = fatal_error;
-        self
+    vescpkg_rs::const_field_builders! {
+        /// Return this header with fatal-error state.
+        pub fn with_fatal_error(fatal_error: FloatOutBoyFatalErrorState) => fatal_error;
+        /// Return this header with data-recorder flags.
+        pub fn with_data_recorder(data_recorder: FloatOutBoyDataRecorderFlags) => data_recorder;
     }
 
-    /// Return this header with data-recorder flags.
-    #[must_use]
-    pub const fn with_data_recorder(mut self, data_recorder: FloatOutBoyDataRecorderFlags) -> Self {
-        self.data_recorder = data_recorder;
-        self
-    }
-
-    /// Return the typed VESC system timestamp.
-    #[must_use]
-    pub const fn timestamp(self) -> TimestampTicks {
-        self.timestamp
+    vescpkg_rs::const_field_getters! {
+        /// Return the typed VESC system timestamp.
+        pub fn timestamp -> TimestampTicks = timestamp;
     }
 
     /// Return the Float Out Boy `v1.2.1` realtime data mask byte.
