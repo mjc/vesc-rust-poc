@@ -1,13 +1,7 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopOutput, LoopState};
 
-use super::booster::Phase as BoosterPhase;
-
 #[cfg(test)]
-use super::{
-    booster::{Profile, Proportional},
-    loop_io::PidState,
-    pid::PitchRate,
-};
+use super::{booster::Branch, loop_io::PidState, pid::PitchRate};
 
 #[cfg(test)]
 use crate::domain::{
@@ -32,8 +26,7 @@ impl LoopState {
     #[inline]
     pub(crate) fn advance_balance_loop(self, config: LoopConfig, input: LoopInput) -> LoopOutput {
         let (pid_currents, state) = self.update_pid(config, input);
-        let booster_current =
-            BoosterPhase::from_step(config, input).filtered_current(state.booster_current);
+        let booster_current = input.filtered_booster_current(config, state.booster_current);
         let pitch_based = pid_currents.pitch_based_current(
             booster_current,
             state.softstart_pid_limit,
