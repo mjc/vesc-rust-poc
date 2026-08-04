@@ -7,69 +7,12 @@ use crate::domain::{
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
-    BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
-    MotorCurrent, SampleRate, SignedRatio,
+    BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, MotorCurrent,
+    SignedRatio,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub(super) struct FloatOutBoyMotorCurrentFilter {
-    a0: f32,
-    a1: f32,
-    a2: f32,
-    b1: f32,
-    b2: f32,
-    z1: f32,
-    z2: f32,
-    enabled: bool,
-}
-
-impl FloatOutBoyMotorCurrentFilter {
-    #[cfg(test)]
-    pub(super) fn source_startup() -> Self {
-        Self::default()
-    }
-
-    fn configure(&mut self, frequency: Frequency, sample_rate: SampleRate) {
-        self.enabled = frequency.is_positive();
-        if self.enabled {
-            let k = vescpkg_rs::tan(
-                core::f32::consts::PI * frequency.as_hertz() / sample_rate.as_hertz(),
-            );
-            let norm = 1.0 / (1.0 + k / CURRENT_FILTER_Q + k * k);
-            self.a0 = k * k * norm;
-            self.a1 = 2.0 * self.a0;
-            self.a2 = self.a0;
-            self.b1 = 2.0 * (k * k - 1.0) * norm;
-            self.b2 = (1.0 - k / CURRENT_FILTER_Q + k * k) * norm;
-        }
-    }
-
-    fn process(
-        &mut self,
-        current: DirectionalMotorCurrent,
-    ) -> FloatOutBoyRealtimeFilteredMotorCurrent {
-        let input = current.current().as_amps();
-        let output = if self.enabled {
-            let output = input * self.a0 + self.z1;
-            self.z1 = input * self.a1 + self.z2 - self.b1 * output;
-            self.z2 = input * self.a2 - self.b2 * output;
-            output
-        } else {
-            input
-        };
-        FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-            Current::from_amps(output),
-        ))
-    }
-
-    pub(super) fn reset_runtime(&mut self) {
-        self.z1 = 0.0;
-        self.z2 = 0.0;
-    }
-}
 
 #[cfg(any(test, target_arch = "arm"))]
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
@@ -104,9 +47,16 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     state.motor_current_filter.configure(
         state.serialized_config.motor_current_filter_frequency(),
         state.serialized_config.startup().sample_rate(),
+        CURRENT_FILTER_Q,
     );
     let directional_current = telemetry.directional_motor_current();
-    let filtered_current = state.motor_current_filter.process(directional_current);
+    let filtered_current = FloatOutBoyRealtimeFilteredMotorCurrent::new(
+        DirectionalMotorCurrent::new(Current::from_amps(
+            state
+                .motor_current_filter
+                .process(directional_current.current().as_amps()),
+        )),
+    );
     let electrical_speed = telemetry.electrical_speed();
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
@@ -149,6 +99,3 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
     );
     state.all_data_payloads = payloads.with_base(base);
 }
-
-#[cfg(test)]
-mod tests;

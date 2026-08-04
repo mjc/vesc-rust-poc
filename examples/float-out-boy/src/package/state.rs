@@ -195,7 +195,7 @@ pub struct FloatOutBoyPackageState {
     balance_loop: LoopState,
     reverse_total_erpm: Rpm,
     motor_kinematics: MotorKinematicsTracker,
-    motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
+    motor_current_filter: vescpkg_rs::BiquadLowPass,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
