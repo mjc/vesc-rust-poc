@@ -8,7 +8,7 @@ use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
 use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
 #[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
+use vescpkg_rs::{AnalogPin, DigitalPin};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
 // C map: `LEDS_REFRESH_RATE` is `30` at `third_party/float-out-boy/src/leds.h:26`;
@@ -236,22 +236,17 @@ fn initialize_float_out_boy_runtime_state(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn read_float_out_boy_footpad(gpio: &vescpkg_rs::Gpio, pin: AnalogPin) -> AdcVoltage {
-    gpio.acquire_analog(pin)
-        .ok()
-        .and_then(|pin| {
-            pin.set_mode(GpioMode::Analog)
-                .ok()
-                .and_then(|()| pin.read().ok().flatten())
-        })
-        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
 fn read_float_out_boy_footpads(gpio: &vescpkg_rs::Gpio) -> (AdcVoltage, AdcVoltage) {
+    let zero = AdcVoltage::new(vescpkg_rs::Voltage::ZERO);
     (
-        read_float_out_boy_footpad(gpio, AnalogPin::ADC1),
-        read_float_out_boy_footpad(gpio, AnalogPin::ADC2),
+        gpio.sample_analog(AnalogPin::ADC1)
+            .ok()
+            .flatten()
+            .unwrap_or(zero),
+        gpio.sample_analog(AnalogPin::ADC2)
+            .ok()
+            .flatten()
+            .unwrap_or(zero),
     )
 }
 
@@ -345,10 +340,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             });
             let sleep_us = tick.map_or(1, |tick| {
                 if let Some(level) = tick.beeper_pin_level {
-                    if let Ok(pin) = ctx.firmware().gpio().acquire_digital(DigitalPin::PPM) {
-                        let _ = pin.set_mode(GpioMode::Output);
-                        let _ = pin.write(level);
-                    }
+                    let _ = ctx.firmware().gpio().write_digital(DigitalPin::PPM, level);
                 }
                 tick.sleep_us
             });

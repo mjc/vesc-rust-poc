@@ -226,13 +226,10 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         use FloatOutBoyAppDataCommand as Command;
 
-        let [package_id, command_id, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return false;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command_id) else {
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
             return false;
         };
 

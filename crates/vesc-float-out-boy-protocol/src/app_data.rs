@@ -134,43 +134,17 @@ impl FloatOutBoyAllDataRequest {
     /// Returns [`FloatOutBoyAllDataRequestError`] when the packet has the wrong
     /// length, package ID, or command ID.
     pub fn parse(bytes: &[u8]) -> Result<Self, FloatOutBoyAllDataRequestError> {
-        let [package_id, command_id, mode] = bytes else {
-            return Err(FloatOutBoyAllDataRequestError::Length {
-                actual: bytes.len(),
-            });
-        };
-
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return Err(FloatOutBoyAllDataRequestError::PackageId { value: *package_id });
-        }
-
-        if *command_id != FloatOutBoyAppDataCommand::GetAllData.id() {
-            return Err(FloatOutBoyAllDataRequestError::Command { value: *command_id });
-        }
-
-        Ok(Self::new(FloatOutBoyAllDataMode::from_source_id(*mode)))
+        let &[mode] = vesc_protocol::app_data::parse_fixed_app_data_request(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::GetAllData.id(),
+        )?;
+        Ok(Self::new(FloatOutBoyAllDataMode::from_source_id(mode)))
     }
 }
 
 /// Error returned when a Float Out Boy all-data request cannot be parsed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FloatOutBoyAllDataRequestError {
-    /// The request length is not the Float Out Boy `v1.2.1` three-byte shape.
-    Length {
-        /// Actual request byte length.
-        actual: usize,
-    },
-    /// The package ID does not match Float Out Boy.
-    PackageId {
-        /// Rejected package ID.
-        value: u8,
-    },
-    /// The command ID is not `COMMAND_GET_ALLDATA`.
-    Command {
-        /// Rejected command ID.
-        value: u8,
-    },
-}
+pub use vesc_protocol::app_data::FixedAppDataRequestError as FloatOutBoyAllDataRequestError;
 
 #[cfg(test)]
 mod tests;

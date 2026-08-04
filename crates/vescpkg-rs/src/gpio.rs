@@ -247,6 +247,24 @@ impl Gpio {
         })
     }
 
+    /// Configure, sample, and release one analog pin.
+    pub fn sample_analog(&self, pin: AnalogPin) -> Result<Option<AdcVoltage>, GpioError> {
+        let pin = self.acquire_analog(pin)?;
+        pin.set_mode(GpioMode::Analog)?;
+        pin.read()
+    }
+
+    /// Configure, drive, and release one digital output pin.
+    pub fn write_digital(
+        &self,
+        pin: DigitalPin,
+        level: DigitalOutputLevel,
+    ) -> Result<(), GpioError> {
+        let pin = self.acquire_digital(pin)?;
+        pin.set_mode(GpioMode::Output)?;
+        pin.write(level)
+    }
+
     // The host fixture uses one process-wide bitmap; firmware uses the
     // loader-owned runtime bitmap attached to this capability.
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
@@ -486,14 +504,16 @@ mod tests {
     fn gpio_uses_one_semantic_capability() {
         let gpio = Gpio::test((1.2, 3.4));
         assert_f32_eq!(
-            gpio.read_analog(AnalogPin::ADC1)
+            gpio.sample_analog(AnalogPin::ADC1)
+                .unwrap()
                 .expect("ADC1 present")
                 .voltage()
                 .as_volts(),
             1.2
         );
         assert_f32_eq!(
-            gpio.read_analog(AnalogPin::ADC2)
+            gpio.sample_analog(AnalogPin::ADC2)
+                .unwrap()
                 .expect("ADC2 present")
                 .voltage()
                 .as_volts(),
@@ -513,11 +533,13 @@ mod tests {
     #[test]
     fn digital_gpio_uses_typed_ppm_pin_and_output_level() {
         let gpio = Gpio::test((0.0, 0.0));
-        let ppm = gpio.acquire_digital(DigitalPin::PPM).unwrap();
 
         assert_eq!(DigitalOutputLevel::Low.firmware_level(), 0);
         assert_eq!(DigitalOutputLevel::High.firmware_level(), 1);
 
+        gpio.write_digital(DigitalPin::PPM, DigitalOutputLevel::High)
+            .unwrap();
+        let ppm = gpio.acquire_digital(DigitalPin::PPM).unwrap();
         ppm.set_mode(super::GpioMode::Output).unwrap();
         ppm.write(DigitalOutputLevel::High).unwrap();
     }

@@ -347,13 +347,10 @@ impl FloatOutBoyPackageState {
         bytes: &[u8],
         now: &mut impl FnMut() -> TimestampTicks,
     ) -> bool {
-        let [package_id, command, ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return false;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
+        let Some((command, _)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
             return false;
         };
 

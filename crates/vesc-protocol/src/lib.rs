@@ -40,6 +40,8 @@
 #[cfg(test)]
 extern crate std;
 
+/// Fixed-shape VESC app-data request parsing.
+pub mod app_data;
 /// BLE loopback wire-format helpers and response handling.
 pub mod ble_loopback;
 /// VESC firmware buffer-compatible primitive encoders.

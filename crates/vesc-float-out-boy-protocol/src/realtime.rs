@@ -12,6 +12,7 @@ use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
     MosfetTemperature, MotorCurrent, MotorTemperature, SignedRatio, TimestampTicks,
 };
+use vescpkg_rs::protocol_buffer::flag_if;
 
 macro_rules! realtime_data_items {
     (
@@ -287,18 +288,16 @@ impl FloatOutBoyRealtimeDataHeader {
     /// Return the Float Out Boy `v1.2.1` realtime data mask byte.
     #[must_use]
     pub const fn data_mask_compat(self) -> u8 {
-        let runtime = match self.ride_state.run_state() {
-            FloatOutBoyRunState::Running => 0x1,
-            FloatOutBoyRunState::Disabled
-            | FloatOutBoyRunState::Startup
-            | FloatOutBoyRunState::Ready => 0,
-        };
-        let charging = match self.ride_state.charging() {
-            FloatOutBoyChargingState::NotCharging => 0,
-            FloatOutBoyChargingState::Charging => 0x2,
-        };
-
-        runtime | charging | 0x4
+        flag_if(
+            matches!(self.ride_state.run_state(), FloatOutBoyRunState::Running),
+            0x1,
+        ) | flag_if(
+            matches!(
+                self.ride_state.charging(),
+                FloatOutBoyChargingState::Charging
+            ),
+            0x2,
+        ) | 0x4
     }
 
     /// Return the Float Out Boy `v1.2.1` realtime extra-flags byte.
@@ -316,20 +315,25 @@ impl FloatOutBoyRealtimeDataHeader {
     /// Return the Float Out Boy `v1.2.1` realtime footpad/ride-flags byte.
     #[must_use]
     pub const fn footpad_flags_compat(self) -> u8 {
-        let charging = match self.ride_state.charging() {
-            FloatOutBoyChargingState::NotCharging => 0,
-            FloatOutBoyChargingState::Charging => 0x20,
-        };
-        let darkride = match self.ride_state.darkride() {
-            FloatOutBoyDarkRideState::Upright => 0,
-            FloatOutBoyDarkRideState::Active => 0x2,
-        };
-        let wheelslip = match self.ride_state.wheelslip() {
-            FloatOutBoyWheelSlipState::None => 0,
-            FloatOutBoyWheelSlipState::Detected => 0x1,
-        };
-
-        self.footpad_state.id() << 6 | charging | darkride | wheelslip
+        self.footpad_state.id() << 6
+            | flag_if(
+                matches!(
+                    self.ride_state.charging(),
+                    FloatOutBoyChargingState::Charging
+                ),
+                0x20,
+            )
+            | flag_if(
+                matches!(self.ride_state.darkride(), FloatOutBoyDarkRideState::Active),
+                0x2,
+            )
+            | flag_if(
+                matches!(
+                    self.ride_state.wheelslip(),
+                    FloatOutBoyWheelSlipState::Detected
+                ),
+                0x1,
+            )
     }
 
     /// Return the Float Out Boy `v1.2.1` realtime setpoint/stop byte.
