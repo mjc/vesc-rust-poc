@@ -47,6 +47,7 @@ pub use self::all_data::{
     FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode2Payload,
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
+    encode_float_out_boy_all_data_fault_response,
 };
 pub use self::app_data::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
