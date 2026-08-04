@@ -8,6 +8,115 @@ use core::{
 #[cfg(target_arch = "arm")]
 use core::{ffi::c_void, ptr};
 
+/// Bounded half-word storage prepared for one DMA ownership interval.
+///
+/// Host builds retain inline storage for deterministic tests. ARM builds
+/// acquire exactly the requested firmware allocation.
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+#[derive(Debug, PartialEq)]
+#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
+pub struct DmaHalfWordStorage<const N: usize> {
+    #[cfg(not(target_arch = "arm"))]
+    words: [u16; N],
+    #[cfg(all(feature = "alloc", target_arch = "arm"))]
+    words: Option<DmaHalfWordBuffer>,
+    len: usize,
+}
+
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+impl<const N: usize> DmaHalfWordStorage<N> {
+    /// Build empty storage without allocating firmware memory.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            #[cfg(not(target_arch = "arm"))]
+            words: [0; N],
+            #[cfg(all(feature = "alloc", target_arch = "arm"))]
+            words: None,
+            len: 0,
+        }
+    }
+
+    /// Prepare exactly `len` half-words for one exclusive DMA owner.
+    ///
+    /// Preparation fails for zero, values beyond `N`, or storage that has not
+    /// been explicitly released from its previous ownership interval.
+    #[must_use]
+    pub fn prepare(&mut self, len: usize) -> bool {
+        if len == 0 || len > N || !self.is_empty() {
+            return false;
+        }
+        #[cfg(not(target_arch = "arm"))]
+        self.words.get_mut(..len).unwrap_or_default().fill(0);
+        #[cfg(target_arch = "arm")]
+        {
+            self.words = DmaHalfWordBuffer::new(len);
+            if self.words.is_none() {
+                return false;
+            }
+        }
+        self.len = len;
+        true
+    }
+
+    /// Return the prepared half-word count.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return whether no DMA storage is currently prepared.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Borrow the prepared words for exclusive CPU mutation.
+    #[must_use]
+    pub fn as_mut_slice(&mut self) -> Option<&mut [u16]> {
+        let len = self.len;
+        if len == 0 {
+            return None;
+        }
+        #[cfg(not(target_arch = "arm"))]
+        let words = self.words.get_mut(..len);
+        #[cfg(target_arch = "arm")]
+        let words = self.words.as_mut()?.as_mut_slice(len);
+        words
+    }
+
+    /// Borrow the prepared words for DMA.
+    #[must_use]
+    pub fn as_slice(&self) -> Option<&[u16]> {
+        if self.len == 0 {
+            return None;
+        }
+        #[cfg(not(target_arch = "arm"))]
+        let words = self.words.get(..self.len);
+        #[cfg(target_arch = "arm")]
+        let words = self.words.as_ref()?.as_slice(self.len);
+        words
+    }
+
+    /// Release the current ownership interval and its ARM allocation.
+    pub fn release(&mut self) {
+        #[cfg(not(target_arch = "arm"))]
+        self.words.fill(0);
+        #[cfg(all(feature = "alloc", target_arch = "arm"))]
+        if let Some(words) = self.words.take() {
+            words.release();
+        }
+        self.len = 0;
+    }
+}
+
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+impl<const N: usize> Default for DmaHalfWordStorage<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Firmware-allocated half-word storage whose release is controlled by a DMA owner.
 #[cfg(all(feature = "alloc", target_arch = "arm"))]
 #[derive(Debug, PartialEq)]
