@@ -100,7 +100,11 @@ impl FloatOutBoyPackageState {
                     base.footpad().state(),
                     base.status().beep_reason(),
                 )
-                .with_fatal_error(self.alert_tracker.fatal_error())
+                .with_fatal_error(if self.alert_tracker.fatal_error() {
+                    crate::domain::FloatOutBoyFatalErrorState::Present
+                } else {
+                    crate::domain::FloatOutBoyFatalErrorState::None
+                })
                 .with_data_recorder(self.data_recorder.flags());
                 let tail = FloatOutBoyRealtimeTail::new(
                     self.alert_tracker.firmware_fault_active(),
