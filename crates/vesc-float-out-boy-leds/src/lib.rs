@@ -92,77 +92,62 @@ pub enum FloatOutBoyLedColorOrder {
 }
 }
 
-vescpkg_rs::wire_enum! {
-/// Float Out Boy named LED color.
-///
-/// C map: these IDs follow the `enumNames` order for LED color config fields at
-/// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
-pub enum FloatOutBoyLedColor {
-    /// Black/off.
-    Black = 0,
-    /// White using all channels.
-    WhiteFull = 1,
-    /// White using RGB channels.
-    WhiteRgb = 2,
-    /// White using the white channel.
-    WhiteSingle = 3,
-    /// Red.
-    Red = 4,
-    /// Ferrari red.
-    Ferrari = 5,
-    /// Flame.
-    Flame = 6,
-    /// Coral.
-    Coral = 7,
-    /// Sunset.
-    Sunset = 8,
-    /// Sunrise.
-    Sunrise = 9,
-    /// Gold.
-    Gold = 10,
-    /// Orange.
-    Orange = 11,
-    /// Yellow.
-    Yellow = 12,
-    /// Banana.
-    Banana = 13,
-    /// Lime.
-    Lime = 14,
-    /// Acid.
-    Acid = 15,
-    /// Sage.
-    Sage = 16,
-    /// Green.
-    Green = 17,
-    /// Mint.
-    Mint = 18,
-    /// Tiffany.
-    Tiffany = 19,
-    /// Cyan.
-    Cyan = 20,
-    /// Steel.
-    Steel = 21,
-    /// Sky.
-    Sky = 22,
-    /// Azure.
-    Azure = 23,
-    /// Sapphire.
-    Sapphire = 24,
-    /// Blue.
-    Blue = 25,
-    /// Violet.
-    Violet = 26,
-    /// Amethyst.
-    Amethyst = 27,
-    /// Magenta.
-    Magenta = 28,
-    /// Pink.
-    Pink = 29,
-    /// Fuchsia.
-    Fuchsia = 30,
-    /// Lavender.
-    Lavender = 31,
+macro_rules! named_led_colors {
+    ($($name:ident = $id:literal => $channels:expr),+ $(,)?) => {
+        vescpkg_rs::wire_enum! {
+        /// Float Out Boy named LED color.
+        ///
+        /// C map: these IDs follow the `enumNames` order for LED color config fields at
+        /// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
+        pub enum FloatOutBoyLedColor {
+            $(#[doc = concat!(stringify!($name), " LED color.")]
+            $name = $id,)+
+        }
+        }
+
+        impl FloatOutBoyLedColor {
+            const fn channels(self) -> [u8; 4] {
+                match self {
+                    $(Self::$name => $channels,)+
+                }
+            }
+        }
+    };
 }
+
+named_led_colors! {
+    Black = 0 => [0x00, 0x00, 0x00, 0x00],
+    WhiteFull = 1 => [0xff, 0xff, 0xff, 0xff],
+    WhiteRgb = 2 => [0xff, 0xff, 0xff, 0x00],
+    WhiteSingle = 3 => [0x00, 0x00, 0x00, 0xff],
+    Red = 4 => [0xff, 0x00, 0x00, 0x00],
+    Ferrari = 5 => [0xff, 0x38, 0x00, 0x00],
+    Flame = 6 => [0xff, 0x50, 0x00, 0x00],
+    Coral = 7 => [0xff, 0x60, 0x40, 0x00],
+    Sunset = 8 => [0xff, 0x78, 0x30, 0x00],
+    Sunrise = 9 => [0xff, 0x90, 0x40, 0x00],
+    Gold = 10 => [0xff, 0x80, 0x20, 0x00],
+    Orange = 11 => [0xff, 0x78, 0x00, 0x00],
+    Yellow = 12 => [0xff, 0xa0, 0x00, 0x00],
+    Banana = 13 => [0xff, 0xb0, 0x40, 0x00],
+    Lime = 14 => [0xff, 0xff, 0x00, 0x00],
+    Acid = 15 => [0xa0, 0xff, 0x00, 0x00],
+    Sage = 16 => [0xa0, 0xff, 0x50, 0x00],
+    Green = 17 => [0x00, 0xff, 0x00, 0x00],
+    Mint = 18 => [0x00, 0xff, 0x50, 0x00],
+    Tiffany = 19 => [0x00, 0xff, 0xc0, 0x00],
+    Cyan = 20 => [0x00, 0xff, 0xff, 0x00],
+    Steel = 21 => [0x90, 0xc0, 0xff, 0x00],
+    Sky = 22 => [0x70, 0xd0, 0xff, 0x00],
+    Azure = 23 => [0x00, 0xa0, 0xff, 0x00],
+    Sapphire = 24 => [0x00, 0x70, 0xff, 0x00],
+    Blue = 25 => [0x00, 0x00, 0xff, 0x00],
+    Violet = 26 => [0x80, 0x00, 0xff, 0x00],
+    Amethyst = 27 => [0xa0, 0x60, 0xff, 0x00],
+    Magenta = 28 => [0xff, 0x00, 0xff, 0x00],
+    Pink = 29 => [0xff, 0x00, 0xc0, 0x00],
+    Fuchsia = 30 => [0xff, 0x00, 0x70, 0x00],
+    Lavender = 31 => [0xff, 0x70, 0xa0, 0x00],
 }
 
 /// One renderer pixel in red, green, blue, white channel order.
@@ -171,54 +156,13 @@ pub struct FloatOutBoyLedPixel {
     pub(crate) channels: [u8; 4],
 }
 
-const NAMED_LED_COLOR_CHANNELS: [[u8; 4]; 32] = [
-    [0x00, 0x00, 0x00, 0x00],
-    [0xff, 0xff, 0xff, 0xff],
-    [0xff, 0xff, 0xff, 0x00],
-    [0x00, 0x00, 0x00, 0xff],
-    [0xff, 0x00, 0x00, 0x00],
-    [0xff, 0x38, 0x00, 0x00],
-    [0xff, 0x50, 0x00, 0x00],
-    [0xff, 0x60, 0x40, 0x00],
-    [0xff, 0x78, 0x30, 0x00],
-    [0xff, 0x90, 0x40, 0x00],
-    [0xff, 0x80, 0x20, 0x00],
-    [0xff, 0x78, 0x00, 0x00],
-    [0xff, 0xa0, 0x00, 0x00],
-    [0xff, 0xb0, 0x40, 0x00],
-    [0xff, 0xff, 0x00, 0x00],
-    [0xa0, 0xff, 0x00, 0x00],
-    [0xa0, 0xff, 0x50, 0x00],
-    [0x00, 0xff, 0x00, 0x00],
-    [0x00, 0xff, 0x50, 0x00],
-    [0x00, 0xff, 0xc0, 0x00],
-    [0x00, 0xff, 0xff, 0x00],
-    [0x90, 0xc0, 0xff, 0x00],
-    [0x70, 0xd0, 0xff, 0x00],
-    [0x00, 0xa0, 0xff, 0x00],
-    [0x00, 0x70, 0xff, 0x00],
-    [0x00, 0x00, 0xff, 0x00],
-    [0x80, 0x00, 0xff, 0x00],
-    [0xa0, 0x60, 0xff, 0x00],
-    [0xff, 0x00, 0xff, 0x00],
-    [0xff, 0x00, 0xc0, 0x00],
-    [0xff, 0x00, 0x70, 0x00],
-    [0xff, 0x70, 0xa0, 0x00],
-];
-
 impl FloatOutBoyLedPixel {
     /// Return Refloat 1.2.1's exact channel values for a named color.
     #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) color ID is the checked palette index"
-    )]
     pub fn from_named(color: FloatOutBoyLedColor) -> Self {
-        let channels = NAMED_LED_COLOR_CHANNELS
-            .get(color.id() as usize)
-            .copied()
-            .unwrap_or_default();
-        Self { channels }
+        Self {
+            channels: color.channels(),
+        }
     }
 
     /// Gamma-correct and reorder this pixel for one physical strip.
