@@ -111,13 +111,13 @@ vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data base payload fields.
     #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyAllDataBasePayload {
-        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
-        attitude: FloatOutBoyAllDataAttitude => attitude,
-        status: FloatOutBoyAllDataStatus => status,
+        balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current => with_balance_current,
+        attitude: FloatOutBoyAllDataAttitude => attitude => with_attitude,
+        status: FloatOutBoyAllDataStatus => status => with_status,
         footpad: FloatOutBoyFootpadSample => footpad,
-        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints,
-        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current,
-        motor: FloatOutBoyAllDataMotorPayload => motor,
+        setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints => with_setpoints,
+        booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current => with_booster_current,
+        motor: FloatOutBoyAllDataMotorPayload => motor => with_motor,
     }
 }
 

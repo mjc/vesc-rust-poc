@@ -22,7 +22,7 @@ use super::{
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFaults;
-use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
+use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
 use crate::wire::saturating_trunc_f32_to_u8;
 use vescpkg_rs::prelude::{
     AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
@@ -86,13 +86,6 @@ fn refresh_darkride_state(
         ride_state.with_darkride(FloatOutBoyDarkRideState::Upright),
         alert,
     )
-}
-
-struct RuntimeValues {
-    balance_current: FloatOutBoyRealtimeBalanceCurrent,
-    setpoints: FloatOutBoyRealtimeRuntimeSetpoints,
-    booster_current: FloatOutBoyRealtimeBoosterCurrent,
-    motor: FloatOutBoyAllDataMotorPayload,
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -859,10 +852,9 @@ fn apply_protective_setpoint(
 fn advance_running_control(
     state: &mut FloatOutBoyPackageState,
     imu: &impl Imu,
-    base: &FloatOutBoyAllDataBasePayload,
+    base: &mut FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
     phase: &mut TransitionPhase,
-    runtime: &mut RuntimeValues,
 ) {
     let signals = protection_signals(state, base);
     if signals.battery_voltage < signals.high_voltage_threshold && !signals.bms_cell_over_voltage {
@@ -979,7 +971,7 @@ fn advance_running_control(
         state.serialized_config.startup().sample_rate(),
         phase.darkride_active,
     );
-    runtime.setpoints = state.ride_modifiers.advance(
+    let setpoints = state.ride_modifiers.advance(
         &state.serialized_config,
         RideModifierInput {
             base_setpoint: board_setpoint,
@@ -993,6 +985,7 @@ fn advance_running_control(
             wheelslip: phase.ride_state.wheelslip(),
         },
     );
+    *base = base.with_setpoints(setpoints);
     if phase.ride_state.mode() != FloatOutBoyMode::Flywheel {
         let warning = matches!(
             phase.ride_state.setpoint_adjustment(),
@@ -1010,13 +1003,13 @@ fn advance_running_control(
 
     let gyro = imu.angular_rate();
     let mut loop_state = state.balance_loop;
-    loop_state.balance_current = runtime.balance_current.current();
-    loop_state.booster_current = runtime.booster_current.current();
+    loop_state.balance_current = base.balance_current().current();
+    loop_state.booster_current = base.booster_current().current();
     let balance_loop = loop_state.advance_balance_loop(
         state.runtime_balance_loop_config(),
         LoopInput {
-            setpoint: runtime.setpoints.board(),
-            brake_tilt_setpoint: runtime.setpoints.brake_tilt(),
+            setpoint: base.setpoints().board(),
+            brake_tilt_setpoint: base.setpoints().brake_tilt(),
             balance_pitch: phase.balance_pitch.angle_degrees(),
             raw_pitch: phase.pitch_degrees,
             roll: imu.roll(),
@@ -1032,10 +1025,13 @@ fn advance_running_control(
         },
     );
     state.balance_loop = balance_loop.state;
-    runtime.booster_current =
-        FloatOutBoyRealtimeBoosterCurrent::new(state.balance_loop.booster_current);
-    runtime.balance_current =
-        FloatOutBoyRealtimeBalanceCurrent::new(state.balance_loop.balance_current);
+    *base = base
+        .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::new(
+            state.balance_loop.booster_current,
+        ))
+        .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
+            state.balance_loop.balance_current,
+        ));
     state.request_motor_current(balance_loop.requested_current);
 }
 
@@ -1051,10 +1047,10 @@ pub(super) fn refresh(
     system_time_ticks: TimestampTicks,
 ) -> bool {
     let payloads = state.all_data_payloads;
-    let base = payloads.base();
+    let mut base = payloads.base();
     let mut phase = evaluate_transition_phase(state, imu, &base, system_time_ticks);
     let reset_runtime = phase.startup_became_ready || phase.state_engage;
-    let mut runtime = if reset_runtime {
+    if reset_runtime {
         // Upstream `reset_runtime_vars` clears control-loop history and seeds only
         // the board setpoint from the current balance pitch.
         state.balance_loop.reset_pid();
@@ -1068,35 +1064,23 @@ pub(super) fn refresh(
         let balance_pitch = phase.balance_pitch.angle_degrees();
         state.runtime_board_setpoint = balance_pitch;
         let board_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(balance_pitch);
-        RuntimeValues {
-            balance_current: FloatOutBoyRealtimeBalanceCurrent::default(),
-            setpoints: FloatOutBoyRealtimeRuntimeSetpoints::default().with_board(board_setpoint),
-            booster_current: FloatOutBoyRealtimeBoosterCurrent::default(),
-            motor: base
-                .motor()
-                .with_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
-        }
-    } else {
-        RuntimeValues {
-            balance_current: base.balance_current(),
-            setpoints: base.setpoints(),
-            booster_current: base.booster_current(),
-            motor: base.motor(),
-        }
-    };
+        base = base
+            .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::default())
+            .with_setpoints(
+                FloatOutBoyRealtimeRuntimeSetpoints::default().with_board(board_setpoint),
+            )
+            .with_booster_current(FloatOutBoyRealtimeBoosterCurrent::default())
+            .with_motor(
+                base.motor()
+                    .with_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
+            );
+    }
 
     if phase.run_state == FloatOutBoyRunState::Running
         && !phase.state_engage
         && !phase.state_stop_fault
     {
-        advance_running_control(
-            state,
-            imu,
-            &base,
-            system_time_ticks,
-            &mut phase,
-            &mut runtime,
-        );
+        advance_running_control(state, imu, &mut base, system_time_ticks, &mut phase);
     } else if phase.run_state == FloatOutBoyRunState::Ready
         && !phase.state_stop_fault
         && let Some(current) = state.remote_control.request_ready_current(
@@ -1127,15 +1111,16 @@ pub(super) fn refresh(
     // C publishes the just-refreshed `imu.balance_pitch` through app-data;
     // normal mode comes from the balance filter at `third_party/float-out-boy/src/imu.c:35-41`,
     // while FLYWHEEL mirrors raw pitch at `third_party/float-out-boy/src/imu.c:56-58`.
-    let base = FloatOutBoyAllDataBasePayload::new(
-        runtime.balance_current,
-        FloatOutBoyAllDataAttitude::new(phase.balance_pitch, phase.imu_roll, phase.imu_pitch),
-        FloatOutBoyAllDataStatus::new(phase.ride_state, phase.beep_reason),
-        base.footpad(),
-        runtime.setpoints,
-        runtime.booster_current,
-        runtime.motor,
-    );
+    base = base
+        .with_attitude(FloatOutBoyAllDataAttitude::new(
+            phase.balance_pitch,
+            phase.imu_roll,
+            phase.imu_pitch,
+        ))
+        .with_status(FloatOutBoyAllDataStatus::new(
+            phase.ride_state,
+            phase.beep_reason,
+        ));
     state.all_data_payloads = payloads.with_base(base);
     #[cfg(any(test, target_arch = "arm"))]
     {
