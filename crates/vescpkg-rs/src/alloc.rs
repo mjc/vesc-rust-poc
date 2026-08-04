@@ -17,9 +17,13 @@ use core::ffi::c_void;
 #[cfg(feature = "alloc")]
 use core::mem::size_of;
 #[cfg(feature = "alloc")]
+use core::ops::{Deref, DerefMut};
+#[cfg(feature = "alloc")]
 use core::ptr;
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
+#[cfg(feature = "alloc")]
+use rust_alloc::alloc::{alloc, dealloc};
 
 #[cfg(feature = "alloc")]
 const HEADER_BYTES: usize = size_of::<*mut c_void>();
@@ -76,6 +80,86 @@ impl AllocationHeader {
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VescAllocator;
+
+/// A fallibly allocated single value with normal shared, mutable, and drop semantics.
+#[cfg(feature = "alloc")]
+#[derive(Debug)]
+pub struct FallibleBox<T> {
+    pointer: NonNull<T>,
+}
+
+// SAFETY: this is the same exclusive ownership contract as `Box<T>`.
+#[cfg(feature = "alloc")]
+unsafe impl<T: Send> Send for FallibleBox<T> {}
+
+// SAFETY: shared references may cross threads exactly when `T` permits it.
+#[cfg(feature = "alloc")]
+unsafe impl<T: Sync> Sync for FallibleBox<T> {}
+
+#[cfg(feature = "alloc")]
+impl<T> FallibleBox<T> {
+    /// Allocate and initialize one value, returning it on allocation failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original value when the global allocator cannot reserve its slot.
+    pub fn try_new(value: T) -> Result<Self, T> {
+        let layout = Layout::new::<T>();
+        let pointer: NonNull<T> = if layout.size() == 0 {
+            NonNull::dangling()
+        } else {
+            // SAFETY: `layout` is non-zero and valid for one `T`; null is
+            // converted to allocation failure before the value is moved.
+            let Some(pointer) = NonNull::new(unsafe { alloc(layout) }) else {
+                return Err(value);
+            };
+            pointer.cast()
+        };
+        // SAFETY: `pointer` names the live, aligned slot exclusively owned by
+        // the returned box and is initialized exactly once here.
+        unsafe { pointer.as_ptr().write(value) };
+        Ok(Self { pointer })
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> Deref for FallibleBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: construction initializes this exclusively owned slot, and it
+        // remains allocated until `Drop` after all borrows have ended.
+        unsafe { self.pointer.as_ref() }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> DerefMut for FallibleBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: `&mut self` proves exclusive access to the initialized slot.
+        unsafe { self.pointer.as_mut() }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> Drop for FallibleBox<T> {
+    fn drop(&mut self) {
+        // SAFETY: this owner initialized the value exactly once and has not
+        // moved or dropped it since, so its destructor must run exactly once.
+        unsafe { ptr::drop_in_place(self.pointer.as_ptr()) };
+        deallocate_value(self.pointer);
+    }
+}
+
+#[cfg(feature = "alloc")]
+fn deallocate_value<T>(pointer: NonNull<T>) {
+    let layout = Layout::new::<T>();
+    if layout.size() != 0 {
+        // SAFETY: `pointer` came from the global allocator with exactly
+        // `Layout::new::<T>()` and the owning wrapper calls this only once.
+        unsafe { dealloc(pointer.cast().as_ptr(), layout) };
+    }
+}
 
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,8 +283,8 @@ unsafe fn stored_original_ptr(user: NonNull<u8>) -> *mut c_void {
 mod tests {
     #[cfg(feature = "alloc")]
     use super::{
-        AllocationHeader, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr, copy_allocation_bytes,
-        stored_original_ptr, zero_allocation_bytes,
+        AllocationHeader, FallibleBox, HEADER_ALIGN, HEADER_BYTES, aligned_user_ptr,
+        copy_allocation_bytes, stored_original_ptr, zero_allocation_bytes,
     };
     #[cfg(feature = "alloc")]
     use core::alloc::Layout;
@@ -284,5 +368,45 @@ mod tests {
         unsafe { zero_allocation_bytes(dst.as_mut_ptr(), dst.len()) };
 
         assert_eq!(dst, [0; 8]);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn fallible_box_initializes_in_place_and_drops_the_value_once() {
+        use std::{cell::Cell, rc::Rc};
+
+        #[derive(Debug)]
+        struct DropCounter {
+            drops: Rc<Cell<u8>>,
+            value: u8,
+        }
+
+        impl Drop for DropCounter {
+            fn drop(&mut self) {
+                self.drops.set(self.drops.get().saturating_add(1));
+            }
+        }
+
+        let drops = Rc::new(Cell::new(0));
+        let mut allocation = FallibleBox::try_new(DropCounter {
+            drops: Rc::clone(&drops),
+            value: 0,
+        })
+        .expect("host allocation succeeds");
+        assert_eq!(drops.get(), 0);
+        allocation.value = 7;
+        assert_eq!(allocation.value, 7);
+        assert_eq!(drops.get(), 0);
+        drop(allocation);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn fallible_box_owner_preserves_pointer_sized_optional_layout() {
+        assert_eq!(
+            core::mem::size_of::<Option<super::FallibleBox<u32>>>(),
+            core::mem::size_of::<*mut u32>()
+        );
     }
 }
