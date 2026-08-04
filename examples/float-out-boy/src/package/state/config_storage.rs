@@ -1,4 +1,6 @@
 use super::{FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
+#[cfg(any(test, target_arch = "arm"))]
+use crate::config::FloatOutBoyMetadataConfig as Metadata;
 use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigImage};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
@@ -279,7 +281,9 @@ impl FloatOutBoyPackageState {
             return None;
         }
         self.apply_persisted_config(loaded);
-        self.serialized_config.editor().set_disabled(disabled);
+        self.serialized_config
+            .editor()
+            .set(Metadata::DISABLED_FIELD, disabled);
         self.begin_configure_active(now);
         Some(self.serialized_config)
     }
