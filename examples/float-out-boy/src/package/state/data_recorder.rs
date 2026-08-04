@@ -1,7 +1,5 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::realtime_value;
-#[cfg(any(test, target_arch = "arm"))]
-use super::super::protocol::wire::encode_float_out_boy_float16;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
@@ -163,7 +161,7 @@ impl FloatOutBoyPackageState {
                 FloatOutBoyRunState::Running
             ));
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
-            encode_float_out_boy_float16(realtime_value(
+            vescpkg_rs::protocol_buffer::float16_auto_bits(realtime_value(
                 &payloads,
                 item,
                 self.remote_control.input(),
