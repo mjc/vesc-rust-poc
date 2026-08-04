@@ -27,12 +27,13 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::prelude::{AudioFrequency, AudioVoltage};
 use vescpkg_rs::{
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
-    CustomConfigDurationField, CustomConfigEditor, CustomConfigElectricalSpeedField,
-    CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
-    CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
-    CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigSampleRateField,
-    CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
+    CustomConfigCursor, CustomConfigDurationField, CustomConfigEditor,
+    CustomConfigElectricalSpeedField, CustomConfigEnumField, CustomConfigFlagField,
+    CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
+    CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
+    CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
+    CustomConfigRatioField, CustomConfigSampleRateField, CustomConfigScaledVoltageField,
+    CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
 };
 
 mod flywheel;
@@ -246,7 +247,7 @@ impl FloatOutBoyConfigImage {
             && u16::from_be_bytes([bytes[85], bytes[86]]) < 10_000
             && bytes[79] <= 2
             && bytes[101] <= 2
-            && FloatOutBoyLedConfigDecoder::new(bytes).validate().is_some()
+            && validate_led_config(bytes).is_some()
             && u16::from_be_bytes([bytes[142], bytes[143]]) > 0
             && bytes[144] > 0
             && u16::from_be_bytes([bytes[244], bytes[245]]) > 0
@@ -281,7 +282,7 @@ impl FloatOutBoyConfigImage {
     pub(crate) fn led_configs(
         &self,
     ) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
-        FloatOutBoyLedConfigDecoder::new(self.as_bytes()).decode()
+        decode_led_config(self.as_bytes())
     }
 
     config_views! {
@@ -390,120 +391,90 @@ impl FloatOutBoyHapticConfig<'_> {
 
 type FloatOutBoyHardwareLedMode = WireByte;
 
-struct FloatOutBoyLedConfigDecoder<'a> {
-    bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN],
-    offset: usize,
+fn decode_led_config(
+    bytes: &[u8; FLOAT_OUT_BOY_CONFIG_LEN],
+) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
+    let mut cursor = CustomConfigCursor::new(bytes, 175);
+    let leds = FloatOutBoyLedsConfig {
+        on: cursor.boolean()?,
+        headlights_on: cursor.boolean()?,
+        headlights_transition: cursor.enum_value()?,
+        direction_transition: cursor.enum_value()?,
+        lifted: crate::leds::FloatOutBoyLiftedLedsConfig {
+            lights_off: cursor.boolean()?,
+            status_on_front: cursor.boolean()?,
+        },
+        front: decode_led_bar(&mut cursor)?,
+        rear: decode_led_bar(&mut cursor)?,
+        headlights: decode_led_bar(&mut cursor)?,
+        taillights: decode_led_bar(&mut cursor)?,
+        status: FloatOutBoyStatusBarConfig {
+            brightness_headlights_off: cursor.scaled_ratio(10_000.0)?,
+            brightness_headlights_on: cursor.scaled_ratio(10_000.0)?,
+            show_sensors_while_running: cursor.boolean()?,
+            duty_threshold: cursor.scaled_ratio(10_000.0)?,
+            red_bar_percentage: cursor.scaled_ratio(10_000.0)?,
+            idle_timeout: cursor.be_u16()?,
+        },
+        status_idle: decode_led_bar(&mut cursor)?,
+    };
+    let hardware = FloatOutBoyHardwareLedsConfig {
+        mode: cursor.enum_value()?,
+        pin: cursor.enum_value()?,
+        pin_config: cursor.enum_value()?,
+        status: decode_led_strip(&mut cursor)?,
+        front: decode_led_strip(&mut cursor)?,
+        rear: decode_led_strip(&mut cursor)?,
+    };
+
+    (cursor.offset() == 242).then_some((hardware, leds))
 }
 
-impl<'a> FloatOutBoyLedConfigDecoder<'a> {
-    const fn new(bytes: &'a [u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> Self {
-        Self { bytes, offset: 175 }
+fn validate_led_config(bytes: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> Option<()> {
+    validate_led_enums::<FloatOutBoyLedTransition>(bytes, &[177, 178])?;
+    validate_led_enums::<FloatOutBoyLedAnimationMode>(bytes, &[181, 188, 195, 202, 220])?;
+    validate_led_enums::<FloatOutBoyLedColor>(
+        bytes,
+        &[184, 185, 191, 192, 198, 199, 205, 206, 223, 224],
+    )?;
+    validate_led_enums::<FloatOutBoyLedMode>(bytes, &[227])?;
+    validate_led_enums::<FloatOutBoyLedPin>(bytes, &[228])?;
+    validate_led_enums::<FloatOutBoyLedPinConfig>(bytes, &[229])?;
+    validate_led_enums::<FloatOutBoyLedStripOrder>(bytes, &[230, 234, 238])?;
+    validate_led_enums::<FloatOutBoyLedColorOrder>(bytes, &[232, 236, 240])?;
+    for offset in [182, 189, 196, 203, 209, 211, 214, 216, 221] {
+        let high = bytes.get(offset).copied()?;
+        let low = bytes.get(offset.saturating_add(1)).copied()?;
+        Ratio::from_ratio(f32::from(u16::from_be_bytes([high, low])) / 10_000.0).ok()?;
     }
+    Some(())
+}
 
-    fn decode(mut self) -> Option<(FloatOutBoyHardwareLedsConfig, FloatOutBoyLedsConfig)> {
-        let leds = FloatOutBoyLedsConfig {
-            on: self.boolean()?,
-            headlights_on: self.boolean()?,
-            headlights_transition: self.enum_value()?,
-            direction_transition: self.enum_value()?,
-            lifted: crate::leds::FloatOutBoyLiftedLedsConfig {
-                lights_off: self.boolean()?,
-                status_on_front: self.boolean()?,
-            },
-            front: self.bar()?,
-            rear: self.bar()?,
-            headlights: self.bar()?,
-            taillights: self.bar()?,
-            status: FloatOutBoyStatusBarConfig {
-                brightness_headlights_off: self.ratio(10_000.0)?,
-                brightness_headlights_on: self.ratio(10_000.0)?,
-                show_sensors_while_running: self.boolean()?,
-                duty_threshold: self.ratio(10_000.0)?,
-                red_bar_percentage: self.ratio(10_000.0)?,
-                idle_timeout: self.u16()?,
-            },
-            status_idle: self.bar()?,
-        };
-        let hardware = FloatOutBoyHardwareLedsConfig {
-            mode: self.enum_value()?,
-            pin: self.enum_value()?,
-            pin_config: self.enum_value()?,
-            status: self.strip()?,
-            front: self.strip()?,
-            rear: self.strip()?,
-        };
-
-        (self.offset == 242).then_some((hardware, leds))
+fn validate_led_enums<T: TryFrom<u8>>(bytes: &[u8], offsets: &[usize]) -> Option<()> {
+    for offset in offsets {
+        T::try_from(bytes.get(*offset).copied()?).ok()?;
     }
+    Some(())
+}
 
-    fn validate(self) -> Option<()> {
-        self.enums::<FloatOutBoyLedTransition>(&[177, 178])?;
-        self.enums::<FloatOutBoyLedAnimationMode>(&[181, 188, 195, 202, 220])?;
-        self.enums::<FloatOutBoyLedColor>(&[184, 185, 191, 192, 198, 199, 205, 206, 223, 224])?;
-        self.enums::<FloatOutBoyLedMode>(&[227])?;
-        self.enums::<FloatOutBoyLedPin>(&[228])?;
-        self.enums::<FloatOutBoyLedPinConfig>(&[229])?;
-        self.enums::<FloatOutBoyLedStripOrder>(&[230, 234, 238])?;
-        self.enums::<FloatOutBoyLedColorOrder>(&[232, 236, 240])?;
-        for offset in [182, 189, 196, 203, 209, 211, 214, 216, 221] {
-            let high = self.bytes.get(offset).copied()?;
-            let low = self.bytes.get(offset.saturating_add(1)).copied()?;
-            Ratio::from_ratio(f32::from(u16::from_be_bytes([high, low])) / 10_000.0).ok()?;
-        }
-        Some(())
-    }
+fn decode_led_bar(cursor: &mut CustomConfigCursor<'_>) -> Option<FloatOutBoyLedBarConfig> {
+    let animation_mode = cursor.enum_value()?;
+    Some(FloatOutBoyLedBarConfig {
+        brightness: cursor.scaled_ratio(10_000.0)?,
+        primary_color: cursor.enum_value()?,
+        secondary_color: cursor.enum_value()?,
+        animation_mode,
+        animation_speed: f32::from(cursor.be_u16()?) / 1_000.0,
+    })
+}
 
-    fn enums<T: TryFrom<u8>>(&self, offsets: &[usize]) -> Option<()> {
-        for offset in offsets {
-            T::try_from(self.bytes.get(*offset).copied()?).ok()?;
-        }
-        Some(())
-    }
-
-    fn byte(&mut self) -> Option<u8> {
-        let value = self.bytes.get(self.offset).copied();
-        self.offset = self.offset.saturating_add(1);
-        value
-    }
-
-    fn boolean(&mut self) -> Option<bool> {
-        self.byte().map(|value| value != 0)
-    }
-
-    fn u16(&mut self) -> Option<u16> {
-        let high = self.byte()?;
-        let low = self.byte()?;
-        Some(u16::from_be_bytes([high, low]))
-    }
-
-    fn ratio(&mut self, scale: f32) -> Option<Ratio> {
-        self.u16()
-            .and_then(|value| Ratio::from_ratio(f32::from(value) / scale).ok())
-    }
-
-    fn bar(&mut self) -> Option<FloatOutBoyLedBarConfig> {
-        let animation_mode = self.enum_value()?;
-        Some(FloatOutBoyLedBarConfig {
-            brightness: self.ratio(10_000.0)?,
-            primary_color: self.enum_value()?,
-            secondary_color: self.enum_value()?,
-            animation_mode,
-            animation_speed: f32::from(self.u16()?) / 1_000.0,
-        })
-    }
-
-    fn strip(&mut self) -> Option<FloatOutBoyLedStripConfig> {
-        Some(FloatOutBoyLedStripConfig {
-            order: self.enum_value()?,
-            count: self.byte()?,
-            color_order: self.enum_value()?,
-            reverse: self.boolean()?,
-        })
-    }
-
-    fn enum_value<T: TryFrom<u8>>(&mut self) -> Option<T> {
-        T::try_from(self.byte()?).ok()
-    }
+fn decode_led_strip(cursor: &mut CustomConfigCursor<'_>) -> Option<FloatOutBoyLedStripConfig> {
+    Some(FloatOutBoyLedStripConfig {
+        order: cursor.enum_value()?,
+        count: cursor.byte()?,
+        color_order: cursor.enum_value()?,
+        reverse: cursor.boolean()?,
+    })
 }
 
 pub(crate) struct FloatOutBoyConfigEditor<'a>(CustomConfigEditor<'a, FLOAT_OUT_BOY_CONFIG_LEN>);
