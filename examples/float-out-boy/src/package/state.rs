@@ -88,6 +88,7 @@ type InternalLedRuntime = internal_leds::RuntimeAllocation;
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
+pub(in crate::package) use motor_runtime::{MotorConfigSnapshot, snapshot_motor_config};
 use remote_control::RemoteControlState;
 use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -401,18 +402,18 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    pub(crate) fn refresh_aux_motor_config_runtime_state(
+    pub(crate) fn aux_motor_config_refresh_due(&self, now: TimestampTicks) -> bool {
+        self.aux_motor_config_refresh_ticks
+            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
+    }
+
+    pub(in crate::package) fn finish_aux_motor_config_refresh(
         &mut self,
-        telemetry: &impl MotorTelemetry,
+        config: MotorConfigSnapshot,
         now: TimestampTicks,
     ) {
-        if self
-            .aux_motor_config_refresh_ticks
-            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
-        {
-            self.refresh_motor_config_runtime_state(telemetry);
-            self.aux_motor_config_refresh_ticks.restart(now);
-        }
+        motor_runtime::apply_motor_config(self, config);
+        self.aux_motor_config_refresh_ticks.restart(now);
     }
 
     #[cfg(test)]
