@@ -267,7 +267,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
     assert!(state.store_serialized_config(&config));
     let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        crate::package::threads::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
+        firmware.telemetry(),
         vescpkg_rs::prelude::OdometerMeters::from_meters(0),
         vescpkg_rs::prelude::TimestampTicks::from_ticks(0),
         1.0,

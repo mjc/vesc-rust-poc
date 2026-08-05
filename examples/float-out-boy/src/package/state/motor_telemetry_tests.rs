@@ -254,7 +254,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));
     let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        crate::package::threads::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
+        firmware.telemetry(),
         OdometerMeters::from_meters(0),
         TimestampTicks::from_ticks(5_000),
         0.5,
@@ -272,7 +272,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
 
     let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        crate::package::threads::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
+        firmware.telemetry(),
         OdometerMeters::from_meters(0),
         TimestampTicks::from_ticks(5_001),
         0.501,
