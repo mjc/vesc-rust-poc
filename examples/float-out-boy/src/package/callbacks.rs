@@ -88,6 +88,42 @@ fn finish_restored_config(
 }
 
 #[cfg_attr(target_arch = "arm", inline(never))]
+fn handle_phased_tune_packet(
+    context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
+    reply: &mut vescpkg_rs::AppDataReply<'_>,
+    command: FloatOutBoyAppDataCommand,
+    payload: &[u8],
+    now: &mut impl FnMut() -> vescpkg_rs::TimestampTicks,
+) -> Option<bool> {
+    if !matches!(
+        command,
+        FloatOutBoyAppDataCommand::TuneDefaults
+            | FloatOutBoyAppDataCommand::RuntimeTune
+            | FloatOutBoyAppDataCommand::TuneTilt
+            | FloatOutBoyAppDataCommand::TuneOther
+            | FloatOutBoyAppDataCommand::Booster
+    ) {
+        return None;
+    }
+
+    Some(
+        reply
+            .with_scratch::<{ crate::config::FLOAT_OUT_BOY_CONFIG_LEN }, _>(|config| {
+                context.with_state(|state| config.copy_from_slice(state.serialized_config()));
+                let Some(commit) =
+                    FloatOutBoyPackageState::prepare_tune_config(config, command, payload)
+                else {
+                    return false;
+                };
+                let applied_at = now();
+                context.with_state(|state| state.commit_prepared_tune(config, commit, applied_at));
+                true
+            })
+            .unwrap_or(false),
+    )
+}
+
+#[cfg_attr(target_arch = "arm", inline(never))]
 fn handle_effectful_float_out_boy_packet(
     context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
     bytes: &[u8],
@@ -181,7 +217,6 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         // `third_party/float-out-boy/src/main.c:2143-2225`.
         let firmware = vescpkg_rs::Firmware::new();
         let mut now = || firmware.clock().now();
-        let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
         let bytes = packet.as_bytes();
         let (command, payload) = match float_out_boy_command(bytes) {
             Ok(Some(command)) => command,
@@ -198,6 +233,10 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         {
             return;
         }
+        if handle_phased_tune_packet(context, reply, command, payload, &mut now).is_some() {
+            return;
+        }
+        let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
         let _ = context.with_state(|state| {
             handle_float_out_boy_app_data_packet(
                 state,

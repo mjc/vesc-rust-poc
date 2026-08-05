@@ -31,6 +31,14 @@ pub fn invoke_stateful_app_data_handler<T: crate::AppDataHandler>(packet: &[u8])
     crate::firmware::invoke_stateful_app_data_handler::<T>(packet)
 }
 
+/// Invoke a stateful app-data handler and count its exclusive state phases.
+#[must_use]
+pub fn invoke_stateful_app_data_handler_with_phase_count<T: crate::AppDataHandler>(
+    packet: &[u8],
+) -> Option<usize> {
+    crate::firmware::invoke_stateful_app_data_handler_with_phase_count::<T>(packet)
+}
+
 /// Invoke a stateful custom-config handler through its real phased callback context.
 #[must_use]
 pub fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
