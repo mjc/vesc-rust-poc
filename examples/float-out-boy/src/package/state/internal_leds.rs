@@ -5,7 +5,7 @@ use crate::{
         FloatOutBoyLedPin, FloatOutBoyLedRenderer, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
     },
 };
-use vescpkg_rs::{MotorTelemetry, TimestampTicks};
+use vescpkg_rs::{BatteryLevel, ElectricalSpeed, SignedTripDistance, TimestampTicks};
 
 use super::FloatOutBoyPackageState;
 
@@ -20,6 +20,8 @@ mod driver;
 mod hardware;
 
 use driver::FloatOutBoyInternalLedDriver;
+pub(in crate::package) type FloatOutBoyLedTelemetry =
+    (SignedTripDistance, BatteryLevel, ElectricalSpeed);
 #[cfg(target_arch = "arm")]
 pub(super) type RuntimeAllocation = vescpkg_rs::FallibleBox<FloatOutBoyInternalLedRuntime>;
 
@@ -172,13 +174,14 @@ impl FloatOutBoyPackageState {
             })
     }
 
-    /// Sample one coherent firmware snapshot, render it, and expose it for one paint.
+    /// Render one coherent firmware snapshot and expose it for one paint.
     pub(crate) fn render_internal_leds(
         &mut self,
-        telemetry: &impl MotorTelemetry,
+        telemetry: FloatOutBoyLedTelemetry,
         current_time: f32,
         paint: impl FnOnce(&FloatOutBoyLedRenderer),
     ) {
+        let (distance, battery_level, electrical_speed) = telemetry;
         let base = self.all_data_payloads.base();
         let ride_state = base.status().ride_state();
         let filtered_current = base.motor().filtered_motor_current().current().current();
@@ -207,17 +210,12 @@ impl FloatOutBoyPackageState {
             darkride: ride_state.darkride() == FloatOutBoyDarkRideState::Active,
             footpad: base.footpad().state(),
             pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
-            distance: telemetry.signed_trip_distance().distance().as_meters(),
-            battery_level: telemetry.battery_level().as_fraction(),
+            distance: distance.distance().as_meters(),
+            battery_level: battery_level.as_fraction(),
             duty_cycle: base.motor().duty_cycle().ratio().as_ratio(),
             motor_current_saturation,
             battery_current_saturation,
-            moving: telemetry
-                .electrical_speed()
-                .rpm()
-                .as_revolutions_per_minute()
-                .abs()
-                > 100.0,
+            moving: electrical_speed.rpm().as_revolutions_per_minute().abs() > 100.0,
         };
         #[cfg(test)]
         let runtime = self.internal_leds.as_mut();

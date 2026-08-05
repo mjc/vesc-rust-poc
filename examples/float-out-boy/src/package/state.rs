@@ -81,6 +81,7 @@ use flywheel::FloatOutBoyFlywheelRuntime;
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
 #[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
+pub(in crate::package) use internal_leds::FloatOutBoyLedTelemetry;
 #[cfg(test)]
 type InternalLedRuntime = FloatOutBoyInternalLedRuntime;
 #[cfg(target_arch = "arm")]

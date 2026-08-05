@@ -529,7 +529,7 @@ fn aux_tick_reports_backup_due_without_running_the_firmware_effect() {
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
     let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        firmware.telemetry(),
+        super::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
         OdometerMeters::from_meters(1_201),
         TimestampTicks::from_ticks(0),
         0.0,
@@ -572,10 +572,11 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
     state.configure_internal_leds(hardware, config);
     let mut paints = 0;
     let mut painted = [0; 4];
+    let led_telemetry = super::snapshot_float_out_boy_led_telemetry(firmware.telemetry());
 
     let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        firmware.telemetry(),
+        led_telemetry,
         OdometerMeters::from_meters(0),
         TimestampTicks::from_ticks(0),
         1.0 / 30.0,
@@ -603,7 +604,7 @@ fn aux_tick_does_not_touch_backup_before_threshold() {
 
     let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        firmware.telemetry(),
+        super::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
         OdometerMeters::from_meters(1_200),
         TimestampTicks::from_ticks(0),
         0.0,
@@ -628,7 +629,7 @@ fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
 
     let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
-        firmware.telemetry(),
+        super::snapshot_float_out_boy_led_telemetry(firmware.telemetry()),
         OdometerMeters::from_meters(1_201),
         TimestampTicks::from_ticks(0),
         0.0,
