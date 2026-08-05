@@ -393,14 +393,12 @@ impl FloatOutBoyPackageState {
                     .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
-    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
-    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
-        self.aux_odometer = odometer;
-    }
-
-    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
-    pub(crate) fn record_aux_backup_failure(&mut self) {
-        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+    pub(crate) fn record_aux_backup_result(&mut self, odometer: OdometerMeters, stored: bool) {
+        if stored {
+            self.aux_odometer = odometer;
+        } else {
+            self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+        }
     }
 
     pub(crate) fn refresh_aux_motor_config_runtime_state(

@@ -239,20 +239,19 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
     }
 }
 
-/// Refresh the source-backed auxiliary state and persist a backup when its threshold is due.
+/// Refresh the source-backed auxiliary state and report whether a backup is due.
 ///
 /// `aux_thd` renders LEDs, conditionally stores the backup, then refreshes motor
 /// configuration after a strict half-second interval at
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
-pub(crate) fn tick_float_out_boy_aux_thread_with(
+pub(crate) fn prepare_float_out_boy_aux_thread_tick(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
     odometer: OdometerMeters,
     system_time_ticks: TimestampTicks,
     current_time: f32,
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
-    store_backup: impl FnOnce() -> bool,
-) -> Option<bool> {
+) -> bool {
     let running = state
         .all_data_payloads()
         .base()
@@ -263,17 +262,7 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
     state.render_internal_leds(telemetry, current_time, paint_leds);
-    let stored = state.aux_backup_due(odometer).then(|| {
-        let stored = store_backup();
-        if stored {
-            state.record_aux_backup(odometer);
-        } else {
-            state.record_aux_backup_failure();
-        }
-        stored
-    });
-    state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
-    stored
+    state.aux_backup_due(odometer)
 }
 
 /// Start Float Out Boy runtime threads from loader-owned package state.
@@ -468,16 +457,24 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
             let clock = firmware.clock();
             let system_time_ticks = clock.now();
             let current_time = clock.uptime().as_seconds();
+            let backup_due = ctx
+                .with_state_mut(|state| {
+                    prepare_float_out_boy_aux_thread_tick(
+                        state,
+                        telemetry,
+                        odometer,
+                        system_time_ticks,
+                        current_time,
+                        |_| {},
+                    )
+                })
+                .unwrap_or(false);
+            let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
             let _ = ctx.with_state_mut(|state| {
-                tick_float_out_boy_aux_thread_with(
-                    state,
-                    telemetry,
-                    odometer,
-                    system_time_ticks,
-                    current_time,
-                    |_| {},
-                    || firmware.inputs().store_backup().is_ok(),
-                )
+                if let Some(stored) = stored {
+                    state.record_aux_backup_result(odometer, stored);
+                }
+                state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
             });
             threads.sleep_for(Duration::from_micros(u64::from(
                 FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
