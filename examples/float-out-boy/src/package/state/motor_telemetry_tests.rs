@@ -239,7 +239,9 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         .with_temperature_limit_starts(
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0)),
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
-        );
+        )
+        .with_duty_cycle_limit(DutyCycleLimit::new(Ratio::from_ratio_const(0.93)))
+        .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     let settings = FirmwareSettings;
     firmware.with_effects(|effects| {
         settings
@@ -261,10 +263,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         |_| {},
     );
     assert!(!backup_due);
-    state.refresh_aux_motor_config_runtime_state(
-        firmware.telemetry(),
-        TimestampTicks::from_ticks(5_000),
-    );
+    assert!(!state.aux_motor_config_refresh_due(TimestampTicks::from_ticks(5_000)));
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::ZERO)
@@ -279,10 +278,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         |_| {},
     );
     assert!(!backup_due);
-    state.refresh_aux_motor_config_runtime_state(
-        firmware.telemetry(),
-        TimestampTicks::from_ticks(5_001),
-    );
+    let now = TimestampTicks::from_ticks(5_001);
+    assert!(state.aux_motor_config_refresh_due(now));
+    let config = super::snapshot_motor_config(firmware.telemetry());
+    state.finish_aux_motor_config_refresh(config, now);
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::from_amps(42.0))
@@ -290,6 +289,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert_eq!(
         state.motor_current_min,
         MotorCurrentLimit::new(Current::from_amps(17.0))
+    );
+    assert_eq!(
+        state.duty_max_with_margin,
+        DutyCycleLimit::new(Ratio::from_ratio_const(0.88))
     );
     assert_eq!(
         state.battery_current_max,
@@ -306,6 +309,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert_eq!(
         state.motor_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
+    );
+    assert_eq!(
+        state.battery_cell_count,
+        BatteryCellCount::try_new(18).ok()
     );
     assert_eq!(
         state.all_data_payloads.base().motor().electrical_speed(),
