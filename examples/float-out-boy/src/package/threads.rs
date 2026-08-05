@@ -4,6 +4,8 @@
 //! spawns the main and aux threads after loader metadata setup and before the registration tail.
 
 use super::state::FloatOutBoyPackageState;
+#[cfg(all(not(test), target_arch = "arm"))]
+use super::state::snapshot_motor_config;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
 use vescpkg_rs::prelude::{
@@ -470,12 +472,20 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                 })
                 .unwrap_or(false);
             let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
-            let _ = ctx.with_state_mut(|state| {
-                if let Some(stored) = stored {
-                    state.record_aux_backup_result(odometer, stored);
-                }
-                state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
-            });
+            let refresh_motor_config = ctx
+                .with_state_mut(|state| {
+                    if let Some(stored) = stored {
+                        state.record_aux_backup_result(odometer, stored);
+                    }
+                    state.aux_motor_config_refresh_due(system_time_ticks)
+                })
+                .unwrap_or(false);
+            if refresh_motor_config {
+                let config = snapshot_motor_config(telemetry);
+                let _ = ctx.with_state_mut(|state| {
+                    state.finish_aux_motor_config_refresh(config, system_time_ticks);
+                });
+            }
             threads.sleep_for(Duration::from_micros(u64::from(
                 FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
             )));
