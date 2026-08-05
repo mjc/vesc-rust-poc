@@ -310,10 +310,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         state.motor_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
     );
-    assert_eq!(
-        state.battery_cell_count,
-        BatteryCellCount::try_new(18).ok()
-    );
+    assert_eq!(state.battery_cell_count, BatteryCellCount::try_new(18).ok());
     assert_eq!(
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed

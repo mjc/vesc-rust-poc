@@ -395,6 +395,21 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 let _ = ctx.with_state_mut(|state| state.finish_configure_active(migration));
             }
 
+            if let Some(config) = ctx
+                .with_state_mut(|state| state.begin_deferred_config_persistence(system_time_ticks))
+                .flatten()
+            {
+                let stored = ctx
+                    .with_effects(|effects| super::state::store_persisted_config(effects, &config));
+                let migration =
+                    ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
+                let finished_at = ctx.firmware().clock().now();
+                let _ = ctx.with_state_mut(|state| {
+                    state.finish_config_persistence(&config, stored, finished_at);
+                    state.record_firmware_imu_migration(migration);
+                });
+            }
+
             let tick = prepared.and_then(|prepared| {
                 let firmware = ctx.firmware();
                 ctx.with_state_mut(|state| {

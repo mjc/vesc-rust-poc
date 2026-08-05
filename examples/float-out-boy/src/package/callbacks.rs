@@ -134,12 +134,16 @@ fn handle_effectful_float_out_boy_packet(
 ) -> Option<bool> {
     match command {
         FloatOutBoyAppDataCommand::ConfigSave => {
-            let config = context.with_state(|state| state.active_config_image());
-            let stored = context
-                .with_effects(|effects| super::state::store_persisted_config(effects, &config));
-            if stored {
-                let written_at = now();
-                context.with_state(|state| state.acknowledge_command_config_write(written_at));
+            let requested_at = now();
+            let config =
+                context.with_state(|state| state.begin_active_config_persistence(requested_at));
+            if let Some(config) = config {
+                let stored = context
+                    .with_effects(|effects| super::state::store_persisted_config(effects, &config));
+                let finished_at = now();
+                context.with_state(|state| {
+                    state.finish_config_persistence(&config, stored, finished_at);
+                });
             }
             Some(true)
         }

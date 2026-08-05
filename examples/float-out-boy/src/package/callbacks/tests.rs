@@ -270,6 +270,7 @@ fn assert_real_config_save_context(firmware: &FirmwareTest) {
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
+    state.initialize_time_epochs(TimestampTicks::from_ticks(0));
     let expected = *state.serialized_config();
     let installed =
         super::super::custom_config::install_test_float_out_boy_runtime_state(&mut state);

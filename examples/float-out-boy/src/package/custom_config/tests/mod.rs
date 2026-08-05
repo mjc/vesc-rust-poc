@@ -90,7 +90,7 @@ fn stateful_custom_config_current_callback_returns_none_without_runtime_state() 
 }
 
 #[test]
-fn stateful_custom_config_set_callback_writes_runtime_state() {
+fn running_custom_config_set_applies_without_eeprom_writes() {
     let _state_lock = lock_test_float_out_boy_config_state();
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
@@ -99,14 +99,32 @@ fn stateful_custom_config_set_callback_writes_runtime_state() {
     let incoming = nondefault_float_out_boy_config();
 
     assert!(runtime_set_config(&incoming));
+
+    assert_eq!(runtime_current_config(), Some(incoming));
+    assert_eq!(firmware.eeprom_write_count(), 0);
+    assert_eq!(firmware.float_setting_write_count(), 0);
+}
+
+#[test]
+fn safely_stopped_custom_config_set_persists_immediately() {
+    let _state_lock = lock_test_float_out_boy_config_state();
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    ));
+    state.initialize_time_epochs(TimestampTicks::from_ticks(0));
+    let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
+    assert!(runtime_state.is_some());
+    let incoming = nondefault_float_out_boy_config();
+
+    assert!(runtime_set_config(&incoming));
+
     let persisted = firmware
         .with_effects(|effects| firmware.eeprom().read_image::<320>(effects))
-        .expect("custom-config set must write the complete EEPROM image");
-
-    // C map: upstream `set_cfg` mutates `d->float_conf` at
-    // `third_party/float-out-boy/src/main.c:2360-2368`.
-    assert_eq!(runtime_current_config(), Some(incoming));
+        .expect("a safely stopped custom-config set must persist immediately");
     assert_eq!(&persisted[..incoming.len()], &incoming);
+    assert_eq!(firmware.eeprom_write_count(), 81);
 }
 
 #[test]
