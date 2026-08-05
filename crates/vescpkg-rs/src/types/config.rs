@@ -482,6 +482,12 @@ pub trait CustomConfigWritableField<const LEN: usize>: Copy {
 }
 
 impl<const LEN: usize> CustomConfigEditor<'_, LEN> {
+    /// Edit validated custom-config storage borrowed from callback-owned memory.
+    #[must_use]
+    pub fn from_bytes(bytes: &mut [u8; LEN]) -> CustomConfigEditor<'_, LEN> {
+        CustomConfigEditor(bytes)
+    }
+
     /// Encode a semantic value through its typed generated field descriptor.
     pub fn set<Field>(&mut self, field: Field, value: Field::Value) -> bool
     where
