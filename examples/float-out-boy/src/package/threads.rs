@@ -3,7 +3,7 @@
 //! Source oracle: Float Out Boy v1.2.1 `third_party/float-out-boy/src/main.c:2439-2449`
 //! spawns the main and aux threads after loader metadata setup and before the registration tail.
 
-use super::state::{FloatOutBoyLedTelemetry, FloatOutBoyPackageState};
+use super::state::FloatOutBoyPackageState;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
 use vescpkg_rs::prelude::{
@@ -246,7 +246,7 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
 pub(crate) fn prepare_float_out_boy_aux_thread_tick(
     state: &mut FloatOutBoyPackageState,
-    led_telemetry: FloatOutBoyLedTelemetry,
+    telemetry: &impl MotorTelemetry,
     odometer: OdometerMeters,
     system_time_ticks: TimestampTicks,
     current_time: f32,
@@ -261,20 +261,8 @@ pub(crate) fn prepare_float_out_boy_aux_thread_tick(
         == crate::domain::FloatOutBoyRunState::Running;
     state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
-    state.render_internal_leds(led_telemetry, current_time, paint_leds);
+    state.render_internal_leds(telemetry, current_time, paint_leds);
     state.aux_backup_due(odometer)
-}
-
-/// Sample LED-only firmware inputs before acquiring the shared state lock.
-#[cfg(test)]
-pub(crate) fn snapshot_float_out_boy_led_telemetry(
-    telemetry: &impl MotorTelemetry,
-) -> FloatOutBoyLedTelemetry {
-    (
-        telemetry.signed_trip_distance(),
-        telemetry.battery_level(),
-        telemetry.electrical_speed(),
-    )
 }
 
 /// Start Float Out Boy runtime threads from loader-owned package state.
@@ -469,16 +457,11 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
             let clock = firmware.clock();
             let system_time_ticks = clock.now();
             let current_time = clock.uptime().as_seconds();
-            let led_telemetry = (
-                telemetry.signed_trip_distance(),
-                telemetry.battery_level(),
-                telemetry.electrical_speed(),
-            );
             let backup_due = ctx
                 .with_state_mut(|state| {
                     prepare_float_out_boy_aux_thread_tick(
                         state,
-                        led_telemetry,
+                        telemetry,
                         odometer,
                         system_time_ticks,
                         current_time,
