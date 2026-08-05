@@ -349,6 +349,12 @@ impl FirmwareTest {
         crate::test_ffi::fail_eeprom_write_after(successful_writes);
     }
 
+    /// Return the number of attempted custom-EEPROM word writes.
+    #[must_use]
+    pub fn eeprom_write_count(&self) -> usize {
+        crate::test_ffi::eeprom_write_count()
+    }
+
     /// Configure whether firmware IMU startup has completed.
     pub fn set_imu_ready(&self, done: bool) {
         crate::test_ffi::set_imu_startup_done(done);

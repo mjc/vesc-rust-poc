@@ -71,6 +71,7 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
+use config_storage::DeferredConfigPersistence;
 pub(in crate::package) use config_storage::{
     FirmwareImuMigration, FloatOutBoyConfigLoadOutcome, migrate_legacy_firmware_imu_settings,
     store_persisted_config,
@@ -172,6 +173,7 @@ pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     config_load_outcome: FloatOutBoyConfigLoadOutcome,
+    deferred_config_persistence: DeferredConfigPersistence,
     startup_configured: bool,
     firmware_imu_migration: FirmwareImuMigration,
     data_recorder: DataRecorderState,
@@ -243,6 +245,7 @@ impl FloatOutBoyPackageState {
             all_data_payloads: Default::default(),
             serialized_config: Default::default(),
             config_load_outcome: Default::default(),
+            deferred_config_persistence: Default::default(),
             startup_configured: Default::default(),
             firmware_imu_migration: Default::default(),
             data_recorder: Default::default(),
@@ -701,6 +704,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn refresh_running_epochs(&mut self, now: TimestampTicks) {
+        self.retry_failed_config_persistence_after_ride();
         self.disengage_ticks.restart(now);
         self.refresh_idle_epoch(now);
     }
@@ -1013,10 +1017,14 @@ impl FloatOutBoyPackageState {
         if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
             return handled;
         }
-        self.handle_control_packet(now, bytes)
-            || self.handle_config_packet(now, bytes)
-            || self.handle_tuning_packet(now, bytes)
-            || self.handle_query_packet(telemetry, now, reply, bytes)
+        if self.handle_control_packet(now, bytes) || self.handle_config_packet(now, bytes) {
+            return true;
+        }
+        #[cfg(test)]
+        if self.handle_tuning_packet(now, bytes) {
+            return true;
+        }
+        self.handle_query_packet(telemetry, now, reply, bytes)
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
     }
 
@@ -1038,12 +1046,12 @@ impl FloatOutBoyPackageState {
 
         match command {
             FloatOutBoyAppDataCommand::ConfigSave => {
-                let config = self.active_config_image();
-                let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-                    store_persisted_config(effects, &config)
-                });
-                if stored {
-                    self.acknowledge_command_config_write(now());
+                let requested_at = now();
+                if let Some(config) = self.begin_active_config_persistence(requested_at) {
+                    let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                        store_persisted_config(effects, &config)
+                    });
+                    self.finish_config_persistence(&config, stored, now());
                 }
                 Some(true)
             }
@@ -1141,16 +1149,27 @@ impl FloatOutBoyPackageState {
         self.handle_config_command(bytes, now)
     }
 
-    #[cfg_attr(target_arch = "arm", inline(never))]
+    #[cfg(test)]
     fn handle_tuning_packet(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
         bytes: &[u8],
     ) -> bool {
-        tuning::handle_runtime_tune_packet(self, now, bytes)
-            || tuning::handle_tilt_tune_packet(self, bytes)
-            || tuning::handle_other_tune_packet(self, now, bytes)
-            || tuning::handle_booster_packet(self, bytes)
+        let [package_id, command, payload @ ..] = bytes else {
+            return false;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
+            return false;
+        }
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
+            return false;
+        };
+        let mut config = *self.serialized_config();
+        let Some(commit) = Self::prepare_tune_config(&mut config, command, payload) else {
+            return false;
+        };
+        self.commit_prepared_tune(&config, commit, now());
+        true
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
