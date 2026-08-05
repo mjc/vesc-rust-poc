@@ -89,12 +89,13 @@ fn tune_angular_velocity(value: WireByte, offset: f32) -> AngularVelocity {
 
 fn update_active_config(
     state: &mut FloatOutBoyPackageState,
+    reconfigure: bool,
     update: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>) -> bool,
 ) -> bool {
     let mut config = state.serialized_config;
     let updated = update(&mut config.editor());
     if updated {
-        state.replace_active_config(&config);
+        state.replace_runtime_config(&config, reconfigure);
     }
     updated
 }
@@ -137,7 +138,7 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
         _ => -5.0,
     };
 
-    update_active_config(state, |config| {
+    update_active_config(state, true, |config| {
         let updated = write_fields!(config;
             B::KP_FIELD => pid_low.scaled(1.0, 15.0, AngleCurrentGain::new),
             B::KP2_FIELD => pid_high.divided(10.0, 0.0, RateCurrentGain::new),
@@ -182,7 +183,7 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
     } else {
         torque_on.scaled(0.5, 0.0, AngularVelocity::from_degrees_per_second)
     };
-    update_active_config(state, |config| {
+    update_active_config(state, true, |config| {
         write_fields!(config;
             B::ATR_THRESHOLD_UP_FIELD => threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees),
             B::ATR_THRESHOLD_DOWN_FIELD => threshold_down.scaled(0.5, 0.0, AngleDegrees::from_degrees),
@@ -203,7 +204,7 @@ fn apply_extended_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u
     let (roll_gain, turn_start_angle) = WireByte::nibbles(*orientation);
     let (atr_on, atr_off) = WireByte::nibbles(*atr_speeds);
 
-    update_active_config(state, |config| {
+    update_active_config(state, true, |config| {
         let mut updated = true;
         if roll_gain.as_u8() > 0 {
             updated &= config.set(
@@ -236,7 +237,7 @@ fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8])
         return true;
     };
     let (brake_low, brake_high) = WireByte::nibbles(*brake);
-    let updated = update_active_config(state, |config| {
+    let updated = update_active_config(state, true, |config| {
         write_fields!(config;
             B::KP_BRAKE_FIELD => tune_brake_gain(brake_low),
             B::KP2_BRAKE_FIELD => brake_high.divided(10.0, 0.0, PidScale::new),
@@ -285,7 +286,7 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
         return false;
     };
 
-    let updated = update_active_config(state, |config| {
+    let updated = update_active_config(state, false, |config| {
         let mut updated = write_fields!(config;
             C::DUTY_BEEP_ENABLED_FIELD => *flags & 0x01 != 0,
             C::DUTY_PUSHBACK_THRESHOLD_FIELD => WireByte::new(*duty).scaled_ratio(1.0, 100.0, 0.0, Ratio::from_ratio_const),
@@ -345,7 +346,7 @@ pub(super) fn handle_other_tune_packet(
         return false;
     };
 
-    let updated = update_active_config(state, |config| {
+    let updated = update_active_config(state, true, |config| {
         let mut updated = write_fields!(config;
             C::BEEPER_ENABLED_FIELD => *flags & 0x02 != 0,
             F::REVERSESTOP_FIELD => *flags & 0x04 != 0,
@@ -436,7 +437,7 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     let booster_current = WireByte::low_nibble(*booster_current);
     let (brake_angle, brake_ramp) = WireByte::nibbles(*brake_booster);
     let brake_current = WireByte::low_nibble(*brake_booster_current);
-    let updated = update_active_config(state, |config| {
+    let updated = update_active_config(state, false, |config| {
         write_fields!(config;
             B::BOOSTER_ANGLE_FIELD => tune_angle_from(booster_angle, AngleDegrees::from_degrees(5.0)),
             B::BOOSTER_RAMP_FIELD => tune_angle_from(booster_ramp, AngleDegrees::from_degrees(2.0)),
