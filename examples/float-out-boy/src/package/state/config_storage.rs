@@ -187,21 +187,6 @@ impl FloatOutBoyPackageState {
         self.reconfigure_active_config();
     }
 
-    // Keep the 282-byte tune image scalar-replaceable. Outlining this grew the
-    // production ARM tune-handler frame by 120 bytes and hard-faulted the ADV200.
-    #[cfg_attr(target_arch = "arm", inline(always))]
-    pub(super) fn replace_runtime_config(
-        &mut self,
-        config: &FloatOutBoyConfigImage,
-        reconfigure: bool,
-    ) {
-        self.serialized_config = *config;
-        if reconfigure {
-            self.refresh_balance_filter_config();
-            self.refresh_config_runtime_state();
-        }
-    }
-
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn reconfigure_active_config(&mut self) {
         self.refresh_balance_filter_config();
@@ -373,7 +358,7 @@ impl FloatOutBoyPackageState {
             FloatOutBoyAppDataCommand::TuneDefaults => {
                 let mut config = self.serialized_config;
                 config.reset_tune_defaults();
-                self.replace_runtime_config(&config, true);
+                self.replace_active_config(&config);
                 self.refresh_idle_epoch(now());
             }
             _ => return false,
