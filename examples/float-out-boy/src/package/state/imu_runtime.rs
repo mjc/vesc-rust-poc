@@ -514,7 +514,8 @@ fn evaluate_transition_phase(
         && balance_pitch.angle_degrees().abs() < push_start::ANGLE
         && roll_abs < push_start::ANGLE
         && !(faults.reversestop_enabled() && motor_erpm.is_negative());
-    let state_engage = ready_engage || ready_darkride || ready_push_start;
+    let state_engage = (ready_engage || ready_darkride || ready_push_start)
+        && !state.config_persistence_blocks_engagement();
     let stop_event = fault_evaluation.stop_event;
     let reverse_stop_entry_pending = !ride_state
         .setpoint_adjustment()

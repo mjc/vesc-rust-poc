@@ -13,6 +13,16 @@ std::thread_local! {
 }
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
+const DEFERRED_CONFIG_PERSISTENCE_DELAY_SECONDS: u32 = 1;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DeferredConfigPersistence {
+    #[default]
+    Clean,
+    Pending(FloatOutBoyConfigImage),
+    Writing(Option<FloatOutBoyConfigImage>),
+    Failed(FloatOutBoyConfigImage),
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
@@ -187,6 +197,108 @@ impl FloatOutBoyPackageState {
             == FloatOutBoyRunState::Running
     }
 
+    fn config_can_persist_now(&self, now: TimestampTicks) -> bool {
+        match self
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state()
+        {
+            FloatOutBoyRunState::Running => false,
+            FloatOutBoyRunState::Ready => self
+                .disengage_ticks
+                .older_than_secs(now, DEFERRED_CONFIG_PERSISTENCE_DELAY_SECONDS),
+            FloatOutBoyRunState::Disabled | FloatOutBoyRunState::Startup => true,
+        }
+    }
+
+    fn queue_config_persistence(&mut self, config: &FloatOutBoyConfigImage) {
+        // ponytail: one owned snapshot is enough; each later AppUI apply replaces it.
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(_) => {
+                DeferredConfigPersistence::Writing(Some(*config))
+            }
+            _ => DeferredConfigPersistence::Pending(*config),
+        };
+    }
+
+    pub(in crate::package) fn begin_active_config_persistence(
+        &mut self,
+        now: TimestampTicks,
+    ) -> Option<FloatOutBoyConfigImage> {
+        let config = self.active_config_image();
+        if self.config_can_persist_now(now)
+            && !matches!(
+                self.deferred_config_persistence,
+                DeferredConfigPersistence::Writing(_)
+            )
+        {
+            self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
+            Some(config)
+        } else {
+            self.queue_config_persistence(&config);
+            None
+        }
+    }
+
+    pub(in crate::package) fn begin_deferred_config_persistence(
+        &mut self,
+        now: TimestampTicks,
+    ) -> Option<FloatOutBoyConfigImage> {
+        if !self.config_can_persist_now(now) {
+            return None;
+        }
+        let DeferredConfigPersistence::Pending(config) = self.deferred_config_persistence else {
+            return None;
+        };
+        self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
+        Some(config)
+    }
+
+    pub(in crate::package) fn finish_config_persistence(
+        &mut self,
+        config: &FloatOutBoyConfigImage,
+        stored: bool,
+        now: TimestampTicks,
+    ) {
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(Some(pending)) => {
+                DeferredConfigPersistence::Pending(pending)
+            }
+            DeferredConfigPersistence::Writing(None) if stored => DeferredConfigPersistence::Clean,
+            DeferredConfigPersistence::Writing(None) => DeferredConfigPersistence::Failed(*config),
+            state => state,
+        };
+        if stored {
+            self.acknowledge_command_config_write(now);
+        }
+    }
+
+    pub(super) const fn config_persistence_blocks_engagement(&self) -> bool {
+        matches!(
+            self.deferred_config_persistence,
+            DeferredConfigPersistence::Writing(_)
+        )
+    }
+
+    pub(super) fn retry_failed_config_persistence_after_ride(&mut self) {
+        if let DeferredConfigPersistence::Failed(config) = self.deferred_config_persistence {
+            self.deferred_config_persistence = DeferredConfigPersistence::Pending(config);
+        }
+    }
+
+    pub(in crate::package) fn finish_configure_without_firmware_migration(&mut self) {
+        self.alert_after_configure();
+    }
+
+    pub(in crate::package) fn record_firmware_imu_migration(
+        &mut self,
+        migration: FirmwareImuMigration,
+    ) {
+        self.firmware_imu_migration = migration;
+    }
+
     pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
         self.serialized_config = *config;
         self.reconfigure_active_config();
@@ -217,6 +329,12 @@ impl FloatOutBoyPackageState {
     ) {
         self.serialized_config = loaded.config;
         self.config_load_outcome = loaded.outcome;
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(_) => {
+                DeferredConfigPersistence::Writing(Some(loaded.config))
+            }
+            _ => DeferredConfigPersistence::Clean,
+        };
     }
 
     pub(in crate::package) fn begin_configure_active(&mut self, now: TimestampTicks) {

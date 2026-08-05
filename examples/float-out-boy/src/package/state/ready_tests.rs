@@ -231,6 +231,42 @@ fn app_data_ready_normal_both_footpads_engages_like_float_out_boy_start_conditio
 }
 
 #[test]
+fn config_persistence_in_progress_blocks_ready_engagement() {
+    let lifecycle = TimestampTicks::from_ticks(0);
+    let telemetry = FirmwareTest::new();
+    configure_ready_imu(&telemetry, AngleRadians::from_radians(0.1));
+    let imu = telemetry.imu();
+    let mut state = FloatOutBoyPackageState::new(ready_payloads(
+        FloatOutBoyMode::Normal,
+        AngleDegrees::from_degrees(0.05),
+    ));
+    state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
+    state.initialize_time_epochs(lifecycle);
+    assert!(state.begin_active_config_persistence(lifecycle).is_some());
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        lifecycle,
+        telemetry.telemetry(),
+        imu,
+        &[
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Ready
+    );
+}
+
+#[test]
 fn ready_engage_plays_the_configured_three_transition_motor_click_like_refloat() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
