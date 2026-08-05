@@ -222,6 +222,35 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
 }
 
 #[test]
+fn runtime_tune_commands_do_not_reinitialize_led_hardware_like_refloat() {
+    let firmware = FirmwareTest::new();
+    let packets = [
+        TUNE_DEFAULTS_PACKET,
+        RUNTIME_TUNE_PACKET,
+        TILT_TUNE_PACKET,
+        OTHER_TUNE_PACKET,
+        BOOSTER_PACKET,
+    ];
+
+    for packet in packets {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.internal_led_refresh_pending = false;
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(42),
+            &mut |_| true,
+            packet,
+        ));
+        assert!(
+            !state.internal_led_refresh_pending,
+            "command {} requested an LED hardware refresh",
+            packet[1],
+        );
+    }
+}
+
+#[test]
 fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
