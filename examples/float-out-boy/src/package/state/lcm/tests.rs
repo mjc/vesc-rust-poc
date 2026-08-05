@@ -265,15 +265,15 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
     let mut config = state.serialized_config.as_bytes().to_vec();
     config[232] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
-    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+    let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         vescpkg_rs::prelude::OdometerMeters::from_meters(0),
         vescpkg_rs::prelude::TimestampTicks::from_ticks(0),
         1.0,
         |_| {},
-        || true,
     );
+    assert!(!backup_due);
     let before = state.internal_led_renderer_for_test().unwrap();
 
     dispatch(
