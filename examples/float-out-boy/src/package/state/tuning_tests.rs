@@ -186,6 +186,28 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
 }
 
 #[test]
+fn runtime_tune_reconfigures_once_after_applying_all_blocks() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut packet = RUNTIME_TUNE_PACKET.to_vec();
+    packet.extend_from_slice(&[0x54, 0x63]);
+    FloatOutBoyPackageState::reset_config_reconfigure_count_for_test();
+    state.internal_led_refresh_pending = false;
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(42),
+        &mut |_| true,
+        &packet,
+    ));
+    assert_eq!(
+        FloatOutBoyPackageState::config_reconfigure_count_for_test(),
+        1
+    );
+    assert!(state.internal_led_refresh_pending);
+}
+
+#[test]
 fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
     let firmware = FirmwareTest::new();
     let packets: &[&[u8]] = &[
