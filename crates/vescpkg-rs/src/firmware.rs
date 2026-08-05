@@ -113,6 +113,18 @@ impl AppDataReply<'_> {
         self.buffer.len = Some(len);
         Ok(())
     }
+
+    /// Borrow callback-owned scratch space without using the callback stack.
+    ///
+    /// The scratch bytes are discarded unless [`Self::write`] is called later.
+    /// Returns `None` when `LEN` exceeds the firmware app-data buffer.
+    pub fn with_scratch<const LEN: usize, R>(
+        &mut self,
+        operation: impl FnOnce(&mut [u8; LEN]) -> R,
+    ) -> Option<R> {
+        let scratch = <&mut [u8; LEN]>::try_from(self.buffer.bytes.get_mut(..LEN)?).ok()?;
+        Some(operation(scratch))
+    }
 }
 
 #[cfg(any(test, all(not(feature = "test-support"), target_arch = "arm")))]
@@ -200,11 +212,17 @@ impl FirmwareEffects {
 /// state borrow.
 pub struct StatefulCallbackContext<'a, T: crate::PackageRuntimeState> {
     state: crate::runtime::PackageStateSession<'a, T>,
+    #[cfg(any(test, feature = "test-support"))]
+    state_phase_count: usize,
 }
 
 impl<'a, T: crate::PackageRuntimeState> StatefulCallbackContext<'a, T> {
     fn begin(source: crate::PackageStateAccess<'a, T>) -> Option<Self> {
-        source.begin_callback().map(|state| Self { state })
+        source.begin_callback().map(|state| Self {
+            state,
+            #[cfg(any(test, feature = "test-support"))]
+            state_phase_count: 0,
+        })
     }
 
     /// Run one short, exclusive package-state phase.
@@ -213,7 +231,16 @@ impl<'a, T: crate::PackageRuntimeState> StatefulCallbackContext<'a, T> {
     /// lifecycle admission remains active. References borrowed from package
     /// state cannot escape the closure.
     pub fn with_state<R>(&mut self, operation: impl for<'state> FnOnce(&'state mut T) -> R) -> R {
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.state_phase_count += 1;
+        }
         self.state.with_state(operation)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    const fn state_phase_count(&self) -> usize {
+        self.state_phase_count
     }
 
     /// Run one slow or potentially re-entrant firmware-effect phase.
@@ -308,6 +335,20 @@ pub(crate) fn invoke_stateful_app_data_handler<T: AppDataHandler>(packet: &[u8])
     let mut reply = AppDataReply::new(&mut buffer);
     T::handle(&mut context, AppDataPacket::from_bytes(packet), &mut reply);
     true
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn invoke_stateful_app_data_handler_with_phase_count<T: AppDataHandler>(
+    packet: &[u8],
+) -> Option<usize> {
+    let source = crate::PackageStateAccess::runtime(
+        <T::State as crate::PackageRuntimeState>::runtime_store(),
+    );
+    let mut context = StatefulCallbackContext::begin(source)?;
+    let mut buffer = AppDataReplyBuffer::new();
+    let mut reply = AppDataReply::new(&mut buffer);
+    T::handle(&mut context, AppDataPacket::from_bytes(packet), &mut reply);
+    Some(context.state_phase_count())
 }
 
 /// Firmware ABI trampoline for a state-backed app-data handler.
