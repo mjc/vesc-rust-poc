@@ -11,7 +11,7 @@ fn sample(
         AdcVoltage::new(Voltage::from_volts(adc1)),
         AdcVoltage::new(Voltage::from_volts(adc2)),
     );
-    state.all_data_payloads().base().footpad()
+    state.all_data_payloads().footpad()
 }
 
 fn set_fault_thresholds(

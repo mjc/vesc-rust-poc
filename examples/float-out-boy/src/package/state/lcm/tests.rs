@@ -244,7 +244,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
     );
     let payloads = state.all_data_payloads;
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         crate::domain::FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),

@@ -170,10 +170,9 @@ impl FloatOutBoyPackageState {
 
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let flags = ride_state.setpoint_adjustment().id() << 4
-            | base.footpad().state().id() << 2
+            | payloads.footpad().state().id() << 2
             | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
             | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {

@@ -219,7 +219,7 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
         FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),

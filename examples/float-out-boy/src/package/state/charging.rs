@@ -1,7 +1,6 @@
 use super::float_out_boy_command_payload;
 use crate::domain::{
-    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
+    FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
 };
 use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::TimestampTicks;
@@ -53,11 +52,9 @@ pub(super) fn handle_packet(
         ),
     };
 
-    let base = payloads.base();
-    let status = base.status();
     // C map: the same packet writes `state->charging` before storing
     // voltage/current at `third_party/float-out-boy/src/charging.c:53-63`.
-    let ride_state = status.ride_state().with_charging(match *charging {
+    let ride_state = payloads.ride_state().with_charging(match *charging {
         // C map: `charging_state_request` writes `state->charging` from the
         // packet byte at `third_party/float-out-boy/src/charging.c:37-63`.
         0 => FloatOutBoyChargingState::NotCharging,
@@ -65,11 +62,9 @@ pub(super) fn handle_packet(
     });
     Some(
         payloads
-            .with_base(base.with_status(FloatOutBoyAllDataStatus::new(
-                ride_state,
-                status.beep_reason(),
-            )))
-            .with_mode4_charging(FloatOutBoyAllDataMode4Payload::new(current, voltage)),
+            .with_ride_state(ride_state)
+            .with_charging_current(current)
+            .with_charging_voltage(voltage),
     )
 }
 
@@ -78,19 +73,14 @@ pub(super) fn timeout(
     now: TimestampTicks,
     last_update: WrappingTimer,
 ) -> FloatOutBoyAllDataPayloads {
-    let base = payloads.base();
-    let status = base.status();
-    let ride_state = status.ride_state();
+    let ride_state = payloads.ride_state();
     if !matches!(ride_state.charging(), FloatOutBoyChargingState::Charging)
         || !last_update.older_than_secs(now, 5)
     {
         return payloads;
     }
 
-    payloads.with_base(base.with_status(FloatOutBoyAllDataStatus::new(
-        ride_state.with_charging(FloatOutBoyChargingState::NotCharging),
-        status.beep_reason(),
-    )))
+    payloads.with_ride_state(ride_state.with_charging(FloatOutBoyChargingState::NotCharging))
 }
 
 #[cfg(test)]

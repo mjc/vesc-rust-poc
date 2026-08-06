@@ -75,9 +75,9 @@ fn encode_float_out_boy_realtime_data_response(
         payloads,
         FloatOutBoyRealtimeDataHeader::new(
             timestamp,
-            payloads.base().status().ride_state(),
-            payloads.base().footpad().state(),
-            payloads.base().status().beep_reason(),
+            payloads.ride_state(),
+            payloads.footpad().state(),
+            payloads.beep_reason(),
         ),
         FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
         live_values(
@@ -110,7 +110,12 @@ fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPaylo
         base.booster_torque(),
         motor,
     );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
 }
 
 #[test]

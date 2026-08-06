@@ -28,12 +28,9 @@ pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     atr_accel_diff: f32,
 ) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut packet = FloatOutBoyPacket::new();
-    let base = payloads.base();
-    let ride_state = base.status().ride_state();
-    let footpad = base.footpad();
-    let attitude = base.attitude();
-    let setpoints = base.setpoints();
-    let motor = base.motor();
+    let ride_state = payloads.ride_state();
+    let footpad = payloads.footpad();
+    let setpoints = payloads.setpoints();
 
     // Upstream `on_command_received` dispatches `COMMAND_GET_RTDATA` to
     // `send_realtime_data` at `third_party/float-out-boy/src/main.c:2162-2164`; `send_realtime_data`
@@ -42,16 +39,16 @@ pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     // `third_party/float-out-boy/src/imu.c:35-41`.
     packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(FloatOutBoyAppDataCommand::GetRealtimeData.id());
-    packet.push_float32_auto(base.balance_current().current().current().as_amps());
-    packet.push_float32_auto(float_out_boy_degrees(attitude.balance_pitch().angle()));
-    packet.push_float32_auto(float_out_boy_degrees(attitude.roll().angle()));
+    packet.push_float32_auto(payloads.balance_current().current().current().as_amps());
+    packet.push_float32_auto(float_out_boy_degrees(payloads.balance_pitch().angle()));
+    packet.push_float32_auto(float_out_boy_degrees(payloads.roll().angle()));
 
     packet.push(
         (ride_state.float_state_compat() & 0x0f) | (ride_state.setpoint_adjustment_compat() << 4),
     );
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
-    packet.push((switch_state & 0x0f) | (base.status().beep_reason().id() << 4));
+    packet.push((switch_state & 0x0f) | (payloads.beep_reason().id() << 4));
     packet.push_float32_auto(footpad.left_voltage().as_volts());
     packet.push_float32_auto(footpad.right_voltage().as_volts());
 
@@ -67,17 +64,23 @@ pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     .map(|setpoint| setpoint.angle().as_degrees())
     .for_each(|value| packet.push_float32_auto(value));
 
-    packet.push_float32_auto(float_out_boy_degrees(attitude.pitch().angle()));
+    packet.push_float32_auto(float_out_boy_degrees(payloads.pitch().angle()));
     // Upstream reads `d->motor.filt_current`, `d->atr.accel_diff`, and
     // `d->motor.dir_current` at `third_party/float-out-boy/src/main.c:1298-1306`.
-    packet.push_float32_auto(motor.filtered_motor_current().current().current().as_amps());
+    packet.push_float32_auto(
+        payloads
+            .filtered_motor_current()
+            .current()
+            .current()
+            .as_amps(),
+    );
     packet.push_float32_auto(atr_accel_diff);
     if matches!(ride_state.charging(), FloatOutBoyChargingState::Charging) {
-        packet.push_float32_auto(payloads.mode4().current().current().as_amps());
-        packet.push_float32_auto(payloads.mode4().voltage().voltage().as_volts());
+        packet.push_float32_auto(payloads.charging_current().current().as_amps());
+        packet.push_float32_auto(payloads.charging_voltage().voltage().as_volts());
     } else {
-        packet.push_float32_auto(base.booster_torque().torque().as_newton_meters());
-        packet.push_float32_auto(motor.directional_motor_current().current().as_amps());
+        packet.push_float32_auto(payloads.booster_torque().torque().as_newton_meters());
+        packet.push_float32_auto(payloads.directional_motor_current().current().as_amps());
     }
     packet.push_float32_auto(remote_input.ratio().as_ratio());
 
@@ -94,8 +97,7 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     live: FloatOutBoyRealtimeLiveValues,
 ) -> FloatOutBoyRealtimeDataResponse {
     let mut packet = FloatOutBoyPacket::new();
-    let base = payloads.base();
-    let ride_state = base.status().ride_state();
+    let ride_state = payloads.ride_state();
     let running = ride_state.run_state() == FloatOutBoyRunState::Running;
     let charging = matches!(ride_state.charging(), FloatOutBoyChargingState::Charging);
 
@@ -119,8 +121,8 @@ pub fn encode_float_out_boy_realtime_data_response_with_runtime(
         }
     }
     if charging {
-        packet.push_float16_auto(payloads.mode4().current().current().as_amps());
-        packet.push_float16_auto(payloads.mode4().voltage().voltage().as_volts());
+        packet.push_float16_auto(payloads.charging_current().current().as_amps());
+        packet.push_float16_auto(payloads.charging_voltage().voltage().as_volts());
     }
 
     packet.push_u32(u32::from(tail.firmware_fault_active()));

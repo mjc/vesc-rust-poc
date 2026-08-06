@@ -115,7 +115,7 @@ fn charging_times_out_after_five_seconds_and_allows_ready_to_engage() {
         AdcVoltage::new(Voltage::from_volts(2.5)),
         TimestampTicks::from_ticks(60_000),
     );
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.charging(), FloatOutBoyChargingState::Charging);
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
 
@@ -127,7 +127,7 @@ fn charging_times_out_after_five_seconds_and_allows_ready_to_engage() {
         AdcVoltage::new(Voltage::from_volts(2.5)),
         TimestampTicks::from_ticks(60_001),
     );
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.charging(), FloatOutBoyChargingState::NotCharging);
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
 }

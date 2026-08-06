@@ -139,10 +139,9 @@ impl LcmState {
             return packet;
         }
 
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let mut state = ride_state.float_state_compat() & 0x0f;
-        state |= base.footpad().state().id() << 4;
+        state |= payloads.footpad().state().id() << 4;
         if matches!(ride_state.mode(), FloatOutBoyMode::HandTest) {
             state |= 0x80;
         }
@@ -152,7 +151,7 @@ impl LcmState {
         let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
         } else if self.lights_off_when_lifted {
-            degrees(base.attitude().pitch().angle()).abs().min(255.0) as u8
+            degrees(payloads.pitch().angle()).abs().min(255.0) as u8
         } else {
             0
         };

@@ -8,10 +8,10 @@ use super::super::protocol::{
 use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
-    FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAppDataCommand as Command, FloatOutBoyFatalErrorState as FatalError,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeSelectedRequest, FloatOutBoyRealtimeTail,
+    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest, FloatOutBoyAppDataCommand as Command,
+    FloatOutBoyFatalErrorState as FatalError, FloatOutBoyRealtimeDataHeader,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeSelectedRequest,
+    FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
@@ -79,14 +79,13 @@ impl FloatOutBoyPackageState {
         };
         let payloads = self
             .all_data_payloads
-            .with_base_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
-            .with_mode2_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
+            .with_motor_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
+            .with_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
                 telemetry.mosfet_temperature(),
                 telemetry.motor_temperature(),
             ));
         // Float Out Boy's main loop updates `d->time.now` before app-data reads it
         // in `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1931`.
-        let base = payloads.base();
         let fatal = if self.alert_tracker.fatal_error() {
             FatalError::Present
         } else {
@@ -94,9 +93,9 @@ impl FloatOutBoyPackageState {
         };
         let header = FloatOutBoyRealtimeDataHeader::new(
             now(),
-            base.status().ride_state(),
-            base.footpad().state(),
-            base.status().beep_reason(),
+            payloads.ride_state(),
+            payloads.footpad().state(),
+            payloads.beep_reason(),
         )
         .with_fatal_error(fatal)
         .with_data_recorder(self.data_recorder.flags());
@@ -138,18 +137,17 @@ impl FloatOutBoyPackageState {
         };
         let payloads = Self::runtime_all_data_payloads(
             self.all_data_payloads
-                .with_base_battery_voltage(BatteryVoltage::new(
+                .with_motor_battery_voltage(BatteryVoltage::new(
                     telemetry.input_voltage().voltage(),
                 )),
             telemetry,
             true,
         );
-        let base = payloads.base();
         let header = FloatOutBoyRealtimeDataHeader::new(
             now(),
-            base.status().ride_state(),
-            base.footpad().state(),
-            base.status().beep_reason(),
+            payloads.ride_state(),
+            payloads.footpad().state(),
+            payloads.beep_reason(),
         )
         .with_fatal_error(if self.alert_tracker.fatal_error() {
             FatalError::Present
@@ -191,7 +189,7 @@ impl FloatOutBoyPackageState {
                 let mode = request.mode();
                 let payloads =
                     self.all_data_payloads
-                        .with_base_battery_voltage(BatteryVoltage::new(
+                        .with_motor_battery_voltage(BatteryVoltage::new(
                             telemetry.input_voltage().voltage(),
                         ));
                 let payloads = if mode.includes_mode2() {
@@ -216,21 +214,20 @@ impl FloatOutBoyPackageState {
         // `third_party/float-out-boy/src/main.c:1373-1379`; mode >= 3 appends ride
         // totals at `third_party/float-out-boy/src/main.c:1381-1389`.
         let payloads = payloads
-            .with_mode2_distance_abs(telemetry.trip_distance())
-            .with_mode2_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
+            .with_distance_abs(telemetry.trip_distance())
+            .with_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
                 telemetry.mosfet_temperature(),
                 telemetry.motor_temperature(),
             ));
 
         if include_mode3 {
-            payloads.with_mode3_ride_totals(FloatOutBoyAllDataMode3Payload::new(
-                telemetry.odometer(),
-                telemetry.amp_hours_discharged(),
-                telemetry.amp_hours_charged(),
-                telemetry.watt_hours_discharged(),
-                telemetry.watt_hours_charged(),
-                telemetry.battery_level(),
-            ))
+            payloads
+                .with_odometer(telemetry.odometer())
+                .with_discharged_charge(telemetry.amp_hours_discharged())
+                .with_charged_charge(telemetry.amp_hours_charged())
+                .with_discharged_energy(telemetry.watt_hours_discharged())
+                .with_charged_energy(telemetry.watt_hours_charged())
+                .with_battery_level(telemetry.battery_level())
         } else {
             payloads
         }
