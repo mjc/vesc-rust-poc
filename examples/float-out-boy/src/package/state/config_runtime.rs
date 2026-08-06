@@ -32,7 +32,7 @@ pub(super) fn refresh_disabled_state(state: &mut FloatOutBoyPackageState) {
 pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {
     state
         .lcm
-        .set_hardware_mode(state.serialized_config.hardware_led_mode_id());
+        .set_hardware_mode(state.serialized_config.hardware_led_mode());
     if let Some((_, config)) = state.effective_led_config() {
         state.lcm.configure(config);
     }

@@ -687,7 +687,7 @@ fn assert_restored_runtime_state(
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::External.id()
+        crate::lcm::FloatOutBoyLedMode::External
     );
     assert_eq!(
         state
@@ -762,7 +762,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::Off.id()
+        crate::lcm::FloatOutBoyLedMode::Off
     );
     firmware.clear_settings_write_observations();
     assert_eq!(
@@ -993,7 +993,7 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::External.id()
+        crate::lcm::FloatOutBoyLedMode::External
     );
     assert_eq!(
         state.firmware_imu_migration_for_test(),

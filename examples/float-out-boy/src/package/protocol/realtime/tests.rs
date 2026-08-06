@@ -343,6 +343,57 @@ fn selected_realtime_float32_fields_keep_mask1_width_and_order() {
 }
 
 #[test]
+fn selected_realtime_mask1_bits_project_the_typed_realtime_inventory() {
+    let payloads = sample_all_data_payloads();
+    let header = selected_header(&payloads);
+    let live = selected_live_values();
+    let items = [
+        FloatOutBoyRealtimeDataItem::MotorSpeed,
+        FloatOutBoyRealtimeDataItem::MotorErpm,
+        FloatOutBoyRealtimeDataItem::MotorCurrent,
+        FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent,
+        FloatOutBoyRealtimeDataItem::MotorFilteredCurrent,
+        FloatOutBoyRealtimeDataItem::MotorDutyCycle,
+        FloatOutBoyRealtimeDataItem::MotorBatteryVoltage,
+        FloatOutBoyRealtimeDataItem::MotorBatteryCurrent,
+        FloatOutBoyRealtimeDataItem::MotorMosfetTemperature,
+        FloatOutBoyRealtimeDataItem::MotorTemperature,
+        FloatOutBoyRealtimeDataItem::ImuPitch,
+        FloatOutBoyRealtimeDataItem::ImuBalancePitch,
+        FloatOutBoyRealtimeDataItem::ImuRoll,
+        FloatOutBoyRealtimeDataItem::FootpadAdc1,
+        FloatOutBoyRealtimeDataItem::FootpadAdc2,
+        FloatOutBoyRealtimeDataItem::RemoteInput,
+        FloatOutBoyRealtimeDataItem::Setpoint,
+        FloatOutBoyRealtimeDataItem::AtrSetpoint,
+        FloatOutBoyRealtimeDataItem::BrakeTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::TurnTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::RemoteSetpoint,
+        FloatOutBoyRealtimeDataItem::BalanceCurrent,
+        FloatOutBoyRealtimeDataItem::ControlFrequency,
+    ];
+
+    for (offset, item) in items.into_iter().enumerate() {
+        let bit = if offset < 8 { offset + 6 } else { offset + 7 };
+        let response = encode_float_out_boy_realtime_selected_response(
+            selected_request(1, 1 << bit, 0),
+            &payloads,
+            header,
+            live,
+            None,
+        );
+
+        assert_eq!(response.as_bytes().len(), 19, "mask1 bit {bit}");
+        assert_f32_auto_be(
+            response.as_bytes(),
+            15,
+            realtime_value(&payloads, item, live),
+        );
+    }
+}
+
+#[test]
 fn selected_realtime_mask2_keeps_odometer_integer_and_numeric_order() {
     let payloads = sample_all_data_payloads();
     let response = encode_float_out_boy_realtime_selected_response(

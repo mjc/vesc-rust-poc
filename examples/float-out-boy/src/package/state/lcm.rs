@@ -17,6 +17,7 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
 };
+use crate::lcm::FloatOutBoyLedMode;
 use crate::wire::{FloatOutBoyPacket, degrees};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::FirmwareFault;
@@ -52,7 +53,7 @@ fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LcmState {
-    hardware_mode: u8,
+    hardware_mode: FloatOutBoyLedMode,
     brightness: [u8; 3],
     lights_off_when_lifted: bool,
     name: [u8; MAX_LCM_NAME_LENGTH],
@@ -73,7 +74,7 @@ impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.
     #[inline(never)]
-    pub(super) fn new(hardware_mode: u8, lights_off_when_lifted: bool) -> Self {
+    pub(super) fn new(hardware_mode: FloatOutBoyLedMode, lights_off_when_lifted: bool) -> Self {
         Self {
             hardware_mode,
             brightness: [0; 3],
@@ -84,12 +85,12 @@ impl LcmState {
         }
     }
 
-    pub(super) const fn set_hardware_mode(&mut self, hardware_mode: u8) {
+    pub(super) const fn set_hardware_mode(&mut self, hardware_mode: FloatOutBoyLedMode) {
         self.hardware_mode = hardware_mode;
     }
 
     #[cfg(test)]
-    pub(super) const fn hardware_mode(self) -> u8 {
+    pub(super) const fn hardware_mode(self) -> FloatOutBoyLedMode {
         self.hardware_mode
     }
 
@@ -103,7 +104,10 @@ impl LcmState {
     }
 
     const fn enabled(self) -> bool {
-        self.hardware_mode & 0x2 != 0
+        matches!(
+            self.hardware_mode,
+            FloatOutBoyLedMode::External | FloatOutBoyLedMode::Both
+        )
     }
 
     fn poll_request(&mut self, payload: &[u8]) {
@@ -269,7 +273,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(super) fn set_lcm_hardware_mode_for_test(&mut self, mode: u8) {
+    pub(super) fn set_lcm_hardware_mode_for_test(&mut self, mode: FloatOutBoyLedMode) {
         self.lcm.set_hardware_mode(mode);
     }
 }
