@@ -73,13 +73,13 @@ scalar unless its inner type is itself a function. The build script checks this
 distinction with a small synthetic fixture so a future bindgen shape change
 cannot silently turn a data slot into a raw-callable shim.
 
-Libclang is therefore a build-time dependency. The Nix development shell
-supplies it and sets `LIBCLANG_PATH` for the normal build and test commands.
+Libclang is therefore a build-time dependency and must be discoverable through
+`LIBCLANG_PATH`.
 
 The complete host gate can be run directly with:
 
 ```bash
-nix develop --command cargo test -p vescpkg-rs-sys --lib -- --test-threads=1
+cargo test -p vescpkg-rs-sys --lib -- --test-threads=1
 ```
 
 The serial flag keeps the process-global libclang fixture deterministic when
@@ -123,11 +123,9 @@ Host dispatch tests can be run under Miri to exercise the crate-internal mock-ta
 cargo +nightly miri test -p vescpkg-rs-sys
 ```
 
-In the current Nix shell this command is unavailable because no default
-rustup toolchain provides `cargo-miri`; record that as an environment
-limitation rather than weakening the gate. When a nightly Miri toolchain is
-available, use the command above with `-- --test-threads=1` so the host mock
-table and libclang fixtures remain isolated.
+When a nightly Miri toolchain is available, use the command above with
+`-- --test-threads=1` so the host mock table and libclang fixtures remain
+isolated.
 
 Miri covers host mock-table construction, function-pointer storage/loading,
 union/layout helpers, and callback test support. It does not cover the ARM

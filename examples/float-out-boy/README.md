@@ -9,12 +9,20 @@ The port has a different name on purpose. It follows Refloat's behavior and pack
 From the workspace root:
 
 ```console
-$ nix develop
 $ cargo nextest run -p vesc-example-float-out-boy --features test-support
 $ cargo run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 ```
 
 The finished artifact is written below `target/vescpkg/Float-Out-Boy-0.1.0/`.
+
+## Protocol compatibility
+
+The legacy realtime and all-data commands remain implemented for existing clients. New integrations should use the mask-selected realtime command; the package AppUI uses the internal realtime path and recorder protocol from the pinned cutoff.
+
+See the [app-data protocol](../../docs/float-out-boy-protocol.md) for client
+wire formats and the
+[architecture reference](../../docs/float-out-boy-architecture.md) for
+maintainer-facing control, timing, and persistence boundaries.
 
 ## Layout
 
@@ -29,3 +37,4 @@ Refloat is authored by Lukáš Hrázký and builds on the original Float package
 - [Refloat source](https://github.com/lukash/refloat)
 - [Refloat releases](https://github.com/lukash/refloat/releases)
 - [Refloat 1.2 release notes](https://pev.dev/t/refloat-version-1-2/2795)
+- [Refloat 1.3 release notes](https://pev.dev/t/refloat-version-1-3/2995)

@@ -3,6 +3,69 @@
 use super::FloatOutBoyAppDataCommand;
 
 #[test]
+fn protocol_reference_command_table_matches_typed_discriminants() {
+    let reference = include_str!("../../../../docs/float-out-boy-protocol.md");
+    for (command, id) in [
+        ("Info", FloatOutBoyAppDataCommand::Info),
+        (
+            "GetRealtimeData",
+            FloatOutBoyAppDataCommand::GetRealtimeData,
+        ),
+        ("RuntimeTune", FloatOutBoyAppDataCommand::RuntimeTune),
+        ("TuneDefaults", FloatOutBoyAppDataCommand::TuneDefaults),
+        ("ConfigSave", FloatOutBoyAppDataCommand::ConfigSave),
+        ("ConfigRestore", FloatOutBoyAppDataCommand::ConfigRestore),
+        ("TuneOther", FloatOutBoyAppDataCommand::TuneOther),
+        ("Booster", FloatOutBoyAppDataCommand::Booster),
+        ("PrintInfo", FloatOutBoyAppDataCommand::PrintInfo),
+        ("GetAllData", FloatOutBoyAppDataCommand::GetAllData),
+        ("Experiment", FloatOutBoyAppDataCommand::Experiment),
+        ("Lock", FloatOutBoyAppDataCommand::Lock),
+        ("HandTest", FloatOutBoyAppDataCommand::HandTest),
+        ("TuneTilt", FloatOutBoyAppDataCommand::TuneTilt),
+        ("Remote", FloatOutBoyAppDataCommand::Remote),
+        ("LightsControl", FloatOutBoyAppDataCommand::LightsControl),
+        ("Flywheel", FloatOutBoyAppDataCommand::Flywheel),
+        ("LcmPoll", FloatOutBoyAppDataCommand::LcmPoll),
+        ("LcmLightInfo", FloatOutBoyAppDataCommand::LcmLightInfo),
+        (
+            "LcmLightControl",
+            FloatOutBoyAppDataCommand::LcmLightControl,
+        ),
+        ("LcmDeviceInfo", FloatOutBoyAppDataCommand::LcmDeviceInfo),
+        ("ChargingState", FloatOutBoyAppDataCommand::ChargingState),
+        ("LcmGetBattery", FloatOutBoyAppDataCommand::LcmGetBattery),
+        ("RealtimeData", FloatOutBoyAppDataCommand::RealtimeData),
+        (
+            "RealtimeDataIds",
+            FloatOutBoyAppDataCommand::RealtimeDataIds,
+        ),
+        (
+            "RealtimeDataSelected",
+            FloatOutBoyAppDataCommand::RealtimeDataSelected,
+        ),
+        ("AlertsList", FloatOutBoyAppDataCommand::AlertsList),
+        ("AlertsControl", FloatOutBoyAppDataCommand::AlertsControl),
+        (
+            "DataRecordRequest",
+            FloatOutBoyAppDataCommand::DataRecordRequest,
+        ),
+        (
+            "DataRecordHeader",
+            FloatOutBoyAppDataCommand::DataRecordHeader,
+        ),
+        ("DataRecordData", FloatOutBoyAppDataCommand::DataRecordData),
+        ("LcmDebug", FloatOutBoyAppDataCommand::LcmDebug),
+    ] {
+        let row = std::format!("| `{command}` | `{}` |", id.id());
+        assert!(
+            reference.contains(&row),
+            "protocol reference is missing `{row}`"
+        );
+    }
+}
+
+#[test]
 fn every_refloat_command_id_round_trips_through_the_typed_model() {
     for (command, id) in [
         (FloatOutBoyAppDataCommand::Info, 0),
@@ -12,7 +75,6 @@ fn every_refloat_command_id_round_trips_through_the_typed_model() {
         (FloatOutBoyAppDataCommand::ConfigSave, 4),
         (FloatOutBoyAppDataCommand::ConfigRestore, 5),
         (FloatOutBoyAppDataCommand::TuneOther, 6),
-        (FloatOutBoyAppDataCommand::RcMove, 7),
         (FloatOutBoyAppDataCommand::Booster, 8),
         (FloatOutBoyAppDataCommand::PrintInfo, 9),
         (FloatOutBoyAppDataCommand::GetAllData, 10),
@@ -20,6 +82,7 @@ fn every_refloat_command_id_round_trips_through_the_typed_model() {
         (FloatOutBoyAppDataCommand::Lock, 12),
         (FloatOutBoyAppDataCommand::HandTest, 13),
         (FloatOutBoyAppDataCommand::TuneTilt, 14),
+        (FloatOutBoyAppDataCommand::Remote, 15),
         (FloatOutBoyAppDataCommand::LightsControl, 20),
         (FloatOutBoyAppDataCommand::Flywheel, 22),
         (FloatOutBoyAppDataCommand::LcmPoll, 24),

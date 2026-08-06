@@ -514,6 +514,32 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn command_reference_inventories_every_clap_subcommand() {
+        let reference = include_str!("../../../docs/cargo-vescpkg-command.md");
+        for command in [
+            "build",
+            "loopback",
+            "custom-app-data",
+            "custom-config",
+            "firmware-values",
+            "firmware-imu",
+            "fob-log",
+            "lisp-stats",
+            "control-loop",
+            "control-loop-deploy",
+            "package-install",
+            "erase-package",
+            "deploy",
+        ] {
+            let row = format!("| `{command}` |");
+            assert!(
+                reference.contains(&row),
+                "command reference is missing `{row}`"
+            );
+        }
+    }
+
+    #[test]
     fn parse_args_builds_typed_package_options() {
         let command = parse_args([
             "cargo-vescpkg",

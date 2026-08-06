@@ -5,6 +5,7 @@
 
 use super::state::FloatOutBoyPackageState;
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use core::fmt::Write;
 use vescpkg_rs::{Imu, MotorTelemetry};
 
 pub(crate) fn handle_float_out_boy_app_data_packet(
@@ -20,8 +21,41 @@ pub(crate) fn handle_float_out_boy_app_data_packet(
 
 pub(crate) struct FloatOutBoyAppData;
 
-fn float_out_boy_command(bytes: &[u8]) -> Option<(FloatOutBoyAppDataCommand, &[u8])> {
-    vescpkg_rs::protocol_app_data::parse_app_data_command(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FloatOutBoyCommandHeaderError {
+    Truncated(usize),
+    InvalidPackageId(u8),
+}
+
+fn float_out_boy_command(
+    bytes: &[u8],
+) -> Result<Option<(FloatOutBoyAppDataCommand, &[u8])>, FloatOutBoyCommandHeaderError> {
+    let [package_id, command, payload @ ..] = bytes else {
+        return Err(FloatOutBoyCommandHeaderError::Truncated(bytes.len()));
+    };
+    if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
+        return Err(FloatOutBoyCommandHeaderError::InvalidPackageId(*package_id));
+    }
+    Ok(FloatOutBoyAppDataCommand::try_from(*command)
+        .ok()
+        .map(|command| (command, payload)))
+}
+
+#[inline(never)]
+fn log_float_out_boy_command_header_error(
+    effects: &vescpkg_rs::FirmwareEffects,
+    error: FloatOutBoyCommandHeaderError,
+) {
+    let mut log = vescpkg_rs::FirmwareLog::<64>::new();
+    let _ = match error {
+        FloatOutBoyCommandHeaderError::Truncated(length) => {
+            write!(log, "Received command data too short: {length} bytes.")
+        }
+        FloatOutBoyCommandHeaderError::InvalidPackageId(package_id) => {
+            write!(log, "Invalid Package ID: {package_id}")
+        }
+    };
+    let _ = log.flush(effects);
 }
 
 fn finish_restored_config(
@@ -38,9 +72,10 @@ fn finish_restored_config(
 fn handle_effectful_float_out_boy_packet(
     context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
     bytes: &[u8],
+    command: FloatOutBoyAppDataCommand,
+    payload: &[u8],
     now: &mut impl FnMut() -> vescpkg_rs::TimestampTicks,
 ) -> Option<bool> {
-    let (command, payload) = float_out_boy_command(bytes)?;
     match command {
         FloatOutBoyAppDataCommand::ConfigSave => {
             let config = context.with_state(|state| state.active_config_image());
@@ -128,7 +163,20 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         let firmware = vescpkg_rs::Firmware::new();
         let mut now = || firmware.clock().now();
         let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
-        if handle_effectful_float_out_boy_packet(context, packet.as_bytes(), &mut now).is_some() {
+        let bytes = packet.as_bytes();
+        let (command, payload) = match float_out_boy_command(bytes) {
+            Ok(Some(command)) => command,
+            Ok(None) => return,
+            Err(error) => {
+                context.with_effects(|effects| {
+                    log_float_out_boy_command_header_error(effects, error);
+                });
+                return;
+            }
+        };
+        if handle_effectful_float_out_boy_packet(context, bytes, command, payload, &mut now)
+            .is_some()
+        {
             return;
         }
         let _ = context.with_state(|state| {

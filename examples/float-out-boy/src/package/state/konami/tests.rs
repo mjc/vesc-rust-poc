@@ -7,6 +7,24 @@ const SEQUENCE: &[FloatOutBoyFootpadState] = &[
 ];
 
 #[test]
+fn built_in_sequences_have_the_expected_element_counts() {
+    assert_eq!(FloatOutBoyKonami::flywheel().sequence.len(), 8);
+    assert_eq!(FloatOutBoyKonami::headlights_on().sequence.len(), 5);
+    assert_eq!(FloatOutBoyKonami::headlights_off().sequence.len(), 5);
+}
+
+#[test]
+fn empty_sequence_never_completes() {
+    let mut konami = FloatOutBoyKonami::new(&[]);
+
+    assert!(!konami.check(
+        FloatOutBoyFootpadState::Both,
+        TimestampTicks::from_ticks(u32::MAX)
+    ));
+    assert_eq!(konami.state, 0);
+}
+
+#[test]
 fn sequence_requires_source_timing_and_completes_once() {
     let mut konami = FloatOutBoyKonami::new(SEQUENCE);
     assert!(!konami.check(FloatOutBoyFootpadState::Left, TimestampTicks::from_ticks(0)));
