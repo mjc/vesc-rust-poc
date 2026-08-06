@@ -1,43 +1,42 @@
-//! Provisional Float Out Boy/Refloat WS2812 peripheral driver.
+//! VESC STM32F4 WS2812 peripheral driver.
 //!
-//! This module preserves Refloat v1.2.1's exact B6, B7, and C9 timer/DMA map.
-//! It is deliberately named for Float Out Boy: it is not yet the generic VESC
-//! WS2812 API. VESC's official `vesc_pkg` WS2812 library at commit
-//! `10825f313fd35a798db5ec1f5c9aef2b41f947d3` supports TIM3/TIM4 channels 1/2
-//! (normally B6, B7, C6, and C7), while Refloat additionally requires
-//! C9/TIM3 channel 4 and different lifecycle behavior.
+//! This module supports the official VESC package outputs on B6, B7, C6, and
+//! C7, plus Refloat's C9 extension. Each pin resolves to its complete GPIO,
+//! timer-channel, and DMA-stream tuple.
 //!
 //! The low-level entrypoints are unsafe because the SDK cannot lease these raw
-//! STM32 peripherals from the firmware. Float Out Boy's internal LED driver is
-//! the current safe owner: it keeps the DMA source buffer live, serializes CPU
-//! mutation behind quiescence, and retains state when teardown cannot stop DMA.
+//! STM32 peripherals from the firmware. A safe owner must keep the DMA source
+//! buffer live, serialize CPU mutation behind quiescence, and retain state when
+//! teardown cannot stop DMA.
 
-crate::wire_enum! {
-    /// Refloat v1.2.1's selectable WS2812 output pin.
-    pub enum Pin {
-        /// STM32 pin B6, TIM4 channel 1, DMA1 stream 0/channel 2.
-        B6 = 0,
-        /// STM32 pin B7, TIM4 channel 2, DMA1 stream 3/channel 2.
-        B7 = 1,
-        /// STM32 pin C9, TIM3 channel 4, DMA1 stream 2/channel 5.
-        C9 = 2,
-    }
+/// Supported STM32F4 WS2812 output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputPin {
+    /// STM32 pin B6, TIM4 channel 1, DMA1 stream 0/channel 2.
+    B6,
+    /// STM32 pin B7, TIM4 channel 2, DMA1 stream 3/channel 2.
+    B7,
+    /// STM32 pin C6, TIM3 channel 1, DMA1 stream 4/channel 5.
+    C6,
+    /// STM32 pin C7, TIM3 channel 2, DMA1 stream 5/channel 5.
+    C7,
+    /// STM32 pin C9, TIM3 channel 4, DMA1 stream 2/channel 5.
+    C9,
 }
 
-crate::wire_enum! {
-    /// Refloat v1.2.1's WS2812 output pull-up configuration.
-    pub enum PinConfig {
-        /// Configure an open-drain output for an external 5 V pull-up.
-        PullupTo5v = 0,
-        /// Configure the alternate-function output without open drain.
-        NoPullup = 1,
-    }
+/// WS2812 output-driver electrical mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputDrive {
+    /// Configure an open-drain output for an external pull-up.
+    OpenDrain,
+    /// Configure a push-pull alternate-function output.
+    PushPull,
 }
 
 const WS2812_ZERO: u16 = 31;
 const WS2812_ONE: u16 = 72;
 
-/// Encode one byte with Refloat v1.2.1's exact WS2812 PWM duty values.
+/// Encode one byte with the VESC package WS2812 PWM duty values.
 #[must_use]
 pub fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
     let Some(output) = pulses.get_mut(*index..) else {
@@ -72,10 +71,20 @@ const TIM_CCR4: usize = 0x40;
 const TIM_PERIOD: u32 = 104;
 #[cfg(target_arch = "arm")]
 const PAL_MODE_INPUT: u32 = 0;
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 const PAL_MODE_ALTERNATE_2_MID_SPEED: u32 = 2 | (2 << 7) | (1 << 3);
-#[cfg(target_arch = "arm")]
+#[cfg(any(test, target_arch = "arm"))]
 const PAL_OPEN_DRAIN: u32 = 1 << 2;
+
+#[cfg(any(test, target_arch = "arm"))]
+const fn output_mode(drive: OutputDrive) -> u32 {
+    PAL_MODE_ALTERNATE_2_MID_SPEED
+        | if matches!(drive, OutputDrive::OpenDrain) {
+            PAL_OPEN_DRAIN
+        } else {
+            0
+        }
+}
 
 #[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,9 +105,9 @@ struct PinHardware {
 
 #[cfg(any(test, target_arch = "arm"))]
 impl PinHardware {
-    const fn for_pin(pin: Pin) -> Self {
+    const fn for_pin(pin: OutputPin) -> Self {
         match pin {
-            Pin::B6 => Self {
+            OutputPin::B6 => Self {
                 gpio: 0x4002_0400,
                 gpio_pin: 6,
                 timer: 0x4000_0800,
@@ -112,7 +121,7 @@ impl PinHardware {
                 dma_channel: 0x0400_0000,
                 dma_flag_shift: 0,
             },
-            Pin::B7 => Self {
+            OutputPin::B7 => Self {
                 gpio: 0x4002_0400,
                 gpio_pin: 7,
                 timer: 0x4000_0800,
@@ -126,7 +135,35 @@ impl PinHardware {
                 dma_channel: 0x0400_0000,
                 dma_flag_shift: 22,
             },
-            Pin::C9 => Self {
+            OutputPin::C6 => Self {
+                gpio: 0x4002_0800,
+                gpio_pin: 6,
+                timer: 0x4000_0400,
+                timer_ccr: TIM_CCR1,
+                timer_ccmr: TIM_CCMR1,
+                timer_ccmr_shift: 0,
+                timer_ccer_shift: 0,
+                timer_dma_source: 0x0200,
+                rcc_apb1_peripheral: 0x0000_0002,
+                dma_stream: DMA1_BASE + 0x70,
+                dma_channel: 0x0a00_0000,
+                dma_flag_shift: 0,
+            },
+            OutputPin::C7 => Self {
+                gpio: 0x4002_0800,
+                gpio_pin: 7,
+                timer: 0x4000_0400,
+                timer_ccr: TIM_CCR2,
+                timer_ccmr: TIM_CCMR1,
+                timer_ccmr_shift: 8,
+                timer_ccer_shift: 4,
+                timer_dma_source: 0x0400,
+                rcc_apb1_peripheral: 0x0000_0002,
+                dma_stream: DMA1_BASE + 0x88,
+                dma_channel: 0x0a00_0000,
+                dma_flag_shift: 6,
+            },
+            OutputPin::C9 => Self {
                 gpio: 0x4002_0800,
                 gpio_pin: 9,
                 timer: 0x4000_0400,
@@ -162,7 +199,7 @@ impl PinHardware {
     }
 }
 
-/// Configure and start Refloat's circular WS2812 timer/DMA stream.
+/// Configure and start a circular WS2812 timer/DMA stream.
 ///
 /// # Safety
 ///
@@ -171,19 +208,16 @@ impl PinHardware {
 /// be mutated until [`quiesce`] or a successful [`teardown`] stops DMA.
 #[cfg(target_arch = "arm")]
 #[must_use]
-pub unsafe fn setup(pin: Pin, pin_config: PinConfig, pulses: &mut [u16]) -> bool {
-    let pin_mode = PAL_MODE_ALTERNATE_2_MID_SPEED
-        | if matches!(pin_config, PinConfig::PullupTo5v) {
-            PAL_OPEN_DRAIN
-        } else {
-            0
-        };
-    // SAFETY: the caller owns the Refloat source-mapped tuple and buffer for
+pub unsafe fn setup(pin: OutputPin, drive: OutputDrive, pulses: &mut [u16]) -> bool {
+    // SAFETY: the caller owns the source-mapped tuple and buffer for
     // the complete DMA lifetime, exactly as required by the generic stream.
     unsafe {
-        PinHardware::for_pin(pin)
-            .stream()
-            .setup(pin_mode, PAL_MODE_INPUT, TIM_PERIOD, pulses)
+        PinHardware::for_pin(pin).stream().setup(
+            output_mode(drive),
+            PAL_MODE_INPUT,
+            TIM_PERIOD,
+            pulses,
+        )
     }
 }
 
@@ -196,7 +230,7 @@ pub unsafe fn setup(pin: Pin, pin_config: PinConfig, pulses: &mut [u16]) -> bool
 /// `false`.
 #[cfg(target_arch = "arm")]
 #[must_use]
-pub unsafe fn quiesce(pin: Pin) -> bool {
+pub unsafe fn quiesce(pin: OutputPin) -> bool {
     // SAFETY: the caller retains exclusive ownership and the live source
     // buffer under this function's documented contract.
     unsafe { PinHardware::for_pin(pin).stream().quiesce() }
@@ -211,13 +245,13 @@ pub unsafe fn quiesce(pin: Pin) -> bool {
 /// successful [`quiesce`] or [`teardown`].
 #[cfg(target_arch = "arm")]
 #[must_use]
-pub unsafe fn restart(pin: Pin, pulses: &[u16]) -> bool {
+pub unsafe fn restart(pin: OutputPin, pulses: &[u16]) -> bool {
     // SAFETY: the caller has quiesced this exclusively owned tuple and keeps
     // `pulses` stable for the restarted DMA lifetime.
     unsafe { PinHardware::for_pin(pin).stream().restart(pulses) }
 }
 
-/// Stop and reset Refloat's WS2812 peripherals and return the pad to input.
+/// Stop and reset the WS2812 peripherals and return the pad to input.
 ///
 /// # Safety
 ///
@@ -225,7 +259,7 @@ pub unsafe fn restart(pin: Pin, pulses: &[u16]) -> bool {
 /// returns `false`, the DMA source buffer and owning state must remain live.
 #[cfg(target_arch = "arm")]
 #[must_use]
-pub unsafe fn teardown(pin: Pin) -> bool {
+pub unsafe fn teardown(pin: OutputPin) -> bool {
     // SAFETY: the caller owns the live tuple and retains the source buffer if
     // the generic stream cannot confirm DMA shutdown.
     unsafe { PinHardware::for_pin(pin).stream().teardown(PAL_MODE_INPUT) }
@@ -234,11 +268,12 @@ pub unsafe fn teardown(pin: Pin) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DMA1_BASE, Pin, PinConfig, PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4, encode_byte,
+        DMA1_BASE, OutputDrive, OutputPin, PAL_MODE_ALTERNATE_2_MID_SPEED, PAL_OPEN_DRAIN,
+        PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4, encode_byte, output_mode,
     };
 
     #[test]
-    fn every_byte_maps_to_refloats_exact_ws2812_pulses() {
+    fn every_byte_maps_to_the_vesc_ws2812_pulses() {
         let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 
         for byte in 0_u8..=u8::MAX {
@@ -261,40 +296,41 @@ mod tests {
     }
 
     #[test]
-    fn refloat_pin_ids_round_trip_and_reject_unknown_values() {
-        for (id, pin) in [Pin::B6, Pin::B7, Pin::C9].into_iter().enumerate() {
-            let id = u8::try_from(id).expect("three pins fit in u8");
-            assert_eq!(pin.id(), id);
-            assert_eq!(Pin::try_from(id), Ok(pin));
-        }
-        assert_eq!(Pin::try_from(3), Err(3));
-        assert_eq!(Pin::try_from(u8::MAX), Err(u8::MAX));
-    }
-
-    #[test]
-    fn refloat_pin_config_ids_round_trip_and_reject_unknown_values() {
-        assert_eq!(PinConfig::PullupTo5v.id(), 0);
-        assert_eq!(PinConfig::NoPullup.id(), 1);
-        assert_eq!(PinConfig::try_from(0), Ok(PinConfig::PullupTo5v));
-        assert_eq!(PinConfig::try_from(1), Ok(PinConfig::NoPullup));
-        assert_eq!(PinConfig::try_from(2), Err(2));
-    }
-
-    #[test]
-    fn refloat_pin_map_keeps_b6_b7_and_c9_timer_dma_tuples() {
-        let b6 = PinHardware::for_pin(Pin::B6);
+    fn official_vesc_pin_map_keeps_its_timer_dma_tuples() {
+        let b6 = PinHardware::for_pin(OutputPin::B6);
         assert_eq!(
             (b6.gpio, b6.gpio_pin, b6.timer, b6.timer_ccr, b6.dma_stream),
             (0x4002_0400, 6, 0x4000_0800, TIM_CCR1, DMA1_BASE + 0x10)
         );
 
-        let b7 = PinHardware::for_pin(Pin::B7);
+        let b7 = PinHardware::for_pin(OutputPin::B7);
         assert_eq!(
             (b7.gpio, b7.gpio_pin, b7.timer, b7.timer_ccr, b7.dma_stream),
             (0x4002_0400, 7, 0x4000_0800, TIM_CCR2, DMA1_BASE + 0x58)
         );
 
-        let c9 = PinHardware::for_pin(Pin::C9);
+        let c6 = PinHardware::for_pin(OutputPin::C6);
+        assert_eq!(
+            (c6.gpio, c6.gpio_pin, c6.timer, c6.timer_ccr, c6.dma_stream),
+            (0x4002_0800, 6, 0x4000_0400, TIM_CCR1, DMA1_BASE + 0x70)
+        );
+        assert_eq!(c6.timer_dma_source, 0x0200);
+        assert_eq!(c6.dma_channel, 0x0a00_0000);
+        assert_eq!(c6.dma_flag_shift, 0);
+
+        let c7 = PinHardware::for_pin(OutputPin::C7);
+        assert_eq!(
+            (c7.gpio, c7.gpio_pin, c7.timer, c7.timer_ccr, c7.dma_stream),
+            (0x4002_0800, 7, 0x4000_0400, TIM_CCR2, DMA1_BASE + 0x88)
+        );
+        assert_eq!(c7.timer_dma_source, 0x0400);
+        assert_eq!(c7.dma_channel, 0x0a00_0000);
+        assert_eq!(c7.dma_flag_shift, 6);
+    }
+
+    #[test]
+    fn refloat_c9_extension_keeps_its_timer_dma_tuple() {
+        let c9 = PinHardware::for_pin(OutputPin::C9);
         assert_eq!(
             (c9.gpio, c9.gpio_pin, c9.timer, c9.timer_ccr, c9.dma_stream),
             (0x4002_0800, 9, 0x4000_0400, TIM_CCR4, DMA1_BASE + 0x40)
@@ -302,5 +338,17 @@ mod tests {
         assert_eq!(c9.timer_dma_source, 0x1000);
         assert_eq!(c9.dma_channel, 0x0a00_0000);
         assert_eq!(c9.dma_flag_shift, 16);
+    }
+
+    #[test]
+    fn output_drive_selects_push_pull_or_open_drain() {
+        assert_eq!(
+            output_mode(OutputDrive::PushPull),
+            PAL_MODE_ALTERNATE_2_MID_SPEED
+        );
+        assert_eq!(
+            output_mode(OutputDrive::OpenDrain),
+            PAL_MODE_ALTERNATE_2_MID_SPEED | PAL_OPEN_DRAIN
+        );
     }
 }
