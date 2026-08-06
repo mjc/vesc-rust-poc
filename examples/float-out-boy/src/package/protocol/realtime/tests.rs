@@ -119,12 +119,11 @@ fn legacy_and_command_31_encode_every_live_modifier_with_source_signs() {
 #[test]
 fn float32_auto_zeros_small_normal_like_float_out_boy() {
     let value = 1.25e-38_f32;
-    let mut bytes = [0xff; 4];
-    let mut index = 0;
+    let mut packet = crate::wire::FloatOutBoyPacket::<4>::new();
 
-    float_out_boy_realtime_push_float32_auto(&mut bytes, &mut index, value);
+    packet.push_float32_auto(value);
 
-    assert_eq!((value.is_normal(), index, bytes), (true, 4, [0; 4]));
+    assert_eq!((value.is_normal(), packet.into_bytes()), (true, [0; 4]));
 }
 
 #[test]

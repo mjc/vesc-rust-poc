@@ -1,5 +1,5 @@
 use super::*;
-use crate::leds::FloatOutBoyLedColorOrder;
+use crate::leds::{FloatOutBoyLedColorOrder, FloatOutBoyLedStripOrder};
 
 impl FloatOutBoyLedMode {
     pub(crate) const fn uses_internal_leds(self) -> bool {

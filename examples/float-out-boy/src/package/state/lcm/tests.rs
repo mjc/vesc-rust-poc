@@ -69,14 +69,14 @@ fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
 fn every_lcm_response_starts_with_the_refloat_package_and_command_ids() {
     let state = LcmState::new(2, false);
     assert_eq!(
-        &state.light_info_response().bytes()[..2],
+        &state.light_info_response().as_bytes()[..2],
         [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::LcmLightInfo.id(),
         ]
     );
     assert_eq!(
-        &state.device_info_response().bytes()[..2],
+        &state.device_info_response().as_bytes()[..2],
         [
             FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::LcmDeviceInfo.id(),

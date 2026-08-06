@@ -34,14 +34,13 @@ impl FloatOutBoyAppDataPackageId {
     }
 }
 
-/// Float Out Boy app-data command IDs.
-///
-/// Float Out Boy `v1.2.1` defines the core IDs in `third_party/float-out-boy/src/main.c:1241-1262`,
-/// LCM IDs in `third_party/float-out-boy/src/lcm.h:27-33`, and charging state in
-/// `third_party/float-out-boy/src/charging.h:25`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(u8)]
-pub enum FloatOutBoyAppDataCommand {
+vescpkg_rs::wire_enum! {
+    /// Float Out Boy app-data command IDs.
+    ///
+    /// Float Out Boy `v1.2.1` defines the core IDs in `third_party/float-out-boy/src/main.c:1241-1262`,
+    /// LCM IDs in `third_party/float-out-boy/src/lcm.h:27-33`, and charging state in
+    /// `third_party/float-out-boy/src/charging.h:25`.
+    pub enum FloatOutBoyAppDataCommand {
     /// Version/package info.
     Info = 0,
     /// Realtime data request.
@@ -104,6 +103,7 @@ pub enum FloatOutBoyAppDataCommand {
     DataRecordData = 43,
     /// LCM debug command reserved for external debugging.
     LcmDebug = 99,
+    }
 }
 
 impl FloatOutBoyAppDataCommand {
@@ -114,50 +114,10 @@ impl FloatOutBoyAppDataCommand {
     /// Returns [`FloatOutBoyAppDataCommandError`] when `id` is not one of the
     /// command bytes defined by Float Out Boy.
     pub const fn try_from_id(id: u8) -> Result<Self, FloatOutBoyAppDataCommandError> {
-        match id {
-            0 => Ok(Self::Info),
-            1 => Ok(Self::GetRealtimeData),
-            2 => Ok(Self::RuntimeTune),
-            3 => Ok(Self::TuneDefaults),
-            4 => Ok(Self::ConfigSave),
-            5 => Ok(Self::ConfigRestore),
-            6 => Ok(Self::TuneOther),
-            7 => Ok(Self::RcMove),
-            8 => Ok(Self::Booster),
-            9 => Ok(Self::PrintInfo),
-            10 => Ok(Self::GetAllData),
-            11 => Ok(Self::Experiment),
-            12 => Ok(Self::Lock),
-            13 => Ok(Self::HandTest),
-            14 => Ok(Self::TuneTilt),
-            20 => Ok(Self::LightsControl),
-            22 => Ok(Self::Flywheel),
-            24 => Ok(Self::LcmPoll),
-            25 => Ok(Self::LcmLightInfo),
-            26 => Ok(Self::LcmLightControl),
-            27 => Ok(Self::LcmDeviceInfo),
-            28 => Ok(Self::ChargingState),
-            29 => Ok(Self::LcmGetBattery),
-            31 => Ok(Self::RealtimeData),
-            32 => Ok(Self::RealtimeDataIds),
-            35 => Ok(Self::AlertsList),
-            36 => Ok(Self::AlertsControl),
-            41 => Ok(Self::DataRecordRequest),
-            42 => Ok(Self::DataRecordHeader),
-            43 => Ok(Self::DataRecordData),
-            99 => Ok(Self::LcmDebug),
-            value => Err(FloatOutBoyAppDataCommandError { value }),
+        match Self::try_from_wire_id(id) {
+            Ok(command) => Ok(command),
+            Err(value) => Err(FloatOutBoyAppDataCommandError { value }),
         }
-    }
-
-    /// Return the Float Out Boy `v1.2.1` command ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminants are the source-pinned wire IDs"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
     }
 }
 

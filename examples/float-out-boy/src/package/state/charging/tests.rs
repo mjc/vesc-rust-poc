@@ -27,14 +27,8 @@ fn charging_state_command_updates_status_and_mode4_payload_like_float_out_boy() 
         payloads.base().status().ride_state().charging(),
         FloatOutBoyChargingState::Charging
     );
-    assert_f32_eq!(
-        payloads.mode4().current().current().current().as_amps(),
-        12.3
-    );
-    assert_f32_eq!(
-        payloads.mode4().voltage().voltage().voltage().as_volts(),
-        50.0
-    );
+    assert_f32_eq!(payloads.mode4().current().current().as_amps(), 12.3);
+    assert_f32_eq!(payloads.mode4().voltage().voltage().as_volts(), 50.0);
 }
 
 #[test]
@@ -57,20 +51,11 @@ fn charging_packet_preserves_signed_current_and_zeroes_inactive_measurements() {
     };
 
     let charging = packet(1, (-123_i16).to_be_bytes());
-    assert_f32_eq!(
-        charging.mode4().current().current().current().as_amps(),
-        -12.3
-    );
+    assert_f32_eq!(charging.mode4().current().current().as_amps(), -12.3);
 
     let inactive = packet(0, 123_i16.to_be_bytes());
-    assert_f32_eq!(
-        inactive.mode4().current().current().current().as_amps(),
-        0.0
-    );
-    assert_f32_eq!(
-        inactive.mode4().voltage().voltage().voltage().as_volts(),
-        0.0
-    );
+    assert_f32_eq!(inactive.mode4().current().current().as_amps(), 0.0);
+    assert_f32_eq!(inactive.mode4().voltage().voltage().as_volts(), 0.0);
 }
 
 #[test]

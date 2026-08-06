@@ -2,7 +2,7 @@ use super::FloatOutBoyPackageState;
 #[cfg(any(test, target_arch = "arm"))]
 use super::limits::TractionLossLimits;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyFocIdCurrent,
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
 };
 use vescpkg_rs::MotorTelemetry;
@@ -142,9 +142,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, telemetry: &impl Moto
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.
         telemetry
             .d_axis_current()
-            .map_or(FloatOutBoyFocIdCurrent::unavailable(), |current| {
-                FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(current.current()))
-            }),
+            .map(|current| MotorCurrent::new(current.current())),
     );
     let base = FloatOutBoyAllDataBasePayload::new(
         base.balance_current(),

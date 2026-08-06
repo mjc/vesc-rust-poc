@@ -14,7 +14,10 @@ use crate::{
 };
 use vescpkg_rs::Ratio;
 
-use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO, encode_byte};
+use super::{
+    FloatOutBoyInternalLedDriver, FloatOutBoyLedStripRole, WS2812_ONE, WS2812_RESET, WS2812_ZERO,
+    encode_byte, ordered_strips,
+};
 
 fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
     FloatOutBoyLedBarConfig::new(
@@ -43,6 +46,90 @@ fn enabled_config() -> FloatOutBoyLedsConfig {
         black,
     )
     .enabled()
+}
+
+#[test]
+fn ordered_strips_matches_refloat_priority_for_every_order_assignment() {
+    let orders = [
+        FloatOutBoyLedStripOrder::None,
+        FloatOutBoyLedStripOrder::First,
+        FloatOutBoyLedStripOrder::Second,
+        FloatOutBoyLedStripOrder::Third,
+    ];
+
+    for status_order in orders {
+        for front_order in orders {
+            for rear_order in orders {
+                let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+                    .with_status_strip(FloatOutBoyLedStripConfig::new(
+                        status_order,
+                        2,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ))
+                    .with_front_strip(FloatOutBoyLedStripConfig::new(
+                        front_order,
+                        3,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ))
+                    .with_rear_strip(FloatOutBoyLedStripConfig::new(
+                        rear_order,
+                        5,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ));
+                let candidates = [
+                    (FloatOutBoyLedStripRole::Status, status_order, 2),
+                    (FloatOutBoyLedStripRole::Front, front_order, 3),
+                    (FloatOutBoyLedStripRole::Rear, rear_order, 5),
+                ];
+                let expected: std::vec::Vec<_> = [
+                    FloatOutBoyLedStripOrder::First,
+                    FloatOutBoyLedStripOrder::Second,
+                    FloatOutBoyLedStripOrder::Third,
+                ]
+                .into_iter()
+                .filter_map(|order| {
+                    candidates
+                        .into_iter()
+                        .find(|(_, candidate, _)| *candidate == order)
+                })
+                .map(|(role, _, count)| (role, count))
+                .collect();
+                let actual: std::vec::Vec<_> = ordered_strips(hardware)
+                    .map(|(role, strip)| (role, strip.count))
+                    .collect();
+
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn ordered_strips_ignores_disabled_counts_and_duplicate_orders() {
+    let disabled = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::None,
+        u8::MAX,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let first = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::First,
+        2,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let duplicate_first = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::First,
+        4,
+        FloatOutBoyLedColorOrder::Grbw,
+    );
+    let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+        .with_status_strip(first)
+        .with_front_strip(duplicate_first)
+        .with_rear_strip(disabled);
+
+    assert_eq!(
+        ordered_strips(hardware).collect::<std::vec::Vec<_>>(),
+        [(FloatOutBoyLedStripRole::Status, first)]
+    );
 }
 
 #[test]

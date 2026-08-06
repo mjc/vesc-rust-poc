@@ -1,5 +1,137 @@
 //! VESC firmware buffer-compatible primitive encoders.
 
+/// Fixed-capacity writer using VESC's incrementing-index overflow convention.
+///
+/// Writes past the physical buffer are discarded while the logical length keeps
+/// advancing, matching firmware helpers that increment their output index after
+/// every attempted byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedBuffer<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
+}
+
+impl<const N: usize> FixedBuffer<N> {
+    /// Build an empty zero-filled buffer.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; N],
+            len: 0,
+        }
+    }
+
+    /// Append one byte.
+    #[inline]
+    pub fn push(&mut self, value: u8) {
+        if let Some(slot) = self.bytes.get_mut(self.len) {
+            *slot = value;
+        }
+        self.len = self.len.saturating_add(1);
+    }
+
+    /// Append every byte from a slice.
+    #[inline]
+    pub fn extend(&mut self, values: &[u8]) {
+        extend_incrementing(&mut self.bytes, &mut self.len, values);
+    }
+
+    /// Append a slice padded or truncated to exactly `LEN` logical bytes.
+    #[inline]
+    pub fn extend_fixed<const LEN: usize>(&mut self, value: &[u8]) {
+        let copied = value.len().min(LEN);
+        self.extend(value.get(..copied).unwrap_or_default());
+        for _ in copied..LEN {
+            self.push(0);
+        }
+    }
+
+    /// Append a big-endian unsigned 16-bit integer.
+    #[inline]
+    pub fn push_u16(&mut self, value: u16) {
+        self.extend(&value.to_be_bytes());
+    }
+
+    /// Append a big-endian signed 16-bit integer.
+    #[inline]
+    pub fn push_i16(&mut self, value: i16) {
+        self.extend(&value.to_be_bytes());
+    }
+
+    /// Append a big-endian unsigned 32-bit integer.
+    #[inline]
+    pub fn push_u32(&mut self, value: u32) {
+        self.extend(&value.to_be_bytes());
+    }
+
+    /// Append VESC's automatic 32-bit float representation.
+    #[inline]
+    pub fn push_float32_auto(&mut self, value: f32) {
+        self.push_u32(float32_auto_bits(value));
+    }
+
+    /// Append a scaled, truncating, saturating signed 16-bit value.
+    #[inline]
+    pub fn push_scaled_i16(&mut self, value: f32, scale: f32) {
+        self.push_i16(saturating_trunc_f32_to_i16(value * scale));
+    }
+
+    /// Return the physically stored prefix.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes.get(..self.len).unwrap_or(&self.bytes)
+    }
+
+    /// Return the logical number of attempted bytes, including overflow writes.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return whether no writes have been attempted.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Return the physical capacity remaining for stored bytes.
+    #[must_use]
+    pub const fn remaining(&self) -> usize {
+        N.saturating_sub(self.len)
+    }
+
+    /// Replace one physically present byte.
+    #[must_use]
+    pub fn set(&mut self, index: usize, value: u8) -> bool {
+        self.bytes.get_mut(index).is_some_and(|slot| {
+            *slot = value;
+            true
+        })
+    }
+
+    /// Consume the writer and return its entire fixed-capacity storage.
+    #[must_use]
+    pub const fn into_bytes(self) -> [u8; N] {
+        self.bytes
+    }
+}
+
+#[inline(never)]
+fn extend_incrementing(buffer: &mut [u8], len: &mut usize, values: &[u8]) {
+    for &value in values {
+        if let Some(slot) = buffer.get_mut(*len) {
+            *slot = value;
+        }
+        *len = len.saturating_add(1);
+    }
+}
+
+impl<const N: usize> Default for FixedBuffer<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Append one byte using VESC's incrementing-index convention.
 #[must_use]
 pub fn append_u8(buffer: &mut [u8], index: &mut usize, value: u8) -> Option<()> {
@@ -145,10 +277,31 @@ pub fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto, read_i32,
-        read_u32, saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8,
+        FixedBuffer, append_float32_auto, append_i16, append_i32, append_u32, read_float32_auto,
+        read_i32, read_u32, saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8,
         saturating_trunc_f32_to_u32,
     };
+
+    #[test]
+    fn fixed_buffer_preserves_incrementing_partial_overflow_writes() {
+        let mut packet = FixedBuffer::<5>::new();
+        packet.push(0x12);
+        packet.push_u16(0x3456);
+        packet.push_u32(0x789a_bcde);
+
+        assert_eq!(packet.as_bytes(), [0x12, 0x34, 0x56, 0x78, 0x9a]);
+        assert_eq!(packet.len(), 7);
+    }
+
+    #[test]
+    fn fixed_buffer_encodes_signed_scaled_and_float_values() {
+        let mut packet = FixedBuffer::<8>::new();
+        packet.push_scaled_i16(-12.39, 10.0);
+        packet.push_float32_auto(1.4e-38);
+        packet.push_i16(0x1234);
+
+        assert_eq!(packet.into_bytes(), [0xff, 0x85, 0, 0, 0, 0, 0x12, 0x34]);
+    }
 
     #[test]
     fn fixed_width_encoder_rejects_partial_output() {

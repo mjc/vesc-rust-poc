@@ -77,7 +77,7 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
                     BatteryCurrent::new(Current::from_amps(-2.0)),
                 ),
                 DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-                FloatOutBoyFocIdCurrent::measured(MotorCurrent::new(Current::from_amps(2.0))),
+                Some(MotorCurrent::new(Current::from_amps(2.0))),
             ),
         ),
         FloatOutBoyAllDataMode2Payload::new(
@@ -86,7 +86,7 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
                 MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
                 MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
             ),
-            FloatOutBoyAllDataBatteryTemperature::unavailable(),
+            None,
         ),
         FloatOutBoyAllDataMode3Payload::new(
             OdometerMeters::from_meters(123_456),
@@ -97,8 +97,8 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
             BatteryLevel::from_fraction(0.72),
         ),
         FloatOutBoyAllDataMode4Payload::new(
-            FloatOutBoyRealtimeChargingCurrent::new(BatteryCurrent::new(Current::from_amps(1.2))),
-            FloatOutBoyRealtimeChargingVoltage::new(BatteryVoltage::new(Voltage::from_volts(82.4))),
+            BatteryCurrent::new(Current::from_amps(1.2)),
+            BatteryVoltage::new(Voltage::from_volts(82.4)),
         ),
     )
 }
