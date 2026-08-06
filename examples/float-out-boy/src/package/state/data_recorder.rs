@@ -2,8 +2,7 @@ use super::super::protocol::realtime_value;
 use super::FloatOutBoyPackageState;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags, FloatOutBoyRunState,
-    FloatOutBoyWheelSlipState,
+    FloatOutBoyAppDataCommand, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::{DataRecorder, DataRecorderProtocol, SampleRate, TimestampTicks};
 
@@ -23,45 +22,28 @@ type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
 
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
-pub(super) struct DataRecorderState {
-    recorder: DataRecorder<DataRecorderStorage, SAMPLE_SIZE>,
+pub(super) struct DataRecorderState(pub(super) DataRecorder<DataRecorderStorage, SAMPLE_SIZE>);
+
+pub(super) const fn default_data_recorder() -> DataRecorderState {
+    DataRecorderState(DataRecorder::new(
+        #[cfg(test)]
+        Some([0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]),
+        #[cfg(not(test))]
+        None,
+        DEFAULT_SAMPLE_RATE_HZ,
+    ))
 }
 
+#[cfg(test)]
 impl Default for DataRecorderState {
     fn default() -> Self {
-        Self {
-            recorder: DataRecorder::new(
-                #[cfg(test)]
-                Some([0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]),
-                #[cfg(not(test))]
-                None,
-                DEFAULT_SAMPLE_RATE_HZ,
-            ),
-        }
-    }
-}
-
-impl DataRecorderState {
-    #[cfg(all(not(test), target_arch = "arm"))]
-    fn initialize(&mut self, buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>) {
-        self.recorder.initialize(
-            buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE),
-            TARGET_RECORDING_SECONDS,
-        );
-    }
-
-    pub(super) fn has_capability(&self) -> bool {
-        self.recorder.has_capability()
-    }
-
-    pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
-        self.recorder.available_flags()
+        default_data_recorder()
     }
 }
 
 impl FloatOutBoyPackageState {
     pub(crate) fn stop_data_recorder(&mut self) {
-        self.data_recorder.recorder.replace_storage(None);
+        self.data_recorder.0.replace_storage(None);
     }
 
     #[cfg(all(not(test), target_arch = "arm"))]
@@ -69,18 +51,21 @@ impl FloatOutBoyPackageState {
         &mut self,
         buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
     ) {
-        self.data_recorder.initialize(buffer);
+        self.data_recorder.0.initialize(
+            buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE),
+            TARGET_RECORDING_SECONDS,
+        );
     }
 
     #[cfg(test)]
     pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.recorder.replace_storage(None);
+        self.data_recorder.0.replace_storage(None);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn initialize_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
         self.data_recorder
-            .recorder
+            .0
             .records_mut()
             .configure_sample_rate(sample_rate, Some(TARGET_RECORDING_SECONDS));
     }
@@ -88,7 +73,7 @@ impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn refresh_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
         self.data_recorder
-            .recorder
+            .0
             .records_mut()
             .configure_sample_rate(sample_rate, None);
     }
@@ -113,11 +98,11 @@ impl FloatOutBoyPackageState {
         for (target, value) in sample[5..].chunks_exact_mut(2).zip(values) {
             target.copy_from_slice(&value.to_be_bytes());
         }
-        let _ = self.data_recorder.recorder.sample(sample);
+        let _ = self.data_recorder.0.sample(sample);
     }
 
     pub(super) fn trigger_data_recorder(&mut self, engage: bool) {
-        self.data_recorder.recorder.trigger(engage);
+        self.data_recorder.0.trigger(engage);
     }
 
     pub(super) fn handle_data_recorder_packet(
@@ -132,7 +117,7 @@ impl FloatOutBoyPackageState {
         let reported_capacity = Some(TEST_SAMPLE_CAPACITY);
         #[cfg(not(test))]
         let reported_capacity = None;
-        self.data_recorder.recorder.reply_to_request(
+        self.data_recorder.0.reply_to_request(
             payload,
             &DATA_RECORDER_PROTOCOL,
             reported_capacity,

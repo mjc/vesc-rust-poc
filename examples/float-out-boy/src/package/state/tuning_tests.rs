@@ -668,12 +668,12 @@ fn tune_other_applies_cutoff_secondary_flags() {
     let firmware = FirmwareTest::new();
 
     for (flags, moving_faults_disabled, foot_beep_enabled, parking_brake_mode) in [
-        (0b0000, false, false, FloatOutBoyParkingBrakeMode::Always),
-        (0b0001, true, false, FloatOutBoyParkingBrakeMode::Always),
-        (0b0010, false, true, FloatOutBoyParkingBrakeMode::Always),
-        (0b0100, false, false, FloatOutBoyParkingBrakeMode::Idle),
-        (0b1000, false, false, FloatOutBoyParkingBrakeMode::Never),
-        (0b1111, true, true, FloatOutBoyParkingBrakeMode::Unknown(3)),
+        (0b0000, false, false, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0001, true, false, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0010, false, true, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0100, false, false, FloatOutBoyParkingBrakeMode::IDLE),
+        (0b1000, false, false, FloatOutBoyParkingBrakeMode::NEVER),
+        (0b1111, true, true, FloatOutBoyParkingBrakeMode::from(3)),
     ] {
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = OTHER_TUNE_PACKET.to_vec();

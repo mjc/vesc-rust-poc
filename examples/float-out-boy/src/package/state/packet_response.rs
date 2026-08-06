@@ -40,7 +40,7 @@ impl FloatOutBoyPackageState {
                 payload,
                 self.serialized_config.hardware_led_mode().id(),
                 internal_leds_operational,
-                self.data_recorder.has_capability(),
+                self.data_recorder.0.has_capability(),
             );
             return reply(response.as_bytes());
         }
@@ -106,7 +106,7 @@ impl FloatOutBoyPackageState {
             payloads.beep_reason(),
         )
         .with_fatal_error(fatal)
-        .with_data_recorder(self.data_recorder.flags());
+        .with_data_recorder(self.data_recorder.0.available_flags());
         let tail = FloatOutBoyRealtimeTail::new(
             self.alert_tracker.firmware_fault_active(),
             self.alert_tracker.firmware_fault_code(),
@@ -162,7 +162,7 @@ impl FloatOutBoyPackageState {
         } else {
             FatalError::None
         })
-        .with_data_recorder(self.data_recorder.flags());
+        .with_data_recorder(self.data_recorder.0.available_flags());
         let response = encode_float_out_boy_realtime_selected_response(
             request,
             &payloads,

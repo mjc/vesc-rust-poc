@@ -1280,13 +1280,13 @@ fn parking_brake_mode_field_decodes_known_and_rejects_unknown_values() {
         editable_config_from_bytes(&bytes)
             .motor_control()
             .parking_brake_mode(),
-        crate::config::FloatOutBoyParkingBrakeMode::Idle
+        crate::config::FloatOutBoyParkingBrakeMode::IDLE
     );
 
     bytes[118] = 0xff;
     assert_eq!(
-        crate::config::FloatOutBoyParkingBrakeMode::from(0xff),
-        crate::config::FloatOutBoyParkingBrakeMode::Unknown(0xff)
+        u8::from(crate::config::FloatOutBoyParkingBrakeMode::from(0xff)),
+        0xff
     );
     assert!(FloatOutBoyConfigImage::from_serialized(&bytes).is_none());
 }

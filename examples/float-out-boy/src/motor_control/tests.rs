@@ -12,7 +12,7 @@ fn motor_control_sets_zero_once_while_disabled_like_float_out_boy() {
         FloatOutBoyRunState::Disabled,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
     assert_eq!(motor.current_command_count(), 1);
@@ -23,7 +23,7 @@ fn motor_control_sets_zero_once_while_disabled_like_float_out_boy() {
         FloatOutBoyRunState::Disabled,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
     assert_eq!(motor.current_command_count(), 1);
@@ -40,7 +40,7 @@ fn motor_control_applies_ready_parking_brake_like_float_out_boy() {
         FloatOutBoyRunState::Ready,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
 
@@ -67,7 +67,7 @@ fn motor_control_seeds_idle_brake_timer_instead_of_reproducing_refloat_uptime_bu
         FloatOutBoyRunState::Ready,
         Rpm::ZERO,
         TimestampTicks::from_ticks(20_000),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
 
@@ -98,7 +98,7 @@ fn motor_control_modulates_requested_current_for_vibration_like_float_out_boy() 
             FloatOutBoyRunState::Running,
             Rpm::ZERO,
             TimestampTicks::from_ticks(0),
-            FloatOutBoyParkingBrakeMode::Idle,
+            FloatOutBoyParkingBrakeMode::IDLE,
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_f32_eq!(motor.commanded_current().current().as_amps(), 3.0);
@@ -110,7 +110,7 @@ fn motor_control_modulates_requested_current_for_vibration_like_float_out_boy() 
         FloatOutBoyRunState::Running,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
     assert_f32_eq!(motor.commanded_current().current().as_amps(), 7.0);
@@ -122,7 +122,7 @@ fn motor_control_modulates_requested_current_for_vibration_like_float_out_boy() 
         FloatOutBoyRunState::Running,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::from_amps(50.0)),
     ));
     assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
@@ -142,7 +142,7 @@ fn active_tone_saturates_an_empty_counter_instead_of_panicking() {
         FloatOutBoyRunState::Running,
         Rpm::ZERO,
         TimestampTicks::from_ticks(0),
-        FloatOutBoyParkingBrakeMode::Idle,
+        FloatOutBoyParkingBrakeMode::IDLE,
         MotorCurrent::new(Current::ZERO),
     ));
     assert_eq!(control.tone_counter, 1);
