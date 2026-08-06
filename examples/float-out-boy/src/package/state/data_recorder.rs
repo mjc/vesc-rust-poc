@@ -5,8 +5,7 @@ use crate::domain::{
     FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags, FloatOutBoyRunState,
     FloatOutBoyWheelSlipState,
 };
-use crate::wire::FloatOutBoyPacket;
-use vescpkg_rs::{DataRecorder, DataRecorderReply, SampleRate, TimestampTicks};
+use vescpkg_rs::{DataRecorder, DataRecorderProtocol, SampleRate, TimestampTicks};
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
@@ -57,26 +56,6 @@ impl DataRecorderState {
 
     pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
         self.recorder.available_flags()
-    }
-
-    fn status_response(&self) -> [u8; 7] {
-        #[cfg(test)]
-        let duration = self
-            .recorder
-            .records()
-            .recording_duration_centiseconds_at_capacity(TEST_SAMPLE_CAPACITY);
-        #[cfg(not(test))]
-        let duration = self.recorder.records().recording_duration_centiseconds();
-        let duration = duration.to_be_bytes();
-        [
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::DataRecordRequest.id(),
-            u8::from(self.has_capability()),
-            self.recorder.flags().bits(),
-            self.recorder.records().decimation(),
-            duration[0],
-            duration[1],
-        ]
     }
 }
 
@@ -146,38 +125,16 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         payload: &[u8],
     ) -> bool {
-        match self.data_recorder.recorder.handle_request(payload) {
-            DataRecorderReply::None => {}
-            DataRecorderReply::Status => {
-                let _ = reply(&self.data_recorder.status_response());
-            }
-            DataRecorderReply::Header => {
-                let mut response = DATA_RECORD_HEADER_BYTES;
-                response[1] = FloatOutBoyAppDataCommand::DataRecordHeader.id();
-                let count =
-                    u32::try_from(self.data_recorder.recorder.records().len()).unwrap_or(u32::MAX);
-                response[2..6].copy_from_slice(&count.to_be_bytes());
-                let _ = reply(&response);
-            }
-            DataRecorderReply::Data(offset) => {
-                let mut response = FloatOutBoyPacket::<DATA_RESPONSE_CAPACITY>::new();
-                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
-                response.push(FloatOutBoyAppDataCommand::DataRecordData.id());
-                response.push_u32(offset);
-                let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);
-                while response.remaining() >= SAMPLE_SIZE {
-                    let Some(sample) = self.data_recorder.recorder.records().get(sample_index)
-                    else {
-                        break;
-                    };
-                    response.extend(&sample);
-                    sample_index = sample_index.saturating_add(1);
-                }
-                if !self.data_recorder.recorder.records().is_empty() {
-                    let _ = reply(response.as_bytes());
-                }
-            }
-        }
+        #[cfg(test)]
+        let reported_capacity = Some(TEST_SAMPLE_CAPACITY);
+        #[cfg(not(test))]
+        let reported_capacity = None;
+        self.data_recorder.recorder.reply_to_request(
+            payload,
+            &DATA_RECORDER_PROTOCOL,
+            reported_capacity,
+            reply,
+        );
         true
     }
 }
@@ -196,3 +153,12 @@ const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0
     \x14torque_tilt.setpoint\
     \x0fbalance_current\
     \x14atr.transition_boost";
+
+const DATA_RECORDER_PROTOCOL: DataRecorderProtocol<HEADER_RESPONSE_LEN, DATA_RESPONSE_CAPACITY> =
+    DataRecorderProtocol::new(
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::DataRecordRequest.id(),
+        FloatOutBoyAppDataCommand::DataRecordHeader.id(),
+        FloatOutBoyAppDataCommand::DataRecordData.id(),
+        DATA_RECORD_HEADER_BYTES,
+    );
