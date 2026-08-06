@@ -1,8 +1,10 @@
 use super::FloatOutBoyPackageState;
+#[cfg(test)]
 use super::float_out_boy_command_payload;
 use crate::config::FloatOutBoyConfigImage;
-use crate::domain::FloatOutBoyMode;
-use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRunState};
+#[cfg(test)]
+use crate::domain::FloatOutBoyAppDataCommand;
+use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -30,11 +32,11 @@ enum FloatOutBoyHandtestRequest {
 }
 
 impl FloatOutBoyHandtestRequest {
-    fn from_packet(bytes: &[u8]) -> Option<Self> {
+    fn from_payload(payload: &[u8]) -> Option<Self> {
         // C map: `COMMAND_HANDTEST` uses the first payload byte as the on/off
         // flag at `third_party/float-out-boy/src/main.c:2226-2228`.
-        match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::HandTest) {
-            Some([on, ..]) => Some(Self::from_flag(*on)),
+        match payload {
+            [on, ..] => Some(Self::from_flag(*on)),
             _ => None,
         }
     }
@@ -79,11 +81,17 @@ impl FloatOutBoyHandtestRequest {
 
 impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
-    pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
+    pub(in crate::package) fn prepare_handtest_command(&mut self, payload: &[u8]) -> Option<bool> {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Float Out Boy C dispatches it at `third_party/float-out-boy/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/float-out-boy/src/main.c:1421-1430`.
-        FloatOutBoyHandtestRequest::from_packet(bytes).map(|request| request.apply_to(self))
+        FloatOutBoyHandtestRequest::from_payload(payload).map(|request| request.apply_to(self))
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
+        let payload = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::HandTest)?;
+        self.prepare_handtest_command(payload)
     }
 
     #[cfg(test)]

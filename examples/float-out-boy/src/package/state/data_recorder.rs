@@ -1,5 +1,5 @@
 use super::super::protocol::realtime_value;
-use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
+use super::FloatOutBoyPackageState;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
     FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags, FloatOutBoyRunState,
@@ -198,14 +198,10 @@ impl FloatOutBoyPackageState {
     pub(super) fn handle_data_recorder_packet(
         &mut self,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::DataRecordRequest)
-        else {
-            return false;
-        };
-        if !self.data_recorder.has_capability() {
+        let control = matches!(payload, [1, _, ..]);
+        if !self.data_recorder.has_capability() && !control {
             return true;
         }
 
