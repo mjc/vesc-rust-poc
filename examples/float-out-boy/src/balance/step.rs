@@ -50,7 +50,7 @@ impl LoopState {
             booster_torque,
             input.motor_torque_constant,
             state.softstart_pid_limit,
-            input.motor_current_max,
+            input.motor_current_limits.positive(),
             elapsed,
         );
 

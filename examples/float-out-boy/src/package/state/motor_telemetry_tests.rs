@@ -265,7 +265,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert!(!backup_due);
     assert!(!state.aux_motor_config_refresh_due(TimestampTicks::from_ticks(5_000)));
     assert_eq!(
-        state.motor_current_max,
+        state.motor_current_limits.positive(),
         MotorCurrentLimit::new(Current::ZERO)
     );
 
@@ -283,11 +283,11 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     let config = super::snapshot_motor_config(firmware.telemetry());
     state.finish_aux_motor_config_refresh(config, now);
     assert_eq!(
-        state.motor_current_max,
+        state.motor_current_limits.positive(),
         MotorCurrentLimit::new(Current::from_amps(42.0))
     );
     assert_eq!(
-        state.motor_current_min,
+        state.motor_current_limits.negative(),
         MotorCurrentLimit::new(Current::from_amps(17.0))
     );
     assert_eq!(
@@ -295,11 +295,11 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         DutyCycleLimit::new(Ratio::from_ratio_const(0.88))
     );
     assert_eq!(
-        state.battery_current_max,
+        state.battery_current_limits.positive(),
         InputCurrent::new(Current::from_amps(31.0))
     );
     assert_eq!(
-        state.battery_current_min,
+        state.battery_current_limits.negative(),
         InputCurrent::new(Current::from_amps(13.0))
     );
     assert_eq!(

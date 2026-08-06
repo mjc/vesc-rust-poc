@@ -68,6 +68,43 @@ impl MotorReleaseOutcome {
     }
 }
 
+/// Positive and negative current limits selected by the current direction.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DirectionalCurrentLimits<T> {
+    positive: T,
+    negative: T,
+}
+
+impl<T: Copy> DirectionalCurrentLimits<T> {
+    /// Build a directional limit pair.
+    #[must_use]
+    pub const fn new(positive: T, negative: T) -> Self {
+        Self { positive, negative }
+    }
+
+    /// Return the limit for the current's sign; zero uses the positive limit.
+    #[must_use]
+    pub const fn for_current(self, current: Current) -> T {
+        if current.is_negative() {
+            self.negative
+        } else {
+            self.positive
+        }
+    }
+
+    /// Return the positive-current limit.
+    #[must_use]
+    pub const fn positive(self) -> T {
+        self.positive
+    }
+
+    /// Return the negative-current limit.
+    #[must_use]
+    pub const fn negative(self) -> T {
+        self.negative
+    }
+}
+
 /// Return the bounded magnitude of current relative to a signed current limit.
 #[must_use]
 pub fn current_limit_saturation(current: Current, limit: Current) -> Ratio {
@@ -968,8 +1005,8 @@ pub struct MotorControlApi<B> {
 #[cfg(test)]
 mod tests {
     use super::{
-        battery_cell_count_from_firmware, current_limit_saturation, duty_cycle_from_firmware,
-        duty_cycle_limit_from_firmware,
+        DirectionalCurrentLimits, battery_cell_count_from_firmware, current_limit_saturation,
+        duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
     };
     use crate::{Current, DutyCycle, Ratio, SignedRatio};
 
@@ -1031,6 +1068,17 @@ mod tests {
             current_limit_saturation(Current::from_amps(30.0), Current::from_amps(20.0)),
             Ratio::FULL
         );
+    }
+
+    #[test]
+    fn directional_current_limits_select_by_current_sign() {
+        let limits = DirectionalCurrentLimits::new(20_u8, 10_u8);
+
+        assert_eq!(limits.for_current(Current::from_amps(1.0)), 20);
+        assert_eq!(limits.for_current(Current::ZERO), 20);
+        assert_eq!(limits.for_current(Current::from_amps(-1.0)), 10);
+        assert_eq!(limits.positive(), 20);
+        assert_eq!(limits.negative(), 10);
     }
 }
 
