@@ -89,39 +89,6 @@ fn is_tune_default_byte(index: usize) -> bool {
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct FloatOutBoySetpointFilterConfig {
-    time_constant: VescSeconds,
-    on_speed_time_constant: VescSeconds,
-    off_speed_time_constant: VescSeconds,
-    on_speed_limit: AngularVelocity,
-    off_speed_limit: AngularVelocity,
-}
-
-impl FloatOutBoySetpointFilterConfig {
-    pub(crate) const fn smooth_setpoint_config(
-        self,
-        winddown_time_constant: VescSeconds,
-    ) -> SmoothSetpointConfig {
-        SmoothSetpointConfig::symmetric(
-            self.time_constant,
-            self.on_speed_time_constant,
-            self.off_speed_time_constant,
-            winddown_time_constant,
-            self.on_speed_limit,
-            self.off_speed_limit,
-        )
-    }
-
-    pub(crate) const fn on_speed_limit(self) -> AngularVelocity {
-        self.on_speed_limit
-    }
-    #[cfg(test)]
-    pub(crate) const fn off_speed_limit(self) -> AngularVelocity {
-        self.off_speed_limit
-    }
-}
-
 #[cfg(test)]
 fn generated_field<T: Default>(value: Option<T>) -> T {
     // Generated offsets should always fit the fixed-size configuration image.
@@ -824,24 +791,29 @@ impl FloatOutBoyBalanceConfig<'_> {
         u16::from_be_bytes([self.0.as_bytes()[151], self.0.as_bytes()[152]])
     }
 
-    pub(crate) fn torque_tilt_filter(self) -> FloatOutBoySetpointFilterConfig {
-        FloatOutBoySetpointFilterConfig {
-            time_constant: self.torque_tilt_filter_time_constant(),
-            on_speed_time_constant: self.torque_tilt_filter_on_speed_time_constant(),
-            off_speed_time_constant: self.torque_tilt_filter_off_speed_time_constant(),
-            on_speed_limit: self.torque_tilt_filter_on_speed_limit(),
-            off_speed_limit: self.torque_tilt_filter_off_speed_limit(),
-        }
+    pub(crate) fn torque_tilt_filter(
+        self,
+        winddown_time_constant: VescSeconds,
+    ) -> SmoothSetpointConfig {
+        SmoothSetpointConfig::symmetric(
+            self.torque_tilt_filter_time_constant(),
+            self.torque_tilt_filter_on_speed_time_constant(),
+            self.torque_tilt_filter_off_speed_time_constant(),
+            winddown_time_constant,
+            self.torque_tilt_filter_on_speed_limit(),
+            self.torque_tilt_filter_off_speed_limit(),
+        )
     }
 
-    pub(crate) fn atr_filter(self) -> FloatOutBoySetpointFilterConfig {
-        FloatOutBoySetpointFilterConfig {
-            time_constant: self.atr_filter_time_constant(),
-            on_speed_time_constant: self.atr_filter_on_speed_time_constant(),
-            off_speed_time_constant: self.atr_filter_off_speed_time_constant(),
-            on_speed_limit: self.atr_filter_on_speed_limit(),
-            off_speed_limit: self.atr_filter_off_speed_limit(),
-        }
+    pub(crate) fn atr_filter(self, winddown_time_constant: VescSeconds) -> SmoothSetpointConfig {
+        SmoothSetpointConfig::symmetric(
+            self.atr_filter_time_constant(),
+            self.atr_filter_on_speed_time_constant(),
+            self.atr_filter_off_speed_time_constant(),
+            winddown_time_constant,
+            self.atr_filter_on_speed_limit(),
+            self.atr_filter_off_speed_limit(),
+        )
     }
 }
 

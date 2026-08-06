@@ -54,6 +54,7 @@ fn log_config_store_result(effects: &FirmwareEffects, stored: bool) {
     log_config_message(effects, message);
 }
 
+#[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FirmwareImuMigration {
     #[default]
@@ -71,41 +72,60 @@ pub(in crate::package) enum FirmwareImuMigration {
     },
 }
 
+#[cfg(not(test))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(in crate::package) struct FirmwareImuMigration;
+
+#[cfg(test)]
+macro_rules! migration_outcome {
+    ($outcome:expr) => {
+        $outcome
+    };
+}
+
+#[cfg(not(test))]
+macro_rules! migration_outcome {
+    ($outcome:expr) => {
+        FirmwareImuMigration
+    };
+}
+
 pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     effects: &FirmwareEffects,
 ) -> FirmwareImuMigration {
     let settings = vescpkg_rs::FirmwareSettings;
     let Ok(gain) = settings.imu_mahony_proportional_gain() else {
-        return FirmwareImuMigration::InvalidRead;
+        return migration_outcome!(FirmwareImuMigration::InvalidRead);
     };
     if gain.value() <= 1.0 {
-        return FirmwareImuMigration::NotRequired;
+        return migration_outcome!(FirmwareImuMigration::NotRequired);
     }
     let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.2) else {
-        return FirmwareImuMigration::InvalidTarget;
+        return migration_outcome!(FirmwareImuMigration::InvalidTarget);
     };
     let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
-        return FirmwareImuMigration::InvalidTarget;
+        return migration_outcome!(FirmwareImuMigration::InvalidTarget);
     };
-    let proportional_gain = settings
+    let proportional_failed = settings
         .set_imu_mahony_proportional_gain(effects, proportional_gain)
         .is_err();
-    let integral_gain = settings
+    let integral_failed = settings
         .set_imu_mahony_integral_gain(effects, integral_gain)
         .is_err();
-    let acceleration_confidence_decay = settings
+    let decay_failed = settings
         .set_imu_acceleration_confidence_decay(effects, vescpkg_rs::Ratio::from_ratio_const(0.1))
         .is_err();
+    let _ = (proportional_failed, integral_failed, decay_failed);
 
-    if proportional_gain || integral_gain || acceleration_confidence_decay {
+    migration_outcome!(if proportional_failed || integral_failed || decay_failed {
         FirmwareImuMigration::UnexpectedRejection {
-            proportional_gain,
-            integral_gain,
-            acceleration_confidence_decay,
+            proportional_gain: proportional_failed,
+            integral_gain: integral_failed,
+            acceleration_confidence_decay: decay_failed,
         }
     } else {
         FirmwareImuMigration::Applied
-    }
+    })
 }
 
 #[cfg(test)]

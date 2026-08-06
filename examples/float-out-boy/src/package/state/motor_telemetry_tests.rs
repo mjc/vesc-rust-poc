@@ -217,7 +217,7 @@ fn motor_runtime_tracks_typed_float_out_boy_wheelslip_duty_inputs() {
 
     assert_eq!(state.motor_duty_raw, Ratio::from_ratio_const(0.84));
     assert_eq!(
-        state.duty_max_with_margin,
+        state.motor_config.duty_max_with_margin,
         DutyCycleLimit::new(Ratio::from_ratio_const(0.90))
     );
 }
@@ -265,7 +265,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert!(!backup_due);
     assert!(!state.aux_motor_config_refresh_due(TimestampTicks::from_ticks(5_000)));
     assert_eq!(
-        state.motor_current_limits.positive(),
+        state.motor_config.motor_current_limits.positive(),
         MotorCurrentLimit::new(Current::ZERO)
     );
 
@@ -283,34 +283,37 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     let config = super::snapshot_motor_config(firmware.telemetry());
     state.finish_aux_motor_config_refresh(config, now);
     assert_eq!(
-        state.motor_current_limits.positive(),
+        state.motor_config.motor_current_limits.positive(),
         MotorCurrentLimit::new(Current::from_amps(42.0))
     );
     assert_eq!(
-        state.motor_current_limits.negative(),
+        state.motor_config.motor_current_limits.negative(),
         MotorCurrentLimit::new(Current::from_amps(17.0))
     );
     assert_eq!(
-        state.duty_max_with_margin,
+        state.motor_config.duty_max_with_margin,
         DutyCycleLimit::new(Ratio::from_ratio_const(0.88))
     );
     assert_eq!(
-        state.battery_current_limits.positive(),
+        state.motor_config.battery_current_limits.positive(),
         InputCurrent::new(Current::from_amps(31.0))
     );
     assert_eq!(
-        state.battery_current_limits.negative(),
+        state.motor_config.battery_current_limits.negative(),
         InputCurrent::new(Current::from_amps(13.0))
     );
     assert_eq!(
-        state.mosfet_temperature_limit_start,
+        state.motor_config.mosfet_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0))
     );
     assert_eq!(
-        state.motor_temperature_limit_start,
+        state.motor_config.motor_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
     );
-    assert_eq!(state.battery_cell_count, BatteryCellCount::try_new(18).ok());
+    assert_eq!(
+        state.motor_config.battery_cell_count,
+        BatteryCellCount::try_new(18).ok()
+    );
     assert_eq!(
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed
