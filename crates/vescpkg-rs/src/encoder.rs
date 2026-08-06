@@ -1,4 +1,8 @@
 //! Exclusive package-owned custom encoder callbacks.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::ffi::{CStr, c_char};
 use core::marker::PhantomData;
@@ -23,6 +27,11 @@ pub enum EncoderError {
     /// Another package currently owns custom encoder callbacks.
     Busy,
 }
+
+impl_error!(EncoderError {
+    Unavailable => "encoder callback slot is unavailable",
+    Busy => "encoder callback slot is already owned",
+});
 
 /// Safe callback behavior for one custom encoder provider.
 pub trait EncoderHandler {
@@ -115,6 +124,7 @@ unsafe extern "C" fn disabled_info() -> *mut c_char {
 
 impl crate::Firmware {
     /// Return the optional custom encoder capability handle.
+    #[must_use]
     pub fn encoder(&self) -> Encoder {
         Encoder::new()
     }
@@ -123,6 +133,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional custom encoder capability handle.
+    #[must_use]
     pub fn encoder(&self) -> Encoder {
         Encoder::new()
     }

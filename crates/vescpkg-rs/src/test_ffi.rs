@@ -195,6 +195,7 @@ static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
 static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_FW_OVERRIDE_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -365,6 +366,7 @@ fn reset_temperature_settings() {
     TEMPERATURE_ACCELERATION_DECREASE.store(0.0_f32.to_bits(), Ordering::Relaxed);
 }
 
+#[allow(clippy::too_many_lines, reason = "resets the flat fake-firmware state")]
 fn reset_motor_state() {
     KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
@@ -448,6 +450,7 @@ fn reset_motor_state() {
     FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
     FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_FW_OVERRIDE_AVAILABLE.store(true, Ordering::Relaxed);
     UART_AVAILABLE.store(true, Ordering::Relaxed);
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
@@ -790,7 +793,7 @@ pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
     LBM_SYMBOL_ID.load(Ordering::Relaxed)
 }
 
-pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+pub unsafe fn lbm_get_symbol_by_name(name: *const c_char, symbol: *mut u32) -> c_int {
     if name.is_null() || symbol.is_null() {
         return 0;
     }
@@ -840,8 +843,9 @@ pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) ->
     if buffer_size > FLAT_BUFFER.len() {
         return Some(false);
     }
+    let buffer_size = u32::try_from(buffer_size).ok()?;
     value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
-    value.buf_size = buffer_size as u32;
+    value.buf_size = buffer_size;
     value.buf_pos = 0;
     Some(true)
 }
@@ -1356,6 +1360,10 @@ pub(crate) fn set_foc_audio_stop_available(available: bool) {
 
 pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_foc_fw_override_available(available: bool) {
+    FOC_FW_OVERRIDE_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_uart_available(available: bool) {
@@ -1890,6 +1898,10 @@ pub unsafe fn foc_set_openloop_duty(_duty: f32, _rpm: f32) -> bool {
 
 pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
     FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub unsafe fn foc_set_fw_override(_current: f32) -> bool {
+    FOC_FW_OVERRIDE_AVAILABLE.load(Ordering::Relaxed)
 }
 
 pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {

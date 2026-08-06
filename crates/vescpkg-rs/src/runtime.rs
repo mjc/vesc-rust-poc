@@ -36,6 +36,7 @@ pub(crate) struct CallbackRegistrations {
     imu: bool,
 }
 
+#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
 impl CallbackRegistrations {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn clear_registered<B>(self, bindings: &B)
@@ -129,6 +130,7 @@ pub(crate) fn release_callback_registrations() {
 }
 
 #[cfg(not(target_arch = "arm"))]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Copy)]
 pub(crate) struct CallbackRecorder {
     state: NonNull<core::ffi::c_void>,
@@ -137,6 +139,37 @@ pub(crate) struct CallbackRecorder {
     custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
     clear_custom_config: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
     imu: unsafe fn(NonNull<core::ffi::c_void>) -> bool,
+}
+
+#[cfg(all(not(target_arch = "arm"), not(any(test, feature = "test-support"))))]
+#[derive(Clone, Copy)]
+pub(crate) struct CallbackRecorder;
+
+#[cfg(all(not(target_arch = "arm"), not(any(test, feature = "test-support"))))]
+impl CallbackRecorder {
+    pub(crate) fn new<T: crate::PackageRuntimeState>(_: NonNull<T>) -> Self {
+        Self
+    }
+
+    pub(crate) const fn finish_start(self, started: bool) -> bool {
+        started
+    }
+
+    pub(crate) const fn record_app_data(self) -> bool {
+        true
+    }
+
+    pub(crate) const fn record_custom_config(self) -> bool {
+        true
+    }
+
+    pub(crate) const fn clear_custom_config(self) -> bool {
+        true
+    }
+
+    pub(crate) const fn record_imu(self) -> bool {
+        true
+    }
 }
 
 #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
@@ -761,6 +794,7 @@ impl<T: Send + 'static> PackageStateStore<T> {
             #[cfg(not(target_arch = "arm"))]
             threads: UnsafeCell::new(None),
             #[cfg(not(target_arch = "arm"))]
+            #[cfg(any(test, feature = "test-support"))]
             callbacks: UnsafeCell::new(CallbackRegistrations {
                 app_data: false,
                 custom_config: false,

@@ -13,11 +13,13 @@ pub struct ImuSampleRate(SampleRate);
 
 impl ImuSampleRate {
     /// Wrap the generic sample-rate unit with firmware IMU meaning.
+    #[must_use]
     pub const fn new(sample_rate: SampleRate) -> Self {
         Self(sample_rate)
     }
 
     /// Return the generic sample-rate unit without erasing its meaning at the API boundary.
+    #[must_use]
     pub const fn sample_rate(self) -> SampleRate {
         self.0
     }
@@ -64,11 +66,13 @@ pub struct ImuAccelerationOffset(AccelerationG);
 
 impl ImuAccelerationOffset {
     /// Construct an accelerometer offset from g units.
+    #[must_use]
     pub fn try_new(value: AccelerationG) -> Option<Self> {
         value.as_g().is_finite().then_some(Self(value))
     }
 
     /// Return the offset in g units.
+    #[must_use]
     pub const fn as_g(self) -> f32 {
         self.0.as_g()
     }
@@ -81,6 +85,7 @@ pub struct ImuAngularRateOffset(AngularVelocity);
 
 impl ImuAngularRateOffset {
     /// Construct a gyroscope offset from degrees per second.
+    #[must_use]
     pub fn try_new(value: AngularVelocity) -> Option<Self> {
         value
             .as_degrees_per_second()
@@ -89,6 +94,7 @@ impl ImuAngularRateOffset {
     }
 
     /// Return the offset in degrees per second.
+    #[must_use]
     pub const fn as_degrees_per_second(self) -> f32 {
         self.0.as_degrees_per_second()
     }

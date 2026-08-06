@@ -1,4 +1,8 @@
 //! Motor-domain semantic wrappers.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::units::{Current, Frequency, SampleRate, VescSeconds, Voltage};
 
@@ -21,6 +25,7 @@ macro_rules! current_type {
             }
 
             /// Return the absolute current while preserving the domain wrapper.
+            #[must_use]
             pub const fn abs(self) -> Self {
                 Self(self.0.abs())
             }
@@ -200,6 +205,7 @@ impl AudioChannel {
     }
 
     /// Encode the channel index for the audio boundary.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
@@ -213,6 +219,7 @@ pub struct AudioChannelError {
 
 impl AudioChannelError {
     /// Return the rejected channel.
+    #[must_use]
     pub const fn value(self) -> u8 {
         self.value
     }
@@ -226,7 +233,7 @@ impl core::fmt::Display for AudioChannelError {
 
 impl core::error::Error for AudioChannelError {}
 
-/// Known active motor-fault identifiers from the pinned `mc_fault_code` ABI.
+/// Known active motor-fault identifiers from VESC firmware 7.00.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum FirmwareFaultId {
@@ -284,10 +291,23 @@ pub enum FirmwareFaultId {
     EncoderMagnetTooStrong,
     /// Phase filter fault.
     PhaseFilter,
+    /// General encoder fault.
+    EncoderFault,
+    /// Low-voltage output fault.
+    LowVoltageOutputFault,
+    /// Encoder slip detected.
+    EncoderSlip,
+    /// Motor speed exceeded its configured limit.
+    Overspeed,
+    /// Motor speed fell below its configured limit.
+    Underspeed,
+    /// Motor speed exceeded the absolute limit.
+    AbsoluteOverspeed,
 }
 
 impl FirmwareFaultId {
     /// Convert the known ABI identifier to the app-data compatibility byte.
+    #[must_use]
     pub const fn wire_code(self) -> FirmwareFaultWireCode {
         FirmwareFaultWireCode(self as u8 + 1)
     }
@@ -321,6 +341,12 @@ impl FirmwareFaultId {
             25 => Self::EncoderNoMagnet,
             26 => Self::EncoderMagnetTooStrong,
             27 => Self::PhaseFilter,
+            28 => Self::EncoderFault,
+            29 => Self::LowVoltageOutputFault,
+            30 => Self::EncoderSlip,
+            31 => Self::Overspeed,
+            32 => Self::Underspeed,
+            33 => Self::AbsoluteOverspeed,
             _ => return None,
         })
     }
@@ -356,11 +382,13 @@ pub struct FirmwareFaultWireCode(u8);
 
 impl FirmwareFaultWireCode {
     /// Build a token from an app-data fault-code byte.
+    #[must_use]
     pub const fn from_wire_code(code: u8) -> Self {
         Self(code)
     }
 
     /// Return the app-data fault-code byte.
+    #[must_use]
     pub const fn wire_code(self) -> u8 {
         self.0
     }
@@ -373,6 +401,7 @@ pub struct MotorCurrentLimit(Current);
 
 impl MotorCurrentLimit {
     /// Normalize a configured motor-current limit to its positive magnitude.
+    #[must_use]
     pub const fn new(current: Current) -> Self {
         Self(current.abs())
     }
@@ -384,6 +413,7 @@ impl MotorCurrentLimit {
     }
 
     /// Return the positive current-limit magnitude.
+    #[must_use]
     pub const fn current(self) -> Current {
         self.0
     }
@@ -392,6 +422,7 @@ impl MotorCurrentLimit {
     ///
     /// This follows VESC's comparison semantics: a zero limit clamps nonzero
     /// current to signed zero, while NaN operands leave the current unchanged.
+    #[must_use]
     pub const fn clamp(self, current: MotorCurrent) -> MotorCurrent {
         let requested = current.current();
         if requested.abs().is_greater_than(self.0) {
@@ -438,18 +469,50 @@ voltage_type!(AudioVoltage, "Audio/haptic voltage command.");
 
 /// Explicit motor-control thread selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct MotorSelection(u8);
+#[repr(i32)]
+pub enum MotorSelection {
+    /// Reuse the motor selected before this call.
+    LastUsed = 0,
+    /// Select motor-control thread one.
+    Motor1 = 1,
+    /// Select motor-control thread two.
+    Motor2 = 2,
+}
 
 impl MotorSelection {
-    /// Select a motor-control thread by its firmware index.
-    pub const fn new(index: u8) -> Self {
-        Self(index)
-    }
-
     /// Return the firmware motor-control thread index.
-    pub const fn index(self) -> u8 {
-        self.0
+    #[must_use]
+    pub const fn index(self) -> i32 {
+        self as i32
+    }
+}
+
+/// A firmware motor-selection value outside the documented `0..=2` contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MotorSelectionError(pub i32);
+
+impl core::fmt::Display for MotorSelectionError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            formatter,
+            "motor selection {} is outside the firmware range 0..=2",
+            self.0
+        )
+    }
+}
+
+impl core::error::Error for MotorSelectionError {}
+
+impl TryFrom<i32> for MotorSelection {
+    type Error = MotorSelectionError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::LastUsed),
+            1 => Ok(Self::Motor1),
+            2 => Ok(Self::Motor2),
+            value => Err(MotorSelectionError(value)),
+        }
     }
 }
 frequency_type!(AudioFrequency, "Audio/haptic frequency command.");

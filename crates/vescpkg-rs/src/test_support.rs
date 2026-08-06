@@ -26,11 +26,13 @@ pub fn with_firmware_effects<R>(
 }
 
 /// Invoke a stateful app-data handler through its real phased callback context.
+#[must_use]
 pub fn invoke_stateful_app_data_handler<T: crate::AppDataHandler>(packet: &[u8]) -> bool {
     crate::firmware::invoke_stateful_app_data_handler::<T>(packet)
 }
 
 /// Invoke a stateful custom-config handler through its real phased callback context.
+#[must_use]
 pub fn invoke_stateful_custom_config_handler<T, const LEN: usize>(config: &[u8; LEN]) -> bool
 where
     T: crate::StatefulCustomConfigCallback<LEN>,
@@ -202,7 +204,7 @@ impl FirmwareTest {
         crate::test_ffi::set_nvm_supported(supported);
     }
 
-    /// Make the fake LispBM evaluator reject every process message.
+    /// Make the fake `LispBM` evaluator reject every process message.
     pub fn fail_lisp_messages(&self) {
         crate::test_ffi::fail_lisp_messages(true);
     }
@@ -397,6 +399,11 @@ impl FirmwareTest {
     /// Toggle whether the fake firmware exposes optional open-loop FOC slots.
     pub fn set_open_loop_foc_available(&self, available: bool) {
         crate::test_ffi::set_foc_open_loop_available(available);
+    }
+
+    /// Toggle whether the fake firmware exposes the firmware 7.00 field-weakening slot.
+    pub fn set_field_weakening_override_available(&self, available: bool) {
+        crate::test_ffi::set_foc_fw_override_available(available);
     }
 
     /// Toggle whether the fake firmware exposes its optional UART slots.
@@ -603,6 +610,7 @@ impl FirmwareTest {
     }
 
     /// Configure a malformed raw battery-cell count for rejection-path tests.
+    #[must_use]
     pub fn with_raw_battery_cell_count(self, count: i32) -> Self {
         crate::test_ffi::set_raw_battery_cell_count(count);
         self

@@ -24,10 +24,12 @@ impl Stm32Pad {
     ///
     /// The caller must have exclusive ownership of the resolved hardware
     /// resource and must ensure no firmware subsystem concurrently changes it.
+    #[must_use]
     pub unsafe fn from_pin(pin: DigitalPin) -> Option<Self> {
         let mut gpio = ptr::null_mut();
         let mut st_pin = 0;
-        let resolved = unsafe { crate::ffi::io_get_st_pin(pin.raw(), &mut gpio, &mut st_pin) };
+        let resolved =
+            unsafe { crate::ffi::io_get_st_pin(pin.raw(), &raw mut gpio, &raw mut st_pin) };
         resolved.then(|| NonNull::new(gpio).map(|gpio| Self { gpio, pin: st_pin }))?
     }
 

@@ -1,4 +1,8 @@
 //! Exclusive, checked access to the optional VESC UART peripheral.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,11 +26,19 @@ pub enum UartError {
     InvalidRead,
 }
 
+impl_error!(UartError {
+    Unavailable => "UART capability is unavailable",
+    Busy => "UART is already owned by the SDK",
+    Rejected => "firmware rejected the UART operation",
+    BufferTooLong => "UART write exceeds the firmware ABI length",
+    InvalidRead => "firmware returned an invalid UART read value",
+});
+
 /// Optional UART capability handle.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Uart;
 
-/// Select the UART wiring mode used when opening a lease.
+/// Select the UART wiring mode used when taking over the peripheral.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UartDuplexMode {
     /// Use separate transmit and receive lines.
@@ -37,13 +49,17 @@ pub enum UartDuplexMode {
 
 impl UartDuplexMode {
     /// Return the raw half-duplex flag expected by the firmware ABI.
+    #[must_use]
     pub const fn is_half_duplex(self) -> bool {
         matches!(self, Self::HalfDuplex)
     }
 }
 
-/// Exclusive UART ownership lease.
-pub struct UartLease {
+/// Exclusive SDK session for a UART peripheral taken over from the VESC app.
+///
+/// Dropping this session releases SDK-side exclusivity only. The firmware UART
+/// setup can persist and this API cannot restore the previous VESC app.
+pub struct UartSession {
     _private: (),
 }
 
@@ -52,8 +68,16 @@ impl Uart {
         Self
     }
 
-    /// Acquire the UART and configure its baud and duplex mode.
-    pub fn open(&self, baud: BaudRate, mode: UartDuplexMode) -> Result<UartLease, UartError> {
+    /// Take over the UART and configure its baud and duplex mode.
+    ///
+    /// Firmware can persistently disable the current VESC app while starting
+    /// UART. Dropping the returned session does not stop UART or restore that
+    /// app; it only permits another SDK-side takeover attempt.
+    pub fn take_over(
+        &self,
+        baud: BaudRate,
+        mode: UartDuplexMode,
+    ) -> Result<UartSession, UartError> {
         if UART_OWNED
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
@@ -62,7 +86,7 @@ impl Uart {
         }
         let started = unsafe { crate::ffi::uart_start(baud.as_u32(), mode.is_half_duplex()) };
         match started {
-            Some(true) => Ok(UartLease { _private: () }),
+            Some(true) => Ok(UartSession { _private: () }),
             Some(false) => {
                 UART_OWNED.store(false, Ordering::Release);
                 Err(UartError::Rejected)
@@ -75,7 +99,7 @@ impl Uart {
     }
 }
 
-impl UartLease {
+impl UartSession {
     /// Write a bounded byte slice and return the number of bytes accepted.
     pub fn write(&self, data: &[u8]) -> Result<usize, UartError> {
         let size = u32::try_from(data.len()).map_err(|_| UartError::BufferTooLong)?;
@@ -101,7 +125,7 @@ impl UartLease {
     }
 }
 
-impl Drop for UartLease {
+impl Drop for UartSession {
     fn drop(&mut self) {
         UART_OWNED.store(false, Ordering::Release);
     }
@@ -109,6 +133,7 @@ impl Drop for UartLease {
 
 impl crate::Firmware {
     /// Return the optional UART capability handle.
+    #[must_use]
     pub fn uart(&self) -> Uart {
         Uart::new()
     }
@@ -117,6 +142,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional UART capability handle.
+    #[must_use]
     pub fn uart(&self) -> Uart {
         Uart::new()
     }

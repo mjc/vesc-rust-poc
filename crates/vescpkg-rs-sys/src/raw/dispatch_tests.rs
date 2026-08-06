@@ -28,8 +28,8 @@ use crate::{
 use super::{
     CanStatusMsg, CustomConfigGet, CustomConfigSet, CustomConfigXml, GnssData, RemoteState, VescIf,
     app_is_output_disabled, can_status_msg_index, can_transmit_eid, can_transmit_sid,
-    conf_custom_add_config, conf_custom_clear_configs, foc_get_id, get_ppm, get_ppm_age,
-    gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
+    conf_custom_add_config, conf_custom_clear_configs, foc_get_id, foc_set_fw_override, get_ppm,
+    get_ppm_age, gnss_snapshot, io_read, io_read_analog, io_set_mode, io_write, lbm_add_extension,
     lbm_add_extension_with_table_base, lbm_block_ctx_from_extension, lbm_car, lbm_cdr, lbm_cons,
     lbm_create_byte_array, lbm_dec_as_float, lbm_dec_as_i32, lbm_dec_char, lbm_dec_str,
     lbm_dec_sym, lbm_enc_char, lbm_enc_i, lbm_enc_sym, lbm_enc_sym_eerror, lbm_enc_sym_nil,
@@ -157,6 +157,7 @@ static CUSTOM_CONFIG_SET: SyncCounter = SyncCounter::new();
 static CUSTOM_CONFIG_XML: SyncCounter = SyncCounter::new();
 static SLEEP_US: SyncCounter = SyncCounter::new();
 static THREAD_SET_PRIORITY: SyncCounter = SyncCounter::new();
+static FOC_SET_FW_OVERRIDE: SyncCounter = SyncCounter::new();
 static MUTEX_CREATE: SyncCounter = SyncCounter::new();
 static MUTEX_LOCK: SyncCounter = SyncCounter::new();
 static MUTEX_UNLOCK: SyncCounter = SyncCounter::new();
@@ -192,6 +193,7 @@ static LAST_LEVEL: SyncI32 = SyncI32::new();
 static LAST_LBM_VALUE: SyncU32 = SyncU32::new();
 static LAST_SLEEP_US: SyncU32 = SyncU32::new();
 static LAST_THREAD_PRIORITY: SyncI32 = SyncI32::new();
+static LAST_FW_OVERRIDE: SyncF32 = SyncF32::new();
 static LAST_FOC_ID: SyncF32 = SyncF32::new();
 static LAST_HANDLER_INSTALLED: SyncBool = SyncBool::new();
 static LAST_CUSTOM_CONFIG_DEFAULT: SyncBool = SyncBool::new();
@@ -233,6 +235,7 @@ fn reset_counters() {
         &CUSTOM_CONFIG_XML,
         &SLEEP_US,
         &THREAD_SET_PRIORITY,
+        &FOC_SET_FW_OVERRIDE,
         &MUTEX_CREATE,
         &MUTEX_LOCK,
         &MUTEX_UNLOCK,
@@ -472,6 +475,11 @@ extern "C" fn stub_thread_set_priority(priority: c_int) {
     LAST_THREAD_PRIORITY.set(priority);
 }
 
+extern "C" fn stub_foc_set_fw_override(current: f32) {
+    FOC_SET_FW_OVERRIDE.inc();
+    LAST_FW_OVERRIDE.set(current);
+}
+
 extern "C" fn stub_mutex_create() -> *mut c_void {
     MUTEX_CREATE.inc();
     0xCAFEusize as *mut c_void
@@ -680,6 +688,7 @@ fn populated_table() -> VescIf {
     table.conf_custom_clear_configs = Some(stub_conf_custom_clear_configs);
     table.sleep_us = Some(stub_sleep_us);
     table.thread_set_priority = Some(stub_thread_set_priority);
+    table.foc_set_fw_override = Some(stub_foc_set_fw_override);
     table.mutex_create = Some(stub_mutex_create);
     table.mutex_lock = Some(stub_mutex_lock);
     table.mutex_unlock = Some(stub_mutex_unlock);
@@ -1110,6 +1119,27 @@ fn thread_set_priority_reports_absence_on_pre_6_06_tables() {
 }
 
 #[test]
+fn field_weakening_override_forwards_through_firmware_7_slot() {
+    with_populated_table(|| unsafe {
+        assert!(foc_set_fw_override(4.25));
+        assert_eq!(FOC_SET_FW_OVERRIDE.get(), 1);
+        assert_eq!(LAST_FW_OVERRIDE.get(), 4.25);
+    });
+}
+
+#[test]
+fn field_weakening_override_reports_absence_on_pre_7_00_tables() {
+    let mut table = populated_table();
+    table.foc_set_fw_override = None;
+
+    with_table(&table, || unsafe {
+        reset_counters();
+        assert!(!foc_set_fw_override(4.25));
+        assert_eq!(FOC_SET_FW_OVERRIDE.get(), 0);
+    });
+}
+
+#[test]
 fn mutex_helpers_forward_through_mock_table() {
     with_populated_table(|| unsafe {
         let mutex = vesc_mutex_create();
@@ -1204,17 +1234,14 @@ fn motor_data_helpers_forward_through_mock_table() {
 fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     assert_eq!(
         VescIfAbi::SOURCE_REPOSITORY,
-        "https://github.com/lukash/vesc_pkg_lib"
+        "https://github.com/vedderb/bldc"
     );
     assert_eq!(
         VescIfAbi::SOURCE_COMMIT,
-        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+        "0fc12dab64f2c06c2801bfdebf61256b0989ee06"
     );
-    assert_eq!(
-        VescIfAbi::SOURCE_HEADER,
-        "third_party/vesc_pkg_lib/vesc_c_if.h"
-    );
-    assert_eq!(c_vesc_if::FIELD_COUNT, 253);
+    assert_eq!(VescIfAbi::SOURCE_HEADER, "lispBM/c_libs/vesc_c_if.h");
+    assert_eq!(c_vesc_if::FIELD_COUNT, 254);
     assert_eq!(VescIfAbi::FIELD_COUNT, c_vesc_if::FIELD_COUNT);
 
     assert_eq!(c_vesc_if::lbm_add_extension::INDEX, 0);
@@ -1225,7 +1252,9 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     assert_eq!(c_vesc_if::mc_get_fault::INDEX, 92);
     assert_eq!(c_vesc_if::system_time_ticks::INDEX, 238);
     assert_eq!(c_vesc_if::shutdown_disable::INDEX, 252);
-    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 672);
+    assert_eq!(c_vesc_if::shutdown_disable::HEADER_LINE, 671);
+    assert_eq!(c_vesc_if::foc_set_fw_override::INDEX, 253);
+    assert_eq!(c_vesc_if::foc_set_fw_override::HEADER_LINE, 674);
 
     assert_eq!(
         c_vesc_if::SLOTS[0].name(),
@@ -1233,11 +1262,11 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     );
     assert_eq!(
         c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].name(),
-        c_vesc_if::shutdown_disable::NAME
+        c_vesc_if::foc_set_fw_override::NAME
     );
     assert_eq!(
         c_vesc_if::SLOTS[c_vesc_if::FIELD_COUNT - 1].vesc32_byte_offset(),
-        c_vesc_if::shutdown_disable::VESC32_BYTE_OFFSET
+        c_vesc_if::foc_set_fw_override::VESC32_BYTE_OFFSET
     );
 }
 

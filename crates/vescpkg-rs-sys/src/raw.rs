@@ -343,7 +343,7 @@ mod slots {
     fn_slot!(lbm_continue_eval as unsafe extern "C" fn());
     fn_slot!(lbm_eval_is_paused as unsafe extern "C" fn() -> bool);
     fn_slot!(lbm_add_symbol_const as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
-    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*const c_char, *mut u32) -> c_int);
     fn_slot!(lbm_enc_u as unsafe extern "C" fn(u32) -> LbmValue);
     fn_slot!(lbm_enc_i32 as unsafe extern "C" fn(i32) -> LbmValue);
     fn_slot!(lbm_is_symbol_nil as unsafe extern "C" fn(u32) -> bool);
@@ -584,6 +584,8 @@ mod slots {
     optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
+    // Appended in firmware 7.00; callers treat absence as unsupported.
+    optional_fn_slot!(foc_set_fw_override as unsafe extern "C" fn(f32));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
@@ -1908,6 +1910,13 @@ pub unsafe fn foc_set_openloop_duty_phase(duty: f32, phase: f32) -> bool {
         .is_some()
 }
 
+/// Set the firmware 7.00 field-weakening current override when the slot is present.
+pub unsafe fn foc_set_fw_override(current: f32) -> bool {
+    unsafe { slots::foc_set_fw_override() }
+        .map(|func| unsafe { func(current) })
+        .is_some()
+}
+
 /// Trigger a FOC audio beep when the firmware slot is present.
 pub unsafe fn foc_beep(frequency: f32, duration: f32, voltage: f32) -> Option<bool> {
     unsafe { slots::foc_beep() }.map(|func| unsafe { func(frequency, duration, voltage) })
@@ -2398,7 +2407,7 @@ pub unsafe fn lbm_add_symbol_const(name: *mut c_char, symbol: *mut u32) -> c_int
 }
 
 /// Look up a LispBM symbol by name and write its numeric identifier.
-pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+pub unsafe fn lbm_get_symbol_by_name(name: *const c_char, symbol: *mut u32) -> c_int {
     unsafe { slots::lbm_get_symbol_by_name()(name, symbol) }
 }
 

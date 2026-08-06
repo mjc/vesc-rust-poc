@@ -60,6 +60,7 @@ pub enum BatteryChemistry {
 
 impl BatteryChemistry {
     /// Decode the VESC `BATTERY_TYPE` enum value.
+    #[must_use]
     pub const fn from_raw(value: i32) -> Option<Self> {
         match value {
             0 => Some(Self::LithiumIon),
@@ -70,6 +71,7 @@ impl BatteryChemistry {
     }
 
     /// Encode the VESC `BATTERY_TYPE` enum value.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         match self {
             Self::LithiumIon => 0,
@@ -104,6 +106,7 @@ pub enum CanBaudRate {
 
 impl CanBaudRate {
     /// Decode the VESC `CAN_BAUD` enum value.
+    #[must_use]
     pub const fn from_raw(value: i32) -> Option<Self> {
         match value {
             0 => Some(Self::Kbps125),
@@ -120,6 +123,7 @@ impl CanBaudRate {
     }
 
     /// Encode the VESC `CAN_BAUD` enum value.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         match self {
             Self::Kbps125 => 0,
@@ -148,6 +152,7 @@ pub enum ImuAhrsMode {
 
 impl ImuAhrsMode {
     /// Decode the VESC `AHRS_MODE` enum value.
+    #[must_use]
     pub const fn from_raw(value: i32) -> Option<Self> {
         match value {
             0 => Some(Self::Madgwick),
@@ -158,6 +163,7 @@ impl ImuAhrsMode {
     }
 
     /// Encode the VESC `AHRS_MODE` enum value.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         match self {
             Self::Madgwick => 0,
@@ -194,6 +200,7 @@ pub enum ShutdownMode {
 
 impl ShutdownMode {
     /// Decode the VESC `SHUTDOWN_MODE` enum value.
+    #[must_use]
     pub const fn from_raw(value: i32) -> Option<Self> {
         match value {
             0 => Some(Self::AlwaysOff),
@@ -211,6 +218,7 @@ impl ShutdownMode {
     }
 
     /// Encode the VESC `SHUTDOWN_MODE` enum value.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         match self {
             Self::AlwaysOff => 0,
@@ -244,6 +252,7 @@ pub enum CanApplicationMode {
 
 impl CanApplicationMode {
     /// Decode the VESC `CAN_MODE` enum value.
+    #[must_use]
     pub const fn from_raw(value: i32) -> Option<Self> {
         match value {
             0 => Some(Self::Vesc),
@@ -256,6 +265,7 @@ impl CanApplicationMode {
     }
 
     /// Encode the VESC `CAN_MODE` enum value.
+    #[must_use]
     pub const fn as_u8(self) -> u8 {
         match self {
             Self::Vesc => 0,

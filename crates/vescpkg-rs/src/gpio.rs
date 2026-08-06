@@ -1,4 +1,8 @@
 //! Typed GPIO access for package code.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::cell::Cell;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -75,6 +79,12 @@ pub enum GpioError {
     /// Firmware rejected a mode transition or digital operation.
     FirmwareRejected,
 }
+
+impl_error!(GpioError {
+    Busy => "GPIO pin is already owned",
+    WrongMode => "GPIO operation does not match the configured mode",
+    FirmwareRejected => "firmware rejected the GPIO operation",
+});
 
 /// A firmware analog-input pin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -369,7 +379,7 @@ impl Drop for AnalogGpioLease<'_> {
 
 fn claim(leases: &AtomicU32, pin: i32) -> Result<u32, GpioError> {
     let Some(token) = (pin >= 0)
-        .then_some(1_u32.checked_shl(pin as u32))
+        .then_some(1_u32.checked_shl(pin.cast_unsigned()))
         .flatten()
     else {
         return Err(GpioError::FirmwareRejected);

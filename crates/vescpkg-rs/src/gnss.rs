@@ -1,4 +1,8 @@
 //! Owned GNSS snapshots copied from the optional firmware record.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::{
     GnssAltitude, GnssHdop, GnssLatitude, GnssLongitude, GnssSpeed, Height, Latitude, Longitude,
@@ -12,6 +16,10 @@ pub enum GnssError {
     /// The firmware does not expose a GNSS record slot or current record.
     Unavailable,
 }
+
+impl_error!(GnssError {
+    Unavailable => "GNSS data is unavailable",
+});
 
 /// Owned copy of one firmware GNSS record.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -45,42 +53,52 @@ impl GnssSnapshot {
     }
 
     /// Return typed latitude.
+    #[must_use]
     pub const fn latitude(self) -> GnssLatitude {
         self.latitude
     }
     /// Return typed longitude.
+    #[must_use]
     pub const fn longitude(self) -> GnssLongitude {
         self.longitude
     }
     /// Return typed altitude.
+    #[must_use]
     pub const fn altitude(self) -> GnssAltitude {
         self.altitude
     }
     /// Return typed ground speed.
+    #[must_use]
     pub const fn speed(self) -> GnssSpeed {
         self.speed
     }
     /// Return horizontal dilution of precision.
+    #[must_use]
     pub const fn hdop(self) -> GnssHdop {
         self.hdop
     }
     /// Return the firmware update timestamp.
+    #[must_use]
     pub const fn last_update(self) -> TimestampTicks {
         self.last_update
     }
     /// Return milliseconds since midnight in the firmware date record.
+    #[must_use]
     pub const fn milliseconds_today(self) -> i32 {
         self.milliseconds_today
     }
     /// Return the firmware GNSS year field.
+    #[must_use]
     pub const fn year(self) -> i8 {
         self.year
     }
     /// Return the firmware GNSS month field.
+    #[must_use]
     pub const fn month(self) -> i8 {
         self.month
     }
     /// Return the firmware GNSS day field.
+    #[must_use]
     pub const fn day(self) -> i8 {
         self.day
     }
@@ -105,6 +123,7 @@ impl Gnss {
 
 impl crate::Firmware {
     /// Return the optional GNSS capability handle.
+    #[must_use]
     pub fn gnss(&self) -> Gnss {
         Gnss::new()
     }
@@ -113,6 +132,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional GNSS capability handle.
+    #[must_use]
     pub fn gnss(&self) -> Gnss {
         Gnss::new()
     }
