@@ -79,7 +79,7 @@ pub(in crate::package) use config_storage::{
 pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
 use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
-use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
+use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, update_haptic_feedback};
 #[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
 #[cfg(test)]
@@ -952,7 +952,7 @@ impl FloatOutBoyPackageState {
             self.motor_current_max
         };
         let motor_saturation =
-            normalized_current_saturation(filtered_current, current_limit.current());
+            vescpkg_rs::current_limit_saturation(filtered_current, current_limit.current());
         let battery_current = payloads.battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
@@ -960,20 +960,22 @@ impl FloatOutBoyPackageState {
             self.battery_current_max
         };
         let battery_saturation =
-            normalized_current_saturation(battery_current, battery_limit.current());
-        self.haptic_feedback.update(
+            vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current());
+        let duty_solid_threshold = Ratio::clamped(
+            self.runtime_duty_pushback_threshold().as_ratio()
+                + config.haptic().duty_solid_offset().as_ratio(),
+        );
+        update_haptic_feedback(
+            &mut self.haptic_feedback,
             config.haptic(),
             HapticFeedbackInput {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
                 setpoint_adjustment: ride_state.setpoint_adjustment(),
                 duty_cycle: payloads.duty_cycle().magnitude(),
-                duty_solid_threshold: Ratio::clamped(
-                    self.runtime_duty_pushback_threshold().as_ratio()
-                        + config.haptic().duty_solid_offset().as_ratio(),
-                ),
+                duty_solid_threshold,
                 speed: payloads.vehicle_speed().speed(),
-                current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
+                current_saturation: motor_saturation.max(battery_saturation),
                 fatal_error: self.alert_tracker.fatal_error(),
             },
             motor,
