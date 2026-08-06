@@ -44,7 +44,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
 
     super::run_float_out_boy_main_thread_with(threads, || {
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
-        state.configured_loop_time_us()
+        FloatOutBoyPackageState::configured_loop_time_us()
     });
 
     let payloads = state.all_data_payloads();
