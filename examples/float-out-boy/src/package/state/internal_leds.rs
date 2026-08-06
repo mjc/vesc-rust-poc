@@ -187,20 +187,18 @@ impl FloatOutBoyPackageState {
         } else {
             self.motor_current_max
         };
-        let motor_current_saturation = super::haptic_feedback::normalized_current_saturation(
-            filtered_current,
-            motor_limit.current(),
-        );
+        let motor_current_saturation =
+            vescpkg_rs::current_limit_saturation(filtered_current, motor_limit.current())
+                .as_ratio();
         let battery_current = payloads.battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
         } else {
             self.battery_current_max
         };
-        let battery_current_saturation = super::haptic_feedback::normalized_current_saturation(
-            battery_current,
-            battery_limit.current(),
-        );
+        let battery_current_saturation =
+            vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current())
+                .as_ratio();
         let frame = FloatOutBoyLedUpdate {
             run_state: ride_state.run_state(),
             mode: ride_state.mode(),
