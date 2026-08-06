@@ -946,7 +946,7 @@ fn advance_running_control(
             balance_pitch: phase.balance_pitch.angle_degrees(),
             motor_erpm: phase.motor_erpm,
             filtered_torque: state
-                .motor_torque_constant
+                .motor_torque_constant()
                 .torque_from_current(payloads.filtered_motor_current().current().current()),
             motor_current: payloads.motor_current(),
             acceleration: phase.motor_acceleration,
@@ -994,7 +994,7 @@ fn advance_running_control(
                 mode: phase.ride_state.mode(),
                 darkride: phase.ride_state.darkride(),
                 traction_control: state.ride_flags.traction_control,
-                motor_torque_constant: state.motor_torque_constant,
+                motor_torque_constant: state.motor_torque_constant(),
             },
             elapsed,
         );
@@ -1067,7 +1067,7 @@ pub(super) fn refresh(
         && let Some(current) = state.remote_control.request_ready_current(
             payloads.vehicle_speed().speed(),
             elapsed,
-            state.motor_torque_constant,
+            state.motor_torque_constant(),
         )
     {
         state.request_motor_current(current);

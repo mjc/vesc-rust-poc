@@ -249,7 +249,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
     state.balance_loop.pid.integral_torque = state
-        .motor_torque_constant
+        .motor_torque_constant()
         .torque_from_motor_current(MotorCurrent::new(Current::from_amps(8.0)));
     state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
     state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
@@ -282,7 +282,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 0.0);
     assert_eq!(
         state
-            .motor_torque_constant
+            .motor_torque_constant()
             .motor_current_from_torque(state.balance_loop.pid.integral_torque)
             .current(),
         Current::ZERO
@@ -390,7 +390,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
     state.balance_loop.pid.integral_torque = state
-        .motor_torque_constant
+        .motor_torque_constant()
         .torque_from_motor_current(MotorCurrent::new(Current::from_amps(8.0)));
     state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
     state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
@@ -433,7 +433,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     }
     assert_eq!(
         state
-            .motor_torque_constant
+            .motor_torque_constant()
             .motor_current_from_torque(state.balance_loop.pid.integral_torque)
             .current(),
         Current::ZERO

@@ -88,6 +88,12 @@ impl MotorTorqueLimit {
         Self(torque.abs())
     }
 
+    /// Return the positive torque-limit magnitude.
+    #[must_use]
+    pub const fn torque(self) -> MotorTorque {
+        self.0
+    }
+
     /// Clamp signed motor torque to this positive magnitude.
     #[must_use]
     pub fn clamp(self, torque: MotorTorque) -> MotorTorque {
@@ -96,6 +102,55 @@ impl MotorTorqueLimit {
                 .as_newton_meters()
                 .clamp(-self.0.as_newton_meters(), self.0.as_newton_meters()),
         )
+    }
+}
+
+/// Motor torque produced per ampere of phase current.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct MotorTorqueConstant(f32);
+
+impl MotorTorqueConstant {
+    /// Build a motor torque constant from newton-metres per ampere.
+    #[must_use]
+    pub const fn from_newton_meters_per_amp(newton_meters_per_amp: f32) -> Self {
+        Self(newton_meters_per_amp)
+    }
+
+    /// Return the torque constant in newton-metres per ampere.
+    #[must_use]
+    pub const fn as_newton_meters_per_amp(self) -> f32 {
+        self.0
+    }
+
+    /// Convert phase current to motor torque.
+    #[must_use]
+    pub fn torque_from_current(self, current: Current) -> MotorTorque {
+        MotorTorque::from_newton_meters(current.as_amps() * self.0)
+    }
+
+    /// Convert motor torque to phase current.
+    #[must_use]
+    pub fn current_from_torque(self, torque: MotorTorque) -> Current {
+        Current::from_amps(torque.as_newton_meters() / self.0)
+    }
+
+    /// Convert typed motor current to motor torque.
+    #[must_use]
+    pub fn torque_from_motor_current(self, current: MotorCurrent) -> MotorTorque {
+        self.torque_from_current(current.current())
+    }
+
+    /// Convert motor torque to typed motor current.
+    #[must_use]
+    pub fn motor_current_from_torque(self, torque: MotorTorque) -> MotorCurrent {
+        MotorCurrent::new(self.current_from_torque(torque))
+    }
+
+    /// Convert a motor-current limit to a motor-torque limit.
+    #[must_use]
+    pub fn torque_limit_from_current_limit(self, limit: MotorCurrentLimit) -> MotorTorqueLimit {
+        MotorTorqueLimit::new(self.torque_from_current(limit.current()))
     }
 }
 
@@ -662,7 +717,7 @@ seconds_type!(AudioDuration, "Audio/haptic playback duration.");
 
 #[cfg(test)]
 mod tests {
-    use super::{MotorCurrent, MotorCurrentLimit};
+    use super::{MotorCurrent, MotorCurrentLimit, MotorTorque, MotorTorqueConstant};
     use crate::Current;
 
     #[test]
@@ -733,5 +788,22 @@ mod tests {
         assert_eq!(current.abs(), MotorCurrent::new(Current::from_amps(4.0)));
         assert!(current.is_finite());
         assert!(!MotorCurrent::new(Current::from_amps(f32::NAN)).is_finite());
+    }
+
+    #[test]
+    fn torque_constant_converts_typed_current_torque_and_limits() {
+        let constant = MotorTorqueConstant::from_newton_meters_per_amp(0.5);
+        let current = MotorCurrent::new(Current::from_amps(-12.0));
+        let torque = constant.torque_from_motor_current(current);
+
+        assert_eq!(constant.as_newton_meters_per_amp(), 0.5);
+        assert_eq!(torque, MotorTorque::from_newton_meters(-6.0));
+        assert_eq!(constant.motor_current_from_torque(torque), current);
+        assert_eq!(
+            constant
+                .torque_limit_from_current_limit(MotorCurrentLimit::new(Current::from_amps(-4.0)))
+                .torque(),
+            MotorTorque::from_newton_meters(2.0)
+        );
     }
 }
