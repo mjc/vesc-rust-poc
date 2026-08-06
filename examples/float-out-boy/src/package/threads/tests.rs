@@ -417,7 +417,7 @@ fn float_out_boy_main_thread_sleeps_with_fixed_loop_time_like_refloat() {
 
 #[test]
 fn refloat_main_loop_timing_uses_system_ticks_and_compensates_work() {
-    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
+    let timing = vescpkg_rs::FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
 
     assert_eq!(timing.nominal_sleep(), Duration::from_micros(1_200));
     assert_eq!(
@@ -428,7 +428,7 @@ fn refloat_main_loop_timing_uses_system_ticks_and_compensates_work() {
 
 #[test]
 fn refloat_main_loop_timing_keeps_one_tick_after_a_delayed_iteration() {
-    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
+    let timing = vescpkg_rs::FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
 
     assert_eq!(
         timing.sleep_after_work(VescSeconds::from_seconds(0.025)),

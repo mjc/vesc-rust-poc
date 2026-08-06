@@ -8,53 +8,17 @@ use super::state::FloatOutBoyPackageState;
 use super::state::snapshot_motor_config;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
-use vescpkg_rs::prelude::{
-    OdometerMeters, SYSTEM_TICK_RATE_HZ, SampleRate, ThreadPriority, TimestampTicks, VescSeconds,
-};
+use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks, VescSeconds};
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{AnalogPin, DigitalPin};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::{FixedRateLoopTiming, SampleRate};
 
 // C map: `LEDS_REFRESH_RATE` is `30` at `third_party/float-out-boy/src/leds.h:26`;
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
 const FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ: u32 = 30;
 const FLOAT_OUT_BOY_AUX_LOOP_TIME_US: u32 = 1_000_000 / FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ;
-
-#[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyMainLoopTiming {
-    nominal_ticks: u32,
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl FloatOutBoyMainLoopTiming {
-    fn from_sample_rate(sample_rate: SampleRate) -> Self {
-        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
-        let nominal_ticks =
-            crate::wire::saturating_trunc_f32_to_u32(tick_rate / sample_rate.as_hertz()).max(1);
-        Self { nominal_ticks }
-    }
-
-    fn nominal_sleep(self) -> Duration {
-        Self::ticks_to_duration(self.nominal_ticks)
-    }
-
-    fn sleep_after_work(self, elapsed: VescSeconds) -> Duration {
-        let elapsed = elapsed.as_seconds();
-        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
-        if !elapsed.is_finite() || elapsed < 0.0 {
-            return self.nominal_sleep();
-        }
-        // C map: Refloat rounds work time to system ticks with `lrintf`, then
-        // retains at least one sleep tick at `src/main.c` in `fa5d9f73`.
-        let work_ticks = crate::wire::saturating_trunc_f32_to_u32(elapsed * tick_rate + 0.5);
-        Self::ticks_to_duration(self.nominal_ticks.saturating_sub(work_ticks).max(1))
-    }
-
-    fn ticks_to_duration(ticks: u32) -> Duration {
-        Duration::from_micros(u64::from(ticks).saturating_mul(1_000_000) / SYSTEM_TICK_RATE_HZ)
-    }
-}
 
 use vescpkg_rs::prelude::AdcVoltage;
 const fn float_out_boy_working_area()
@@ -337,12 +301,10 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
 
         let mut timing = ctx
             .with_state_mut(|state| {
-                FloatOutBoyMainLoopTiming::from_sample_rate(
-                    state.configured_main_loop_sample_rate(),
-                )
+                FixedRateLoopTiming::from_sample_rate(state.configured_main_loop_sample_rate())
             })
             .unwrap_or_else(|| {
-                FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0))
+                FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0))
             });
         let mut next_sleep = timing.nominal_sleep();
         let mut loop_timer = ctx.firmware().clock().timer_now();
@@ -417,9 +379,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                 }
             }
             if let Some(configured) = ctx.with_state_mut(|state| {
-                FloatOutBoyMainLoopTiming::from_sample_rate(
-                    state.configured_main_loop_sample_rate(),
-                )
+                FixedRateLoopTiming::from_sample_rate(state.configured_main_loop_sample_rate())
             }) {
                 timing = configured;
             }

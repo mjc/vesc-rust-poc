@@ -281,6 +281,8 @@ pub use inputs::{
 pub use logging::{FirmwareLog, LogError};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
+#[cfg(feature = "math")]
+pub use numeric::MotorKinematicsConfig;
 pub use numeric::{
     FixedRingIndex, MotorKinematics, SmoothAngle, SmoothSetpoint, SmoothSetpointConfig,
     SmoothSetpointDirection, SmoothSetpointMultiplier, SmoothedAngleSlew, WrappedAngleMotion,
@@ -334,7 +336,8 @@ pub use thread::{
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
 pub use timer::{
-    WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
+    FixedRateLoopTiming, WrappingTimer, expire_timer_whole_seconds, timer_older,
+    timer_older_whole_seconds,
 };
 pub use uart::{Uart, UartError, UartSession};
 
