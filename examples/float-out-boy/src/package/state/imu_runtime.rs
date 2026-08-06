@@ -21,7 +21,7 @@ use super::{
 use crate::bms::FloatOutBoyBmsFault;
 use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
 use vescpkg_rs::prelude::{
-    AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
+    AngleDegrees, DutyCycle, SignedRatio, SystemTicks, Temperature, VescSeconds, Voltage,
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
@@ -466,7 +466,8 @@ struct AngleFaultActivity {
 }
 
 struct NormalFaultEvaluation {
-    conditions: [bool; 11],
+    before_darkride: Option<FloatOutBoyStopEvent>,
+    after_darkride: Option<FloatOutBoyStopEvent>,
     switches: SwitchFaultActivity,
     angles: AngleFaultActivity,
     can_engage: bool,
@@ -474,7 +475,8 @@ struct NormalFaultEvaluation {
 }
 
 struct SwitchAngleFaultEvaluation {
-    conditions: [bool; 5],
+    before_darkride: Option<FloatOutBoyStopEvent>,
+    after_darkride: Option<FloatOutBoyStopEvent>,
     switches: SwitchFaultActivity,
     angles: AngleFaultActivity,
 }
@@ -543,14 +545,18 @@ fn evaluate_switch_angle_faults(
         && input.pitch_abs > quickstop.pitch
         && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle()
         && (input.pitch >= AngleRadians::ZERO) == (input.motor_erpm >= Rpm::ZERO);
+    let before_darkride = float_out_boy_first_stop_event(&[
+        (FloatOutBoyStopEvent::FullSwitch, full_fault),
+        (FloatOutBoyStopEvent::QuickStop, quickstop_fault),
+        (FloatOutBoyStopEvent::HalfSwitch, half_fault),
+    ]);
+    let after_darkride = float_out_boy_first_stop_event(&[
+        (FloatOutBoyStopEvent::Roll, roll_fault),
+        (FloatOutBoyStopEvent::Pitch, pitch_fault),
+    ]);
     SwitchAngleFaultEvaluation {
-        conditions: [
-            full_fault,
-            quickstop_fault,
-            half_fault,
-            roll_fault,
-            pitch_fault,
-        ],
+        before_darkride,
+        after_darkride,
         switches: SwitchFaultActivity {
             full: full_pending,
             half: half_pending,
@@ -562,6 +568,42 @@ fn evaluate_switch_angle_faults(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct ActiveReverseStopFaultInput {
+    pub(super) footpad: FloatOutBoyFootpadState,
+    pub(super) darkride: FloatOutBoyDarkRideState,
+    pub(super) pitch: AngleDegrees,
+    pub(super) elapsed: SystemTicks,
+    pub(super) total_erpm: Rpm,
+}
+
+impl ActiveReverseStopFaultInput {
+    #[must_use]
+    pub(super) fn stop_event(self) -> Option<FloatOutBoyStopEvent> {
+        let limits = ReverseStopLimits::FLOAT_OUT_BOY;
+        match (self.footpad.is_pressed(), self.darkride) {
+            (false, _) => Some(FloatOutBoyStopEvent::ReverseStopNoFootpads),
+            (true, FloatOutBoyDarkRideState::Upright) if self.pitch > limits.pitch => {
+                Some(FloatOutBoyStopEvent::ReverseStopPitch)
+            }
+            (true, FloatOutBoyDarkRideState::Upright)
+                if self.pitch > limits.timer_fast_pitch
+                    && self.elapsed > SystemTicks::from_ticks(10_000)
+                    || self.pitch > limits.timer_slow_pitch
+                        && self.elapsed > SystemTicks::from_ticks(20_000) =>
+            {
+                Some(FloatOutBoyStopEvent::ReverseStopTimer)
+            }
+            (true, FloatOutBoyDarkRideState::Upright)
+                if self.total_erpm.abs() > limits.total_erpm =>
+            {
+                Some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
+            }
+            _ => None,
+        }
+    }
+}
+
 fn evaluate_normal_faults(
     state: &FloatOutBoyPackageState,
     base: &FloatOutBoyAllDataBasePayload,
@@ -570,29 +612,23 @@ fn evaluate_normal_faults(
 ) -> NormalFaultEvaluation {
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
-    let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
     let footpad = base.footpad().state();
     let running = matches!(input.run_state, FloatOutBoyRunState::Running);
     let flywheel = matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel);
-    let reverse_active = running
+    let flywheel_footpad = running && flywheel && footpad.is_pressed();
+    let reverse_stop = (running
         && matches!(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::ReverseStop
-        );
-    let flywheel_footpad = running && flywheel && footpad.is_pressed();
-    let reverse_no_footpads = reverse_active && !footpad.is_pressed();
-    let reverse_pitch =
-        !input.darkride_active && reverse_active && input.pitch_abs > reverse_stop.pitch;
-    let reverse_timer = !input.darkride_active
-        && reverse_active
-        && ((input.pitch_abs > reverse_stop.timer_fast_pitch
-            && float_out_boy_ticks_elapsed(system_time_ticks, state.reverse_ticks, 1))
-            || (input.pitch_abs > reverse_stop.timer_slow_pitch
-                && float_out_boy_ticks_elapsed(system_time_ticks, state.reverse_ticks, 2)));
-    let reverse_total = !input.darkride_active
-        && reverse_active
-        && state.reverse_total_erpm.abs() > reverse_stop.total_erpm;
-
+        ))
+    .then_some(ActiveReverseStopFaultInput {
+        footpad,
+        darkride: input.ride_state.darkride(),
+        pitch: input.pitch_abs,
+        elapsed: system_time_ticks.wrapping_duration_since(state.reverse_ticks),
+        total_erpm: state.reverse_total_erpm,
+    })
+    .and_then(ActiveReverseStopFaultInput::stop_event);
     let single_footpad = matches!(
         footpad,
         FloatOutBoyFootpadState::Left | FloatOutBoyFootpadState::Right
@@ -609,13 +645,6 @@ fn evaluate_normal_faults(
         || flywheel);
     let switch_angle =
         evaluate_switch_angle_faults(state, base, system_time_ticks, input, can_engage);
-    let [
-        full_fault,
-        quickstop_fault,
-        half_fault,
-        roll_fault,
-        pitch_fault,
-    ] = switch_angle.conditions;
     let darkride = DarkrideLimits::FLOAT_OUT_BOY;
     let darkride_roll = !input.darkride_active
         && running
@@ -628,19 +657,13 @@ fn evaluate_normal_faults(
         && input.roll_abs < darkride.roll_upper;
 
     NormalFaultEvaluation {
-        conditions: [
-            flywheel_footpad,
-            reverse_no_footpads,
-            reverse_pitch,
-            reverse_timer,
-            reverse_total,
-            full_fault,
-            quickstop_fault,
-            half_fault,
-            roll_fault,
-            pitch_fault,
-            darkride_roll,
-        ],
+        before_darkride: flywheel_footpad
+            .then_some(FloatOutBoyStopEvent::FlywheelFootpad)
+            .or(reverse_stop)
+            .or(switch_angle.before_darkride),
+        after_darkride: switch_angle
+            .after_darkride
+            .or(darkride_roll.then_some(FloatOutBoyStopEvent::DarkrideRoll)),
         switches: switch_angle.switches,
         angles: switch_angle.angles,
         can_engage,
@@ -649,7 +672,7 @@ fn evaluate_normal_faults(
 }
 
 struct DarkrideFaultEvaluation {
-    conditions: [bool; 3],
+    stop: Option<FloatOutBoyStopEvent>,
     high_erpm_pending: bool,
     low_erpm_pending: bool,
 }
@@ -696,7 +719,14 @@ fn evaluate_darkride_faults(
             limits.low_delay,
         );
     DarkrideFaultEvaluation {
-        conditions: [high_fault, low_fault, input.darkride_active && can_engage],
+        stop: float_out_boy_first_stop_event(&[
+            (FloatOutBoyStopEvent::DarkrideHighErpm, high_fault),
+            (FloatOutBoyStopEvent::DarkrideLowErpm, low_fault),
+            (
+                FloatOutBoyStopEvent::DarkrideCanEngage,
+                input.darkride_active && can_engage,
+            ),
+        ]),
         high_erpm_pending: high_pending,
         low_erpm_pending: low_pending,
     }
@@ -771,39 +801,10 @@ fn first_transition_stop(
     normal: &NormalFaultEvaluation,
     darkride: &DarkrideFaultEvaluation,
 ) -> Option<FloatOutBoyStopEvent> {
-    let [
-        flywheel_footpad,
-        reverse_no_footpads,
-        reverse_pitch,
-        reverse_timer,
-        reverse_total,
-        full_switch,
-        quickstop,
-        half_switch,
-        roll,
-        pitch,
-        darkride_roll,
-    ] = normal.conditions;
-    let [darkride_high, darkride_low, darkride_can_engage] = darkride.conditions;
-    float_out_boy_first_stop_event(&[
-        (FloatOutBoyStopEvent::FlywheelFootpad, flywheel_footpad),
-        (
-            FloatOutBoyStopEvent::ReverseStopNoFootpads,
-            reverse_no_footpads,
-        ),
-        (FloatOutBoyStopEvent::ReverseStopPitch, reverse_pitch),
-        (FloatOutBoyStopEvent::ReverseStopTimer, reverse_timer),
-        (FloatOutBoyStopEvent::ReverseStopTotalErpm, reverse_total),
-        (FloatOutBoyStopEvent::FullSwitch, full_switch),
-        (FloatOutBoyStopEvent::QuickStop, quickstop),
-        (FloatOutBoyStopEvent::HalfSwitch, half_switch),
-        (FloatOutBoyStopEvent::DarkrideHighErpm, darkride_high),
-        (FloatOutBoyStopEvent::DarkrideLowErpm, darkride_low),
-        (FloatOutBoyStopEvent::DarkrideCanEngage, darkride_can_engage),
-        (FloatOutBoyStopEvent::Roll, roll),
-        (FloatOutBoyStopEvent::Pitch, pitch),
-        (FloatOutBoyStopEvent::DarkrideRoll, darkride_roll),
-    ])
+    normal
+        .before_darkride
+        .or(darkride.stop)
+        .or(normal.after_darkride)
 }
 
 fn transition_control_conditions(

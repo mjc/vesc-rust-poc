@@ -1,15 +1,18 @@
-use super::FloatOutBoyPackageState;
+use super::{
+    FloatOutBoyPackageState, imu_runtime::ActiveReverseStopFaultInput,
+    transition::FloatOutBoyStopEvent,
+};
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
 use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
-    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
-    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
-    FloatOutBoyWheelSlipState,
+    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
@@ -698,6 +701,68 @@ fn running_reverse_stop_fixture(
     state.reverse_total_erpm = reverse_total_erpm;
 
     (now, telemetry, state)
+}
+
+#[test]
+fn active_reverse_stop_faults_follow_source_priority() {
+    let nominal = ActiveReverseStopFaultInput {
+        footpad: FloatOutBoyFootpadState::Both,
+        darkride: FloatOutBoyDarkRideState::Upright,
+        pitch: AngleDegrees::ZERO,
+        elapsed: SystemTicks::from_ticks(0),
+        total_erpm: Rpm::ZERO,
+    };
+    let cases = [
+        (
+            ActiveReverseStopFaultInput {
+                footpad: FloatOutBoyFootpadState::None,
+                darkride: FloatOutBoyDarkRideState::Active,
+                pitch: AngleDegrees::from_degrees(19.0),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopNoFootpads),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                darkride: FloatOutBoyDarkRideState::Active,
+                pitch: AngleDegrees::from_degrees(19.0),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            None,
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                pitch: AngleDegrees::from_degrees(19.0),
+                elapsed: SystemTicks::from_ticks(20_001),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopPitch),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                pitch: AngleDegrees::from_degrees(11.0),
+                elapsed: SystemTicks::from_ticks(10_001),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopTimer),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopTotalErpm),
+        ),
+        (nominal, None),
+    ];
+
+    for (input, expected) in cases {
+        assert_eq!(input.stop_event(), expected);
+    }
 }
 
 #[test]
