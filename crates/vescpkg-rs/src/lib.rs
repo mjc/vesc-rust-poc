@@ -261,7 +261,10 @@ pub use can_bus::{
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
     CanStatus6, CanStatusStore,
 };
-pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromError, EepromWord, EepromWordOffset};
+pub use eeprom::{
+    CustomEeprom, CustomEepromAddress, DeferredPersistence, EepromError, EepromWord,
+    EepromWordOffset, PersistedLoadOutcome, PersistedValue,
+};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
