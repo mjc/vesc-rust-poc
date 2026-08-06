@@ -4,8 +4,7 @@ use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert};
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
@@ -325,7 +324,7 @@ impl FloatOutBoyPackageState {
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::default();
         state.all_data_payloads = all_data_payloads;
-        state.runtime_board_setpoint = state.all_data_payloads.base().setpoints().board().angle();
+        state.runtime_board_setpoint = state.all_data_payloads.setpoints().board().angle();
         state
     }
 
@@ -384,12 +383,7 @@ impl FloatOutBoyPackageState {
 
     /// Return whether the source-backed auxiliary backup threshold has been crossed.
     pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
-        self.all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state()
-            != FloatOutBoyRunState::Running
+        self.all_data_payloads.ride_state().run_state() != FloatOutBoyRunState::Running
             && odometer.as_meters()
                 > self
                     .aux_odometer
@@ -575,8 +569,7 @@ impl FloatOutBoyPackageState {
         self.update_balance_filter(sample);
 
         let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let (pitch, roll) = self.flywheel_attitude(
             ride_state.mode(),
             AngleDegrees::from(imu.pitch().angle()),
@@ -593,15 +586,15 @@ impl FloatOutBoyPackageState {
             let output = self.balance_loop.advance_balance_loop_elapsed(
                 self.runtime_balance_loop_config(),
                 LoopInput {
-                    setpoint: base.setpoints().board(),
-                    brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                    setpoint: payloads.setpoints().board(),
+                    brake_tilt_setpoint: payloads.setpoints().brake_tilt(),
                     balance_pitch: balance_pitch.angle_degrees(),
                     raw_pitch: pitch,
                     roll: ImuRoll::new(AngleRadians::from(roll)),
                     gyro_pitch: angular_rate.pitch(),
                     gyro_yaw: angular_rate.yaw(),
-                    motor_erpm: base.motor().electrical_speed(),
-                    motor_current: base.motor().motor_current(),
+                    motor_erpm: payloads.electrical_speed(),
+                    motor_current: payloads.motor_current(),
                     motor_current_max: self.motor_current_max,
                     motor_current_min: self.motor_current_min,
                     mode: ride_state.mode(),
@@ -615,20 +608,16 @@ impl FloatOutBoyPackageState {
             self.request_motor_current(output.requested_current);
         }
 
-        let attitude = FloatOutBoyAllDataAttitude::new(
-            balance_pitch,
-            ImuRoll::new(AngleRadians::from(roll)),
-            ImuPitch::new(AngleRadians::from(pitch)),
-        );
-        let base = base
+        self.all_data_payloads = payloads
             .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
                 self.balance_loop.balance_current,
             ))
-            .with_attitude(attitude)
+            .with_balance_pitch(balance_pitch)
+            .with_roll(ImuRoll::new(AngleRadians::from(roll)))
+            .with_pitch(ImuPitch::new(AngleRadians::from(pitch)))
             .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::new(
                 self.balance_loop.booster_torque,
             ));
-        self.all_data_payloads = payloads.with_base(base);
 
         self.apply_motor_control(motor, ride_state.run_state(), now);
         #[cfg(any(test, target_arch = "arm"))]
@@ -887,11 +876,11 @@ impl FloatOutBoyPackageState {
         current_pitch: ImuPitch,
         system_time_ticks: TimestampTicks,
     ) -> bool {
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
+        let payloads = self.all_data_payloads;
+        let ride_state = payloads.ride_state();
         // C refreshes `d->imu.pitch` before entering the READY Konami branch at
         // `third_party/float-out-boy/src/main.c:775,947-953`.
-        let footpad = base.footpad().state();
+        let footpad = payloads.footpad().state();
 
         let restore_flywheel_config = if ride_state.run_state() == FloatOutBoyRunState::Ready
             && ride_state.mode() != FloatOutBoyMode::Flywheel
@@ -963,10 +952,10 @@ impl FloatOutBoyPackageState {
         system_time_ticks: TimestampTicks,
     ) {
         let config = self.serialized_config;
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
-        let filtered_current = base.motor().filtered_motor_current().current().current();
-        let braking = base.motor().motor_current().is_negative();
+        let payloads = self.all_data_payloads;
+        let ride_state = payloads.ride_state();
+        let filtered_current = payloads.filtered_motor_current().current().current();
+        let braking = payloads.motor_current().is_negative();
         let current_limit = if braking {
             self.motor_current_min
         } else {
@@ -974,7 +963,7 @@ impl FloatOutBoyPackageState {
         };
         let motor_saturation =
             normalized_current_saturation(filtered_current, current_limit.current());
-        let battery_current = base.motor().battery_current().current();
+        let battery_current = payloads.battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
         } else {
@@ -988,12 +977,12 @@ impl FloatOutBoyPackageState {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
                 setpoint_adjustment: ride_state.setpoint_adjustment(),
-                duty_cycle: base.motor().duty_cycle().magnitude(),
+                duty_cycle: payloads.duty_cycle().magnitude(),
                 duty_solid_threshold: Ratio::clamped(
                     self.runtime_duty_pushback_threshold().as_ratio()
                         + config.haptic().duty_solid_offset().as_ratio(),
                 ),
-                speed: base.motor().vehicle_speed().speed(),
+                speed: payloads.vehicle_speed().speed(),
                 current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
                 fatal_error: self.alert_tracker.fatal_error(),
             },

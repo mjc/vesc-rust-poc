@@ -252,7 +252,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
             .unwrap();
     });
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-    let initial_electrical_speed = state.all_data_payloads.base().motor().electrical_speed();
+    let initial_electrical_speed = state.all_data_payloads.electrical_speed();
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));
     let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
@@ -419,7 +419,7 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
     let setpoints = FloatOutBoyRealtimeRuntimeSetpoints::new(
         setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(10.0))),
             FloatOutBoyAllDataAttitude::new(
@@ -456,7 +456,7 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
     ));
     assert!(state.apply_requested_motor_current(bindings));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream detects traction loss from acceleration, ERPM, and duty at
     // `third_party/float-out-boy/src/main.c:551-562`, then freewheels while traction control is set at
     // `third_party/float-out-boy/src/main.c:949-954`.

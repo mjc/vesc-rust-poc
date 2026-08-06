@@ -68,7 +68,7 @@ fn unified_remote_move_drives_the_ready_motor_path_through_typed_torque() {
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -228,7 +228,7 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
             ),
             base.motor(),
         );
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
             base,
             payloads.mode2(),
             payloads.mode3(),

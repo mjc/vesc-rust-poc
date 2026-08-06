@@ -57,6 +57,7 @@ macro_rules! typed_fields {
 
         impl $name {
             /// Build the typed field group.
+            #[allow(clippy::too_many_arguments)]
             #[must_use]
             pub const fn new($( $field: $field_type, )+) -> Self {
                 Self { $( $field, )+ }

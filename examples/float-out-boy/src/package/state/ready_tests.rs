@@ -34,7 +34,12 @@ fn ready_payloads(
         base.booster_torque(),
         base.motor(),
     );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
 }
 
 fn ready_payloads_with_footpads(
@@ -59,7 +64,12 @@ fn ready_payloads_with_footpads(
         base.booster_torque(),
         base.motor(),
     );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
 }
 
 fn configure_ready_imu(firmware: &FirmwareTest, roll: AngleRadians) {
@@ -145,7 +155,7 @@ fn app_data_ready_pushstart_uses_wide_pitch_gate_like_float_out_boy() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream READY push-start engages above 1000 ERPM when `can_engage`
     // passes and pitch/roll are within 45 degrees at `third_party/float-out-boy/src/main.c:1056-1067`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -189,7 +199,7 @@ fn app_data_ready_pushstart_reverse_stop_blocks_negative_erpm_like_float_out_boy
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream ignores backwards push-start when reverse stop is enabled
     // at `third_party/float-out-boy/src/main.c:1061-1064`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
@@ -218,7 +228,7 @@ fn app_data_ready_normal_both_footpads_engages_like_float_out_boy_start_conditio
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream READY engages when startup pitch/roll tolerances and
     // `can_engage(d)` pass at `third_party/float-out-boy/src/main.c:1033-1036`; `state_engage`
     // moves to RUNNING and sets SAT_CENTERING at `third_party/float-out-boy/src/state.c:36-39`.
@@ -336,7 +346,7 @@ fn app_data_ready_flywheel_without_footpads_engages_like_float_out_boy_can_engag
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream `can_engage(d)` keeps FLYWHEEL mode engaged after footpad
     // checks at `third_party/float-out-boy/src/main.c:346-349`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -362,7 +372,7 @@ fn app_data_ready_flywheel_pressed_footpad_stops_flywheel_like_upstream_fix() {
         Voltage::from_volts(1.0),
         FloatOutBoyFootpadState::Left,
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             FloatOutBoyAllDataAttitude::new(
@@ -392,7 +402,7 @@ fn app_data_ready_flywheel_pressed_footpad_stops_flywheel_like_upstream_fix() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream READY handles FLYWHEEL abort/both-footpad before start
     // conditions at `third_party/float-out-boy/src/main.c:957-963`; `flywheel_stop` returns to
     // NORMAL mode at `third_party/float-out-boy/src/main.c:1869-1873`.
@@ -426,7 +436,7 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         upright_base,
         payloads.mode2(),
         payloads.mode3(),
@@ -447,7 +457,7 @@ fn app_data_ready_single_footpad_engages_when_dual_switch_config_is_set() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream `can_engage(d)` allows a single footpad when
     // `fault_is_dual_switch` is enabled at `third_party/float-out-boy/src/main.c:338-342`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -483,7 +493,7 @@ fn app_data_ready_single_footpad_default_config_does_not_engage_like_float_out_b
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         upright_base,
         payloads.mode2(),
         payloads.mode3(),
@@ -501,7 +511,7 @@ fn app_data_ready_single_footpad_default_config_does_not_engage_like_float_out_b
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream `can_engage(d)` keeps a single footpad gated unless
     // `fault_is_dual_switch` or simple start is enabled at `third_party/float-out-boy/src/main.c:338-342`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
@@ -537,7 +547,7 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -558,7 +568,7 @@ fn app_data_ready_simple_start_single_footpad_engages_after_disengage_grace_like
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
     assert_eq!(
         ride_state.setpoint_adjustment(),

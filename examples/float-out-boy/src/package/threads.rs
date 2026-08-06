@@ -159,12 +159,7 @@ fn finish_float_out_boy_main_thread_tick(
 ) -> FloatOutBoyMainThreadTick {
     #[cfg(test)]
     {
-        let run_state = state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
+        let run_state = state.all_data_payloads().ride_state().run_state();
         // Host main-loop fixtures preserve their existing deterministic control
         // step. The ARM artifact applies motor output and records samples from
         // the IMU callback, matching Refloat main.
@@ -254,12 +249,7 @@ pub(crate) fn prepare_float_out_boy_aux_thread_tick(
     current_time: f32,
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
 ) -> bool {
-    let running = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state()
+    let running = state.all_data_payloads().ride_state().run_state()
         == crate::domain::FloatOutBoyRunState::Running;
     state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();

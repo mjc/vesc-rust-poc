@@ -1,9 +1,6 @@
 use super::FloatOutBoyPackageState;
 use super::limits::traction_loss;
-use crate::domain::{
-    FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
-    FloatOutBoyRealtimeMotorCurrents,
-};
+use crate::domain::{FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCellCount, BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle,
@@ -80,15 +77,13 @@ pub(super) fn refresh(
     elapsed: vescpkg_rs::prelude::VescSeconds,
 ) {
     let payloads = state.all_data_payloads;
-    let base = payloads.base();
-    let motor = base.motor();
     // C map: Float Out Boy v1.2.1 updates motor fields in `motor_data_update` at
     // `third_party/float-out-boy/src/motor_data.c:108-145`. Battery current uses the same first-order
     // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; the package main
     // loop invokes this refresh before control aggregation like the source loop.
-    let previous_battery_current = motor.battery_current().current();
+    let previous_battery_current = payloads.battery_current().current();
     let next_battery_current = telemetry.battery_current().current();
-    let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
+    let previous_duty_cycle = payloads.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     let smoothing = vescpkg_rs::ema_alpha(
         MOTOR_DATA_EMA_CUTOFF,
@@ -116,11 +111,11 @@ pub(super) fn refresh(
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
     state.motor_kinematics.record(motor_erpm, elapsed);
-    let motor = FloatOutBoyAllDataMotorPayload::new(
-        BatteryVoltage::new(telemetry.input_voltage().voltage()),
-        electrical_speed,
-        telemetry.vehicle_speed(),
-        FloatOutBoyRealtimeMotorCurrents::new(
+    state.all_data_payloads = payloads
+        .with_motor_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
+        .with_electrical_speed(electrical_speed)
+        .with_vehicle_speed(telemetry.vehicle_speed())
+        .with_currents(FloatOutBoyRealtimeMotorCurrents::new(
             MotorCurrent::new(telemetry.motor_current().current()),
             directional_current,
             filtered_current,
@@ -128,17 +123,17 @@ pub(super) fn refresh(
                 previous_battery_current
                     + (next_battery_current - previous_battery_current) * smoothing,
             ),
-        ),
-        DutyCycle::new(SignedRatio::clamped(
+        ))
+        .with_duty_cycle(DutyCycle::new(SignedRatio::clamped(
             previous_duty_cycle + smoothing * (raw_duty_cycle - previous_duty_cycle),
-        )),
+        )))
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.
-        telemetry
-            .d_axis_current()
-            .map(|current| MotorCurrent::new(current.current())),
-    );
-    state.all_data_payloads = payloads.with_base(base.with_motor(motor));
+        .with_foc_id_current(
+            telemetry
+                .d_axis_current()
+                .map(|current| MotorCurrent::new(current.current())),
+        );
 }
 
 pub(super) fn reconfigure_filters(state: &mut FloatOutBoyPackageState, frequency: SampleRate) {

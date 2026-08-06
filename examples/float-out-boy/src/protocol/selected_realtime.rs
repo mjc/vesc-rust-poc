@@ -114,7 +114,7 @@ fn append_mask1(
         packet,
         mask.selects(MASK1_BATTERY_SOC),
         precision,
-        payloads.mode3().battery_level().as_fraction(),
+        payloads.battery_level().as_fraction(),
     );
     for (bit, item) in MASK1_ITEMS_AFTER_SOC {
         push_selected(
@@ -135,25 +135,23 @@ fn append_mask2(
 ) {
     if mask.selects(MASK2_ODOMETER) {
         packet.push_u32(super::truncating_u64_to_u32(
-            payloads.mode3().odometer().as_meters(),
+            payloads.odometer().as_meters(),
         ));
     }
-    let mode2 = payloads.mode2();
-    let mode3 = payloads.mode3();
-    let mode4 = payloads.mode4();
     for (bit, value) in [
-        (1 << 1, mode2.distance_abs().distance().as_meters()),
-        (1 << 2, mode4.voltage().voltage().as_volts()),
-        (1 << 3, mode4.current().current().as_amps()),
-        (1 << 4, mode3.discharged_charge().charge().as_amp_hours()),
-        (1 << 5, mode3.charged_charge().charge().as_amp_hours()),
-        (1 << 6, mode3.discharged_energy().energy().as_watt_hours()),
-        (1 << 7, mode3.charged_energy().energy().as_watt_hours()),
+        (1 << 1, payloads.distance_abs().distance().as_meters()),
+        (1 << 2, payloads.charging_voltage().voltage().as_volts()),
+        (1 << 3, payloads.charging_current().current().as_amps()),
+        (1 << 4, payloads.discharged_charge().charge().as_amp_hours()),
+        (1 << 5, payloads.charged_charge().charge().as_amp_hours()),
+        (
+            1 << 6,
+            payloads.discharged_energy().energy().as_watt_hours(),
+        ),
+        (1 << 7, payloads.charged_energy().energy().as_watt_hours()),
         (
             1 << 8,
             payloads
-                .base()
-                .motor()
                 .foc_id_current()
                 .map_or(0.0, |current| current.current().as_amps()),
         ),

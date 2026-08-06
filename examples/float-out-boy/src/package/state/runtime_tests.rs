@@ -382,7 +382,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         upright_base,
         payloads.mode2(),
         payloads.mode3(),
@@ -478,7 +478,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         upright_base,
         payloads.mode2(),
         payloads.mode3(),
@@ -496,7 +496,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream `can_engage(d)` rejects charging state before checking
     // footpads at `third_party/float-out-boy/src/main.c:328-331`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
@@ -622,7 +622,7 @@ fn running_runtime_fixture() -> (TimestampTicks, FirmwareTest, FloatOutBoyPackag
         ),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -650,7 +650,7 @@ fn ready_bms_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
         base.booster_torque(),
         base.motor(),
     );
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -810,7 +810,7 @@ fn running_protective_pushback_fixture(
         base.booster_torque(),
         motor,
     );
-    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -863,7 +863,7 @@ fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
-    let setpoints = state.all_data_payloads().base().setpoints();
+    let setpoints = state.all_data_payloads().setpoints();
     // Pinned Refloat SmoothSetpoint first step at 500 Hz for a five-degree target.
     let expected = 0.000_089_363_82;
     let remote = setpoints.remote().angle().as_degrees();
@@ -976,7 +976,6 @@ fn running_nose_angling_changes_the_production_setpoint_like_float_out_boy() {
             .as_hertz();
     let board = state
         .all_data_payloads()
-        .base()
         .setpoints()
         .board()
         .angle()
@@ -1017,7 +1016,7 @@ fn running_torque_and_atr_update_runtime_setpoints_like_float_out_boy() {
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
-    let setpoints = state.all_data_payloads().base().setpoints();
+    let setpoints = state.all_data_payloads().setpoints();
     assert!(setpoints.torque_tilt().angle().is_positive());
     assert!(setpoints.atr().angle().is_negative());
 }
@@ -1054,8 +1053,12 @@ fn set_protective_ride_state(
         base.booster_torque(),
         base.motor(),
     );
-    state.all_data_payloads =
-        FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4());
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    );
 }
 
 fn settle_motor_acceleration(state: &mut FloatOutBoyPackageState, motor_erpm: Rpm) {
@@ -1531,7 +1534,7 @@ fn reverse_stop_entry_precedes_wheelslip_detection_like_float_out_boy() {
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(
         ride_state.setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::ReverseStop
