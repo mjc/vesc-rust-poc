@@ -560,6 +560,18 @@ pub enum FirmwareFault {
 }
 
 impl FirmwareFault {
+    /// Return whether firmware reports a fault and its compatible wire code.
+    ///
+    /// Unknown nonzero firmware values remain active while using wire code zero.
+    #[must_use]
+    pub const fn active_and_wire_code(self) -> (bool, FirmwareFaultWireCode) {
+        match self {
+            Self::None => (false, FirmwareFaultWireCode::from_wire_code(0)),
+            Self::Active(fault) => (true, fault.wire_code()),
+            Self::Unknown => (true, FirmwareFaultWireCode::from_wire_code(0)),
+        }
+    }
+
     pub(crate) const fn from_raw_code(code: i32) -> Self {
         match code {
             0 => Self::None,
@@ -717,7 +729,10 @@ seconds_type!(AudioDuration, "Audio/haptic playback duration.");
 
 #[cfg(test)]
 mod tests {
-    use super::{MotorCurrent, MotorCurrentLimit, MotorTorque, MotorTorqueConstant};
+    use super::{
+        FirmwareFault, FirmwareFaultId, FirmwareFaultWireCode, MotorCurrent, MotorCurrentLimit,
+        MotorTorque, MotorTorqueConstant,
+    };
     use crate::Current;
 
     #[test]
@@ -804,6 +819,17 @@ mod tests {
                 .torque_limit_from_current_limit(MotorCurrentLimit::new(Current::from_amps(-4.0)))
                 .torque(),
             MotorTorque::from_newton_meters(2.0)
+        );
+    }
+
+    #[test]
+    fn firmware_fault_reports_active_state_and_compatible_wire_code() {
+        let zero = FirmwareFaultWireCode::from_wire_code(0);
+        assert_eq!(FirmwareFault::None.active_and_wire_code(), (false, zero));
+        assert_eq!(FirmwareFault::Unknown.active_and_wire_code(), (true, zero));
+        assert_eq!(
+            FirmwareFault::Active(FirmwareFaultId::Drv).active_and_wire_code(),
+            (true, FirmwareFaultId::Drv.wire_code()),
         );
     }
 }

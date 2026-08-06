@@ -42,11 +42,7 @@ impl<const N: usize> FirmwareFaultHistory<N> {
         timestamp: TimestampTicks,
         persistent_fatal: bool,
     ) {
-        let (active, code) = match fault {
-            FirmwareFault::None => (false, FirmwareFaultWireCode::from_wire_code(0)),
-            FirmwareFault::Active(fault) => (true, fault.wire_code()),
-            FirmwareFault::Unknown => (true, FirmwareFaultWireCode::from_wire_code(0)),
-        };
+        let (active, code) = fault.active_and_wire_code();
         if active && (!self.active || code != self.code) {
             self.push(FirmwareFaultRecord {
                 timestamp,

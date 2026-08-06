@@ -62,7 +62,6 @@ pub(in crate::package) enum FirmwareImuMigration {
     NotRequired,
     Applied,
     InvalidRead,
-    InvalidTarget,
     // Pinned VESC accepts all three supported parameter IDs unconditionally.
     // Retain the outcome for defensive ABI diagnostics and test fakes.
     UnexpectedRejection {
@@ -100,12 +99,8 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     if gain.value() <= 1.0 {
         return migration_outcome!(FirmwareImuMigration::NotRequired);
     }
-    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.2) else {
-        return migration_outcome!(FirmwareImuMigration::InvalidTarget);
-    };
-    let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
-        return migration_outcome!(FirmwareImuMigration::InvalidTarget);
-    };
+    let proportional_gain = vescpkg_rs::ImuMahonyProportionalGain::new_const(0.2);
+    let integral_gain = vescpkg_rs::ImuMahonyIntegralGain::new_const(0.0);
     let proportional_failed = settings
         .set_imu_mahony_proportional_gain(effects, proportional_gain)
         .is_err();
