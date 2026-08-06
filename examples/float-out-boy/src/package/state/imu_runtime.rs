@@ -465,12 +465,15 @@ struct AngleFaultActivity {
     pitch: bool,
 }
 
+#[derive(Clone, Copy)]
+struct EngagementAllowed(bool);
+
 struct NormalFaultEvaluation {
     before_darkride: Option<FloatOutBoyStopEvent>,
     after_darkride: Option<FloatOutBoyStopEvent>,
     switches: SwitchFaultActivity,
     angles: AngleFaultActivity,
-    can_engage: bool,
+    can_engage: EngagementAllowed,
     flywheel_footpad_pressed: bool,
 }
 
@@ -486,7 +489,7 @@ fn evaluate_switch_angle_faults(
     base: &FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    can_engage: bool,
+    EngagementAllowed(can_engage): EngagementAllowed,
 ) -> SwitchAngleFaultEvaluation {
     let faults = state.serialized_config.faults();
     let footpad = base.footpad().state();
@@ -637,12 +640,14 @@ fn evaluate_normal_faults(
     let simple_start = startup.simplestart_enabled()
         && (float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 2)
             || !float_out_boy_ticks_elapsed(system_time_ticks, state.engage_ticks, 1));
-    let can_engage = matches!(
-        input.ride_state.charging(),
-        FloatOutBoyChargingState::NotCharging
-    ) && (matches!(footpad, FloatOutBoyFootpadState::Both)
-        || single_footpad && (dual_switch || simple_start)
-        || flywheel);
+    let can_engage = EngagementAllowed(
+        matches!(
+            input.ride_state.charging(),
+            FloatOutBoyChargingState::NotCharging
+        ) && (matches!(footpad, FloatOutBoyFootpadState::Both)
+            || single_footpad && (dual_switch || simple_start)
+            || flywheel),
+    );
     let switch_angle =
         evaluate_switch_angle_faults(state, base, system_time_ticks, input, can_engage);
     let darkride = DarkrideLimits::FLOAT_OUT_BOY;
@@ -681,7 +686,7 @@ fn evaluate_darkride_faults(
     state: &FloatOutBoyPackageState,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    can_engage: bool,
+    EngagementAllowed(can_engage): EngagementAllowed,
 ) -> DarkrideFaultEvaluation {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
     let high_pending = input.darkride_active && input.motor_erpm > limits.timed_high_erpm;
@@ -743,7 +748,7 @@ fn evaluate_engagement(
     state: &FloatOutBoyPackageState,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    can_engage: bool,
+    EngagementAllowed(can_engage): EngagementAllowed,
 ) -> EngagementEvaluation {
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
@@ -811,7 +816,7 @@ fn transition_control_conditions(
     state: &FloatOutBoyPackageState,
     base: &FloatOutBoyAllDataBasePayload,
     input: &FaultInputs,
-    state_engage: bool,
+    engagement: &EngagementEvaluation,
     stop_event: Option<FloatOutBoyStopEvent>,
 ) -> (ControlConditions, Rpm) {
     let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
@@ -824,7 +829,7 @@ fn transition_control_conditions(
         && !input.darkride_active;
     let motor_acceleration = state.motor_kinematics.average();
     let traction_loss_detected = stop_event.is_none()
-        && !state_engage
+        && !engagement.engage
         && !matches!(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
@@ -985,7 +990,7 @@ fn evaluate_transition_phase(
         evaluate_engagement(state, system_time_ticks, &fault_inputs, normal.can_engage);
     let stop_event = first_transition_stop(&normal, &darkride);
     let (control, motor_acceleration) =
-        transition_control_conditions(state, base, &fault_inputs, engagement.engage, stop_event);
+        transition_control_conditions(state, base, &fault_inputs, &engagement, stop_event);
     let outcome = apply_transition_activity(
         state,
         system_time_ticks,
