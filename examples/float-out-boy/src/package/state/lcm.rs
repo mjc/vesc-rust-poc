@@ -27,11 +27,10 @@ const MAX_LCM_PAYLOAD_LENGTH: usize = 64;
 const POLL_RESPONSE_CAPACITY: usize = 2 + 3 + 6 + 3 + MAX_LCM_PAYLOAD_LENGTH;
 
 fn nul_terminated_prefix(bytes: &[u8]) -> &[u8] {
-    let len = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .map_or(bytes.len(), |index| index.saturating_add(1));
-    &bytes[..len]
+    bytes
+        .split_inclusive(|byte| *byte == 0)
+        .next()
+        .unwrap_or_default()
 }
 
 fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
@@ -182,9 +181,7 @@ impl LcmState {
             packet.extend(&self.brightness);
             // Refloat's Float-specific LED fields are intentionally not sent
             // through this LCM interface.
-            for _ in 0..6 {
-                packet.push(0);
-            }
+            packet.extend(&[0; 6]);
         }
         packet
     }
@@ -247,13 +244,13 @@ impl FloatOutBoyPackageState {
             Command::LcmDeviceInfo => reply(self.lcm.device_info_response().as_bytes()),
             Command::LcmGetBattery => reply(self.lcm.battery_response(telemetry).as_bytes()),
             Command::LightsControl => {
-                if let [_, _, _, mask, value, ..] = payload {
-                    if *mask != 0 {
-                        self.set_led_runtime_overrides(
-                            (mask & 1 != 0).then_some(value & 1 != 0),
-                            (mask & 2 != 0).then_some(value & 2 != 0),
-                        );
-                    }
+                if let [_, _, _, mask, value, ..] = payload
+                    && *mask != 0
+                {
+                    self.set_led_runtime_overrides(
+                        (mask & 1 != 0).then_some(value & 1 != 0),
+                        (mask & 2 != 0).then_some(value & 2 != 0),
+                    );
                 }
                 let status = self.led_runtime_status();
                 reply(&[

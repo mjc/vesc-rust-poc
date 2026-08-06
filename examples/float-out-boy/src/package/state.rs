@@ -701,12 +701,9 @@ impl FloatOutBoyPackageState {
         enabled: Option<bool>,
         headlights_enabled: Option<bool>,
     ) {
-        if let Some(enabled) = enabled {
-            self.led_runtime_overrides.enabled = Some(enabled);
-        }
-        if let Some(headlights_enabled) = headlights_enabled {
-            self.led_runtime_overrides.headlights_enabled = Some(headlights_enabled);
-        }
+        self.led_runtime_overrides.enabled = enabled.or(self.led_runtime_overrides.enabled);
+        self.led_runtime_overrides.headlights_enabled =
+            headlights_enabled.or(self.led_runtime_overrides.headlights_enabled);
         config_runtime::refresh_led_effects(self);
     }
 
