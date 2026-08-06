@@ -72,7 +72,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -153,7 +153,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -244,7 +244,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
         FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -320,7 +320,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
             FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
             base.motor(),
         );
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
             base,
             payloads.mode2(),
             payloads.mode3(),
@@ -389,7 +389,7 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -472,7 +472,7 @@ fn normal_algorithm_trace_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
             Some(MotorCurrent::new(Current::from_amps(0.0))),
         ),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         stopped_base,
         payloads.mode2(),
         payloads.mode3(),

@@ -139,7 +139,7 @@ fn float_out_boy_main_thread_tick_drives_duty_haptic_through_typed_motor_audio()
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -361,13 +361,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
         status.ride_state().run_state(),
         FloatOutBoyRunState::Running
     );
-    let duty = state
-        .all_data_payloads()
-        .base()
-        .motor()
-        .duty_cycle()
-        .ratio()
-        .as_ratio();
+    let duty = state.all_data_payloads().duty_cycle().ratio().as_ratio();
     assert!(duty > 0.8, "duty={duty}, warning_tick={warning_tick:?}");
     assert_eq!(
         status.ride_state().setpoint_adjustment(),

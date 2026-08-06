@@ -1,4 +1,4 @@
-use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
+use super::FloatOutBoyPackageState;
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::wire::FloatOutBoyPacket;
 use vescpkg_rs::MotorTelemetry;
@@ -13,11 +13,10 @@ impl FloatOutBoyPackageState {
         &mut self,
         telemetry: &impl MotorTelemetry,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
-        if let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::AlertsList)
-        {
+        if command == FloatOutBoyAppDataCommand::AlertsList {
             let since = match payload {
                 [a, b, c, d, ..] => {
                     TimestampTicks::from_ticks(u32::from_be_bytes([*a, *b, *c, *d]))
@@ -51,9 +50,7 @@ impl FloatOutBoyPackageState {
             return reply(response.as_bytes());
         }
 
-        if let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::AlertsControl)
-        {
+        if command == FloatOutBoyAppDataCommand::AlertsControl {
             if payload.first() == Some(&1) {
                 self.alert_tracker.clear_fatal();
             }

@@ -37,7 +37,12 @@ fn ready_darkride_payloads() -> FloatOutBoyAllDataPayloads {
         base.booster_torque(),
         base.motor(),
     );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
 }
 
 fn configure_ready_darkride_imu(firmware: &FirmwareTest) {
@@ -70,7 +75,7 @@ fn app_data_ready_darkride_first_second_engages_without_roll_gate_like_float_out
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream READY darkride ignores roll during the first second after
     // disengage at `third_party/float-out-boy/src/main.c:1038-1054`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -96,7 +101,7 @@ fn app_data_ready_darkride_after_grace_engages_with_upside_down_roll_like_float_
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream READY darkride engages after one second when roll is near
     // upside-down at `third_party/float-out-boy/src/main.c:1038-1054`.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
@@ -133,7 +138,7 @@ fn ready_darkride_disables_and_alerts_after_ten_seconds_like_float_out_boy() {
             ],
         ));
 
-        let ride_state = state.all_data_payloads().base().status().ride_state();
+        let ride_state = state.all_data_payloads().ride_state();
         assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
         assert_eq!(ride_state.darkride(), expected_darkride);
         assert_eq!(
@@ -175,7 +180,7 @@ fn ready_darkride_timeout_prevents_same_tick_reactivation_like_float_out_boy() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.darkride(), FloatOutBoyDarkRideState::Upright);
 }

@@ -120,6 +120,13 @@ impl FloatOutBoyAllDataMode {
 }
 
 impl FloatOutBoyAllDataRequest {
+    /// Parse the payload after a validated package and command header.
+    #[must_use]
+    pub fn parse_payload(payload: &[u8]) -> Option<Self> {
+        let &[mode] = payload else { return None };
+        Some(Self::new(FloatOutBoyAllDataMode::from_source_id(mode)))
+    }
+
     /// Parse a Float Out Boy `COMMAND_GET_ALLDATA` app-data packet.
     ///
     /// Upstream dispatches this command at `third_party/float-out-boy/src/main.c:2210-2215`

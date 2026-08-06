@@ -75,9 +75,9 @@ fn encode_float_out_boy_realtime_data_response(
         payloads,
         FloatOutBoyRealtimeDataHeader::new(
             timestamp,
-            payloads.base().status().ride_state(),
-            payloads.base().footpad().state(),
-            payloads.base().status().beep_reason(),
+            payloads.ride_state(),
+            payloads.footpad().state(),
+            payloads.beep_reason(),
         ),
         FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
         live_values(
@@ -110,7 +110,12 @@ fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPaylo
         base.booster_torque(),
         motor,
     );
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    FloatOutBoyAllDataPayloads::from_groups(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    )
 }
 
 #[test]
@@ -335,6 +340,57 @@ fn selected_realtime_float32_fields_keep_mask1_width_and_order() {
     assert_eq!(&bytes[15..19], &0x412c_cccc_u32.to_be_bytes());
     assert_f32_auto_be(bytes, 19, 5.0);
     assert_f32_auto_be(bytes, 23, 0.72);
+}
+
+#[test]
+fn selected_realtime_mask1_bits_project_the_typed_realtime_inventory() {
+    let payloads = sample_all_data_payloads();
+    let header = selected_header(&payloads);
+    let live = selected_live_values();
+    let items = [
+        FloatOutBoyRealtimeDataItem::MotorSpeed,
+        FloatOutBoyRealtimeDataItem::MotorErpm,
+        FloatOutBoyRealtimeDataItem::MotorCurrent,
+        FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent,
+        FloatOutBoyRealtimeDataItem::MotorFilteredCurrent,
+        FloatOutBoyRealtimeDataItem::MotorDutyCycle,
+        FloatOutBoyRealtimeDataItem::MotorBatteryVoltage,
+        FloatOutBoyRealtimeDataItem::MotorBatteryCurrent,
+        FloatOutBoyRealtimeDataItem::MotorMosfetTemperature,
+        FloatOutBoyRealtimeDataItem::MotorTemperature,
+        FloatOutBoyRealtimeDataItem::ImuPitch,
+        FloatOutBoyRealtimeDataItem::ImuBalancePitch,
+        FloatOutBoyRealtimeDataItem::ImuRoll,
+        FloatOutBoyRealtimeDataItem::FootpadAdc1,
+        FloatOutBoyRealtimeDataItem::FootpadAdc2,
+        FloatOutBoyRealtimeDataItem::RemoteInput,
+        FloatOutBoyRealtimeDataItem::Setpoint,
+        FloatOutBoyRealtimeDataItem::AtrSetpoint,
+        FloatOutBoyRealtimeDataItem::BrakeTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::TurnTiltSetpoint,
+        FloatOutBoyRealtimeDataItem::RemoteSetpoint,
+        FloatOutBoyRealtimeDataItem::BalanceCurrent,
+        FloatOutBoyRealtimeDataItem::ControlFrequency,
+    ];
+
+    for (offset, item) in items.into_iter().enumerate() {
+        let bit = if offset < 8 { offset + 6 } else { offset + 7 };
+        let response = encode_float_out_boy_realtime_selected_response(
+            selected_request(1, 1 << bit, 0),
+            &payloads,
+            header,
+            live,
+            None,
+        );
+
+        assert_eq!(response.as_bytes().len(), 19, "mask1 bit {bit}");
+        assert_f32_auto_be(
+            response.as_bytes(),
+            15,
+            realtime_value(&payloads, item, live),
+        );
+    }
 }
 
 #[test]

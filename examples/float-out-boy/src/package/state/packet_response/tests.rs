@@ -17,6 +17,31 @@ fn selected_packet(flags: u8, mask1: u32, mask2: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn typed_dispatch_uses_the_decoded_command_without_rebuilding_its_wire_header() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut response = Vec::new();
+
+    assert!(state.handle_command_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |bytes| {
+            response.extend_from_slice(bytes);
+            true
+        },
+        FloatOutBoyAppDataCommand::RealtimeDataIds,
+        &[],
+    ));
+    assert_eq!(
+        response[..2],
+        [
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeDataIds.id(),
+        ]
+    );
+}
+
+#[test]
 fn selected_realtime_handler_rejects_truncated_required_payload() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
