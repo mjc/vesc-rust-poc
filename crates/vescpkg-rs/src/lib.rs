@@ -233,7 +233,7 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    DataRecorder, DataRecorderFlags, DataRecorderReply, DecimatedRecordRing,
+    DataRecorder, DataRecorderFlags, DataRecorderProtocol, DataRecorderReply, DecimatedRecordRing,
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
     FirmwareDataRecorderDescriptorError, FirmwareDataRecorderVersion, FixedRecordRing,
     FixedRecordStorage, RingCursor,

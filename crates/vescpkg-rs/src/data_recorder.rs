@@ -360,6 +360,38 @@ pub enum DataRecorderReply {
     Data(u32),
 }
 
+/// Package-specific command IDs and header bytes for the standard recorder wire protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataRecorderProtocol<const HEADER_SIZE: usize, const DATA_RESPONSE_CAPACITY: usize> {
+    package_id: u8,
+    status_command: u8,
+    header_command: u8,
+    data_command: u8,
+    header: [u8; HEADER_SIZE],
+}
+
+impl<const HEADER_SIZE: usize, const DATA_RESPONSE_CAPACITY: usize>
+    DataRecorderProtocol<HEADER_SIZE, DATA_RESPONSE_CAPACITY>
+{
+    /// Describe one package's recorder response commands and field header.
+    #[must_use]
+    pub const fn new(
+        package_id: u8,
+        status_command: u8,
+        header_command: u8,
+        data_command: u8,
+        header: [u8; HEADER_SIZE],
+    ) -> Self {
+        Self {
+            package_id,
+            status_command,
+            header_command,
+            data_command,
+            header,
+        }
+    }
+}
+
 /// Fixed-storage state for the standard VESC package data-recorder protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DataRecorder<S, const RECORD_SIZE: usize> {
@@ -495,6 +527,68 @@ impl<S: FixedRecordStorage, const RECORD_SIZE: usize> DataRecorder<S, RECORD_SIZ
             }
             [2, 2, a, b, c, d, ..] => DataRecorderReply::Data(u32::from_be_bytes([*a, *b, *c, *d])),
             _ => DataRecorderReply::None,
+        }
+    }
+
+    /// Apply one recorder request and emit its standard package wire response, if any.
+    pub fn reply_to_request<const HEADER_SIZE: usize, const DATA_RESPONSE_CAPACITY: usize>(
+        &mut self,
+        payload: &[u8],
+        protocol: &DataRecorderProtocol<HEADER_SIZE, DATA_RESPONSE_CAPACITY>,
+        reported_capacity: Option<usize>,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+    ) {
+        match self.handle_request(payload) {
+            DataRecorderReply::None => {}
+            DataRecorderReply::Status => {
+                let duration = reported_capacity.map_or_else(
+                    || self.records.recording_duration_centiseconds(),
+                    |capacity| {
+                        self.records
+                            .recording_duration_centiseconds_at_capacity(capacity)
+                    },
+                );
+                let duration = duration.to_be_bytes();
+                let response = [
+                    protocol.package_id,
+                    protocol.status_command,
+                    u8::from(self.has_capability()),
+                    self.flags.bits(),
+                    self.records.decimation(),
+                    duration[0],
+                    duration[1],
+                ];
+                let _ = reply(&response);
+            }
+            DataRecorderReply::Header => {
+                let mut response = protocol.header;
+                let count = u32::try_from(self.records.len()).unwrap_or(u32::MAX);
+                if let Some(command) = response.get_mut(1) {
+                    *command = protocol.header_command;
+                }
+                if let Some(target) = response.get_mut(2..6) {
+                    target.copy_from_slice(&count.to_be_bytes());
+                    let _ = reply(&response);
+                }
+            }
+            DataRecorderReply::Data(offset) => {
+                let mut response =
+                    crate::protocol_buffer::FixedBuffer::<DATA_RESPONSE_CAPACITY>::new();
+                response.push(protocol.package_id);
+                response.push(protocol.data_command);
+                response.push_u32(offset);
+                let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);
+                while response.remaining() >= RECORD_SIZE {
+                    let Some(sample) = self.records.get(sample_index) else {
+                        break;
+                    };
+                    response.extend(&sample);
+                    sample_index = sample_index.saturating_add(1);
+                }
+                if !self.records.is_empty() {
+                    let _ = reply(response.as_bytes());
+                }
+            }
         }
     }
 
@@ -912,5 +1006,44 @@ mod tests {
             DataRecorderReply::Data(1)
         );
         assert_eq!(recorder.handle_request(&[2, 2, 0]), DataRecorderReply::None);
+    }
+
+    #[test]
+    fn package_data_recorder_frames_standard_status_header_and_data_replies() {
+        let mut recorder = DataRecorder::<[u8; 8], 2>::new([0; 8], 100);
+        let protocol = DataRecorderProtocol::<7, 11>::new(101, 41, 42, 43, [101, 0, 0, 0, 0, 0, 9]);
+        recorder.start();
+        assert!(recorder.records_mut().push(&[0, 1]));
+
+        let mut replies = std::vec::Vec::new();
+        for request in [&[1, 0][..], &[2, 1], &[2, 2, 0, 0, 0, 0]] {
+            recorder.reply_to_request(request, &protocol, None, &mut |bytes| {
+                replies.push(bytes.to_vec());
+                true
+            });
+        }
+
+        assert_eq!(replies[0], [101, 41, 1, 0b111, 1, 0, 4]);
+        assert_eq!(replies[1], [101, 42, 0, 0, 0, 1, 9]);
+        assert_eq!(replies[2], [101, 43, 0, 0, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn package_data_recorder_omits_unavailable_and_empty_data_replies() {
+        let protocol = DataRecorderProtocol::<6, 8>::new(101, 41, 42, 43, [101, 0, 0, 0, 0, 0]);
+        let mut recorder = DataRecorder::<Option<[u8; 2]>, 2>::new(None, 100);
+        let mut replies = std::vec::Vec::new();
+
+        recorder.reply_to_request(&[1, 0], &protocol, Some(1), &mut |bytes| {
+            replies.push(bytes.to_vec());
+            true
+        });
+        recorder.replace_storage(Some([0; 2]));
+        recorder.reply_to_request(&[2, 2, 0, 0, 0, 0], &protocol, None, &mut |bytes| {
+            replies.push(bytes.to_vec());
+            true
+        });
+
+        assert_eq!(replies, [[101, 41, 0, 0b110, 1, 0, 1]]);
     }
 }
