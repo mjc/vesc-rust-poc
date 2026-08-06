@@ -1,10 +1,7 @@
 use super::{FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
 use crate::config::FloatOutBoyMetadataConfig as Metadata;
 use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigImage};
-use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
-    FloatOutBoyRunState,
-};
+use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyMode, FloatOutBoyRunState};
 use vescpkg_rs::{FirmwareEffects, TimestampTicks};
 
 #[cfg(test)]
@@ -463,16 +460,9 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn handle_config_command(
         &mut self,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
         now: &mut impl FnMut() -> TimestampTicks,
     ) -> bool {
-        let Some((command, _)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
-            bytes,
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-        ) else {
-            return false;
-        };
-
         match command {
             FloatOutBoyAppDataCommand::TuneDefaults => {
                 let mut config = self.serialized_config;

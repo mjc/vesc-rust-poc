@@ -1,7 +1,6 @@
-use super::float_out_boy_command_payload;
-use crate::domain::{
-    FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
-};
+#[cfg(test)]
+use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyChargingState};
 use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
@@ -20,9 +19,9 @@ fn decode_charging_current(hi: u8, lo: u8) -> BatteryCurrent {
     ))
 }
 
-pub(super) fn handle_packet(
+pub(super) fn handle_command(
     payloads: FloatOutBoyAllDataPayloads,
-    bytes: &[u8],
+    payload: &[u8],
 ) -> Option<FloatOutBoyAllDataPayloads> {
     // Float Out Boy v1.2.1 routes COMMAND_CHARGING_STATE at `third_party/float-out-boy/src/main.c:2267-2269`;
     // the command ID is defined in `third_party/float-out-boy/src/charging.h:25`.
@@ -34,7 +33,7 @@ pub(super) fn handle_packet(
         current_hi,
         current_lo,
         ..,
-    ] = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::ChargingState)?
+    ] = payload
     else {
         return None;
     };
@@ -66,6 +65,19 @@ pub(super) fn handle_packet(
             .with_charging_current(current)
             .with_charging_voltage(voltage),
     )
+}
+
+#[cfg(test)]
+pub(super) fn handle_packet(
+    payloads: FloatOutBoyAllDataPayloads,
+    bytes: &[u8],
+) -> Option<FloatOutBoyAllDataPayloads> {
+    let (command, payload) = vescpkg_rs::protocol_app_data::parse_app_data_command::<
+        FloatOutBoyAppDataCommand,
+    >(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)?;
+    (command == FloatOutBoyAppDataCommand::ChargingState)
+        .then(|| handle_command(payloads, payload))
+        .flatten()
 }
 
 pub(super) fn timeout(

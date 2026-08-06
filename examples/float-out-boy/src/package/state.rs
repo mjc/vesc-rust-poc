@@ -3,9 +3,11 @@ use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert};
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::FloatOutBoyConfigImage;
+#[cfg(test)]
+use crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
 use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
-    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
+    FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
@@ -102,6 +104,7 @@ use transition::{
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
 
 #[inline]
+#[cfg(test)]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
 /// app-data packets by package byte and command ID before dispatching to per-command handlers.
 fn float_out_boy_command_payload(
@@ -114,13 +117,10 @@ fn float_out_boy_command_payload(
     (actual == command).then_some(payload)
 }
 
-fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
+const fn float_out_boy_source_noop(command: FloatOutBoyAppDataCommand) -> bool {
     matches!(
-        bytes,
-        [package_id, command_id, ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
-                && (*command_id == FloatOutBoyAppDataCommand::PrintInfo.id()
-                    || *command_id == FloatOutBoyAppDataCommand::Experiment.id())
+        command,
+        FloatOutBoyAppDataCommand::PrintInfo | FloatOutBoyAppDataCommand::Experiment
     )
 }
 
@@ -770,12 +770,8 @@ impl FloatOutBoyPackageState {
         config_runtime::refresh_led_effects(self);
     }
 
-    /// Handle one app-data packet in the firmware callback context.
-    ///
-    /// Upstream `on_command_received` dispatches commands at
-    /// `third_party/float-out-boy/src/main.c:2143-2225`; the main
-    /// `float_out_boy_thd` owns `time_update`, `imu_update`, `motor_data_update`, and
-    /// control-loop transitions at `third_party/float-out-boy/src/main.c:772-1080`.
+    #[cfg(test)]
+    /// Parse and handle one raw app-data packet in host tests.
     pub fn handle_packet_with_runtime(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -784,10 +780,15 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        // Device callbacks keep the IMU parameter for one stable packet API;
-        // the device's dedicated IMU callback already refreshed state.
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        // The device's dedicated IMU callback already refreshed state.
         let _ = imu;
-        self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
+        self.handle_command_with_telemetry(telemetry, now, reply, command, payload)
     }
 
     /// Refresh the source-backed runtime slices that Float Out Boy updates near the
@@ -892,17 +893,8 @@ impl FloatOutBoyPackageState {
             self.start_internal_led_confirmation(system_time_ticks);
             // C map: `main.c:85-89` and `main.c:945-949`; this is the same
             // armed default flywheel command used by the native handler.
-            let command = [
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-                FloatOutBoyAppDataCommand::Flywheel.id(),
-                0x82,
-                0,
-                0,
-                0,
-                0,
-                1,
-            ];
-            self.prepare_flywheel_packet(&command).unwrap_or(false)
+            self.prepare_flywheel_command(&[0x82, 0, 0, 0, 0, 1])
+                .unwrap_or(false)
         } else {
             false
         };
@@ -924,24 +916,16 @@ impl FloatOutBoyPackageState {
         restore_flywheel_config
     }
 
-    fn handle_remote_packet(
+    fn handle_remote_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        let [package_id, command, ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
-            || *command != FloatOutBoyAppDataCommand::Remote.id()
-        {
-            return false;
-        }
-        self.remote_control.handle_packet(
+        self.remote_control.handle_command(
             now(),
             self.disengage_ticks.started(),
             self.serialized_config.remote().max_move_speed(),
-            bytes,
+            payload,
         )
     }
 
@@ -993,8 +977,35 @@ impl FloatOutBoyPackageState {
         );
     }
 
-    /// Handle one app-data packet after refreshing live telemetry fields.
+    /// Handle one decoded app-data command after refreshing live telemetry fields.
     #[cfg_attr(target_arch = "arm", inline(never))]
+    pub fn handle_command_with_telemetry(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        now: &mut impl FnMut() -> TimestampTicks,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
+    ) -> bool {
+        #[cfg(test)]
+        if let Some(handled) = self.handle_effectful_packet_for_test(now, command, payload) {
+            return handled;
+        }
+        if self.handle_control_command(now, command, payload)
+            || self.handle_config_command_boundary(now, command)
+        {
+            return true;
+        }
+        #[cfg(test)]
+        if self.handle_tuning_command(now, command, payload) {
+            return true;
+        }
+        self.handle_query_command(telemetry, now, reply, command, payload)
+            || self.reply_to_all_data_command(telemetry, reply, command, payload)
+    }
+
+    #[cfg(test)]
+    /// Parse and handle one raw app-data packet in telemetry-only host tests.
     pub fn handle_packet_with_telemetry(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -1002,37 +1013,22 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        #[cfg(test)]
-        if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
-            return handled;
-        }
-        if self.handle_control_packet(now, bytes) || self.handle_config_packet(now, bytes) {
-            return true;
-        }
-        #[cfg(test)]
-        if self.handle_tuning_packet(now, bytes) {
-            return true;
-        }
-        self.handle_query_packet(telemetry, now, reply, bytes)
-            || self.reply_to_all_data_packet(telemetry, reply, bytes)
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        self.handle_command_with_telemetry(telemetry, now, reply, command, payload)
     }
 
     #[cfg(test)]
     fn handle_effectful_packet_for_test(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> Option<bool> {
-        let [package_id, command, payload @ ..] = bytes else {
-            return None;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return None;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
-            return None;
-        };
-
         match command {
             FloatOutBoyAppDataCommand::ConfigSave => {
                 let requested_at = now();
@@ -1078,7 +1074,7 @@ impl FloatOutBoyPackageState {
                 Some(true)
             }
             FloatOutBoyAppDataCommand::HandTest => {
-                let Some(restore) = self.prepare_handtest_packet(bytes) else {
+                let Some(restore) = self.prepare_handtest_command(payload) else {
                     return Some(false);
                 };
                 if restore {
@@ -1097,7 +1093,7 @@ impl FloatOutBoyPackageState {
                 Some(true)
             }
             FloatOutBoyAppDataCommand::Flywheel => {
-                let Some(restore) = self.prepare_flywheel_packet(bytes) else {
+                let Some(restore) = self.prepare_flywheel_command(payload) else {
                     return Some(false);
                 };
                 if restore {
@@ -1119,40 +1115,35 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_control_packet(
+    fn handle_control_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
-        float_out_boy_source_noop(bytes)
-            || self.handle_charging_state_packet(now, bytes)
-            || self.handle_remote_packet(now, bytes)
+        float_out_boy_source_noop(command)
+            || command == FloatOutBoyAppDataCommand::ChargingState
+                && self.handle_charging_state_command(now, payload)
+            || command == FloatOutBoyAppDataCommand::Remote
+                && self.handle_remote_command(now, payload)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_config_packet(
+    fn handle_config_command_boundary(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
     ) -> bool {
-        self.handle_config_command(bytes, now)
+        self.handle_config_command(command, now)
     }
 
     #[cfg(test)]
-    fn handle_tuning_packet(
+    fn handle_tuning_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
-        let [package_id, command, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return false;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
-            return false;
-        };
         let mut config = *self.serialized_config();
         let Some(commit) = Self::prepare_tune_config(&mut config, command, payload) else {
             return false;
@@ -1162,20 +1153,22 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_query_packet(
+    fn handle_query_command(
         &mut self,
         telemetry: &impl MotorTelemetry,
         now: &mut impl FnMut() -> TimestampTicks,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
-        self.handle_alert_packet(telemetry, reply, bytes)
-            || self.handle_lcm_packet(telemetry, reply, bytes)
-            || self.handle_data_recorder_packet(reply, bytes)
-            || self.reply_to_metadata_packet(reply, bytes)
-            || self.reply_to_legacy_realtime_data_packet(reply, bytes)
-            || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
-            || self.reply_to_realtime_selected_packet(telemetry, now, reply, bytes)
+        self.handle_alert_packet(telemetry, reply, command, payload)
+            || self.handle_lcm_command(telemetry, reply, command, payload)
+            || command == FloatOutBoyAppDataCommand::DataRecordRequest
+                && self.handle_data_recorder_packet(reply, payload)
+            || self.reply_to_metadata_command(reply, command, payload)
+            || self.reply_to_legacy_realtime_data_command(reply, command)
+            || self.reply_to_realtime_data_command(telemetry, now, reply, command)
+            || self.reply_to_realtime_selected_command(telemetry, now, reply, command, payload)
     }
 
     #[cfg(test)]
@@ -1251,12 +1244,12 @@ impl FloatOutBoyPackageState {
         );
     }
 
-    fn handle_charging_state_packet(
+    fn handle_charging_state_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        match charging::handle_packet(self.all_data_payloads, bytes) {
+        match charging::handle_command(self.all_data_payloads, payload) {
             Some(payloads) => {
                 self.all_data_payloads = payloads;
                 self.charging_ticks.restart(now());
