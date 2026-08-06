@@ -127,10 +127,13 @@ unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *
     if arg_count < 0 {
         return;
     }
+    let Ok(length) = usize::try_from(arg_count) else {
+        return;
+    };
     H::run(TerminalArgs {
         argv,
         index: 0,
-        length: usize::try_from(arg_count).unwrap_or(0),
+        length,
         _lifetime: PhantomData,
     });
 }

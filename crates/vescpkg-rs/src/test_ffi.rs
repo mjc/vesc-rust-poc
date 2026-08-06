@@ -58,13 +58,13 @@ pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
     true
 }
 
-static STM32_GPIO: u8 = 0;
+static mut STM32_GPIO: u8 = 0;
 
 pub unsafe fn io_get_st_pin(pin: VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
     let (Some(gpio), Some(st_pin)) = (unsafe { gpio.as_mut() }, unsafe { st_pin.as_mut() }) else {
         return false;
     };
-    *gpio = core::ptr::addr_of!(STM32_GPIO).cast_mut().cast();
+    *gpio = core::ptr::addr_of_mut!(STM32_GPIO).cast();
     *st_pin = u32::try_from(pin.0).unwrap_or_default();
     true
 }
@@ -241,7 +241,8 @@ static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
 static IMU_CALIBRATION_VALID: AtomicBool = AtomicBool::new(true);
-static FLAT_BUFFER: [u8; 256] = [0; 256];
+const FLAT_BUFFER_LEN: usize = 256;
+static mut FLAT_BUFFER: [u8; FLAT_BUFFER_LEN] = [0; FLAT_BUFFER_LEN];
 static CAN_STATUS: CanStatusMsg = CanStatusMsg {
     id: 7,
     rx_time: 123,
@@ -314,7 +315,7 @@ static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
 static LBM_SYMBOL_ID: AtomicU32 = AtomicU32::new(0);
 static LBM_MESSAGE_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_EVAL_PAUSED: AtomicBool = AtomicBool::new(false);
-static LBM_STRING: [u8; 5] = *b"vesc\0";
+static mut LBM_STRING: [u8; 5] = *b"vesc\0";
 const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
@@ -742,7 +743,7 @@ pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
 }
 
 pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
-    LBM_STRING.as_ptr().cast_mut().cast()
+    core::ptr::addr_of_mut!(LBM_STRING).cast::<u8>().cast()
 }
 
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
@@ -840,11 +841,11 @@ pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option
 
 pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
     let value = unsafe { value.as_mut()? };
-    if buffer_size > FLAT_BUFFER.len() {
+    if buffer_size > FLAT_BUFFER_LEN {
         return Some(false);
     }
     let buffer_size = u32::try_from(buffer_size).ok()?;
-    value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
+    value.buf = core::ptr::addr_of_mut!(FLAT_BUFFER).cast::<u8>();
     value.buf_size = buffer_size;
     value.buf_pos = 0;
     Some(true)
@@ -1039,7 +1040,7 @@ pub unsafe fn vesc_sem_reset(_semaphore: *mut c_void) {
 pub unsafe fn vesc_free(pointer: *mut c_void) {
     if core::ptr::eq(
         pointer.cast_const(),
-        core::ptr::addr_of!(FLAT_BUFFER).cast::<c_void>(),
+        core::ptr::addr_of_mut!(FLAT_BUFFER).cast::<c_void>(),
     ) {
         return;
     }

@@ -5,7 +5,6 @@
 )]
 
 use core::ffi::c_int;
-use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage};
@@ -163,7 +162,8 @@ impl FocAudio {
         }
     }
 
-    /// Return the firmware-owned table pointer for inspection.
+    /// Return the firmware-owned table pointer for inspection without erasing
+    /// the firmware's `const` contract.
     ///
     /// # Safety
     ///
@@ -172,9 +172,8 @@ impl FocAudio {
     /// not dereference it after its lease is dropped or turn it into a slice
     /// without separately knowing the table length.
     #[must_use]
-    pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<NonNull<f32>> {
+    pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<*const f32> {
         unsafe { crate::ffi::foc_get_audio_sample_table(c_int::from(channel.as_u8())) }
-            .and_then(|pointer| NonNull::new(pointer.cast_mut()))
     }
 }
 
