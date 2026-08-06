@@ -1,5 +1,9 @@
 //! Shared VESC package BMS monitoring state and threshold evaluation.
 
+// TODO(vescpkg-rs): Move the Refloat-derived 42-second startup sentinel,
+// five-second stale/grace window, and zero-temperature threshold disabling
+// rules into package-supplied policy.
+
 use crate::{TimestampTicks, VescSeconds, Voltage, timer_older};
 
 /// Integer BMS temperature used by VESC package configuration and telemetry.

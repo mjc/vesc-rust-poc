@@ -1,5 +1,9 @@
 //! Validated descriptor for Refloat's optional recorder firmware buffer.
 
+// TODO(vescpkg-rs): Split the Refloat 6.05 descriptor address, magic, version,
+// and CCM range from the generic recorder ring and protocol before supporting
+// another recorder-firmware layout.
+
 use core::ptr::NonNull;
 
 use crate::{SampleRate, TimestampTicks};

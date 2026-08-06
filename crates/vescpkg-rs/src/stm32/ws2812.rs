@@ -27,6 +27,8 @@ pub enum OutputPin {
     ///
     /// This mapping is not declared by the current VESC package source.
     C7,
+    // TODO(vescpkg-rs): Move this Refloat-only tuple behind a package-specific
+    // mapping when a second nonstandard WS2812 output is added.
     /// STM32 pin C9, TIM3 channel 4, DMA1 stream 2/channel 5.
     C9,
 }
