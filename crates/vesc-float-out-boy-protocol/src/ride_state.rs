@@ -42,7 +42,7 @@ impl FloatOutBoyRideState {
         }
     }
 
-    vescpkg_rs::const_field_builders! {
+    vesc_protocol::const_field_builders! {
         /// Return this state with the requested charging state.
         pub fn with_charging(charging: FloatOutBoyChargingState) => charging;
         /// Return this state with the requested wheel-slip state.
@@ -50,10 +50,10 @@ impl FloatOutBoyRideState {
         /// Return this state with the requested darkride/upside-down state.
         pub fn with_darkride(darkride: FloatOutBoyDarkRideState) => darkride;
         /// Return this state with the requested setpoint adjustment.
-        pub(crate) fn with_setpoint_adjustment(setpoint_adjustment: FloatOutBoySetpointAdjustment) => setpoint_adjustment;
+        pub fn with_setpoint_adjustment(setpoint_adjustment: FloatOutBoySetpointAdjustment) => setpoint_adjustment;
     }
 
-    vescpkg_rs::const_field_getters! {
+    vesc_protocol::const_field_getters! {
         /// Return the top-level run state.
         ///
         /// Mirrors upstream `d->state.state`, read by `set_cfg` at

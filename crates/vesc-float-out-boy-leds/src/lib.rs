@@ -1,7 +1,74 @@
 //! Float Out Boy LED support types.
 //!
-//! These types model Float Out Boy's internal LED configuration surface. Raw config
-//! field packing stays at package/config boundaries.
+//! This crate deliberately owns FOB-specific LED configuration and rendering. It is
+//! not a generic VESC or `vescpkg-rs` LED API. Raw config field packing stays at
+//! package/config boundaries.
+
+#![no_std]
+#![deny(warnings, clippy::pedantic)]
+#![forbid(unused_extern_crates)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::allow_attributes,
+        clippy::allow_attributes_without_reason,
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::mem_forget,
+        clippy::missing_safety_doc,
+        clippy::multiple_unsafe_ops_per_block,
+        clippy::panic,
+        clippy::todo,
+        clippy::undocumented_unsafe_blocks,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+#[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
+macro_rules! assert_f32_eq {
+    ($actual:expr, $expected:expr $(,)?) => {{
+        let actual: f32 = $actual;
+        let expected: f32 = $expected;
+        let tolerance = f32::EPSILON * actual.abs().max(expected.abs()).max(1.0) * 4.0;
+        let exactly_equal = !actual.is_nan() && actual.to_bits() == expected.to_bits();
+        assert!(
+            exactly_equal
+                || (actual.is_finite()
+                    && expected.is_finite()
+                    && (actual - expected).abs() <= tolerance),
+            "expected {expected:?}, got {actual:?} (tolerance {tolerance:?})"
+        );
+    }};
+}
+
+mod hardware;
+mod mode;
+#[cfg(any(test, feature = "test-support"))]
+mod test_support;
+
+pub use self::hardware::FloatOutBoyHardwareLedsConfig;
+pub use self::mode::FloatOutBoyLedMode;
+pub use vesc_float_out_boy_protocol::{
+    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState,
+};
+
+/// Compatibility namespace for FOB hardware LED configuration.
+pub mod lcm {
+    pub use crate::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
+}
+
+mod wire {
+    pub(crate) use vesc_float_out_boy_protocol::{
+        saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
+    };
+}
 
 use vescpkg_rs::prelude::Ratio;
 
@@ -242,50 +309,78 @@ pub enum FloatOutBoyLedTransition {
 /// Float Out Boy LED bar configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedBarConfig {
-    pub(crate) brightness: Ratio,
-    pub(crate) primary_color: FloatOutBoyLedColor,
-    pub(crate) secondary_color: FloatOutBoyLedColor,
-    pub(crate) animation_mode: FloatOutBoyLedAnimationMode,
-    pub(crate) animation_speed: f32,
+    /// Bar brightness ratio.
+    pub brightness: Ratio,
+    /// Primary named color.
+    pub primary_color: FloatOutBoyLedColor,
+    /// Secondary named color.
+    pub secondary_color: FloatOutBoyLedColor,
+    /// Animation mode.
+    pub animation_mode: FloatOutBoyLedAnimationMode,
+    /// Animation speed multiplier.
+    pub animation_speed: f32,
 }
 
 /// Float Out Boy status-bar configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyStatusBarConfig {
-    pub(crate) idle_timeout: u16,
-    pub(crate) duty_threshold: Ratio,
-    pub(crate) red_bar_percentage: Ratio,
-    pub(crate) show_sensors_while_running: bool,
-    pub(crate) brightness_headlights_on: Ratio,
-    pub(crate) brightness_headlights_off: Ratio,
+    /// Idle timeout in source configuration units.
+    pub idle_timeout: u16,
+    /// Duty threshold for red progress.
+    pub duty_threshold: Ratio,
+    /// Red portion of the status bar.
+    pub red_bar_percentage: Ratio,
+    /// Whether running sensor state appears on the status bar.
+    pub show_sensors_while_running: bool,
+    /// Status brightness with headlights on.
+    pub brightness_headlights_on: Ratio,
+    /// Status brightness with headlights off.
+    pub brightness_headlights_off: Ratio,
 }
 
+/// Lifted-board LED behavior.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FloatOutBoyLiftedLedsConfig {
-    pub(crate) lights_off: bool,
-    pub(crate) status_on_front: bool,
+pub struct FloatOutBoyLiftedLedsConfig {
+    /// Turn lights off while lifted.
+    pub lights_off: bool,
+    /// Render status on the front strip while lifted.
+    pub status_on_front: bool,
 }
 
 /// Float Out Boy LEDs configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedsConfig {
-    pub(crate) on: bool,
-    pub(crate) headlights_on: bool,
-    pub(crate) headlights_transition: FloatOutBoyLedTransition,
-    pub(crate) direction_transition: FloatOutBoyLedTransition,
-    pub(crate) lifted: FloatOutBoyLiftedLedsConfig,
-    pub(crate) headlights: FloatOutBoyLedBarConfig,
-    pub(crate) taillights: FloatOutBoyLedBarConfig,
-    pub(crate) front: FloatOutBoyLedBarConfig,
-    pub(crate) rear: FloatOutBoyLedBarConfig,
-    pub(crate) status: FloatOutBoyStatusBarConfig,
-    pub(crate) status_idle: FloatOutBoyLedBarConfig,
+    /// Master LED enable.
+    pub on: bool,
+    /// Headlight enable.
+    pub headlights_on: bool,
+    /// Headlight transition mode.
+    pub headlights_transition: FloatOutBoyLedTransition,
+    /// Direction-change transition mode.
+    pub direction_transition: FloatOutBoyLedTransition,
+    /// Lifted-board behavior.
+    pub lifted: FloatOutBoyLiftedLedsConfig,
+    /// Active headlight bar.
+    pub headlights: FloatOutBoyLedBarConfig,
+    /// Active taillight bar.
+    pub taillights: FloatOutBoyLedBarConfig,
+    /// Front direction bar.
+    pub front: FloatOutBoyLedBarConfig,
+    /// Rear direction bar.
+    pub rear: FloatOutBoyLedBarConfig,
+    /// Active status bar.
+    pub status: FloatOutBoyStatusBarConfig,
+    /// Idle status bar.
+    pub status_idle: FloatOutBoyLedBarConfig,
 }
 
+/// Runtime LED enable overrides owned by package state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FloatOutBoyLedRuntimeStatus {
-    pub(crate) enabled: bool,
-    pub(crate) headlights_enabled: bool,
+pub struct FloatOutBoyLedRuntimeStatus {
+    /// Whether LED rendering is enabled.
+    pub enabled: bool,
+    /// Whether headlights are enabled.
+    pub headlights_enabled: bool,
 }
 
 vescpkg_rs::wire_enum! {
@@ -305,10 +400,14 @@ pub enum FloatOutBoyLedStripOrder {
 /// Float Out Boy LED strip configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyLedStripConfig {
-    pub(crate) order: FloatOutBoyLedStripOrder,
-    pub(crate) count: u8,
-    pub(crate) color_order: FloatOutBoyLedColorOrder,
-    pub(crate) reverse: bool,
+    /// Physical strip order.
+    pub order: FloatOutBoyLedStripOrder,
+    /// Pixel count.
+    pub count: u8,
+    /// Physical channel order.
+    pub color_order: FloatOutBoyLedColorOrder,
+    /// Whether logical pixels are reversed.
+    pub reverse: bool,
 }
 
 // Refloat stores each strip length in one byte.
@@ -418,7 +517,8 @@ impl FloatOutBoyLedDynamics {
             self.run_state = run_state;
             return false;
         }
-        self.on_off_fade = rate_limit(self.on_off_fade, f32::from(u8::from(config.on)), 3.0 / 30.0);
+        self.on_off_fade =
+            vescpkg_rs::slew_toward(self.on_off_fade, f32::from(u8::from(config.on)), 3.0 / 30.0);
 
         if !self.board_is_upright && pitch_degrees > 60.0 {
             self.board_is_upright = true;
@@ -426,7 +526,7 @@ impl FloatOutBoyLedDynamics {
             self.board_is_upright = false;
         }
 
-        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
+        let running = run_state == crate::FloatOutBoyRunState::Running;
         if run_state != self.run_state {
             if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled)
                 || matches!(run_state, crate::FloatOutBoyRunState::Disabled)
@@ -446,11 +546,13 @@ impl FloatOutBoyLedDynamics {
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
         let right =
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
-        self.left_sensor = rate_limit(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
-        self.right_sensor = rate_limit(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
+        self.left_sensor =
+            vescpkg_rs::slew_toward(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
+        self.right_sensor =
+            vescpkg_rs::slew_toward(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
 
-        let headlights_should = matches!(run_state, crate::FloatOutBoyRunState::Running)
-            && !matches!(mode, crate::FloatOutBoyMode::Flywheel)
+        let headlights_should = run_state == crate::FloatOutBoyRunState::Running
+            && mode != crate::FloatOutBoyMode::Flywheel
             && config.headlights_on;
         let headlights_on = self.headlights_state.is_on();
         let transitioning = self.headlights_state.is_transitioning();
@@ -485,7 +587,7 @@ impl FloatOutBoyLedDynamics {
             }
         }
 
-        if matches!(run_state, crate::FloatOutBoyRunState::Running)
+        if run_state == crate::FloatOutBoyRunState::Running
             && !was_headlights_transitioning
             && !self.headlights_state.is_transitioning()
         {
@@ -542,17 +644,7 @@ impl FloatOutBoyLedDynamics {
     }
 }
 
-fn rate_limit(value: f32, target: f32, step: f32) -> f32 {
-    if (target - value).abs() < step {
-        target
-    } else if target > value {
-        value + step
-    } else {
-        value - step
-    }
-}
-
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 /// Test-only split status input retained for compact renderer fixtures.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedStatusUpdate {
@@ -620,7 +712,8 @@ impl FloatOutBoyStatusDynamics {
                     .min(config.status_idle.brightness.as_ratio()),
             );
         }
-        self.brightness = rate_limit(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
+        self.brightness =
+            vescpkg_rs::slew_toward(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
         Ratio::clamped(self.brightness)
     }
 
@@ -637,8 +730,8 @@ impl FloatOutBoyStatusDynamics {
             self.idle_time = current_time;
         }
 
-        let duty = if matches!(input.run_state, crate::FloatOutBoyRunState::Running)
-            && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+        let duty = if input.run_state == crate::FloatOutBoyRunState::Running
+            && input.mode != crate::FloatOutBoyMode::Flywheel
         {
             (input.duty_cycle.abs() * 10.0 / 9.0).min(1.0)
         } else {
@@ -652,7 +745,8 @@ impl FloatOutBoyStatusDynamics {
         } else {
             self.duty_blend
         };
-        self.duty_blend = rate_limit(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
+        self.duty_blend =
+            vescpkg_rs::slew_toward(self.duty_blend, duty_target, 5.0 / 30.0).clamp(0.0, 1.0);
 
         if sensors.0.as_ratio() >= 1.0 || sensors.1.as_ratio() >= 1.0 {
             self.idle_blend = 0.0;
@@ -666,7 +760,8 @@ impl FloatOutBoyStatusDynamics {
         } else {
             0.0
         };
-        self.idle_blend = rate_limit(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
+        self.idle_blend =
+            vescpkg_rs::slew_toward(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
         if input.moving {
             self.idle_time = current_time;
         }
@@ -684,9 +779,12 @@ impl FloatOutBoyStatusDynamics {
 pub struct FloatOutBoyLedRenderer {
     dynamics: FloatOutBoyLedDynamics,
     status_dynamics: FloatOutBoyStatusDynamics,
-    pub(crate) status: FloatOutBoyLedStripFrame,
-    pub(crate) front: FloatOutBoyLedStripFrame,
-    pub(crate) rear: FloatOutBoyLedStripFrame,
+    /// Current status-strip frame.
+    pub status: FloatOutBoyLedStripFrame,
+    /// Current front-strip frame.
+    pub front: FloatOutBoyLedStripFrame,
+    /// Current rear-strip frame.
+    pub rear: FloatOutBoyLedStripFrame,
     front_bar: FloatOutBoyLedBarConfig,
     rear_bar: FloatOutBoyLedBarConfig,
     animation_start: f32,
@@ -754,7 +852,7 @@ impl FloatOutBoyLedRenderer {
             self.status_on_front_idle_time = current_time;
         }
         let status_on_front = config.lifted.status_on_front
-            && matches!(input.run_state, crate::FloatOutBoyRunState::Ready)
+            && input.run_state == crate::FloatOutBoyRunState::Ready
             && upright;
         let status_brightness = self.status_dynamics.update_brightness(config);
         let front_target = if status_on_front {
@@ -769,9 +867,11 @@ impl FloatOutBoyLedRenderer {
         } else {
             self.rear_bar.brightness.as_ratio()
         };
-        self.front_brightness = rate_limit(self.front_brightness, front_target, 3.0 / 30.0);
-        self.rear_brightness = rate_limit(self.rear_brightness, rear_target, 3.0 / 30.0);
-        self.status_on_front_blend = rate_limit(
+        self.front_brightness =
+            vescpkg_rs::slew_toward(self.front_brightness, front_target, 3.0 / 30.0);
+        self.rear_brightness =
+            vescpkg_rs::slew_toward(self.rear_brightness, rear_target, 3.0 / 30.0);
+        self.status_on_front_blend = vescpkg_rs::slew_toward(
             self.status_on_front_blend,
             f32::from(u8::from(status_on_front)),
             3.0 / 30.0,
@@ -790,7 +890,7 @@ impl FloatOutBoyLedRenderer {
         if config.lifted.status_on_front && self.status_on_front_blend > 0.0 {
             let front_idle =
                 config.lifted.lights_off && current_time - self.status_on_front_idle_time > 3.0;
-            self.status_on_front_idle_blend = rate_limit(
+            self.status_on_front_idle_blend = vescpkg_rs::slew_toward(
                 self.status_on_front_idle_blend,
                 f32::from(u8::from(front_idle)),
                 3.0 / 30.0,
@@ -831,8 +931,8 @@ impl FloatOutBoyLedRenderer {
     ) {
         if headlights.2 || old_headlights.2 {
             let targets = if headlights.2 {
-                let should_be_on = matches!(input.run_state, crate::FloatOutBoyRunState::Running)
-                    && !matches!(input.mode, crate::FloatOutBoyMode::Flywheel)
+                let should_be_on = input.run_state == crate::FloatOutBoyRunState::Running
+                    && input.mode != crate::FloatOutBoyMode::Flywheel
                     && config.headlights_on;
                 select_front_rear_bars(config, should_be_on, old_direction.1)
             } else {
@@ -1664,10 +1764,6 @@ fn refloat_hue_to_pixel(hue: u8) -> FloatOutBoyLedPixel {
         ],
     }
 }
-
-#[cfg(test)]
-#[path = "leds/tests/api.rs"]
-mod test_api;
 
 #[cfg(test)]
 mod renderer_tests;

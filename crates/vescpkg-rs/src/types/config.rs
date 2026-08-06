@@ -32,6 +32,12 @@ impl WireByte {
         Self::new(value >> 4)
     }
 
+    /// Split one protocol byte into its low and high nibbles.
+    #[must_use]
+    pub const fn nibbles(value: u8) -> (Self, Self) {
+        (Self::low_nibble(value), Self::high_nibble(value))
+    }
+
     /// Apply a wire scale and offset directly through a semantic constructor.
     pub fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
         constructor(f32::from(self.0) * scale + offset)
@@ -414,7 +420,28 @@ impl<const LEN: usize> CustomConfigImage<LEN> {
 /// In-place editor for fixed-size serialized VESC custom-config bytes.
 pub struct CustomConfigEditor<'a, const LEN: usize>(&'a mut [u8; LEN]);
 
+/// Typed generated field that can be written through a custom-config editor.
+pub trait CustomConfigWritableField<const LEN: usize>: Copy {
+    /// Semantic value accepted by this field.
+    type Value;
+
+    /// Encode the value into the field's generated storage.
+    fn write_field(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: Self::Value,
+    ) -> Option<()>;
+}
+
 impl<const LEN: usize> CustomConfigEditor<'_, LEN> {
+    /// Encode a semantic value through its typed generated field descriptor.
+    pub fn set<Field>(&mut self, field: Field, value: Field::Value) -> bool
+    where
+        Field: CustomConfigWritableField<LEN>,
+    {
+        field.write_field(self, value).is_some()
+    }
+
     /// Write one byte for crate-internal field descriptors.
     pub(crate) fn set_byte_at(&mut self, offset: usize, value: u8) -> Option<()> {
         let byte = self.0.get_mut(offset)?;
@@ -961,6 +988,44 @@ impl CustomConfigRatioField {
     }
 }
 
+macro_rules! writable_config_fields {
+    ($($field:ty => $value:ty;)*) => {$(
+        impl<const LEN: usize> CustomConfigWritableField<LEN> for $field {
+            type Value = $value;
+
+            fn write_field(
+                self,
+                editor: &mut CustomConfigEditor<'_, LEN>,
+                value: Self::Value,
+            ) -> Option<()> {
+                self.write(editor, value)
+            }
+        }
+    )*};
+}
+
+writable_config_fields! {
+    CustomConfigDurationField => crate::VescSeconds;
+    CustomConfigVoltageField => crate::units::Voltage;
+    CustomConfigElectricalSpeedField => super::motion::ElectricalSpeed;
+    CustomConfigSampleRateField => crate::SampleRate;
+    CustomConfigFlagField => bool;
+    CustomConfigWireByteField => WireByte;
+    CustomConfigMotorCurrentField => crate::MotorCurrent;
+    CustomConfigAngleField => crate::AngleDegrees;
+    CustomConfigAngularVelocityField => crate::AngularVelocity;
+    CustomConfigSecondsField => crate::VescSeconds;
+    CustomConfigScaledVoltageField => crate::Voltage;
+    CustomConfigFrequencyField => crate::Frequency;
+    CustomConfigMahonyPitchGainField => crate::MahonyPitchGain;
+    CustomConfigMahonyRollGainField => crate::MahonyRollGain;
+    CustomConfigAngleCurrentGainField => crate::AngleCurrentGain;
+    CustomConfigRateCurrentGainField => crate::RateCurrentGain;
+    CustomConfigIntegralCurrentGainField => crate::IntegralCurrentGain;
+    CustomConfigPidScaleField => crate::PidScale;
+    CustomConfigRatioField => crate::Ratio;
+}
+
 /// Gear reduction ratio configured for speed/distance calculations.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -1198,6 +1263,29 @@ mod tests {
     }
 
     #[test]
+    fn config_editor_sets_heterogeneous_typed_fields() {
+        let flag = crate::generated_custom_config_field!(
+            CustomConfigFlagField,
+            len: 3,
+            offset: 0
+        );
+        let speed = crate::generated_custom_config_field!(
+            CustomConfigElectricalSpeedField,
+            len: 3,
+            offset: 1
+        );
+        let mut image = CustomConfigImage::new([0; 3]);
+        let mut editor = image.editor();
+
+        assert!(editor.set(flag, true));
+        assert!(editor.set(
+            speed,
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(12_345.0))
+        ));
+        assert_eq!(image.as_bytes(), &[1, 0x30, 0x39]);
+    }
+
+    #[test]
     fn scaled_fields_decode_and_encode_semantic_values() {
         macro_rules! field {
             ($field:ty) => {
@@ -1355,6 +1443,10 @@ mod tests {
 
     #[test]
     fn wire_byte_extracts_protocol_nibbles() {
+        assert_eq!(
+            super::WireByte::nibbles(0xab),
+            (super::WireByte::new(0x0b), super::WireByte::new(0x0a))
+        );
         assert_eq!(super::WireByte::low_nibble(0xab).as_u8(), 0x0b);
         assert_eq!(super::WireByte::high_nibble(0xab).as_u8(), 0x0a);
         assert_eq!(

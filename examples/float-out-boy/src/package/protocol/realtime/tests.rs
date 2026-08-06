@@ -1,7 +1,43 @@
 use super::super::super::test_support::sample_all_data_payloads;
 use super::*;
-use crate::domain::{FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload};
-use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
+use crate::domain::{
+    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem, FloatOutBoyRealtimeRemoteInput,
+    FloatOutBoyRealtimeTail,
+};
+use vescpkg_rs::prelude::{
+    AngleDegrees, AngleRadians, FirmwareFaultWireCode, SignedRatio, Speed, TimestampTicks,
+    VehicleSpeed,
+};
+
+fn encode_float_out_boy_get_realtime_data_response(
+    payloads: &FloatOutBoyAllDataPayloads,
+) -> [u8; 72] {
+    encode_float_out_boy_get_realtime_data_response_with_remote(
+        payloads,
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+    )
+}
+
+fn encode_float_out_boy_realtime_data_response(
+    payloads: &FloatOutBoyAllDataPayloads,
+    timestamp: TimestampTicks,
+) -> vesc_float_out_boy_protocol::FloatOutBoyRealtimeDataResponse {
+    encode_float_out_boy_realtime_data_response_with_runtime(
+        payloads,
+        FloatOutBoyRealtimeDataHeader::new(
+            timestamp,
+            payloads.base().status().ride_state(),
+            payloads.base().footpad().state(),
+            payloads.base().status().beep_reason(),
+        ),
+        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+        0.0,
+    )
+}
 
 fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPayloads {
     let payloads = sample_all_data_payloads();

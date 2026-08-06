@@ -45,15 +45,6 @@ fn smooth_ramp(state: &mut SmoothAngle, target: AngleDegrees, step: AngleDegrees
     }
 }
 
-fn rate_limit(value: AngleDegrees, target: AngleDegrees, step: AngleDegrees) -> AngleDegrees {
-    let diff = target - value;
-    if diff.abs() < step {
-        target
-    } else {
-        value + step * diff.signum()
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct AtrState {
     angle: SmoothAngle,
@@ -330,7 +321,7 @@ impl RideModifierState {
         if input.darkride {
             return;
         }
-        if matches!(input.wheelslip, FloatOutBoyWheelSlipState::Detected) {
+        if input.wheelslip == FloatOutBoyWheelSlipState::Detected {
             self.wind_down_for_wheelslip();
             return;
         }
@@ -386,7 +377,7 @@ impl RideModifierState {
     fn update_nose(&mut self, config: &FloatOutBoyConfigImage, erpm: Rpm, sample_rate: SampleRate) {
         // C map: constant/variable nose target and rate limit mirror
         // `third_party/float-out-boy/src/main.c:746-758` and configuration at `:165-173`.
-        self.nose = rate_limit(
+        self.nose = vescpkg_rs::slew_toward(
             self.nose,
             nose_target(config, erpm),
             loop_step(config.nose_angling_speed(), sample_rate),

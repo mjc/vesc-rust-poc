@@ -1,14 +1,11 @@
-use super::wire::{float_out_boy_degrees, push_float_out_boy_float16};
-use crate::domain::FloatOutBoyMode;
-use crate::domain::{
+use crate::packet::FloatOutBoyPacket;
+use crate::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeTail, FloatOutBoyRunState,
 };
-use crate::wire::FloatOutBoyPacket;
-#[cfg(test)]
-use vescpkg_rs::prelude::{FirmwareFaultWireCode, TimestampTicks};
+use crate::{FloatOutBoyMode, degrees as float_out_boy_degrees, push_float_out_boy_float16};
 
 // Float Out Boy v1.2.1 `send_realtime_data` declares its fixed buffer at
 // `third_party/float-out-boy/src/main.c:1267-1269`.
@@ -19,27 +16,16 @@ const FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY: usize = 77;
 
 /// Variable-length Float Out Boy `COMMAND_REALTIME_DATA` response bytes from
 /// `third_party/float-out-boy/src/main.c:1904-1960`.
-pub(in crate::package) type FloatOutBoyRealtimeDataResponse =
+/// Fixed-capacity FOB command-31 realtime response.
+pub type FloatOutBoyRealtimeDataResponse =
     FloatOutBoyPacket<FLOAT_OUT_BOY_REALTIME_DATA_RESPONSE_CAPACITY>;
 
 #[inline(never)]
-#[cfg(test)]
-pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response(
+/// Encode FOB's legacy realtime response with live remote and ATR input.
+#[must_use]
+pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     payloads: &FloatOutBoyAllDataPayloads,
-) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
-    encode_float_out_boy_get_realtime_data_response_with_remote(
-        payloads,
-        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-        ),
-        0.0,
-    )
-}
-
-#[inline(never)]
-pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_remote(
-    payloads: &FloatOutBoyAllDataPayloads,
-    remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
+    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
     atr_accel_diff: f32,
 ) -> [u8; FLOAT_OUT_BOY_GET_REALTIME_DATA_RESPONSE_LEN] {
     let mut packet = FloatOutBoyPacket::new();
@@ -100,41 +86,20 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
 }
 
 #[inline(never)]
-#[cfg(test)]
-pub(in crate::package) fn encode_float_out_boy_realtime_data_response(
-    payloads: &FloatOutBoyAllDataPayloads,
-    system_timestamp: TimestampTicks,
-) -> FloatOutBoyRealtimeDataResponse {
-    encode_float_out_boy_realtime_data_response_with_runtime(
-        payloads,
-        FloatOutBoyRealtimeDataHeader::new(
-            system_timestamp,
-            payloads.base().status().ride_state(),
-            payloads.base().footpad().state(),
-            payloads.base().status().beep_reason(),
-        ),
-        FloatOutBoyRealtimeTail::new(false, FirmwareFaultWireCode::from_wire_code(0)),
-        crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-            vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-        ),
-        0.0,
-        0.0,
-    )
-}
-
-#[inline(never)]
-pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runtime(
+/// Encode FOB's command-31 realtime response from typed runtime values.
+#[must_use]
+pub fn encode_float_out_boy_realtime_data_response_with_runtime(
     payloads: &FloatOutBoyAllDataPayloads,
     header: FloatOutBoyRealtimeDataHeader,
     tail: FloatOutBoyRealtimeTail,
-    remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
+    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
     atr_accel_diff: f32,
     atr_speed_boost: f32,
 ) -> FloatOutBoyRealtimeDataResponse {
     let mut packet = FloatOutBoyPacket::new();
     let base = payloads.base();
     let ride_state = base.status().ride_state();
-    let running = matches!(ride_state.run_state(), FloatOutBoyRunState::Running);
+    let running = ride_state.run_state() == FloatOutBoyRunState::Running;
     let charging = matches!(ride_state.charging(), FloatOutBoyChargingState::Charging);
 
     // Upstream `cmd_realtime_data` writes the realtime packet in
@@ -189,10 +154,12 @@ pub(in crate::package) fn encode_float_out_boy_realtime_data_response_with_runti
     packet
 }
 
-pub(in crate::package) fn realtime_value(
+/// Project one typed FOB realtime item to its protocol float value.
+#[must_use]
+pub fn realtime_value(
     payloads: &FloatOutBoyAllDataPayloads,
     item: FloatOutBoyRealtimeDataItem,
-    remote_input: crate::domain::FloatOutBoyRealtimeRemoteInput,
+    remote_input: crate::FloatOutBoyRealtimeRemoteInput,
     atr_accel_diff: f32,
     atr_speed_boost: f32,
 ) -> f32 {
@@ -269,6 +236,3 @@ pub(in crate::package) fn realtime_value(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

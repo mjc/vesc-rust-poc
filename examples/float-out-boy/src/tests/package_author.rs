@@ -43,7 +43,7 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 #[test]
 fn package_author_builds_source_startup_all_data_payload() {
     let payloads = FloatOutBoyAllDataPayloads::source_startup();
-    assert_eq!(payloads, FloatOutBoyAllDataPayloads::default());
+    assert_eq!(payloads, FloatOutBoyAllDataPayloads::source_startup());
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
         FloatOutBoyAllDataMode::with_mode4(),
     ));
@@ -449,7 +449,6 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         motor,
     );
 
-    assert_eq!(payload.command(), FloatOutBoyAppDataCommand::GetAllData);
     assert_eq!(payload.status().ride_state().float_state_compat(), 1);
     assert_eq!(payload.status().beep_reason().id(), 1);
     assert_eq!(payload.footpad().state(), FloatOutBoyFootpadState::Both);

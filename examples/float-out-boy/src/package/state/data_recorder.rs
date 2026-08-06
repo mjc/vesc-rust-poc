@@ -1,7 +1,5 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::realtime_value;
-#[cfg(any(test, target_arch = "arm"))]
-use super::super::protocol::wire::encode_float_out_boy_float16;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
@@ -10,6 +8,9 @@ use crate::domain::{
 #[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
+#[cfg(any(test, target_arch = "arm"))]
+use vesc_float_out_boy_protocol::encode_float_out_boy_float16;
+use vescpkg_rs::RingCursor;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
@@ -20,62 +21,11 @@ const DATA_RESPONSE_CAPACITY: usize = 511;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
-#[cfg(any(test, target_arch = "arm"))]
-fn advance_ring_index(index: usize, capacity: usize) -> usize {
-    index
-        .checked_add(1)
-        .filter(|next| *next < capacity)
-        .unwrap_or(0)
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct DataRecorderRing {
-    next: usize,
-    len: usize,
-}
-
-impl DataRecorderRing {
-    fn clear(&mut self) {
-        *self = Self::default();
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn write_slot(self, capacity: usize) -> Option<usize> {
-        (capacity > 0).then_some(self.next)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn commit_write(&mut self, capacity: usize) {
-        self.next = advance_ring_index(self.next, capacity);
-        self.len = self.len.saturating_add(1).min(capacity);
-    }
-
-    fn len(self, capacity: usize) -> usize {
-        self.len.min(capacity)
-    }
-
-    fn slot_at(self, index: usize, capacity: usize) -> Option<usize> {
-        let len = self.len(capacity);
-        if index >= len || capacity == 0 {
-            return None;
-        }
-        let oldest = self
-            .next
-            .checked_add(capacity)?
-            .checked_sub(len)?
-            .checked_rem(capacity)?;
-        oldest.checked_add(index)?.checked_rem(capacity)
-    }
-}
-
-#[cfg(test)]
-mod ring_tests;
-
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     flags: FloatOutBoyDataRecorderFlags,
-    ring: DataRecorderRing,
+    ring: RingCursor,
     #[cfg(test)]
     capability: Option<()>,
     #[cfg(test)]
@@ -88,7 +38,7 @@ impl Default for DataRecorderState {
     fn default() -> Self {
         Self {
             flags: FloatOutBoyDataRecorderFlags::AUTOSTART | FloatOutBoyDataRecorderFlags::AUTOSTOP,
-            ring: DataRecorderRing::default(),
+            ring: RingCursor::default(),
             #[cfg(test)]
             capability: Some(()),
             #[cfg(test)]
@@ -290,14 +240,8 @@ impl FloatOutBoyPackageState {
         let ride_state = base.status().ride_state();
         let flags = ride_state.setpoint_adjustment().id() << 4
             | base.footpad().state().id() << 2
-            | u8::from(matches!(
-                ride_state.wheelslip(),
-                FloatOutBoyWheelSlipState::Detected
-            )) << 1
-            | u8::from(matches!(
-                ride_state.run_state(),
-                FloatOutBoyRunState::Running
-            ));
+            | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
+            | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
             encode_float_out_boy_float16(realtime_value(
                 &payloads,

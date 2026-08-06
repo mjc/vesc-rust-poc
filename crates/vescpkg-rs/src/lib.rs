@@ -96,10 +96,10 @@ mod audio;
 mod bindings;
 mod capabilities;
 mod data_recorder;
-mod declaration_macros;
 mod eeprom;
 mod encoder;
 mod extension;
+mod fault_history;
 mod firmware;
 mod gnss;
 mod lifecycle_core;
@@ -107,6 +107,7 @@ mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
+mod numeric;
 mod nvm;
 mod packet;
 mod plot;
@@ -230,9 +231,13 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
+    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    FirmwareDataRecorderDescriptorError, RingCursor,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
+pub use vesc_protocol::{
+    const_field_builders, const_field_getters, typed_fields, typed_newtype, wire_enum,
+};
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
@@ -258,12 +263,14 @@ pub use extension::{
     LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue,
     StatefulLbmExtension,
 };
+pub use fault_history::{FirmwareFaultHistory, FirmwareFaultRecord};
 #[allow(deprecated)]
 pub use input::{ControllerInput, RemoteInput};
 pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
+pub use numeric::slew_toward;
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.

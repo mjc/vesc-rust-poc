@@ -15,7 +15,7 @@
 /// `third_party/float-out-boy/src/main.c:1271`, `1318`, `1881`, and `1909`.
 pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: u8 = 101;
 
-vescpkg_rs::wire_enum! {
+vesc_protocol::wire_enum! {
     /// Float Out Boy app-data command IDs.
     ///
     /// Float Out Boy `v1.2.1` defines the core IDs in `third_party/float-out-boy/src/main.c:1241-1262`,
@@ -116,7 +116,7 @@ impl FloatOutBoyAppDataCommandError {
     }
 }
 
-vescpkg_rs::typed_newtype! {
+vesc_protocol::typed_newtype! {
     /// Float Out Boy all-data request mode byte.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct FloatOutBoyAllDataMode(u8);
@@ -168,7 +168,7 @@ impl FloatOutBoyAllDataMode {
     }
 }
 
-vescpkg_rs::typed_newtype! {
+vesc_protocol::typed_newtype! {
     /// Float Out Boy all-data request.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FloatOutBoyAllDataRequest(FloatOutBoyAllDataMode);

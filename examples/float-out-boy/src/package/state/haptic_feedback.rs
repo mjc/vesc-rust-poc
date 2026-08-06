@@ -160,7 +160,7 @@ fn feedback_type(
     config: FloatOutBoyHapticConfig<'_>,
     input: HapticFeedbackInput,
 ) -> HapticFeedbackType {
-    if !matches!(input.run_state, FloatOutBoyRunState::Running)
+    if input.run_state != FloatOutBoyRunState::Running
         || matches!(input.mode, FloatOutBoyMode::HandTest)
     {
         return HapticFeedbackType::None;

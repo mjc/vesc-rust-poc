@@ -238,7 +238,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.next().is_some() {
         return Err("usage: production-rust INPUT OUTPUT".into());
     }
-    copy_production_rust(&input, &output, &input)?;
+    if input.is_file() {
+        fs::create_dir_all(output.parent().ok_or("output file has no parent")?)?;
+        fs::write(output, without_tests(&fs::read_to_string(input)?))?;
+    } else {
+        copy_production_rust(&input, &output, &input)?;
+    }
     Ok(())
 }
 
@@ -264,7 +269,11 @@ fn copy_production_rust(input: &Path, output: &Path, root: &Path) -> io::Result<
 }
 
 fn is_test_dir(name: &std::ffi::OsStr) -> bool {
-    matches!(name.to_str(), Some("test" | "tests" | "test_support"))
+    name.to_str().is_some_and(|name| {
+        matches!(name, "test" | "tests" | "test_support")
+            || name.ends_with("_test")
+            || name.ends_with("_tests")
+    })
 }
 
 fn is_test_file(name: &std::ffi::OsStr) -> bool {
@@ -335,6 +344,7 @@ mod tests {
         assert!(!is_test_file(OsStr::new("latest.rs")));
         assert!(is_test_dir(OsStr::new("tests")));
         assert!(is_test_dir(OsStr::new("test_support")));
+        assert!(is_test_dir(OsStr::new("protocol_tests")));
         assert!(!is_test_dir(OsStr::new("handtest")));
     }
 

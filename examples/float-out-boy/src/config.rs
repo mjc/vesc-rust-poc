@@ -88,10 +88,10 @@ fn generated_field<T: Default>(value: Option<T>) -> T {
 
 macro_rules! generated_config_fields {
     ($(
-        $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+        $field:ident: $field_type:ty => $getter:ident $(, $setter:ident)? -> $value_type:ty,
         offset: $offset:expr $(, scale: $scale:expr)? $(, map: $map:expr)?;
     )*) => {$(
-        const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
+        pub(crate) const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
             $field_type,
             len: FLOAT_OUT_BOY_CONFIG_LEN,
             offset: $offset
@@ -103,15 +103,19 @@ macro_rules! generated_config_fields {
             $(let value = ($map)(value);)?
             value
         }
+
+        $(pub(crate) fn $setter(editor: &mut FloatOutBoyConfigEditor<'_>, value: $value_type) -> bool {
+            editor.set(Self::$field, value)
+        })?
     )*};
 }
 
 macro_rules! generated_image_config_fields {
     ($(
-        $field:ident: $field_type:ty => $getter:ident -> $value_type:ty,
+        $field:ident: $field_type:ty => $getter:ident $(, $setter:ident)? -> $value_type:ty,
         offset: $offset:expr $(, scale: $scale:expr)?;
     )*) => {$(
-        const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
+        pub(crate) const $field: $field_type = vescpkg_rs::generated_custom_config_field!(
             $field_type,
             len: FLOAT_OUT_BOY_CONFIG_LEN,
             offset: $offset
@@ -121,6 +125,10 @@ macro_rules! generated_image_config_fields {
         pub(crate) fn $getter(&self) -> $value_type {
             generated_field(Self::$field.read(self))
         }
+
+        $(pub(crate) fn $setter(editor: &mut FloatOutBoyConfigEditor<'_>, value: $value_type) -> bool {
+            editor.set(Self::$field, value)
+        })?
     )*};
 }
 
@@ -134,6 +142,7 @@ macro_rules! config_views {
     };
 }
 
+#[cfg(test)]
 macro_rules! generated_config_setters {
     ($(
         $(#[$attribute:meta])*
@@ -173,26 +182,26 @@ impl core::ops::Deref for FloatOutBoyConfigImage {
 impl FloatOutBoyConfigImage {
     generated_image_config_fields! {
         ATR_FILTER_FIELD: CustomConfigFrequencyField => motor_current_filter_frequency -> vescpkg_rs::Frequency, offset: 165, scale: 100.0;
-        DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => duty_pushback_angle -> AngleDegrees, offset: 44, scale: 100.0;
-        DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField => duty_pushback_speed -> AngularVelocity, offset: 46, scale: 100.0;
-        DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField => duty_pushback_threshold -> Ratio, offset: 48, scale: 1000.0;
-        DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField => duty_beep_enabled -> bool, offset: 50;
+        DUTY_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => duty_pushback_angle, set_duty_pushback_angle -> AngleDegrees, offset: 44, scale: 100.0;
+        DUTY_PUSHBACK_SPEED_FIELD: CustomConfigAngularVelocityField => duty_pushback_speed, set_duty_pushback_speed -> AngularVelocity, offset: 46, scale: 100.0;
+        DUTY_PUSHBACK_THRESHOLD_FIELD: CustomConfigRatioField => duty_pushback_threshold, set_duty_pushback_threshold -> Ratio, offset: 48, scale: 1000.0;
+        DUTY_BEEP_ENABLED_FIELD: CustomConfigFlagField => duty_beep_enabled, set_duty_beep_enabled -> bool, offset: 50;
         FOOT_BEEP_ENABLED_FIELD: CustomConfigFlagField => foot_beep_enabled -> bool, offset: 28;
-        TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField => tiltback_return_speed -> AngularVelocity, offset: 64, scale: 100.0;
+        TILTBACK_RETURN_SPEED_FIELD: CustomConfigAngularVelocityField => tiltback_return_speed, set_tiltback_return_speed -> AngularVelocity, offset: 64, scale: 100.0;
         PERSISTENT_FATAL_ERROR_FIELD: CustomConfigFlagField => persistent_fatal_error -> bool, offset: 66;
-        TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField => tiltback_constant -> AngleDegrees, offset: 67, scale: 1000.0;
-        TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_constant_erpm -> ElectricalSpeed, offset: 69;
-        TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField => tiltback_variable -> PidScale, offset: 71, scale: 1000.0;
-        TILTBACK_VARIABLE_MAX_FIELD: CustomConfigAngleField => tiltback_variable_max -> AngleDegrees, offset: 73, scale: 100.0;
-        TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
-        NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
-        INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
-        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
+        TILTBACK_CONSTANT_ANGLE_FIELD: CustomConfigAngleField => tiltback_constant, set_tiltback_constant -> AngleDegrees, offset: 67, scale: 1000.0;
+        TILTBACK_CONSTANT_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_constant_erpm, set_tiltback_constant_erpm -> ElectricalSpeed, offset: 69;
+        TILTBACK_VARIABLE_RATE_FIELD: CustomConfigPidScaleField => tiltback_variable, set_tiltback_variable -> PidScale, offset: 71, scale: 1000.0;
+        TILTBACK_VARIABLE_MAX_FIELD: CustomConfigAngleField => tiltback_variable_max, set_tiltback_variable_max -> AngleDegrees, offset: 73, scale: 100.0;
+        TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm, set_tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
+        NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed, set_nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
+        INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit, set_input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
+        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed, set_input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
         HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => high_voltage_pushback_angle -> AngleDegrees, offset: 51, scale: 100.0;
         HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => high_voltage_threshold -> Voltage, offset: 55, scale: 100.0;
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
         LOW_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => low_voltage_threshold -> Voltage, offset: 61, scale: 100.0;
-        BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled -> bool, offset: 242;
+        BEEPER_ENABLED_FIELD: CustomConfigFlagField => beeper_enabled, set_beeper_enabled -> bool, offset: 242;
         LEDS_ON_FIELD: CustomConfigFlagField => leds_enabled -> bool, offset: 175;
         LEDS_HEADLIGHTS_ON_FIELD: CustomConfigFlagField => headlights_enabled -> bool, offset: 176;
     }
@@ -202,7 +211,7 @@ impl FloatOutBoyConfigImage {
     pub(crate) fn lights_off_when_lifted(&self) -> bool {
         generated_field(Self::LEDS_LIGHTS_OFF_WHEN_LIFTED_FIELD.read(self))
     }
-    const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
+    pub(crate) const INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 79);
     #[cfg(any(test, target_arch = "arm"))]
     const INPUT_TILT_INVERT_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 84);
     #[cfg(any(test, target_arch = "arm"))]
@@ -522,27 +531,33 @@ impl core::ops::DerefMut for FloatOutBoyConfigEditor<'_> {
 }
 
 impl FloatOutBoyConfigEditor<'_> {
-    fn set_flag(&mut self, field: CustomConfigFlagField, value: bool) -> bool {
-        field.write(&mut self.0, value).is_some()
-    }
-
     pub(crate) fn clear_meta_is_default(&mut self) {
         // C map: `set_cfg` always clears `meta.is_default` after a write at
         // `third_party/float-out-boy/src/main.c:2375-2377`.
-        self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, false);
+        let _ = self.set(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, false);
     }
 
     #[cfg(test)]
     pub(crate) fn set_meta_is_default(&mut self, is_default: bool) -> bool {
-        self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, is_default)
+        self.set(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, is_default)
     }
 
     pub(crate) fn keep_enabled_while_running(&mut self) {
         // C map: `set_cfg` refuses to persist package disablement while
         // RUNNING at `third_party/float-out-boy/src/main.c:2370-2373`.
-        self.set_flag(FloatOutBoyMetadataConfig::DISABLED_FIELD, false);
+        let _ = self.set(FloatOutBoyMetadataConfig::DISABLED_FIELD, false);
     }
 
+    pub(crate) fn set_ki_limit(&mut self, current: MotorCurrent) -> bool {
+        if !current.is_finite() || current.is_negative() {
+            return false;
+        }
+        self.set(FloatOutBoyBalanceConfig::KI_LIMIT_FIELD, current)
+    }
+}
+
+#[cfg(test)]
+impl FloatOutBoyConfigEditor<'_> {
     generated_config_setters! {
         #[cfg(any(test, target_arch = "arm"))]
         set_disabled(disabled: bool) => FloatOutBoyMetadataConfig::DISABLED_FIELD;
@@ -577,29 +592,9 @@ impl FloatOutBoyConfigEditor<'_> {
         set_kp2(kp2: RateCurrentGain) => FloatOutBoyBalanceConfig::KP2_FIELD;
         set_ki(ki: IntegralCurrentGain) => FloatOutBoyBalanceConfig::KI_FIELD;
         set_kp_brake(scale: PidScale) => FloatOutBoyBalanceConfig::KP_BRAKE_FIELD;
-        set_kp2_brake(scale: PidScale) => FloatOutBoyBalanceConfig::KP2_BRAKE_FIELD;
-    }
-
-    pub(crate) fn set_ki_limit(&mut self, current: MotorCurrent) -> bool {
-        if !current.is_finite() || current.is_negative() {
-            return false;
-        }
-        FloatOutBoyBalanceConfig::KI_LIMIT_FIELD
-            .write(self, current)
-            .is_some()
     }
 
     generated_config_setters! { set_mahony_kp(gain: MahonyPitchGain) => FloatOutBoyFilterConfig::MAHONY_KP_FIELD; }
-
-    generated_config_setters! { set_duty_beep_enabled(enabled: bool) => FloatOutBoyConfigImage::DUTY_BEEP_ENABLED_FIELD; }
-
-    generated_config_setters! { set_duty_pushback_angle(angle: AngleDegrees) => FloatOutBoyConfigImage::DUTY_PUSHBACK_ANGLE_FIELD; }
-
-    generated_config_setters! { set_duty_pushback_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::DUTY_PUSHBACK_SPEED_FIELD; }
-
-    generated_config_setters! { set_duty_pushback_threshold(threshold: Ratio) => FloatOutBoyConfigImage::DUTY_PUSHBACK_THRESHOLD_FIELD; }
-
-    generated_config_setters! { set_tiltback_return_speed(speed: AngularVelocity) => FloatOutBoyConfigImage::TILTBACK_RETURN_SPEED_FIELD; }
 
     #[cfg(test)]
     generated_config_setters! { set_speed_pushback_threshold(speed: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD; }
@@ -607,8 +602,6 @@ impl FloatOutBoyConfigEditor<'_> {
     generated_config_setters! { set_dirty_landings_enabled(enabled: bool) => FloatOutBoyStartupConfig::DIRTY_LANDINGS_FIELD; }
 
     generated_config_setters! { set_startup_click_current(current: vescpkg_rs::WireByte) => FloatOutBoyStartupConfig::CLICK_CURRENT_FIELD; }
-
-    generated_config_setters! { set_brake_current(current: MotorCurrent) => FloatOutBoyMotorControlConfig::BRAKE_CURRENT_FIELD; }
 
     generated_config_setters! { set_tiltback_constant(angle: AngleDegrees) => FloatOutBoyConfigImage::TILTBACK_CONSTANT_ANGLE_FIELD; }
 
@@ -658,8 +651,6 @@ impl FloatOutBoyConfigEditor<'_> {
         set_atr_angle_limit(angle: AngleDegrees) => FloatOutBoyBalanceConfig::ATR_ANGLE_LIMIT_FIELD;
         set_atr_on_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::ATR_ON_SPEED_FIELD;
         set_atr_off_speed(speed: AngularVelocity) => FloatOutBoyBalanceConfig::ATR_OFF_SPEED_FIELD;
-        set_atr_response_boost(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_RESPONSE_BOOST_FIELD;
-        set_atr_transition_boost(strength: PidScale) => FloatOutBoyBalanceConfig::ATR_TRANSITION_BOOST_FIELD;
         set_atr_amps_accel_ratio(ratio: PidScale) => FloatOutBoyBalanceConfig::ATR_AMPS_ACCEL_RATIO_FIELD;
         set_atr_amps_decel_ratio(ratio: PidScale) => FloatOutBoyBalanceConfig::ATR_AMPS_DECEL_RATIO_FIELD;
         set_brake_tilt_strength(strength: PidScale) => FloatOutBoyBalanceConfig::BRAKE_TILT_STRENGTH_FIELD;
@@ -762,7 +753,7 @@ impl FloatOutBoyMotorControlConfig<'_> {
         offset: 101
     );
     generated_config_fields! {
-        BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_current -> MotorCurrent, offset: 102, scale: 100.0;
+        BRAKE_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_current, set_brake_current -> MotorCurrent, offset: 102, scale: 100.0;
     }
 
     pub(crate) fn parking_brake_mode(self) -> FloatOutBoyParkingBrakeMode {
@@ -780,7 +771,7 @@ impl FloatOutBoyFilterConfig<'_> {
     // Upstream serializes Mahony pitch/roll KP after `ki` at
     // `third_party/float-out-boy/src/conf/settings.xml:3916-3921`; both use scale 10000.
     generated_config_fields! {
-        MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField => mahony_kp -> MahonyPitchGain, offset: 10, scale: 10000.0;
+        MAHONY_KP_FIELD: CustomConfigMahonyPitchGainField => mahony_kp, set_mahony_kp -> MahonyPitchGain, offset: 10, scale: 10000.0;
         MAHONY_KP_ROLL_FIELD: CustomConfigMahonyRollGainField => mahony_kp_roll -> MahonyRollGain, offset: 12, scale: 10000.0;
     }
 }
@@ -809,11 +800,11 @@ impl FloatOutBoyFaultConfig<'_> {
         DELAY_SWITCH_FULL_FIELD: CustomConfigDurationField => switch_full_delay -> VescSeconds, offset: 35;
     }
     generated_config_fields! {
-        DUAL_SWITCH_FIELD: CustomConfigFlagField => dual_switch -> bool, offset: 39;
+        DUAL_SWITCH_FIELD: CustomConfigFlagField => dual_switch, set_dual_switch -> bool, offset: 39;
         MOVING_FAULT_DISABLED_FIELD: CustomConfigFlagField => moving_faults_disabled -> bool, offset: 40;
         QUICKSTOP_FIELD: CustomConfigFlagField => quickstop_enabled -> bool, offset: 41;
-        DARKRIDE_FIELD: CustomConfigFlagField => darkride_enabled -> bool, offset: 42;
-        REVERSESTOP_FIELD: CustomConfigFlagField => reversestop_enabled -> bool, offset: 43;
+        DARKRIDE_FIELD: CustomConfigFlagField => darkride_enabled, set_darkride_enabled -> bool, offset: 42;
+        REVERSESTOP_FIELD: CustomConfigFlagField => reversestop_enabled, set_reversestop_enabled -> bool, offset: 43;
     }
 }
 
@@ -827,17 +818,17 @@ impl FloatOutBoyStartupConfig<'_> {
     // `third_party/float-out-boy/src/conf/settings.xml:3966-3972`.
     generated_config_fields! {
         HERTZ_FIELD: CustomConfigSampleRateField => sample_rate -> SampleRate, offset: 18;
-        PITCH_TOLERANCE_FIELD: CustomConfigAngleField => pitch_tolerance -> AngleDegrees, offset: 91, scale: 100.0;
-        ROLL_TOLERANCE_FIELD: CustomConfigAngleField => roll_tolerance -> AngleDegrees, offset: 93, scale: 100.0;
-        SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
+        PITCH_TOLERANCE_FIELD: CustomConfigAngleField => pitch_tolerance, set_startup_pitch_tolerance -> AngleDegrees, offset: 91, scale: 100.0;
+        ROLL_TOLERANCE_FIELD: CustomConfigAngleField => roll_tolerance, set_startup_roll_tolerance -> AngleDegrees, offset: 93, scale: 100.0;
+        SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed, set_startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
     }
-    const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
+    pub(crate) const CLICK_CURRENT_FIELD: CustomConfigWireByteField = vescpkg_rs::generated_custom_config_field!(CustomConfigWireByteField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 97);
     generated_config_fields! {
-        SIMPLESTART_FIELD: CustomConfigFlagField => simplestart_enabled -> bool, offset: 98;
-        PUSHSTART_FIELD: CustomConfigFlagField => pushstart_enabled -> bool, offset: 99;
+        SIMPLESTART_FIELD: CustomConfigFlagField => simplestart_enabled, set_simplestart_enabled -> bool, offset: 98;
+        PUSHSTART_FIELD: CustomConfigFlagField => pushstart_enabled, set_pushstart_enabled -> bool, offset: 99;
     }
     const DIRTY_LANDINGS_OFFSET: usize = 100;
-    const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
+    pub(crate) const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
 
     #[expect(clippy::inline_always, reason = "keeps the linked ARM image compact")]
     #[inline(always)]
@@ -871,45 +862,45 @@ impl FloatOutBoyBalanceConfig<'_> {
     // Upstream serializes balance tuning fields in
     // `third_party/float-out-boy/src/conf/settings.xml:3916-3923,3975-3984`.
     generated_config_fields! {
-        KP_FIELD: CustomConfigAngleCurrentGainField => kp -> AngleCurrentGain, offset: 4, scale: 10.0;
-        KP2_FIELD: CustomConfigRateCurrentGainField => kp2 -> RateCurrentGain, offset: 6, scale: 100.0;
-        KI_FIELD: CustomConfigIntegralCurrentGainField => ki -> IntegralCurrentGain, offset: 8, scale: 100_000.0;
-        KP_BRAKE_FIELD: CustomConfigPidScaleField => kp_brake -> PidScale, offset: 14, scale: 100.0;
-        KP2_BRAKE_FIELD: CustomConfigPidScaleField => kp2_brake -> PidScale, offset: 16, scale: 100.0;
-        BOOSTER_ANGLE_FIELD: CustomConfigAngleField => booster_angle -> AngleDegrees, offset: 106, scale: 100.0;
-        BOOSTER_RAMP_FIELD: CustomConfigAngleField => booster_ramp -> AngleDegrees, offset: 108, scale: 100.0;
-        BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField => booster_current -> MotorCurrent, offset: 110, scale: 100.0;
-        BRAKE_BOOSTER_ANGLE_FIELD: CustomConfigAngleField => brake_booster_angle -> AngleDegrees, offset: 112, scale: 100.0;
-        BRAKE_BOOSTER_RAMP_FIELD: CustomConfigAngleField => brake_booster_ramp -> AngleDegrees, offset: 114, scale: 100.0;
-        BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_booster_current -> MotorCurrent, offset: 116, scale: 100.0;
-        TORQUE_TILT_START_CURRENT_FIELD: CustomConfigMotorCurrentField => torque_tilt_start_current -> MotorCurrent, offset: 118, scale: 100.0;
-        TORQUE_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => torque_tilt_angle_limit -> AngleDegrees, offset: 120, scale: 100.0;
-        TORQUE_TILT_ON_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_on_speed -> AngularVelocity, offset: 122, scale: 100.0;
-        TORQUE_TILT_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_off_speed -> AngularVelocity, offset: 124, scale: 100.0;
-        TORQUE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_strength -> PidScale, offset: 126, scale: 1000.0;
-        TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_regen_strength -> PidScale, offset: 128, scale: 1000.0;
-        TURN_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => turn_tilt_strength -> PidScale, offset: 130, scale: 100.0;
-        TURN_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => turn_tilt_angle_limit -> AngleDegrees, offset: 132, scale: 100.0;
+        KP_FIELD: CustomConfigAngleCurrentGainField => kp, set_kp -> AngleCurrentGain, offset: 4, scale: 10.0;
+        KP2_FIELD: CustomConfigRateCurrentGainField => kp2, set_kp2 -> RateCurrentGain, offset: 6, scale: 100.0;
+        KI_FIELD: CustomConfigIntegralCurrentGainField => ki, set_ki -> IntegralCurrentGain, offset: 8, scale: 100_000.0;
+        KP_BRAKE_FIELD: CustomConfigPidScaleField => kp_brake, set_kp_brake -> PidScale, offset: 14, scale: 100.0;
+        KP2_BRAKE_FIELD: CustomConfigPidScaleField => kp2_brake, set_kp2_brake -> PidScale, offset: 16, scale: 100.0;
+        BOOSTER_ANGLE_FIELD: CustomConfigAngleField => booster_angle, set_booster_angle -> AngleDegrees, offset: 106, scale: 100.0;
+        BOOSTER_RAMP_FIELD: CustomConfigAngleField => booster_ramp, set_booster_ramp -> AngleDegrees, offset: 108, scale: 100.0;
+        BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField => booster_current, set_booster_current -> MotorCurrent, offset: 110, scale: 100.0;
+        BRAKE_BOOSTER_ANGLE_FIELD: CustomConfigAngleField => brake_booster_angle, set_brake_booster_angle -> AngleDegrees, offset: 112, scale: 100.0;
+        BRAKE_BOOSTER_RAMP_FIELD: CustomConfigAngleField => brake_booster_ramp, set_brake_booster_ramp -> AngleDegrees, offset: 114, scale: 100.0;
+        BRAKE_BOOSTER_CURRENT_FIELD: CustomConfigMotorCurrentField => brake_booster_current, set_brake_booster_current -> MotorCurrent, offset: 116, scale: 100.0;
+        TORQUE_TILT_START_CURRENT_FIELD: CustomConfigMotorCurrentField => torque_tilt_start_current, set_torque_tilt_start_current -> MotorCurrent, offset: 118, scale: 100.0;
+        TORQUE_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => torque_tilt_angle_limit, set_torque_tilt_angle_limit -> AngleDegrees, offset: 120, scale: 100.0;
+        TORQUE_TILT_ON_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_on_speed, set_torque_tilt_on_speed -> AngularVelocity, offset: 122, scale: 100.0;
+        TORQUE_TILT_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => torque_tilt_off_speed, set_torque_tilt_off_speed -> AngularVelocity, offset: 124, scale: 100.0;
+        TORQUE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_strength, set_torque_tilt_strength -> PidScale, offset: 126, scale: 1000.0;
+        TORQUE_TILT_REGEN_STRENGTH_FIELD: CustomConfigPidScaleField => torque_tilt_regen_strength, set_torque_tilt_regen_strength -> PidScale, offset: 128, scale: 1000.0;
+        TURN_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => turn_tilt_strength, set_turn_tilt_strength -> PidScale, offset: 130, scale: 100.0;
+        TURN_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => turn_tilt_angle_limit, set_turn_tilt_angle_limit -> AngleDegrees, offset: 132, scale: 100.0;
         TURN_TILT_START_ANGLE_FIELD: CustomConfigAngleField => turn_tilt_start_angle -> AngleDegrees, offset: 134, scale: 100.0;
-        TURN_TILT_START_ERPM_FIELD: CustomConfigElectricalSpeedField => turn_tilt_start_erpm -> ElectricalSpeed, offset: 136;
+        TURN_TILT_START_ERPM_FIELD: CustomConfigElectricalSpeedField => turn_tilt_start_erpm, set_turn_tilt_start_erpm -> ElectricalSpeed, offset: 136;
         TURN_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => turn_tilt_speed -> AngularVelocity, offset: 138, scale: 100.0;
-        ATR_STRENGTH_UP_FIELD: CustomConfigPidScaleField => atr_strength_up -> PidScale, offset: 145, scale: 1000.0;
-        ATR_STRENGTH_DOWN_FIELD: CustomConfigPidScaleField => atr_strength_down -> PidScale, offset: 147, scale: 1000.0;
-        ATR_THRESHOLD_UP_FIELD: CustomConfigAngleField => atr_threshold_up -> AngleDegrees, offset: 149, scale: 100.0;
-        ATR_THRESHOLD_DOWN_FIELD: CustomConfigAngleField => atr_threshold_down -> AngleDegrees, offset: 151, scale: 100.0;
-        ATR_SPEED_BOOST_FIELD: CustomConfigPidScaleField => atr_speed_boost -> PidScale, offset: 153, scale: 10000.0;
-        ATR_ANGLE_LIMIT_FIELD: CustomConfigAngleField => atr_angle_limit -> AngleDegrees, offset: 155, scale: 100.0;
-        ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField => atr_on_speed -> AngularVelocity, offset: 157, scale: 100.0;
-        ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => atr_off_speed -> AngularVelocity, offset: 159, scale: 100.0;
-        ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField => atr_response_boost -> PidScale, offset: 161, scale: 1000.0;
-        ATR_TRANSITION_BOOST_FIELD: CustomConfigPidScaleField => atr_transition_boost -> PidScale, offset: 163, scale: 1000.0;
-        ATR_AMPS_ACCEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_accel_ratio -> PidScale, offset: 167, scale: 100.0;
-        ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
-        BRAKE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => brake_tilt_strength -> PidScale, offset: 171, scale: 100.0;
-        BRAKE_TILT_LINGERING_FIELD: CustomConfigPidScaleField => brake_tilt_lingering -> PidScale, offset: 173, scale: 1000.0;
+        ATR_STRENGTH_UP_FIELD: CustomConfigPidScaleField => atr_strength_up, set_atr_strength_up -> PidScale, offset: 145, scale: 1000.0;
+        ATR_STRENGTH_DOWN_FIELD: CustomConfigPidScaleField => atr_strength_down, set_atr_strength_down -> PidScale, offset: 147, scale: 1000.0;
+        ATR_THRESHOLD_UP_FIELD: CustomConfigAngleField => atr_threshold_up, set_atr_threshold_up -> AngleDegrees, offset: 149, scale: 100.0;
+        ATR_THRESHOLD_DOWN_FIELD: CustomConfigAngleField => atr_threshold_down, set_atr_threshold_down -> AngleDegrees, offset: 151, scale: 100.0;
+        ATR_SPEED_BOOST_FIELD: CustomConfigPidScaleField => atr_speed_boost, set_atr_speed_boost -> PidScale, offset: 153, scale: 10000.0;
+        ATR_ANGLE_LIMIT_FIELD: CustomConfigAngleField => atr_angle_limit, set_atr_angle_limit -> AngleDegrees, offset: 155, scale: 100.0;
+        ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField => atr_on_speed, set_atr_on_speed -> AngularVelocity, offset: 157, scale: 100.0;
+        ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => atr_off_speed, set_atr_off_speed -> AngularVelocity, offset: 159, scale: 100.0;
+        ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField => atr_response_boost, set_atr_response_boost -> PidScale, offset: 161, scale: 1000.0;
+        ATR_TRANSITION_BOOST_FIELD: CustomConfigPidScaleField => atr_transition_boost, set_atr_transition_boost -> PidScale, offset: 163, scale: 1000.0;
+        ATR_AMPS_ACCEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_accel_ratio, set_atr_amps_accel_ratio -> PidScale, offset: 167, scale: 100.0;
+        ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio, set_atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
+        BRAKE_TILT_STRENGTH_FIELD: CustomConfigPidScaleField => brake_tilt_strength, set_brake_tilt_strength -> PidScale, offset: 171, scale: 100.0;
+        BRAKE_TILT_LINGERING_FIELD: CustomConfigPidScaleField => brake_tilt_lingering, set_brake_tilt_lingering -> PidScale, offset: 173, scale: 1000.0;
     }
 
-    const KI_LIMIT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 104, scale: 10.0);
+    pub(crate) const KI_LIMIT_FIELD: CustomConfigMotorCurrentField = vescpkg_rs::generated_custom_config_field!(CustomConfigMotorCurrentField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 104, scale: 10.0);
 
     pub(crate) fn ki_limit(self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(generated_field(Self::KI_LIMIT_FIELD.read(self.0)).current())

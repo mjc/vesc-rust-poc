@@ -30,21 +30,6 @@ use vescpkg_rs::prelude::{
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
-fn rate_limit_angle(
-    current: AngleDegrees,
-    target: AngleDegrees,
-    step: AngleDegrees,
-) -> AngleDegrees {
-    let difference = target - current;
-    if difference.abs() < step {
-        target
-    } else if difference > AngleDegrees::ZERO {
-        current + step
-    } else {
-        current - step
-    }
-}
-
 fn pack_voltage_threshold(
     configured: Voltage,
     battery_cell_count: Option<BatteryCellCount>,
@@ -87,7 +72,7 @@ fn refresh_darkride_state(
         }
     }
 
-    let reset_after_disengage = matches!(run_state, FloatOutBoyRunState::Ready)
+    let reset_after_disengage = run_state == FloatOutBoyRunState::Ready
         && float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 10);
     if !reset_after_disengage {
         return (ride_state, None);
@@ -95,7 +80,7 @@ fn refresh_darkride_state(
 
     // Float Out Boy removes the post-flip darkride grace after updating the
     // roll transition at `third_party/float-out-boy/src/main.c:781-794,984-992`.
-    let alert = matches!(ride_state.darkride(), FloatOutBoyDarkRideState::Active)
+    let alert = (ride_state.darkride() == FloatOutBoyDarkRideState::Active)
         .then_some(FloatOutBoyBeeperAlert::Long(1));
     state.upside_down_flags.enabled = false;
     (
@@ -119,7 +104,7 @@ fn refresh_ready_alert(
     ready_flywheel_stop: bool,
     system_time_ticks: TimestampTicks,
 ) -> Option<(FloatOutBoyBeepReason, FloatOutBoyBeeperAlert)> {
-    if !matches!(run_state, FloatOutBoyRunState::Ready) || ready_flywheel_stop {
+    if run_state != FloatOutBoyRunState::Ready || ready_flywheel_stop {
         return None;
     }
 
@@ -180,6 +165,12 @@ struct TransitionPhase {
     startup_centering_step: AngleDegrees,
 }
 
+impl TransitionPhase {
+    fn set_adjustment(&mut self, adjustment: FloatOutBoySetpointAdjustment) {
+        self.ride_state = self.ride_state.with_setpoint_adjustment(adjustment);
+    }
+}
+
 struct FaultInputs {
     ride_state: FloatOutBoyRideState,
     run_state: FloatOutBoyRunState,
@@ -215,13 +206,10 @@ fn evaluate_normal_faults(
     let startup = state.serialized_config.startup();
     let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
     let footpad = base.footpad().state();
-    let running = matches!(input.run_state, FloatOutBoyRunState::Running);
-    let flywheel = matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel);
+    let running = input.run_state == FloatOutBoyRunState::Running;
+    let flywheel = input.ride_state.mode() == FloatOutBoyMode::Flywheel;
     let reverse_active = running
-        && matches!(
-            input.ride_state.setpoint_adjustment(),
-            FloatOutBoySetpointAdjustment::ReverseStop
-        );
+        && input.ride_state.setpoint_adjustment() == FloatOutBoySetpointAdjustment::ReverseStop;
     let flywheel_footpad = running && flywheel && footpad.is_pressed();
     let reverse_no_footpads = reverse_active && !footpad.is_pressed();
     let reverse_pitch =
@@ -354,10 +342,7 @@ fn evaluate_darkride_faults(
     // Active darkride shortens the wheelslip runaway stop from 100 ms to
     // 30 ms after the one-second post-flip grace (`src/main.c:361-366`).
     let wheelslip_fault = high_pending
-        && matches!(
-            input.ride_state.wheelslip(),
-            FloatOutBoyWheelSlipState::Detected
-        )
+        && input.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected
         && float_out_boy_ticks_elapsed_seconds(
             system_time_ticks,
             state.upside_down_fault_ticks,
@@ -451,7 +436,7 @@ fn evaluate_transition_phase(
     } else {
         ride_state.run_state()
     };
-    if matches!(run_state, FloatOutBoyRunState::Running) {
+    if run_state == FloatOutBoyRunState::Running {
         // `time_update` refreshes Float Out Boy's disengage and idle timers on every RUNNING loop
         // at `third_party/float-out-boy/src/time.c:38-43`.
         state.refresh_running_epochs(system_time_ticks);
@@ -474,7 +459,7 @@ fn evaluate_transition_phase(
         )));
     }
 
-    let (imu_pitch, imu_roll) = if matches!(ride_state.mode(), FloatOutBoyMode::Flywheel) {
+    let (imu_pitch, imu_roll) = if ride_state.mode() == FloatOutBoyMode::Flywheel {
         let (pitch, roll) = state.flywheel_attitude(
             ride_state.mode(),
             AngleDegrees::from(imu.pitch().angle()),
@@ -505,8 +490,8 @@ fn evaluate_transition_phase(
     } else {
         Rpm::from_revolutions_per_minute(100_000.0)
     };
-    let footpad_warning = matches!(run_state, FloatOutBoyRunState::Running)
-        && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+    let footpad_warning = run_state == FloatOutBoyRunState::Running
+        && ride_state.mode() != FloatOutBoyMode::Flywheel
         && !base.footpad().state().is_pressed()
         && motor_erpm.abs() > switch_warning_erpm;
     if footpad_warning {
@@ -518,13 +503,13 @@ fn evaluate_transition_phase(
 
     // Float Out Boy normally uses its balance filter, while FLYWHEEL uses raw
     // pitch (`src/imu.c:35-41,56-58`).
-    let balance_pitch = if matches!(ride_state.mode(), FloatOutBoyMode::Flywheel) {
+    let balance_pitch = if ride_state.mode() == FloatOutBoyMode::Flywheel {
         FloatOutBoyRealtimeBalancePitch::new(pitch)
     } else {
         state.balance_filter.balance_pitch()
     };
-    let ready_flywheel_stop = matches!(run_state, FloatOutBoyRunState::Ready)
-        && matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+    let ready_flywheel_stop = run_state == FloatOutBoyRunState::Ready
+        && ride_state.mode() == FloatOutBoyMode::Flywheel
         && state
             .flywheel
             .should_stop(base.footpad().state().is_pressed());
@@ -537,13 +522,8 @@ fn evaluate_transition_phase(
             .ride_state()
             .run_state();
     }
-    let darkride_active = matches!(
-        (run_state, ride_state.darkride()),
-        (
-            FloatOutBoyRunState::Running,
-            FloatOutBoyDarkRideState::Active
-        )
-    );
+    let darkride_active = run_state == FloatOutBoyRunState::Running
+        && ride_state.darkride() == FloatOutBoyDarkRideState::Active;
     let fault_inputs = FaultInputs {
         ride_state,
         run_state,
@@ -570,16 +550,14 @@ fn evaluate_transition_phase(
         ));
     let roll_tolerance = startup.roll_tolerance();
     let ready_engage = !startup_became_ready
-        && matches!(run_state, FloatOutBoyRunState::Ready)
+        && run_state == FloatOutBoyRunState::Ready
         && !ready_flywheel_stop
         && normal.can_engage
         && balance_pitch.angle_degrees().abs() < pitch_tolerance
         && roll_abs < roll_tolerance;
     let ready_darkride = !startup_became_ready
-        && matches!(
-            (run_state, ride_state.darkride()),
-            (FloatOutBoyRunState::Ready, FloatOutBoyDarkRideState::Active)
-        )
+        && run_state == FloatOutBoyRunState::Ready
+        && ride_state.darkride() == FloatOutBoyDarkRideState::Active
         && balance_pitch.angle_degrees().abs() < pitch_tolerance
         && {
             // READY darkride either ignores roll during its initial grace or
@@ -595,7 +573,7 @@ fn evaluate_transition_phase(
         };
     let push_start = PushStartLimits::FLOAT_OUT_BOY;
     let ready_push_start = !startup_became_ready
-        && matches!(run_state, FloatOutBoyRunState::Ready)
+        && run_state == FloatOutBoyRunState::Ready
         && startup.pushstart_enabled()
         && motor_erpm.abs() > push_start.erpm_min
         && normal.can_engage
@@ -606,23 +584,22 @@ fn evaluate_transition_phase(
     let startup_centering_step = startup.centering_step();
     let stop_event = first_transition_stop(&normal, &darkride);
     let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
-    let reverse_stop_entry_pending = !matches!(
-        ride_state.setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
-    ) && faults.reversestop_enabled()
+    let reverse_stop_entry_pending = !ride_state
+        .setpoint_adjustment()
+        .is_centering_or_reverse_stop()
+        && faults.reversestop_enabled()
         && motor_erpm < -reverse_stop.entry_erpm
         && !darkride_active;
     let motor_acceleration = state.motor_kinematics.average();
     let traction_loss = TractionLossLimits::FLOAT_OUT_BOY;
     let traction_loss_detected = stop_event.is_none()
         && !state_engage
-        && !matches!(
-            ride_state.setpoint_adjustment(),
-            FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
-        )
+        && !ride_state
+            .setpoint_adjustment()
+            .is_centering_or_reverse_stop()
         && !reverse_stop_entry_pending
-        && matches!(run_state, FloatOutBoyRunState::Running)
-        && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
+        && run_state == FloatOutBoyRunState::Running
+        && ride_state.mode() != FloatOutBoyMode::Flywheel
         && motor_acceleration.abs() > traction_loss.acceleration_detect
         && motor_acceleration.is_negative() == motor_erpm.is_negative()
         && base.motor().duty_cycle().ratio() > traction_loss.duty
@@ -648,7 +625,7 @@ fn evaluate_transition_phase(
         state.engage_ticks = system_time_ticks;
         state.trigger_data_recorder(true);
     }
-    if matches!(run_state, FloatOutBoyRunState::Running) && !transition.state_stopped {
+    if run_state == FloatOutBoyRunState::Running && !transition.state_stopped {
         state.upside_down_flags.enabled = true;
         if darkride_active && !state.upside_down_flags.started {
             state.upside_down_flags.started = true;
@@ -662,13 +639,9 @@ fn evaluate_transition_phase(
         state.fault_switch_half_ticks = system_time_ticks;
     }
     let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
-    if !matches!(
-        (run_state, ride_state.setpoint_adjustment()),
-        (
-            FloatOutBoyRunState::Running,
-            FloatOutBoySetpointAdjustment::ReverseStop
-        )
-    ) || pitch_abs < reverse_stop.timer_slow_pitch
+    if run_state != FloatOutBoyRunState::Running
+        || ride_state.setpoint_adjustment() != FloatOutBoySetpointAdjustment::ReverseStop
+        || pitch_abs < reverse_stop.timer_slow_pitch
     {
         state.reverse_ticks = system_time_ticks;
     }
@@ -807,12 +780,10 @@ fn apply_protective_setpoint(
 ) {
     let duty = base.motor().duty_cycle().ratio().as_ratio();
     if duty > state.runtime_duty_pushback_threshold().as_ratio() {
-        if !matches!(phase.ride_state.mode(), FloatOutBoyMode::Flywheel) {
-            phase.ride_state = phase
-                .ride_state
-                .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackDuty);
+        if phase.ride_state.mode() != FloatOutBoyMode::Flywheel {
+            phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackDuty);
         }
-        *board_setpoint = rate_limit_angle(
+        *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             directional_angle(state.runtime_duty_pushback_angle(), phase.motor_erpm),
             state.runtime_duty_pushback_step(),
@@ -836,7 +807,7 @@ fn apply_protective_setpoint(
         ) || signals.battery_voltage
             > signals.high_voltage_threshold + Voltage::from_volts(1.0)
             || signals.bms_cell_over_voltage;
-        phase.ride_state = phase.ride_state.with_setpoint_adjustment(if tiltback {
+        phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackHighVoltage
         } else {
             FloatOutBoySetpointAdjustment::None
@@ -852,9 +823,7 @@ fn apply_protective_setpoint(
     if signals.bms_connection_fault {
         phase.beep_reason = FloatOutBoyBeepReason::BmsConnection;
         phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
-        phase.ride_state = phase
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
+        phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
         *board_setpoint = directional_angle(
             state.serialized_config.high_voltage_pushback_angle(),
             phase.motor_erpm,
@@ -864,7 +833,7 @@ fn apply_protective_setpoint(
     if let Some((reason, tiltback)) = signals.motor_temperature_warning {
         phase.beep_reason = reason;
         phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
-        phase.ride_state = phase.ride_state.with_setpoint_adjustment(if tiltback {
+        phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackTemperature
         } else {
             FloatOutBoySetpointAdjustment::None
@@ -880,9 +849,7 @@ fn apply_protective_setpoint(
     if let Some(reason) = signals.bms_temperature_reason {
         phase.beep_reason = reason;
         phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
-        phase.ride_state = phase
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackTemperature);
+        phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackTemperature);
         *board_setpoint = directional_angle(
             state.serialized_config.low_voltage_pushback_angle(),
             phase.motor_erpm,
@@ -905,7 +872,7 @@ fn apply_protective_setpoint(
             || motor_current < Current::from_amps(5.0)
             || voltage_delta.as_volts() * 20.0 / motor_current.as_amps() > 1.0
             || signals.bms_cell_under_voltage;
-        phase.ride_state = phase.ride_state.with_setpoint_adjustment(if tiltback {
+        phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackLowVoltage
         } else {
             FloatOutBoySetpointAdjustment::None
@@ -924,33 +891,21 @@ fn apply_protective_setpoint(
     let threshold = state.serialized_config.speed_pushback_threshold();
     if threshold.is_positive() && speed.abs() > threshold {
         phase.beep_reason = FloatOutBoyBeepReason::Speed;
-        phase.ride_state = phase
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::PushbackSpeed);
+        phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackSpeed);
         let target = if speed.is_positive() {
             state.runtime_duty_pushback_angle()
         } else {
             -state.runtime_duty_pushback_angle()
         };
         *board_setpoint =
-            rate_limit_angle(*board_setpoint, target, state.runtime_duty_pushback_step());
+            vescpkg_rs::slew_toward(*board_setpoint, target, state.runtime_duty_pushback_step());
         return;
     }
-    if matches!(
-        phase.ride_state.setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::PushbackDuty
-            | FloatOutBoySetpointAdjustment::PushbackHighVoltage
-            | FloatOutBoySetpointAdjustment::PushbackError
-            | FloatOutBoySetpointAdjustment::PushbackLowVoltage
-            | FloatOutBoySetpointAdjustment::PushbackSpeed
-            | FloatOutBoySetpointAdjustment::PushbackTemperature
-    ) {
-        phase.ride_state = phase
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+    if phase.ride_state.setpoint_adjustment().is_pushback() {
+        phase.set_adjustment(FloatOutBoySetpointAdjustment::None);
     }
     if !board_setpoint.is_zero() {
-        *board_setpoint = rate_limit_angle(
+        *board_setpoint = vescpkg_rs::slew_toward(
             *board_setpoint,
             AngleDegrees::ZERO,
             state.runtime_tiltback_return_step(),
@@ -990,9 +945,7 @@ fn advance_running_control(
             Rpm::ZERO
         };
         state.reverse_ticks = system_time_ticks;
-        phase.ride_state = phase
-            .ride_state
-            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::ReverseStop);
+        phase.set_adjustment(FloatOutBoySetpointAdjustment::ReverseStop);
     }
 
     let wheelslip_branch = if phase.traction_loss_detected {
@@ -1001,13 +954,12 @@ fn advance_running_control(
             state.ride_flags.traction_control = true;
         }
         true
-    } else if matches!(
-        phase.ride_state.wheelslip(),
-        FloatOutBoyWheelSlipState::Detected
-    ) && !matches!(
-        phase.ride_state.setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
-    ) {
+    } else if phase.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected
+        && !phase
+            .ride_state
+            .setpoint_adjustment()
+            .is_centering_or_reverse_stop()
+    {
         let limits = TractionLossLimits::FLOAT_OUT_BOY;
         if phase.motor_acceleration.abs() < limits.acceleration_clear {
             state.ride_flags.traction_control = false;
@@ -1035,9 +987,7 @@ fn advance_running_control(
         FloatOutBoySetpointAdjustment::Centering
     ) {
         if board_setpoint.is_zero() {
-            phase.ride_state = phase
-                .ride_state
-                .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+            phase.set_adjustment(FloatOutBoySetpointAdjustment::None);
         } else if board_setpoint.abs() < phase.startup_centering_step {
             board_setpoint = AngleDegrees::ZERO;
         } else {
@@ -1047,10 +997,7 @@ fn advance_running_control(
     }
 
     if !phase.reverse_stop_entry_pending
-        && matches!(
-            phase.ride_state.setpoint_adjustment(),
-            FloatOutBoySetpointAdjustment::ReverseStop
-        )
+        && phase.ride_state.setpoint_adjustment() == FloatOutBoySetpointAdjustment::ReverseStop
     {
         let limits = ReverseStopLimits::FLOAT_OUT_BOY;
         state.reverse_total_erpm = state.reverse_total_erpm + phase.motor_erpm;
@@ -1059,9 +1006,7 @@ fn advance_running_control(
             Some(limits.target_angle(state.reverse_total_erpm))
         } else if total <= limits.tolerance_erpm * 0.5 && !phase.motor_erpm.is_negative() {
             state.reverse_total_erpm = Rpm::ZERO;
-            phase.ride_state = phase
-                .ride_state
-                .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+            phase.set_adjustment(FloatOutBoySetpointAdjustment::None);
             Some(AngleDegrees::ZERO)
         } else {
             None
@@ -1070,14 +1015,12 @@ fn advance_running_control(
             board_setpoint = setpoint;
         }
     }
-    if !matches!(
-        phase.ride_state.setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
-    ) && !wheelslip_branch
-        && !matches!(
-            phase.ride_state.wheelslip(),
-            FloatOutBoyWheelSlipState::Detected
-        )
+    if !phase
+        .ride_state
+        .setpoint_adjustment()
+        .is_centering_or_reverse_stop()
+        && !wheelslip_branch
+        && phase.ride_state.wheelslip() != FloatOutBoyWheelSlipState::Detected
     {
         apply_protective_setpoint(
             state,
@@ -1088,11 +1031,7 @@ fn advance_running_control(
             &mut board_setpoint,
         );
     }
-    if matches!(
-        phase.ride_state.wheelslip(),
-        FloatOutBoyWheelSlipState::Detected
-    ) && above_duty_limit
-    {
+    if phase.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected && above_duty_limit {
         board_setpoint = AngleDegrees::ZERO;
     }
     state.runtime_board_setpoint = board_setpoint;
@@ -1116,7 +1055,7 @@ fn advance_running_control(
             wheelslip: phase.ride_state.wheelslip(),
         },
     );
-    if !matches!(phase.ride_state.mode(), FloatOutBoyMode::Flywheel) {
+    if phase.ride_state.mode() != FloatOutBoyMode::Flywheel {
         let warning = matches!(
             phase.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::PushbackDuty
@@ -1191,22 +1130,10 @@ pub(super) fn refresh(
         let balance_pitch = phase.balance_pitch.angle_degrees();
         state.runtime_board_setpoint = balance_pitch;
         let board_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(balance_pitch);
-        let zero_setpoint = FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::ZERO);
         RuntimeValues {
-            balance_current: FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(
-                Current::ZERO,
-            )),
-            setpoints: FloatOutBoyRealtimeRuntimeSetpoints::new(
-                board_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-                zero_setpoint,
-            ),
-            booster_current: FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(
-                Current::ZERO,
-            )),
+            balance_current: FloatOutBoyRealtimeBalanceCurrent::default(),
+            setpoints: FloatOutBoyRealtimeRuntimeSetpoints::default().with_board(board_setpoint),
+            booster_current: FloatOutBoyRealtimeBoosterCurrent::default(),
             motor: base
                 .motor()
                 .with_duty_cycle(DutyCycle::new(SignedRatio::from_ratio_const(0.0))),
@@ -1220,7 +1147,7 @@ pub(super) fn refresh(
         }
     };
 
-    if matches!(phase.run_state, FloatOutBoyRunState::Running)
+    if phase.run_state == FloatOutBoyRunState::Running
         && !phase.state_engage
         && !phase.state_stop_fault
     {
@@ -1232,7 +1159,7 @@ pub(super) fn refresh(
             &mut phase,
             &mut runtime,
         );
-    } else if matches!(phase.run_state, FloatOutBoyRunState::Ready)
+    } else if phase.run_state == FloatOutBoyRunState::Ready
         && !phase.state_stop_fault
         && let Some(current) = state.remote_control.request_ready_current(
             phase.motor_erpm,

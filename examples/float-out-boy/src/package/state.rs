@@ -319,18 +319,17 @@ impl FloatOutBoyPackageState {
     /// Return whether the source-backed auxiliary backup threshold has been crossed.
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
-        !matches!(
-            self.all_data_payloads
-                .base()
-                .status()
-                .ride_state()
-                .run_state(),
-            FloatOutBoyRunState::Running
-        ) && odometer.as_meters()
-            > self
-                .aux_odometer
-                .as_meters()
-                .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
+        self.all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state()
+            != FloatOutBoyRunState::Running
+            && odometer.as_meters()
+                > self
+                    .aux_odometer
+                    .as_meters()
+                    .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
     /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
@@ -640,7 +639,7 @@ impl FloatOutBoyPackageState {
     ) {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
-        self.alert_tracker.update_firmware_fault(
+        self.alert_tracker.update(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
@@ -663,7 +662,7 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state(telemetry);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
-        self.alert_tracker.update_firmware_fault(
+        self.alert_tracker.update(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
@@ -688,31 +687,30 @@ impl FloatOutBoyPackageState {
         // `third_party/float-out-boy/src/main.c:775,947-953`.
         let footpad = base.footpad().state();
 
-        let restore_flywheel_config =
-            if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
-                && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-                && self
-                    .konami
-                    .flywheel
-                    .check_flywheel(current_pitch, footpad, system_time_ticks)
-            {
-                self.start_internal_led_confirmation(system_time_ticks);
-                // C map: `main.c:85-89` and `main.c:945-949`; this is the same
-                // armed default flywheel command used by the native handler.
-                let command = [
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-                    FloatOutBoyAppDataCommand::Flywheel.id(),
-                    0x82,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                ];
-                self.prepare_flywheel_packet(&command).unwrap_or(false)
-            } else {
-                false
-            };
+        let restore_flywheel_config = if ride_state.run_state() == FloatOutBoyRunState::Ready
+            && ride_state.mode() != FloatOutBoyMode::Flywheel
+            && self
+                .konami
+                .flywheel
+                .check_flywheel(current_pitch, footpad, system_time_ticks)
+        {
+            self.start_internal_led_confirmation(system_time_ticks);
+            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
+            // armed default flywheel command used by the native handler.
+            let command = [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+                FloatOutBoyAppDataCommand::Flywheel.id(),
+                0x82,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ];
+            self.prepare_flywheel_packet(&command).unwrap_or(false)
+        } else {
+            false
+        };
 
         if self.serialized_config.hardware_led_mode_id() == 0 {
             return restore_flywheel_config;
@@ -775,10 +773,7 @@ impl FloatOutBoyPackageState {
                 ),
                 speed: base.motor().vehicle_speed().speed(),
                 current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
-                fatal_error: matches!(
-                    self.alert_tracker.fatal_error(),
-                    crate::domain::FloatOutBoyFatalErrorState::Present
-                ),
+                fatal_error: self.alert_tracker.fatal_error(),
             },
             motor,
             &mut self.motor_control,
