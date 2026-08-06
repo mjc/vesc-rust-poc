@@ -1,6 +1,3 @@
-use super::smooth_setpoint::{
-    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
-};
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
@@ -12,6 +9,9 @@ use vescpkg_rs::WrappedAngleMotion;
 use vescpkg_rs::prelude::Current;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Frequency, MotorCurrent, PidScale, Rpm, SampleRate, VescSeconds,
+};
+use vescpkg_rs::{
+    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
 
 const LOOP_HERTZ_COMPAT: f32 = 720.0;
