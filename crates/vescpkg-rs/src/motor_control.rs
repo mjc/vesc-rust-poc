@@ -4,6 +4,10 @@
 //! `src/motor_control.c`; packages retain ownership of their run-state mapping
 //! and configured parking-brake/current values.
 
+// TODO(vescpkg-rs): Move the root balance package's 50/200/2000 ERPM brake
+// thresholds, one-second timer, 50 ms current-off delay, and 350 Hz
+// four-transition click into package-supplied policy.
+
 use crate::prelude::{
     AudioFrequency, BrakeCurrent, Current, CurrentOffDelay, DutyCycle, MotorCurrent, Rpm,
     SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, TimestampTicks, VescSeconds,
