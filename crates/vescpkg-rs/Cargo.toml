@@ -9,6 +9,7 @@ description = "Unofficial Rust package-author API for code running inside VESC p
 workspace = true
 
 [dependencies]
+bitflags = { version = "2.13.1", default-features = false }
 libm = { version = "0.2", optional = true }
 pin-init = { version = "0.2.0", optional = true }
 vesc-protocol = { path = "../vesc-protocol" }
