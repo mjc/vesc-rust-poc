@@ -63,7 +63,6 @@ mod reverse_stop_tests;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
-mod smooth_setpoint;
 mod transition;
 #[cfg(test)]
 mod transition_tests;
