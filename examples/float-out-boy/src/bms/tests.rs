@@ -314,15 +314,15 @@ fn ext_bms_ignores_extra_arguments_like_refloat() {
 fn bms_sample_rejects_non_finite_numeric_inputs() {
     for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         assert_eq!(
-            FloatOutBoyBmsSample::try_new(invalid, 4.1, -2, 43, 55, 0.2),
+            FloatOutBoyBmsSample::try_from_telemetry(invalid, 4.1, -2, 43, 55, 0.2),
             None
         );
         assert_eq!(
-            FloatOutBoyBmsSample::try_new(2.8, invalid, -2, 43, 55, 0.2),
+            FloatOutBoyBmsSample::try_from_telemetry(2.8, invalid, -2, 43, 55, 0.2),
             None
         );
         assert_eq!(
-            FloatOutBoyBmsSample::try_new(2.8, 4.1, -2, 43, 55, invalid),
+            FloatOutBoyBmsSample::try_from_telemetry(2.8, 4.1, -2, 43, 55, invalid),
             None
         );
     }
@@ -331,7 +331,14 @@ fn bms_sample_rejects_non_finite_numeric_inputs() {
 #[test]
 fn bms_sample_accepts_finite_numeric_extremes() {
     assert_eq!(
-        FloatOutBoyBmsSample::try_new(f32::MIN, f32::MAX, i32::MIN, i32::MAX, i32::MIN, f32::MAX,),
+        FloatOutBoyBmsSample::try_from_telemetry(
+            f32::MIN,
+            f32::MAX,
+            i32::MIN,
+            i32::MAX,
+            i32::MIN,
+            f32::MAX,
+        ),
         Some(FloatOutBoyBmsSample::new(
             Voltage::from_volts(f32::MIN),
             Voltage::from_volts(f32::MAX),

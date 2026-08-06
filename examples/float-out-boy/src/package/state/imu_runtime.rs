@@ -19,7 +19,7 @@ use super::{
     FloatOutBoyWheelSlipState, Imu, MotorCurrent, RideModifierInput, Rpm, TimestampTicks,
     float_out_boy_first_stop_event, float_out_boy_state_transition,
 };
-use crate::bms::FloatOutBoyBmsFaults;
+use crate::bms::FloatOutBoyBmsFaults as BmsFaults;
 use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
 use crate::wire::saturating_trunc_f32_to_u8;
 use vescpkg_rs::prelude::{
@@ -598,65 +598,58 @@ struct ProtectionSignals {
     high_voltage_threshold: Voltage,
     low_voltage_threshold: Voltage,
     battery_voltage: Voltage,
-    bms_cell_over_voltage: bool,
-    bms_connection_fault: bool,
-    bms_cell_under_voltage: bool,
+    bms_faults: BmsFaults,
     bms_temperature_reason: Option<FloatOutBoyBeepReason>,
     motor_temperature_warning: Option<(FloatOutBoyBeepReason, bool)>,
+}
+
+impl ProtectionSignals {
+    const fn has_bms_fault(&self, fault: BmsFaults) -> bool {
+        self.bms_faults.contains(fault)
+    }
 }
 
 fn protection_signals(
     state: &FloatOutBoyPackageState,
     payloads: &FloatOutBoyAllDataPayloads,
 ) -> ProtectionSignals {
-    let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_OVER_VOLTAGE);
+    use FloatOutBoyBeepReason as Reason;
+
+    let bms_faults = state.bms.faults();
     #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_cell_over_voltage = false;
-    let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFaults::CONNECTION);
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_connection_fault = false;
-    let bms_temperature_reason = if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::CELL_OVER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::CellOverTemperature)
-    } else if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::CELL_UNDER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::CellUnderTemperature)
-    } else if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::BMS_OVER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::BmsOverTemperature)
-    } else {
-        None
-    };
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_temperature_reason = None;
-    let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE);
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_cell_under_voltage = false;
+    let bms_faults = BmsFaults::empty();
+    let bms_temperature_reason = [
+        (
+            BmsFaults::CELL_OVER_TEMPERATURE,
+            Reason::CellOverTemperature,
+        ),
+        (
+            BmsFaults::CELL_UNDER_TEMPERATURE,
+            Reason::CellUnderTemperature,
+        ),
+        (BmsFaults::BMS_OVER_TEMPERATURE, Reason::BmsOverTemperature),
+    ]
+    .into_iter()
+    .find_map(|(fault, reason)| bms_faults.contains(fault).then_some(reason));
     let warning_margin = Temperature::from_degrees_celsius(3.0);
     let tiltback_margin = Temperature::from_degrees_celsius(1.0);
     let motor_config = state.motor_config;
-    let mosfet_threshold =
-        motor_config.mosfet_temperature_limit_start.temperature() - warning_margin;
-    let motor_threshold = motor_config.motor_temperature_limit_start.temperature() - warning_margin;
-    let motor_temperature_warning = if state.mosfet_temperature.temperature() > mosfet_threshold {
-        Some((
-            FloatOutBoyBeepReason::MosfetTemperature,
-            state.mosfet_temperature.temperature() > mosfet_threshold + tiltback_margin,
-        ))
-    } else if state.motor_temperature.temperature() > motor_threshold {
-        Some((
-            FloatOutBoyBeepReason::MotorTemperature,
-            state.motor_temperature.temperature() > motor_threshold + tiltback_margin,
-        ))
-    } else {
-        None
-    };
+    let motor_temperature_warning = [
+        (
+            state.mosfet_temperature.temperature(),
+            motor_config.mosfet_temperature_limit_start.temperature() - warning_margin,
+            Reason::MosfetTemperature,
+        ),
+        (
+            state.motor_temperature.temperature(),
+            motor_config.motor_temperature_limit_start.temperature() - warning_margin,
+            Reason::MotorTemperature,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(temperature, threshold, reason)| {
+        (temperature > threshold).then_some((reason, temperature > threshold + tiltback_margin))
+    });
     ProtectionSignals {
         high_voltage_threshold: pack_voltage_threshold(
             state.serialized_config.high_voltage_threshold(),
@@ -667,9 +660,7 @@ fn protection_signals(
             motor_config.battery_cell_count,
         ),
         battery_voltage: payloads.motor_battery_voltage().voltage(),
-        bms_cell_over_voltage,
-        bms_connection_fault,
-        bms_cell_under_voltage,
+        bms_faults,
         bms_temperature_reason,
         motor_temperature_warning,
     }
@@ -710,9 +701,9 @@ fn apply_protective_setpoint(
     }
     if duty > 0.05
         && (signals.battery_voltage > signals.high_voltage_threshold
-            || signals.bms_cell_over_voltage)
+            || signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE))
     {
-        phase.beep_reason = if signals.bms_cell_over_voltage {
+        phase.beep_reason = if signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE) {
             FloatOutBoyBeepReason::CellHighVoltage
         } else {
             FloatOutBoyBeepReason::HighVoltage
@@ -722,7 +713,7 @@ fn apply_protective_setpoint(
             .high_voltage_ticks
             .older_than(system_time_ticks, VescSeconds::from_seconds(0.5))
             || signals.battery_voltage > signals.high_voltage_threshold + Voltage::from_volts(1.0)
-            || signals.bms_cell_over_voltage;
+            || signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE);
         phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackHighVoltage
         } else {
@@ -736,7 +727,7 @@ fn apply_protective_setpoint(
         }
         return;
     }
-    if signals.bms_connection_fault {
+    if signals.has_bms_fault(BmsFaults::CONNECTION) {
         phase.beep_reason = FloatOutBoyBeepReason::BmsConnection;
         phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
         phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
@@ -773,10 +764,10 @@ fn apply_protective_setpoint(
         return;
     }
     if duty > 0.05
-        && (signals.bms_cell_under_voltage
+        && (signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE)
             || signals.battery_voltage < signals.low_voltage_threshold)
     {
-        phase.beep_reason = if signals.bms_cell_under_voltage {
+        phase.beep_reason = if signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE) {
             FloatOutBoyBeepReason::CellLowVoltage
         } else {
             FloatOutBoyBeepReason::LowVoltage
@@ -787,7 +778,7 @@ fn apply_protective_setpoint(
         let tiltback = voltage_delta > Voltage::from_volts(2.0)
             || motor_current < Current::from_amps(5.0)
             || voltage_delta.as_volts() * 20.0 / motor_current.as_amps() > 1.0
-            || signals.bms_cell_under_voltage;
+            || signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE);
         phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackLowVoltage
         } else {
@@ -845,7 +836,9 @@ fn advance_running_control(
     elapsed: VescSeconds,
 ) {
     let signals = protection_signals(state, payloads);
-    if signals.battery_voltage < signals.high_voltage_threshold && !signals.bms_cell_over_voltage {
+    if signals.battery_voltage < signals.high_voltage_threshold
+        && !signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE)
+    {
         state.high_voltage_ticks.restart(system_time_ticks);
     }
     let above_duty_limit =

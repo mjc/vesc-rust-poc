@@ -419,12 +419,12 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(crate) const fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
+    pub(crate) fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
         self.bms.sample()
     }
 
     #[cfg(test)]
-    pub(crate) const fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
+    pub(crate) fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
         self.bms.faults()
     }
 
