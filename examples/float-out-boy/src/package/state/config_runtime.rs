@@ -1,5 +1,5 @@
 use super::FloatOutBoyPackageState;
-use crate::domain::{FloatOutBoyAllDataStatus, FloatOutBoyRunState};
+use crate::domain::FloatOutBoyRunState;
 
 pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
     state
@@ -10,9 +10,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState) {
 
 pub(super) fn refresh_disabled_state(state: &mut FloatOutBoyPackageState) {
     let payloads = state.all_data_payloads;
-    let base = payloads.base();
-    let status = base.status();
-    let ride_state = status.ride_state();
+    let ride_state = payloads.ride_state();
     let disabled = state.serialized_config.metadata().disabled();
     let run_state = match (ride_state.run_state(), disabled) {
         // C map: Float Out Boy applies `float_conf.disabled` from `configure(d)` at
@@ -28,9 +26,7 @@ pub(super) fn refresh_disabled_state(state: &mut FloatOutBoyPackageState) {
         return;
     }
 
-    let status =
-        FloatOutBoyAllDataStatus::new(ride_state.with_run_state(run_state), status.beep_reason());
-    state.all_data_payloads = payloads.with_base(base.with_status(status));
+    state.all_data_payloads = payloads.with_ride_state(ride_state.with_run_state(run_state));
 }
 
 pub(super) fn refresh_leds(state: &mut FloatOutBoyPackageState) {

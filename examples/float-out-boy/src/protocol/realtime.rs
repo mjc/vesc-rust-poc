@@ -106,8 +106,7 @@ impl FloatOutBoyRealtimeSelectedRequest {
 
 macro_rules! realtime_data_items {
     (
-        project($payloads:ident, $live:ident;
-            $base:ident, $motor:ident, $attitude:ident, $setpoints:ident, $temperatures:ident);
+        project($payloads:ident, $live:ident);
         always { $( $always:ident => $always_id:literal => $always_value:expr, )+ }
         runtime { $( $runtime:ident => $runtime_id:literal => $runtime_value:expr, )+ }
         recorded { $( $recorded:ident, )+ }
@@ -149,11 +148,6 @@ macro_rules! realtime_data_items {
             item: FloatOutBoyRealtimeDataItem,
             $live: FloatOutBoyRealtimeLiveValues,
         ) -> f32 {
-            let $base = $payloads.base();
-            let $motor = $base.motor();
-            let $attitude = $base.attitude();
-            let $setpoints = $base.setpoints();
-            let $temperatures = $payloads.mode2().temperatures();
             match item {
                 $(FloatOutBoyRealtimeDataItem::$always => $always_value,)+
                 $(FloatOutBoyRealtimeDataItem::$runtime => $runtime_value,)+
@@ -168,40 +162,39 @@ macro_rules! realtime_data_items {
 // Projections mirror `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1943-1948`;
 // motor speed stays in the km/h expected by the VESC Tool consumer.
 realtime_data_items! {
-    project(payloads, live;
-        base, motor, attitude, setpoints, temperatures);
+    project(payloads, live);
     always {
         ControlDt => "control.dt" => live.control_period().period().as_seconds(),
         ControlFrequency => "control.freq" => live.control_frequency().frequency().as_hertz(),
-        MotorSpeed => "speed" => motor.vehicle_speed().speed().as_kilometers_per_hour(),
-        MotorErpm => "erpm" => motor.electrical_speed().rpm().as_revolutions_per_minute(),
-        MotorCurrent => "current" => motor.motor_current().current().as_amps(),
-        MotorDirectionalCurrent => "dir_current" => motor.directional_motor_current().current().as_amps(),
-        MotorFilteredCurrent => "filt_current" => motor.filtered_motor_current().current().current().as_amps(),
-        MotorDutyCycle => "duty_cycle" => motor.duty_cycle().ratio().as_ratio(),
-        MotorBatteryVoltage => "batt_voltage" => motor.battery_voltage().voltage().as_volts(),
-        MotorBatteryCurrent => "batt_current" => motor.battery_current().current().as_amps(),
-        MotorMosfetTemperature => "mosfet_temp" => temperatures.mosfet().temperature().as_degrees_celsius(),
-        MotorTemperature => "motor_temp" => temperatures.motor().temperature().as_degrees_celsius(),
-        ImuPitch => "pitch" => super::degrees(attitude.pitch().angle()),
-        ImuBalancePitch => "balance_pitch" => super::degrees(attitude.balance_pitch().angle()),
-        ImuRoll => "roll" => super::degrees(attitude.roll().angle()),
-        FootpadAdc1 => "adc_left" => base.footpad().left_voltage().as_volts(),
-        FootpadAdc2 => "adc_right" => base.footpad().right_voltage().as_volts(),
+        MotorSpeed => "speed" => payloads.vehicle_speed().speed().as_kilometers_per_hour(),
+        MotorErpm => "erpm" => payloads.electrical_speed().rpm().as_revolutions_per_minute(),
+        MotorCurrent => "current" => payloads.motor_current().current().as_amps(),
+        MotorDirectionalCurrent => "dir_current" => payloads.directional_motor_current().current().as_amps(),
+        MotorFilteredCurrent => "filt_current" => payloads.filtered_motor_current().current().current().as_amps(),
+        MotorDutyCycle => "duty_cycle" => payloads.duty_cycle().ratio().as_ratio(),
+        MotorBatteryVoltage => "batt_voltage" => payloads.motor_battery_voltage().voltage().as_volts(),
+        MotorBatteryCurrent => "batt_current" => payloads.battery_current().current().as_amps(),
+        MotorMosfetTemperature => "mosfet_temp" => payloads.temperatures().mosfet().temperature().as_degrees_celsius(),
+        MotorTemperature => "motor_temp" => payloads.temperatures().motor().temperature().as_degrees_celsius(),
+        ImuPitch => "pitch" => super::degrees(payloads.pitch().angle()),
+        ImuBalancePitch => "balance_pitch" => super::degrees(payloads.balance_pitch().angle()),
+        ImuRoll => "roll" => super::degrees(payloads.roll().angle()),
+        FootpadAdc1 => "adc_left" => payloads.footpad().left_voltage().as_volts(),
+        FootpadAdc2 => "adc_right" => payloads.footpad().right_voltage().as_volts(),
         RemoteInput => "remote.input" => live.remote_input().ratio().as_ratio(),
     }
     runtime {
-        Setpoint => "setpoint" => setpoints.board().angle().as_degrees(),
-        AtrSetpoint => "atr.setpoint" => setpoints.atr().angle().as_degrees(),
-        BrakeTiltSetpoint => "brake_tilt.setpoint" => setpoints.brake_tilt().angle().as_degrees(),
-        TorqueTiltSetpoint => "torque_tilt.setpoint" => setpoints.torque_tilt().angle().as_degrees(),
-        TurnTiltSetpoint => "turn_tilt.setpoint" => setpoints.turn_tilt().angle().as_degrees(),
-        RemoteSetpoint => "remote.setpoint" => setpoints.remote().angle().as_degrees(),
-        BalanceCurrent => "balance_current" => base.balance_current().current().current().as_amps(),
+        Setpoint => "setpoint" => payloads.setpoints().board().angle().as_degrees(),
+        AtrSetpoint => "atr.setpoint" => payloads.setpoints().atr().angle().as_degrees(),
+        BrakeTiltSetpoint => "brake_tilt.setpoint" => payloads.setpoints().brake_tilt().angle().as_degrees(),
+        TorqueTiltSetpoint => "torque_tilt.setpoint" => payloads.setpoints().torque_tilt().angle().as_degrees(),
+        TurnTiltSetpoint => "turn_tilt.setpoint" => payloads.setpoints().turn_tilt().angle().as_degrees(),
+        RemoteSetpoint => "remote.setpoint" => payloads.setpoints().remote().angle().as_degrees(),
+        BalanceCurrent => "balance_current" => payloads.balance_current().current().current().as_amps(),
         AtrAccelDiff => "atr.accel_diff" => live.atr_accel_diff().as_erpm_delta(),
         AtrSpeedBoost => "atr.speed_boost" => live.atr_speed_boost().as_units(),
         AtrTransitionBoost => "atr.transition_boost" => live.atr_transition_boost().factor(),
-        BoosterTorque => "booster.torque" => base.booster_torque().torque().as_newton_meters(),
+        BoosterTorque => "booster.torque" => payloads.booster_torque().torque().as_newton_meters(),
     }
     recorded {
         ControlDt,

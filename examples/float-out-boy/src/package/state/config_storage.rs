@@ -189,22 +189,11 @@ impl FloatOutBoyPackageState {
     }
 
     pub(in crate::package) fn is_running(&self) -> bool {
-        self.all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state()
-            == FloatOutBoyRunState::Running
+        self.all_data_payloads.ride_state().run_state() == FloatOutBoyRunState::Running
     }
 
     fn config_can_persist_now(&self, now: TimestampTicks) -> bool {
-        match self
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state()
-        {
+        match self.all_data_payloads.ride_state().run_state() {
             FloatOutBoyRunState::Running => false,
             FloatOutBoyRunState::Ready => self
                 .disengage_ticks
@@ -361,7 +350,7 @@ impl FloatOutBoyPackageState {
         config: &[u8],
     ) -> Option<FloatOutBoyConfigImage> {
         let mut config = FloatOutBoyConfigImage::from_serialized(config)?;
-        let ride_state = self.all_data_payloads.base().status().ride_state();
+        let ride_state = self.all_data_payloads.ride_state();
         if !matches!(ride_state.mode(), FloatOutBoyMode::Normal) {
             return None;
         }
@@ -459,12 +448,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn alert_after_configure(&mut self) {
-        let run_state = self
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
+        let run_state = self.all_data_payloads.ride_state().run_state();
         let alert = match run_state {
             FloatOutBoyRunState::Disabled => FloatOutBoyBeeperAlert::Short(3),
             // Intentional Refloat 1.2.1 bug fix from upstream 37cf343:

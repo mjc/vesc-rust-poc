@@ -143,7 +143,7 @@ impl FloatOutBoyFlywheelRequest {
     }
 
     fn apply_to(self, state: &mut FloatOutBoyPackageState) -> bool {
-        let ride_state = state.all_data_payloads.base().status().ride_state();
+        let ride_state = state.all_data_payloads.ride_state();
         if !matches!(
             ride_state.mode(),
             FloatOutBoyMode::Normal | FloatOutBoyMode::Flywheel
@@ -187,8 +187,7 @@ impl FloatOutBoyPackageState {
 
     fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> Option<bool> {
         if self.flywheel.offsets.needs_calibration() || recalibrate {
-            let attitude = self.all_data_payloads.base().attitude();
-            let pitch = AngleDegrees::from(attitude.pitch().angle());
+            let pitch = AngleDegrees::from(self.all_data_payloads.pitch().angle());
             if pitch.abs() < AngleDegrees::from_degrees(70.0) {
                 if self.flywheel.config.is_some() {
                     self.prepare_flywheel_restore();
@@ -199,7 +198,7 @@ impl FloatOutBoyPackageState {
             }
             self.flywheel.offsets = FloatOutBoyFlywheelOffsets::calibrated(
                 pitch,
-                AngleDegrees::from(attitude.roll().angle()),
+                AngleDegrees::from(self.all_data_payloads.roll().angle()),
             );
             self.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
         } else {

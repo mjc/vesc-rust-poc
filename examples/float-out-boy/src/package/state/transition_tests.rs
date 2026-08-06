@@ -22,7 +22,7 @@ fn darkride_payloads(mode: FloatOutBoyMode) -> FloatOutBoyAllDataPayloads {
         .status()
         .ride_state()
         .with_darkride(FloatOutBoyDarkRideState::Active);
-    FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -46,7 +46,7 @@ fn darkride_no_footpads_payloads(mode: FloatOutBoyMode) -> FloatOutBoyAllDataPay
         Voltage::from_volts(0.0),
         FloatOutBoyFootpadState::None,
     );
-    FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -67,7 +67,7 @@ fn upright_no_footpads_payloads() -> FloatOutBoyAllDataPayloads {
     let base = payloads.base();
     let no_footpads =
         FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, FloatOutBoyFootpadState::None);
-    FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -199,7 +199,7 @@ fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays(
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
-        let ride_state = state.all_data_payloads().base().status().ride_state();
+        let ride_state = state.all_data_payloads().ride_state();
         assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
         assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::None);
     }
@@ -320,7 +320,7 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -345,7 +345,7 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
@@ -378,7 +378,7 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -438,7 +438,7 @@ fn app_data_running_flywheel_pressed_footpad_stops_like_upstream_fix() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
@@ -472,7 +472,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_float_out_boy_state_stop
         base.booster_torque(),
         base.motor(),
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         base,
         payloads.mode2(),
         payloads.mode3(),
@@ -490,7 +490,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_float_out_boy_state_stop
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.wheelslip(), FloatOutBoyWheelSlipState::None);
 }
 
@@ -516,7 +516,7 @@ fn app_data_running_darkride_footpads_stop_like_float_out_boy_fault_check() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
@@ -551,7 +551,7 @@ fn app_data_running_darkride_timed_low_erpm_stops_like_float_out_boy_fault_check
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
@@ -580,7 +580,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_float_out_boy_fault_ch
         Voltage::from_volts(0.0),
         FloatOutBoyFootpadState::None,
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -609,7 +609,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_float_out_boy_fault_ch
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Roll);
 }
@@ -636,7 +636,7 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::None);
 }
@@ -690,7 +690,7 @@ fn full_switch_stopped_state_with_pitch(
 fn prepare_ready_engagement(state: &mut FloatOutBoyPackageState, pitch: AngleRadians) {
     let payloads = state.all_data_payloads();
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -726,12 +726,7 @@ fn tick_ready_engagement(
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
-    state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state()
+    state.all_data_payloads().ride_state().run_state()
 }
 
 #[test]
@@ -837,7 +832,7 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
     );
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
-    let setpoints_before_stop = state.all_data_payloads().base().setpoints();
+    let setpoints_before_stop = state.all_data_payloads().setpoints();
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -850,7 +845,7 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Roll);
     // Upstream `state_stop` leaves modifier state intact; READY suppresses motor
@@ -899,7 +894,7 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(ride_state.stop_condition(), FloatOutBoyStopCondition::Pitch);
     assert!(state.apply_motor_control(telemetry.motor(), ride_state.run_state(), lifecycle));
@@ -944,7 +939,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         Voltage::from_volts(0.0),
         FloatOutBoyFootpadState::Left,
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -973,7 +968,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
@@ -1008,7 +1003,7 @@ fn app_data_running_darkride_high_erpm_stops_like_float_out_boy_fault_check() {
         ],
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
     assert_eq!(
         ride_state.stop_condition(),
