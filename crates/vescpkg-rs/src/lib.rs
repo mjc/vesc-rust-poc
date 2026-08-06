@@ -109,6 +109,7 @@ mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
+mod motor_control;
 mod numeric;
 mod nvm;
 mod packet;
@@ -282,6 +283,7 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
+pub use motor_control::{MotorControl, MotorControlRunState, ParkingBrakeMode};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
 #[cfg(feature = "math")]

@@ -17,6 +17,7 @@ use crate::{
 };
 use vescpkg_rs::CustomConfigResetField;
 use vescpkg_rs::CustomConfigVoltageField;
+pub(crate) use vescpkg_rs::ParkingBrakeMode as FloatOutBoyParkingBrakeMode;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain,
@@ -624,28 +625,6 @@ impl FloatOutBoyBmsConfig<'_> {
             self.cell_high_temperature(),
             self.bms_high_temperature(),
         )
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub(crate) struct FloatOutBoyParkingBrakeMode(u8);
-
-impl FloatOutBoyParkingBrakeMode {
-    pub(crate) const ALWAYS: Self = Self(0);
-    pub(crate) const IDLE: Self = Self(1);
-    pub(crate) const NEVER: Self = Self(2);
-}
-
-impl From<u8> for FloatOutBoyParkingBrakeMode {
-    fn from(value: u8) -> Self {
-        Self(value)
-    }
-}
-
-impl From<FloatOutBoyParkingBrakeMode> for u8 {
-    fn from(value: FloatOutBoyParkingBrakeMode) -> Self {
-        value.0
     }
 }
 

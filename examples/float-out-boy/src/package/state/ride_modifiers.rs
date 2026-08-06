@@ -238,16 +238,7 @@ impl RideModifierState {
     }
 
     pub(super) fn reset(&mut self) {
-        self.nose = AngleDegrees::ZERO;
-        self.torque.reset();
-        self.atr.angle.reset();
-        self.atr.accel_diff = 0.0;
-        self.atr.speed_boost = 0.0;
-        self.atr.transition_target = AngleDegrees::ZERO;
-        self.atr.transition_boost = SmoothSetpointMultiplier::ONE;
-        self.brake.reset();
-        self.turn.angle.reset();
-        self.turn.yaw = WrappedAngleMotion::default();
+        *self = Self::default();
     }
 
     pub(super) fn aggregate_yaw(
