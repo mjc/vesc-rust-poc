@@ -364,8 +364,11 @@ impl FloatOutBoyRealtimeDataHeader {
 
     /// Return the cutoff internal-realtime extra-flags byte.
     #[must_use]
-    pub const fn extra_flags_compat(self) -> u8 {
-        self.data_recorder.realtime_extra_flags_compat()
+    pub fn extra_flags_compat(self) -> u8 {
+        u8::from(
+            self.data_recorder
+                .contains(FloatOutBoyDataRecorderFlags::RECORDING),
+        )
     }
 
     /// Return the cutoff internal-realtime packed state flags.
