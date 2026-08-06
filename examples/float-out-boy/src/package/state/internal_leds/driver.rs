@@ -169,11 +169,7 @@ impl FloatOutBoyInternalLedDriver {
                 };
                 let (channels, channel_count) = pixel.physical_channels(strip.color_order);
                 for channel in channels.into_iter().take(channel_count) {
-                    if !vescpkg_rs::stm32::float_out_boy_ws2812::encode_byte(
-                        pulses,
-                        &mut pulse_index,
-                        channel,
-                    ) {
+                    if !vescpkg_rs::stm32::ws2812::encode_byte(pulses, &mut pulse_index, channel) {
                         return false;
                     }
                 }

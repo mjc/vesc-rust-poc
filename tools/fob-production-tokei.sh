@@ -10,8 +10,4 @@ source=examples/float-out-boy/src
 "${CARGO:-cargo}" run --quiet \
   --manifest-path tools/fob-production-rust/Cargo.toml -- \
   "$source" "$filtered_dir/$source"
-source=crates/vescpkg-rs/src/stm32/float_out_boy_ws2812.rs
-"${CARGO:-cargo}" run --quiet \
-  --manifest-path tools/fob-production-rust/Cargo.toml -- \
-  "$source" "$filtered_dir/$source"
 nix run nixpkgs#tokei -- "$filtered_dir" --types Rust "$@"
