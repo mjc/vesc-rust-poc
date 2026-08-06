@@ -50,7 +50,6 @@ impl FloatOutBoyPackageState {
         payload: &[u8],
     ) -> bool {
         if command == Command::Info {
-            let internal_leds_operational = self.internal_leds_operational();
             // C map: `on_command_received` dispatches COMMAND_INFO at
             // `third_party/float-out-boy/src/main.c:2158-2160`; `cmd_info` writes
             // the requested v1 or v2 metadata shape at
@@ -58,7 +57,7 @@ impl FloatOutBoyPackageState {
             let response = encode_float_out_boy_info_response(
                 payload,
                 self.serialized_config.hardware_led_mode().id(),
-                internal_leds_operational,
+                self.internal_leds_operational(),
                 self.data_recorder.0.has_capability(),
             );
             return reply(response.as_bytes());
@@ -69,8 +68,7 @@ impl FloatOutBoyPackageState {
             // `third_party/float-out-boy/src/main.c:2275-2277`; `cmd_realtime_data_ids`
             // sends the counted ID table at `third_party/float-out-boy/src/main.c:1876-1901`.
             // Keep the response as callback-local bytes like upstream's stack buffer.
-            let response = encode_float_out_boy_realtime_data_ids_response();
-            return reply(&response);
+            return reply(&encode_float_out_boy_realtime_data_ids_response());
         }
 
         false
@@ -86,12 +84,13 @@ impl FloatOutBoyPackageState {
         }
         // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
         // `third_party/float-out-boy/src/main.c:2162-2164`.
-        let response = encode_float_out_boy_get_realtime_data_response_with_remote(
-            &self.all_data_payloads,
-            self.remote_control.input(),
-            self.ride_modifiers.atr_accel_diff(),
-        );
-        reply(&response)
+        reply(
+            &encode_float_out_boy_get_realtime_data_response_with_remote(
+                &self.all_data_payloads,
+                self.remote_control.input(),
+                self.ride_modifiers.atr_accel_diff(),
+            ),
+        )
     }
 
     pub(super) fn reply_to_realtime_data_command(
@@ -118,13 +117,15 @@ impl FloatOutBoyPackageState {
             self.alert_tracker.firmware_fault_active(),
             self.alert_tracker.firmware_fault_code(),
         );
-        let response = encode_float_out_boy_realtime_data_response_with_runtime(
-            &payloads,
-            header,
-            tail,
-            self.realtime_live_values(),
-        );
-        reply(response.as_bytes())
+        reply(
+            encode_float_out_boy_realtime_data_response_with_runtime(
+                &payloads,
+                header,
+                tail,
+                self.realtime_live_values(),
+            )
+            .as_bytes(),
+        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -159,14 +160,16 @@ impl FloatOutBoyPackageState {
             true,
         );
         let header = self.realtime_header(&payloads, now());
-        let response = encode_float_out_boy_realtime_selected_response(
-            request,
-            &payloads,
-            header,
-            self.realtime_live_values(),
-            gnss,
-        );
-        reply(response.as_bytes())
+        reply(
+            encode_float_out_boy_realtime_selected_response(
+                request,
+                &payloads,
+                header,
+                self.realtime_live_values(),
+                gnss,
+            )
+            .as_bytes(),
+        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -185,8 +188,7 @@ impl FloatOutBoyPackageState {
         match (request, telemetry.firmware_fault()) {
             (None, _) | (Some(_), FirmwareFault::Unknown) => false,
             (Some(_), FirmwareFault::Active(fault)) => {
-                let response = encode_float_out_boy_all_data_fault_response(fault.wire_code());
-                reply(response.as_bytes())
+                reply(encode_float_out_boy_all_data_fault_response(fault.wire_code()).as_bytes())
             }
             // Preserve the fail-closed behavior for an ABI value this SDK
             // cannot safely represent in Float Out Boy's wire format.
@@ -202,10 +204,9 @@ impl FloatOutBoyPackageState {
                 } else {
                     payloads
                 };
-                let response = payloads.encode_response(request);
                 // Refloat commit 98bfe765 keeps the last reason available to
                 // later command-7 readers after its active condition ends.
-                reply(response.as_bytes())
+                reply(payloads.encode_response(request).as_bytes())
             }
         }
     }

@@ -85,11 +85,8 @@ impl RemoteControlState {
         maximum_move_speed: Speed,
         payload: &[u8],
     ) -> bool {
-        let Some(byte) = payload.first() else {
-            return false;
-        };
-        let Some(input) = parse_remote_command(*byte) else {
-            return true;
+        let Some(input) = payload.first().copied().and_then(parse_remote_command) else {
+            return !payload.is_empty();
         };
 
         self.input = input;
@@ -244,10 +241,11 @@ impl RemoteControlState {
         };
         let error = target.as_kilometers_per_hour() - vehicle_speed.as_kilometers_per_hour();
         advance_remote_move_integral(&mut self.move_integral, error, elapsed);
-        let torque = MotorTorque::from_newton_meters(
-            (1.2 * error + self.move_integral.as_newton_meters()).clamp(-10.0, 10.0),
-        );
-        Some(torque_constant.motor_current_from_torque(torque))
+        Some(
+            torque_constant.motor_current_from_torque(MotorTorque::from_newton_meters(
+                (1.2 * error + self.move_integral.as_newton_meters()).clamp(-10.0, 10.0),
+            )),
+        )
     }
 }
 
