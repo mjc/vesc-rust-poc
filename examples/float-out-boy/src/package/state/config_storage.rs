@@ -172,6 +172,7 @@ impl FloatOutBoyPackageState {
         let _ = now;
     }
 
+    #[cfg(test)]
     pub(in crate::package) const fn active_config_image(&self) -> FloatOutBoyConfigImage {
         self.serialized_config
     }
@@ -194,7 +195,7 @@ impl FloatOutBoyPackageState {
         &mut self,
         now: TimestampTicks,
     ) -> Option<FloatOutBoyConfigImage> {
-        let config = self.active_config_image();
+        let config = self.serialized_config;
         let can_begin = self.config_can_persist_now(now);
         self.deferred_config_persistence.request(config, can_begin)
     }

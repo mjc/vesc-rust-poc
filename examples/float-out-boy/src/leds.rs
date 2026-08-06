@@ -466,7 +466,7 @@ impl FloatOutBoyLedDynamics {
             distance,
             ..
         } = input;
-        if matches!(run_state, crate::FloatOutBoyRunState::Startup) {
+        if run_state == crate::FloatOutBoyRunState::Startup {
             self.run_state = run_state;
             return false;
         }
@@ -485,8 +485,8 @@ impl FloatOutBoyLedDynamics {
 
         let running = run_state == crate::FloatOutBoyRunState::Running;
         if run_state != self.run_state {
-            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled)
-                || matches!(run_state, crate::FloatOutBoyRunState::Disabled)
+            if self.run_state == crate::FloatOutBoyRunState::Disabled
+                || run_state == crate::FloatOutBoyRunState::Disabled
             {
                 self.on_off_fade = Ratio::ZERO;
             }
@@ -498,11 +498,9 @@ impl FloatOutBoyLedDynamics {
         self.run_state = run_state;
 
         let show_sensors = config.status.show_sensors_while_running || !running;
-        let both = !running && matches!(footpad, crate::FloatOutBoyFootpadState::Both);
-        let left =
-            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
-        let right =
-            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
+        let both = !running && footpad == crate::FloatOutBoyFootpadState::Both;
+        let left = show_sensors && (both || footpad == crate::FloatOutBoyFootpadState::Left);
+        let right = show_sensors && (both || footpad == crate::FloatOutBoyFootpadState::Right);
         self.left_sensor = self.left_sensor.slew_toward(left, SENSOR_FADE_STEP);
         self.right_sensor = self.right_sensor.slew_toward(right, SENSOR_FADE_STEP);
 
@@ -1230,9 +1228,8 @@ impl FloatOutBoyLedStripFrame {
 
     /// Paint Refloat's disabled red pulse.
     pub fn render_disabled(&mut self, brightness: Ratio, time: f32) {
-        let red = FloatOutBoyLedPixel::rgb(0xff, 0, 0);
         self.render_pulse_shape(
-            red,
+            FloatOutBoyLedPixel::rgb(0xff, 0, 0),
             FloatOutBoyLedPixel::default(),
             brightness,
             time / 2.0,
@@ -1290,24 +1287,12 @@ impl FloatOutBoyLedStripFrame {
         bar.brightness = bar.brightness * on_off_fade;
         let time = time * bar.animation_speed;
         let target = match bar.animation_mode {
-            FloatOutBoyLedAnimationMode::Felony => {
-                self.render_felony(bar, time);
-                return;
-            }
+            FloatOutBoyLedAnimationMode::Felony => return self.render_felony(bar, time),
             FloatOutBoyLedAnimationMode::RainbowCycle
             | FloatOutBoyLedAnimationMode::RainbowFade
-            | FloatOutBoyLedAnimationMode::RainbowRoll => {
-                self.render_rainbow(bar, time);
-                return;
-            }
-            FloatOutBoyLedAnimationMode::Pulse => {
-                self.render_pulse(bar, time);
-                return;
-            }
-            FloatOutBoyLedAnimationMode::KnightRider => {
-                self.render_knight_rider(bar, time);
-                return;
-            }
+            | FloatOutBoyLedAnimationMode::RainbowRoll => return self.render_rainbow(bar, time),
+            FloatOutBoyLedAnimationMode::Pulse => return self.render_pulse(bar, time),
+            FloatOutBoyLedAnimationMode::KnightRider => return self.render_knight_rider(bar, time),
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color)
             }
@@ -1563,9 +1548,7 @@ impl FloatOutBoyLedStripFrame {
     fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, time: f32) {
         let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::RainbowCycle => {
-                let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0)
-                    .checked_rem(10)
-                    .unwrap_or_default();
+                let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0) % 10;
                 let hue = crate::wire::saturating_trunc_f32_to_u8(f32::from(step) * 25.5);
                 refloat_hue_to_pixel(hue)
             }
