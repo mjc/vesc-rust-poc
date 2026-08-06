@@ -8,8 +8,8 @@ use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
-    FloatOutBoyRealtimeTail,
+    FloatOutBoyAppDataCommand as Command, FloatOutBoyFatalErrorState as FatalError,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
@@ -20,12 +20,8 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        if let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Info)
-        {
-            #[cfg(any(test, target_arch = "arm"))]
+        if let Some(payload) = float_out_boy_command_payload(bytes, Command::Info) {
             let internal_leds_operational = self.internal_leds_operational();
-            #[cfg(all(not(test), not(target_arch = "arm")))]
-            let internal_leds_operational = false;
             // C map: `on_command_received` dispatches COMMAND_INFO at
             // `third_party/float-out-boy/src/main.c:2158-2160`; `cmd_info` writes
             // the requested v1 or v2 metadata shape at
@@ -39,9 +35,7 @@ impl FloatOutBoyPackageState {
             return reply(response.as_bytes());
         }
 
-        if float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RealtimeDataIds)
-            .is_some()
-        {
+        if float_out_boy_command_payload(bytes, Command::RealtimeDataIds).is_some() {
             // C map: `on_command_received` dispatches realtime-data IDs at
             // `third_party/float-out-boy/src/main.c:2275-2277`; `cmd_realtime_data_ids`
             // sends the counted ID table at `third_party/float-out-boy/src/main.c:1876-1901`.
@@ -58,19 +52,17 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::GetRealtimeData) {
-            Some(_) => {
-                // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
-                // `third_party/float-out-boy/src/main.c:2162-2164`.
-                let response = encode_float_out_boy_get_realtime_data_response_with_remote(
-                    &self.all_data_payloads,
-                    self.remote_control.input(),
-                    self.ride_modifiers.atr_accel_diff(),
-                );
-                reply(&response)
-            }
-            None => false,
-        }
+        let Some(_) = float_out_boy_command_payload(bytes, Command::GetRealtimeData) else {
+            return false;
+        };
+        // C map: `on_command_received` dispatches legacy `COMMAND_GET_RTDATA` at
+        // `third_party/float-out-boy/src/main.c:2162-2164`.
+        let response = encode_float_out_boy_get_realtime_data_response_with_remote(
+            &self.all_data_payloads,
+            self.remote_control.input(),
+            self.ride_modifiers.atr_accel_diff(),
+        );
+        reply(&response)
     }
 
     pub(super) fn reply_to_realtime_data_packet(
@@ -80,49 +72,45 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RealtimeData) {
-            Some(_) => {
-                let payloads = self
-                    .all_data_payloads
-                    .with_base_battery_voltage(BatteryVoltage::new(
-                        telemetry.input_voltage().voltage(),
-                    ))
-                    .with_mode2_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
-                        telemetry.mosfet_temperature(),
-                        telemetry.motor_temperature(),
-                    ));
-                // Float Out Boy's main loop updates `d->time.now` before app-data reads it
-                // in `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1931`.
-                let system_timestamp = now();
-                let base = payloads.base();
-                let header = FloatOutBoyRealtimeDataHeader::new(
-                    system_timestamp,
-                    base.status().ride_state(),
-                    base.footpad().state(),
-                    base.status().beep_reason(),
-                )
-                .with_fatal_error(if self.alert_tracker.fatal_error() {
-                    crate::domain::FloatOutBoyFatalErrorState::Present
-                } else {
-                    crate::domain::FloatOutBoyFatalErrorState::None
-                })
-                .with_data_recorder(self.data_recorder.flags());
-                let tail = FloatOutBoyRealtimeTail::new(
-                    self.alert_tracker.firmware_fault_active(),
-                    self.alert_tracker.firmware_fault_code(),
-                );
-                let response = encode_float_out_boy_realtime_data_response_with_runtime(
-                    &payloads,
-                    header,
-                    tail,
-                    self.remote_control.input(),
-                    self.ride_modifiers.atr_accel_diff(),
-                    self.ride_modifiers.atr_speed_boost(),
-                );
-                reply(response.as_bytes())
-            }
-            None => false,
-        }
+        let Some(_) = float_out_boy_command_payload(bytes, Command::RealtimeData) else {
+            return false;
+        };
+        let payloads = self
+            .all_data_payloads
+            .with_base_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
+            .with_mode2_temperatures(FloatOutBoyRealtimeMotorTemperatures::new(
+                telemetry.mosfet_temperature(),
+                telemetry.motor_temperature(),
+            ));
+        // Float Out Boy's main loop updates `d->time.now` before app-data reads it
+        // in `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1931`.
+        let base = payloads.base();
+        let fatal = if self.alert_tracker.fatal_error() {
+            FatalError::Present
+        } else {
+            FatalError::None
+        };
+        let header = FloatOutBoyRealtimeDataHeader::new(
+            now(),
+            base.status().ride_state(),
+            base.footpad().state(),
+            base.status().beep_reason(),
+        )
+        .with_fatal_error(fatal)
+        .with_data_recorder(self.data_recorder.flags());
+        let tail = FloatOutBoyRealtimeTail::new(
+            self.alert_tracker.firmware_fault_active(),
+            self.alert_tracker.firmware_fault_code(),
+        );
+        let response = encode_float_out_boy_realtime_data_response_with_runtime(
+            &payloads,
+            header,
+            tail,
+            self.remote_control.input(),
+            self.ride_modifiers.atr_accel_diff(),
+            self.ride_modifiers.atr_speed_boost(),
+        );
+        reply(response.as_bytes())
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

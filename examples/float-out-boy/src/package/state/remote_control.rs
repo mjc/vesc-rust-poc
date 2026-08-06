@@ -1,10 +1,11 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
-use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, MotorCurrent, Rpm, SampleRate, TimestampTicks,
+    AngleDegrees, AngularVelocity, Current, DeciampCurrent, MotorCurrent, Ratio, Rpm, SampleRate,
+    TimestampTicks,
 };
+use vescpkg_rs::{SmoothedAngleSlew, WrappingTimer};
 
 fn zero_motor_current() -> MotorCurrent {
     // C map: `reset_runtime_vars` and the RC-move idle branches clear current
@@ -13,58 +14,15 @@ fn zero_motor_current() -> MotorCurrent {
     MotorCurrent::new(Current::ZERO)
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct RemoteCurrentTarget(i16);
-
-impl RemoteCurrentTarget {
-    const ZERO: Self = Self(0);
-
-    const fn new(deciamps: i16) -> Self {
-        Self(deciamps)
-    }
-
-    #[cfg(test)]
-    const fn deciamps(self) -> i16 {
-        self.0
-    }
-
-    fn motor_current(self) -> MotorCurrent {
-        // C map: `cmd_rc_move` stores packet current as deciamps at
-        // `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` requests amps.
-        MotorCurrent::new(Current::from_amps(f32::from(self.0) * 0.1))
-    }
-
-    const fn is_zero(self) -> bool {
-        // C map: `cmd_rc_move` treats zero target current as the idle step.
-        self.0 == 0
-    }
-
-    const fn exceeds_packet_limit(self) -> bool {
-        // C map: `cmd_rc_move` clamps packet targets above 20 deciamps.
-        self.0 > 80
-    }
-
-    const fn should_halve_mid_move(self) -> bool {
-        // C map: `do_rc_move` halves targets above 2A after 500 steps.
-        self.0 > 20
-    }
-
-    fn halve(&mut self) {
-        // C map: `do_rc_move` halves large RC moves after 500 steps at
-        // `third_party/float-out-boy/src/main.c:281-284`.
-        self.0 /= 2;
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct RemoteMove {
-    target: RemoteCurrentTarget,
+    target: DeciampCurrent,
     duration_steps: u16,
 }
 
 impl RemoteMove {
     const ZERO_CURRENT_STEP: Self = Self {
-        target: RemoteCurrentTarget::ZERO,
+        target: DeciampCurrent::from_deciamps(0),
         duration_steps: 1,
     };
 
@@ -83,23 +41,23 @@ impl RemoteMove {
         };
 
         let target = match direction {
-            0 => RemoteCurrentTarget::new(i16::from(current).saturating_neg()),
-            _ => RemoteCurrentTarget::new(i16::from(current)),
+            0 => DeciampCurrent::from_deciamps(i16::from(current).saturating_neg()),
+            _ => DeciampCurrent::from_deciamps(i16::from(current)),
         };
 
         Self::new(target, time)
     }
 
-    fn new(target: RemoteCurrentTarget, time: u8) -> Self {
+    fn new(target: DeciampCurrent, time: u8) -> Self {
         // C map: `cmd_rc_move` keeps zero requests idle, clamps oversized
         // targets, and stores duration as `time * 100` at
         // `third_party/float-out-boy/src/main.c:1735-1758`.
         match target {
-            target if target.is_zero() => Self::ZERO_CURRENT_STEP,
-            target if target.exceeds_packet_limit() => Self {
+            target if target.as_deciamps() == 0 => Self::ZERO_CURRENT_STEP,
+            target if target.as_deciamps() > 80 => Self {
                 // C map: oversized positive targets are clamped to 20 deciamps
                 // at `third_party/float-out-boy/src/main.c:1753-1757`.
-                target: RemoteCurrentTarget::new(20),
+                target: DeciampCurrent::from_deciamps(20),
                 duration_steps: u16::from(time) * 100,
             },
             target => Self {
@@ -136,12 +94,11 @@ pub(super) fn handle_packet(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RemoteControlState {
     input: crate::domain::FloatOutBoyRealtimeRemoteInput,
-    tilt_ramped_step: AngleDegrees,
-    tilt_setpoint: AngleDegrees,
+    input_tilt: SmoothedAngleSlew,
     current: MotorCurrent,
     steps: u16,
     counter: u16,
-    target: RemoteCurrentTarget,
+    target: DeciampCurrent,
 }
 
 impl Default for RemoteControlState {
@@ -152,18 +109,16 @@ impl Default for RemoteControlState {
             input: crate::domain::FloatOutBoyRealtimeRemoteInput::new(
                 vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
             ),
-            tilt_ramped_step: AngleDegrees::ZERO,
-            tilt_setpoint: AngleDegrees::ZERO,
+            input_tilt: SmoothedAngleSlew::default(),
             current: zero_motor_current(),
             steps: 0,
             counter: 0,
-            target: RemoteCurrentTarget::ZERO,
+            target: DeciampCurrent::from_deciamps(0),
         }
     }
 }
 
 impl RemoteControlState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn set_input(&mut self, input: crate::domain::FloatOutBoyRealtimeRemoteInput) {
         // C map: `remote_input` stores the connected, deadbanded, optionally
         // inverted input at `third_party/float-out-boy/src/remote.c:36-68`.
@@ -175,8 +130,7 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/main.c:239-252`.
         self.current = zero_motor_current();
         self.steps = 0;
-        self.tilt_ramped_step = AngleDegrees::ZERO;
-        self.tilt_setpoint = AngleDegrees::ZERO;
+        self.input_tilt = SmoothedAngleSlew::default();
     }
 
     pub(super) fn update_input_tilt(
@@ -191,35 +145,16 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/remote.c:30-34,70-94`.
         sample_rate
             .sample_period()
-            .map_or(self.tilt_setpoint, |period| {
-                let step = AngleDegrees::from(speed * period).as_degrees();
+            .map_or(self.input_tilt.setpoint(), |period| {
+                let step = AngleDegrees::from(speed * period);
                 let direction = if darkride { -1.0 } else { 1.0 };
-                let target = self.input.ratio().as_ratio() * angle_limit.as_degrees() * direction;
-                let setpoint = self.tilt_setpoint.as_degrees();
-                let target_diff = target - setpoint;
-                if target_diff.abs() < 2.0 {
-                    self.tilt_ramped_step = AngleDegrees::from_degrees(
-                        0.02 * step * target_diff / 2.0 + 0.98 * self.tilt_ramped_step.as_degrees(),
-                    );
-                    let centering_step = self
-                        .tilt_ramped_step
-                        .as_degrees()
-                        .abs()
-                        .min((target_diff / 2.0).abs() * step)
-                        * target_diff.signum();
-                    self.tilt_setpoint = if target_diff.abs() < centering_step.abs() {
-                        AngleDegrees::from_degrees(target)
-                    } else {
-                        AngleDegrees::from_degrees(setpoint + centering_step)
-                    };
-                } else {
-                    self.tilt_ramped_step = AngleDegrees::from_degrees(
-                        0.02 * step * target_diff.signum()
-                            + 0.98 * self.tilt_ramped_step.as_degrees(),
-                    );
-                    self.tilt_setpoint = self.tilt_setpoint + self.tilt_ramped_step;
-                }
-                self.tilt_setpoint
+                let target = angle_limit * (self.input.ratio().as_ratio() * direction);
+                self.input_tilt.advance(
+                    target,
+                    step,
+                    Ratio::from_ratio_const(0.02),
+                    AngleDegrees::from_degrees(2.0),
+                )
             })
     }
 
@@ -236,7 +171,7 @@ impl RemoteControlState {
         self.target = remote_move.target;
         self.steps = remote_move.duration_steps;
 
-        if self.target.is_zero() {
+        if self.target.as_deciamps() == 0 {
             self.current = zero_motor_current();
         }
     }
@@ -267,14 +202,14 @@ impl RemoteControlState {
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where active RC move steps
         // filter/request `rc_current` at `third_party/float-out-boy/src/main.c:276-286`.
-        self.filter_current(self.target.motor_current());
+        self.filter_current(MotorCurrent::new(self.target.as_current()));
         if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
             self.current = zero_motor_current();
         }
         self.steps = self.steps.saturating_sub(1);
         self.counter = self.counter.saturating_add(1);
-        if self.counter == 500 && self.target.should_halve_mid_move() {
-            self.target.halve();
+        if self.counter == 500 && self.target.as_deciamps() > 20 {
+            self.target = DeciampCurrent::from_deciamps(self.target.as_deciamps() / 2);
         }
         Some(self.current)
     }
@@ -323,7 +258,7 @@ impl RemoteControlState {
 
     #[cfg(test)]
     pub(super) const fn target_deciamps_for_test(self) -> i16 {
-        self.target.deciamps()
+        self.target.as_deciamps()
     }
 
     #[cfg(test)]

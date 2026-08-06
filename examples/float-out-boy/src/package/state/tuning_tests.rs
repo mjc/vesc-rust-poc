@@ -310,7 +310,8 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
     ));
 
     let mut expected_balance_filter = balance_filter_before_tune;
-    expected_balance_filter.configure_from(state.serialized_config.filter());
+    let filter = state.serialized_config.filter();
+    expected_balance_filter.configure(filter.mahony_kp(), filter.mahony_kp_roll());
     assert_eq!(state.balance_filter, expected_balance_filter);
 
     let bytes = state.serialized_config.as_bytes();

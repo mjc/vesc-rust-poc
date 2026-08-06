@@ -2,33 +2,25 @@
 //!
 //! This module owns Float Out Boy-specific BMS extension behavior.
 
-#[cfg(any(test, target_arch = "arm"))]
 use crate::package::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::LispArgs;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::LispValue;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::{VescSeconds, Voltage};
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub(crate) struct FloatOutBoyBmsTemperature(i32);
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsTemperature {
     pub(crate) const fn from_degrees_celsius(degrees_celsius: i32) -> Self {
         Self(degrees_celsius)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn from_config_byte(encoded: u8) -> Self {
         Self(i32::from(i8::from_be_bytes([encoded])))
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 vescpkg_rs::typed_fields! {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub(crate) struct FloatOutBoyBmsSample {
@@ -41,14 +33,12 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl Default for FloatOutBoyBmsSample {
     fn default() -> Self {
         Self::source_startup()
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsSample {
     pub(crate) const fn source_startup() -> Self {
         Self::new(
@@ -61,7 +51,6 @@ impl FloatOutBoyBmsSample {
         )
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn try_new(
         cell_low_voltage: f32,
         cell_high_voltage: f32,
@@ -85,7 +74,6 @@ impl FloatOutBoyBmsSample {
             })
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn from_lisp_args(args: &LispArgs<'_>) -> Option<Self> {
         (args.len() > 5).then_some(())?;
         Self::try_new(
@@ -99,7 +87,6 @@ impl FloatOutBoyBmsSample {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 vescpkg_rs::typed_fields! {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub(crate) struct FloatOutBoyBmsThresholds {
@@ -112,7 +99,6 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 bitflags::bitflags! {
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct FloatOutBoyBmsFaults: u8 {
@@ -126,7 +112,6 @@ bitflags::bitflags! {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsFaults {
     pub(crate) fn evaluate(
         enabled: bool,
@@ -176,10 +161,8 @@ impl FloatOutBoyBmsFaults {
 ///
 /// Upstream returns `d->float_conf.bms.enabled` at
 /// `third_party/float-out-boy/src/main.c:2319-2331`.
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) struct ExtBms;
 
-#[cfg(any(test, target_arch = "arm"))]
 impl vescpkg_rs::StatefulLbmExtension for ExtBms {
     type State = FloatOutBoyPackageState;
 

@@ -50,33 +50,6 @@ fn darkride_erpm_stop_events_map_to_float_out_boy_reverse_stop() {
 }
 
 #[test]
-fn state_transition_action_selects_stop_engage_or_preserve() {
-    let stop_input = FloatOutBoyStateTransitionInput {
-        state_engage: true,
-        stop_event: Some(FloatOutBoyStopEvent::QuickStop),
-        ..transition_input(running_normal())
-    };
-    let engage_input = FloatOutBoyStateTransitionInput {
-        state_engage: true,
-        ..transition_input(running_normal())
-    };
-    let preserve_input = transition_input(running_normal());
-
-    assert_eq!(
-        FloatOutBoyStateTransitionAction::select(&stop_input),
-        FloatOutBoyStateTransitionAction::Stop(FloatOutBoyStopEvent::QuickStop)
-    );
-    assert_eq!(
-        FloatOutBoyStateTransitionAction::select(&engage_input),
-        FloatOutBoyStateTransitionAction::Engage
-    );
-    assert_eq!(
-        FloatOutBoyStateTransitionAction::select(&preserve_input),
-        FloatOutBoyStateTransitionAction::Preserve
-    );
-}
-
-#[test]
 fn state_transition_stop_wins_over_engage_like_float_out_boy_state_stop() {
     let previous = running_normal().with_wheelslip(FloatOutBoyWheelSlipState::Detected);
     let output = float_out_boy_state_transition(FloatOutBoyStateTransitionInput {

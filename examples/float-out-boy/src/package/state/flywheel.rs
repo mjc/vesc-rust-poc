@@ -1,23 +1,16 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::{
     FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyRunState,
     float_out_boy_command_payload,
 };
 use super::{FloatOutBoyMode, FloatOutBoyPackageState, LoopConfig};
 use crate::config::FloatOutBoyFlywheelConfig;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::WireByte;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AngleCurrentGain, RateCurrentGain};
 use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Ratio};
 
-#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_COMMAND_ARMED: u8 = 0x80;
-#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_COMMAND_MASK: u8 = 0x7f;
-#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_RECALIBRATE: u8 = 2;
-#[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_RELAX_ROLL: u8 = 4;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -27,12 +20,10 @@ pub(super) struct FloatOutBoyFlywheelOffsets {
 }
 
 impl FloatOutBoyFlywheelOffsets {
-    #[cfg(any(test, target_arch = "arm"))]
     fn calibrated(pitch: AngleDegrees, roll: AngleDegrees) -> Self {
         Self { pitch, roll }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn needs_calibration(self) -> bool {
         self.pitch.is_zero()
     }
@@ -77,21 +68,18 @@ impl FloatOutBoyFlywheelRuntime {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyFlywheelStart {
     recalibrate: bool,
     config: FloatOutBoyFlywheelConfig,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FloatOutBoyFlywheelRequest {
     Stop,
     Start(FloatOutBoyFlywheelStart),
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyFlywheelRequest {
     fn from_packet(bytes: &[u8]) -> Option<Self> {
         let [
@@ -176,7 +164,6 @@ impl FloatOutBoyFlywheelRequest {
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn prepare_flywheel_packet(&mut self, bytes: &[u8]) -> Option<bool> {
         FloatOutBoyFlywheelRequest::from_packet(bytes).map(|request| request.apply_to(self))
     }
@@ -198,7 +185,6 @@ impl FloatOutBoyPackageState {
         true
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn accept_flywheel_calibration(&mut self, recalibrate: bool) -> Option<bool> {
         if self.flywheel.offsets.needs_calibration() || recalibrate {
             let attitude = self.all_data_payloads.base().attitude();
@@ -222,7 +208,6 @@ impl FloatOutBoyPackageState {
         None
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn start_flywheel(&mut self, start: FloatOutBoyFlywheelStart) -> bool {
         self.set_ride_mode(FloatOutBoyMode::Flywheel);
         if let Some(restore) = self.accept_flywheel_calibration(start.recalibrate) {
@@ -250,7 +235,6 @@ impl FloatOutBoyPackageState {
         self.flywheel.abort = false;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn commit_flywheel_restore(
         &mut self,
         loaded: &super::FloatOutBoyPersistedConfig,

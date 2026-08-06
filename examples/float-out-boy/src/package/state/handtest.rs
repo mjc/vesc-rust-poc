@@ -1,30 +1,23 @@
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use super::float_out_boy_command_payload;
-#[cfg(any(test, target_arch = "arm"))]
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyMode, FloatOutBoyRideState,
+    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyMode, FloatOutBoyRideState,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct FloatOutBoyHandtestSafetyConfig(FloatOutBoyConfigImage);
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestSafetyConfig {
     fn from_config(mut config: FloatOutBoyConfigImage) -> Option<Self> {
         // C map: `cmd_handtest` applies temporary safety overrides only in
         // `third_party/float-out-boy/src/main.c:1431-1446`.
-        if config.editor().apply_handtest_safety_overrides() {
-            Some(Self(config))
-        } else {
-            None
-        }
+        config
+            .editor()
+            .apply_handtest_safety_overrides()
+            .then_some(Self(config))
     }
 
     const fn into_image(self) -> FloatOutBoyConfigImage {
@@ -32,14 +25,12 @@ impl FloatOutBoyHandtestSafetyConfig {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyHandtestRequest {
     Enable,
     Disable,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyHandtestRequest {
     fn from_packet(bytes: &[u8]) -> Option<Self> {
         // C map: `COMMAND_HANDTEST` uses the first payload byte as the on/off
@@ -88,23 +79,6 @@ impl FloatOutBoyHandtestRequest {
     }
 }
 
-fn float_out_boy_ride_state_with_mode(
-    ride_state: FloatOutBoyRideState,
-    mode: FloatOutBoyMode,
-) -> FloatOutBoyRideState {
-    // C map: `cmd_handtest` writes only the mode field at
-    // `third_party/float-out-boy/src/main.c:1430`.
-    FloatOutBoyRideState::new(
-        ride_state.run_state(),
-        mode,
-        ride_state.setpoint_adjustment(),
-        ride_state.stop_condition(),
-    )
-    .with_charging(ride_state.charging())
-    .with_wheelslip(ride_state.wheelslip())
-    .with_darkride(ride_state.darkride())
-}
-
 fn float_out_boy_payloads_with_ride_state(
     payloads: FloatOutBoyAllDataPayloads,
     ride_state: FloatOutBoyRideState,
@@ -113,21 +87,13 @@ fn float_out_boy_payloads_with_ride_state(
     // swapping only mode at `third_party/float-out-boy/src/main.c:1430-1449`.
     let base = payloads.base();
     let status = base.status();
-    let base = FloatOutBoyAllDataBasePayload::new(
-        base.balance_current(),
-        base.attitude(),
-        FloatOutBoyAllDataStatus::new(ride_state, status.beep_reason()),
-        base.footpad(),
-        base.setpoints(),
-        base.booster_current(),
-        base.motor(),
-    );
-
-    FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())
+    payloads.with_base(base.with_status(FloatOutBoyAllDataStatus::new(
+        ride_state,
+        status.beep_reason(),
+    )))
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
@@ -160,13 +126,10 @@ impl FloatOutBoyPackageState {
         // preserve the rest of the packed Rust ride state while swapping mode.
         let payloads = self.all_data_payloads;
         let ride_state = payloads.base().status().ride_state();
-        self.all_data_payloads = float_out_boy_payloads_with_ride_state(
-            payloads,
-            float_out_boy_ride_state_with_mode(ride_state, mode),
-        );
+        self.all_data_payloads =
+            float_out_boy_payloads_with_ride_state(payloads, ride_state.with_mode(mode));
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn apply_handtest_safety_config(&mut self) {
         // C map: enabling HANDTEST applies temporary safety overrides at
@@ -176,7 +139,6 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn commit_handtest_restore(
         &mut self,
         loaded: &super::FloatOutBoyPersistedConfig,
@@ -193,7 +155,6 @@ impl FloatOutBoyPackageState {
         true
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn handtest_safety_config(config: &FloatOutBoyConfigImage) -> Option<FloatOutBoyConfigImage> {
         // Float Out Boy C applies temporary HANDTEST safety config at
         // `third_party/float-out-boy/src/main.c:1431-1446` and restores from EEPROM on off at

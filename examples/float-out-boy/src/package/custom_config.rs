@@ -137,7 +137,7 @@ fn runtime_float_out_boy_config_xml() -> ConfigXml<'static> {
     ConfigXml::new(&FLOAT_OUT_BOY_CONFIG_XML)
 }
 
-#[cfg(any(test, not(target_arch = "arm")))]
+#[cfg(test)]
 fn runtime_float_out_boy_config_xml() -> ConfigXml<'static> {
     ConfigXml::new(&FLOAT_OUT_BOY_CONFIG_XML)
 }

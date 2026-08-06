@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
+use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::package::test_support::sample_all_data_payloads;
 use std::vec::Vec;
 use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultId};

@@ -3,11 +3,18 @@
 use core::ops::{Div, Mul};
 
 use crate::battery::Energy;
-use crate::scalar_unit;
 use crate::time::{SystemTicks, system_ticks_as_secs_f32};
+use crate::{scalar_int_unit, scalar_unit};
 
 scalar_unit!(Voltage, from_volts, as_volts, "volts");
 scalar_unit!(Current, from_amps, as_amps, "amps");
+scalar_int_unit!(
+    DeciampCurrent,
+    from_deciamps,
+    as_deciamps,
+    i16,
+    "tenths of an amp"
+);
 scalar_unit!(Power, from_watts, as_watts, "watts");
 scalar_unit!(Resistance, from_ohms, as_ohms, "ohms");
 scalar_unit!(Inductance, from_henries, as_henries, "henries");
@@ -18,6 +25,14 @@ scalar_unit!(
     as_microteslas,
     "microteslas"
 );
+
+impl DeciampCurrent {
+    /// Convert the signed fixed-point value to current in amps.
+    #[must_use]
+    pub fn as_current(self) -> Current {
+        Current::from_amps(f32::from(self.as_deciamps()) * 0.1)
+    }
+}
 
 /// Positive number of series-connected battery cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

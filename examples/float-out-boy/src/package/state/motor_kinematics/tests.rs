@@ -1,4 +1,4 @@
-use super::{MotorKinematicsTracker, WINDOW_U8};
+use super::{ABS_ERPM_SMOOTHING, MotorKinematicsTracker, WINDOW_U8};
 use vescpkg_rs::prelude::Rpm;
 
 #[test]
@@ -11,16 +11,19 @@ fn record_matches_float_out_boy_rolling_erpm_delta_average() {
     let mut tracker = MotorKinematicsTracker::default();
 
     for step in 1..=WINDOW_U8 {
-        tracker.record(Rpm::from_revolutions_per_minute(f32::from(step) * 10.0));
+        tracker.record(
+            Rpm::from_revolutions_per_minute(f32::from(step) * 10.0),
+            ABS_ERPM_SMOOTHING,
+        );
     }
 
     assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
-    tracker.record(Rpm::from_revolutions_per_minute(410.0));
+    tracker.record(Rpm::from_revolutions_per_minute(410.0), ABS_ERPM_SMOOTHING);
 
     assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 10.0);
 
-    tracker.record(Rpm::from_revolutions_per_minute(450.0));
+    tracker.record(Rpm::from_revolutions_per_minute(450.0), ABS_ERPM_SMOOTHING);
 
     // Float Out Boy replaces the oldest 10 ERPM sample with the current 40 ERPM sample:
     // `10 + (40 - 10) / ACCEL_ARRAY_SIZE`.
@@ -31,7 +34,10 @@ fn record_matches_float_out_boy_rolling_erpm_delta_average() {
 fn record_matches_float_out_boy_absolute_erpm_smoothing() {
     let mut tracker = MotorKinematicsTracker::default();
 
-    tracker.record(Rpm::from_revolutions_per_minute(-1_000.0));
+    tracker.record(
+        Rpm::from_revolutions_per_minute(-1_000.0),
+        ABS_ERPM_SMOOTHING,
+    );
 
     assert_eq!(
         tracker.smoothed_abs_erpm(),

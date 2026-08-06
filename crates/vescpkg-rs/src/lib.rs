@@ -235,9 +235,11 @@ pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
     FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage, RingCursor,
 };
+pub use vesc_protocol::app_data as protocol_app_data;
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vesc_protocol::{
-    const_field_builders, const_field_getters, typed_fields, typed_newtype, wire_enum,
+    const_field_builders, const_field_getters, const_forward_getters, typed_field_groups,
+    typed_fields, typed_newtype, typed_newtypes, wire_enum,
 };
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
@@ -271,7 +273,12 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
-pub use numeric::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
+#[cfg(feature = "math")]
+pub use numeric::BiquadLowPass;
+pub use numeric::{
+    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+    angle_step, slew_toward,
+};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.
@@ -281,7 +288,7 @@ pub use numeric::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
 pub mod __macro_support;
 
 #[cfg(feature = "math")]
-pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
+pub use ahrs::{Ahrs, AhrsParameterError, AxisMahony, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
@@ -356,10 +363,10 @@ pub mod prelude {
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
-        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
-        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+        Current, DeciampCurrent, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+        OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+        SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     #[cfg(feature = "math")]
     pub use crate::{Ahrs, Madgwick};

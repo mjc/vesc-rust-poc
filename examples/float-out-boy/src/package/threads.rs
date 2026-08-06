@@ -3,29 +3,20 @@
 //! Source oracle: Float Out Boy v1.2.1 `third_party/float-out-boy/src/main.c:2439-2449`
 //! spawns the main and aux threads after loader metadata setup and before the registration tail.
 
-#[cfg(any(test, target_arch = "arm"))]
 use super::state::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use core::time::Duration;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::ThreadWorkingAreaSize;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
 #[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
-#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::{AnalogPin, DigitalPin};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
 
-#[cfg(any(test, target_arch = "arm"))]
 // C map: `LEDS_REFRESH_RATE` is `30` at `third_party/float-out-boy/src/leds.h:26`;
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
 const FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ: u32 = 30;
-#[cfg(any(test, target_arch = "arm"))]
 const FLOAT_OUT_BOY_AUX_LOOP_TIME_US: u32 = 1_000_000 / FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ;
 
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::AdcVoltage;
-#[cfg(any(test, target_arch = "arm"))]
 const fn float_out_boy_working_area()
 -> Result<ThreadWorkingAreaSize, vescpkg_rs::ThreadWorkingAreaSizeError> {
     ThreadWorkingAreaSize::try_from_bytes(3072)
@@ -79,21 +70,18 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyMainThreadTick {
     pub(crate) sleep_us: u32,
     pub(crate) beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Clone, Copy)]
 struct FloatOutBoyMainThreadPrepare {
     alert_level: Option<crate::beeper::FloatOutBoyBeeperLevel>,
     restore_flywheel_config: bool,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn prepare_float_out_boy_main_thread_tick(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -123,7 +111,6 @@ fn prepare_float_out_boy_main_thread_tick(
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn finish_float_out_boy_main_thread_tick(
     state: &mut FloatOutBoyPackageState,
     motor: &impl MotorOutput,
@@ -208,7 +195,6 @@ pub(crate) fn run_float_out_boy_aux_thread_with(threads: &impl FirmwareThreads) 
 /// `aux_thd` renders LEDs, conditionally stores the backup, then refreshes motor
 /// configuration after a strict half-second interval at
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn tick_float_out_boy_aux_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -238,7 +224,6 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
 /// Upstream performs this between loader metadata setup
 /// (third_party/float-out-boy/src/main.c:2431-2432) and callback registration
 /// (third_party/float-out-boy/src/main.c:2455-2459).
-#[cfg(any(test, target_arch = "arm"))]
 fn initialize_float_out_boy_runtime_state(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -251,22 +236,17 @@ fn initialize_float_out_boy_runtime_state(
 }
 
 #[cfg(all(not(test), target_arch = "arm"))]
-fn read_float_out_boy_footpad(gpio: &vescpkg_rs::Gpio, pin: AnalogPin) -> AdcVoltage {
-    gpio.acquire_analog(pin)
-        .ok()
-        .and_then(|pin| {
-            pin.set_mode(GpioMode::Analog)
-                .ok()
-                .and_then(|()| pin.read().ok().flatten())
-        })
-        .unwrap_or_else(|| AdcVoltage::new(vescpkg_rs::Voltage::ZERO))
-}
-
-#[cfg(all(not(test), target_arch = "arm"))]
 fn read_float_out_boy_footpads(gpio: &vescpkg_rs::Gpio) -> (AdcVoltage, AdcVoltage) {
+    let zero = AdcVoltage::new(vescpkg_rs::Voltage::ZERO);
     (
-        read_float_out_boy_footpad(gpio, AnalogPin::ADC1),
-        read_float_out_boy_footpad(gpio, AnalogPin::ADC2),
+        gpio.sample_analog(AnalogPin::ADC1)
+            .ok()
+            .flatten()
+            .unwrap_or(zero),
+        gpio.sample_analog(AnalogPin::ADC2)
+            .ok()
+            .flatten()
+            .unwrap_or(zero),
     )
 }
 
@@ -360,10 +340,7 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             });
             let sleep_us = tick.map_or(1, |tick| {
                 if let Some(level) = tick.beeper_pin_level {
-                    if let Ok(pin) = ctx.firmware().gpio().acquire_digital(DigitalPin::PPM) {
-                        let _ = pin.set_mode(GpioMode::Output);
-                        let _ = pin.write(level);
-                    }
+                    let _ = ctx.firmware().gpio().write_digital(DigitalPin::PPM, level);
                 }
                 tick.sleep_us
             });

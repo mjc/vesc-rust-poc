@@ -196,7 +196,7 @@ fn startup_balance_filter_uses_firmware_orientation_like_float_out_boy_data_init
         ),
     ));
 
-    assert!((state.balance_filter.balance_pitch().angle().as_radians() - 0.2).abs() < 1.0e-5);
+    assert!((state.balance_filter.pitch().as_radians() - 0.2).abs() < 1.0e-5);
 }
 
 #[test]
@@ -1211,7 +1211,9 @@ fn set_protective_ride_state(
 
 fn settle_motor_acceleration(state: &mut FloatOutBoyPackageState, motor_erpm: Rpm) {
     for _ in 0..40 {
-        state.motor_kinematics.record(motor_erpm);
+        state
+            .motor_kinematics
+            .record(motor_erpm, super::motor_kinematics::ABS_ERPM_SMOOTHING);
     }
 }
 

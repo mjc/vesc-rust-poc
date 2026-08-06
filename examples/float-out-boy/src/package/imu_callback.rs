@@ -1,12 +1,8 @@
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 use vescpkg_rs::ImuReadSample;
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 struct FloatOutBoyImuRead;
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 impl vescpkg_rs::ImuReadHandler for FloatOutBoyImuRead {
     type State = FloatOutBoyPackageState;
 
@@ -17,7 +13,6 @@ impl vescpkg_rs::ImuReadHandler for FloatOutBoyImuRead {
     }
 }
 
-#[cfg(any(test, all(not(test), target_arch = "arm")))]
 vescpkg_rs::firmware_imu_read_callback!(float_out_boy_imu_read_callback, FloatOutBoyImuRead);
 
 #[cfg(test)]

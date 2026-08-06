@@ -53,9 +53,7 @@ fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LcmState {
     hardware_mode: u8,
-    brightness: u8,
-    brightness_idle: u8,
-    status_brightness: u8,
+    brightness: [u8; 3],
     lights_off_when_lifted: bool,
     name: [u8; MAX_LCM_NAME_LENGTH],
     payload: [u8; MAX_LCM_PAYLOAD_LENGTH],
@@ -78,9 +76,7 @@ impl LcmState {
     pub(super) fn new(hardware_mode: u8, lights_off_when_lifted: bool) -> Self {
         Self {
             hardware_mode,
-            brightness: 0,
-            brightness_idle: 0,
-            status_brightness: 0,
+            brightness: [0; 3],
             lights_off_when_lifted,
             name: [0; MAX_LCM_NAME_LENGTH],
             payload: [0; MAX_LCM_PAYLOAD_LENGTH],
@@ -102,11 +98,7 @@ impl LcmState {
             return;
         }
 
-        [
-            self.brightness,
-            self.brightness_idle,
-            self.status_brightness,
-        ] = configured_brightness(config);
+        self.brightness = configured_brightness(config);
         self.lights_off_when_lifted = config.lifted.lights_off;
     }
 
@@ -130,9 +122,7 @@ impl LcmState {
             return;
         }
 
-        self.brightness = payload[0];
-        self.brightness_idle = payload[1];
-        self.status_brightness = payload[2];
+        self.brightness.copy_from_slice(&payload[..3]);
         let extra = &payload[3..];
         self.payload_size = extra.len().min(MAX_LCM_PAYLOAD_LENGTH);
         self.payload[..self.payload_size].copy_from_slice(&extra[..self.payload_size]);
@@ -176,9 +166,7 @@ impl LcmState {
         );
         packet.push_scaled_i16(telemetry.battery_current().current().as_amps(), 1.0);
         packet.push_scaled_i16(telemetry.input_voltage().voltage().as_volts(), 10.0);
-        packet.push(self.brightness);
-        packet.push(self.brightness_idle);
-        packet.push(self.status_brightness);
+        packet.extend(&self.brightness);
         packet.extend(&self.payload[..self.payload_size]);
         self.payload_size = 0;
         packet
@@ -188,9 +176,7 @@ impl LcmState {
         let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmLightInfo);
         if self.enabled() {
             packet.push(3);
-            packet.push(self.brightness);
-            packet.push(self.brightness_idle);
-            packet.push(self.status_brightness);
+            packet.extend(&self.brightness);
             // Refloat's Float-specific LED fields are intentionally not sent
             // through this LCM interface.
             for _ in 0..6 {
@@ -240,13 +226,10 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         use FloatOutBoyAppDataCommand as Command;
 
-        let [package_id, command_id, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return false;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command_id) else {
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
             return false;
         };
 

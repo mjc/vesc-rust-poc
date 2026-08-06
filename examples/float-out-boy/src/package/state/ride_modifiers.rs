@@ -3,8 +3,8 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
-use vescpkg_rs::SmoothAngle;
 use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, Rpm, SampleRate};
+use vescpkg_rs::{SmoothAngle, WrappedAngleMotion};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct AtrState {
@@ -14,16 +14,9 @@ struct AtrState {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-struct YawMotion {
-    last: AngleDegrees,
-    change: AngleDegrees,
-    aggregate: AngleDegrees,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct TurnTiltState {
     angle: SmoothAngle,
-    yaw: YawMotion,
+    yaw: WrappedAngleMotion,
 }
 
 fn same_source_sign(lhs: AngleDegrees, rhs: AngleDegrees) -> bool {
@@ -31,17 +24,6 @@ fn same_source_sign(lhs: AngleDegrees, rhs: AngleDegrees) -> bool {
     // positive and negative IEEE-754 zero therefore belong to the positive
     // branch. Using the unit type keeps that C compatibility rule explicit.
     lhs.is_negative() == rhs.is_negative()
-}
-
-fn wrapped_yaw_delta(yaw: AngleDegrees, previous: AngleDegrees) -> AngleDegrees {
-    let change = yaw - previous;
-    if change < AngleDegrees::from_degrees(-180.0) {
-        change + AngleDegrees::from_degrees(360.0)
-    } else if change > AngleDegrees::from_degrees(180.0) {
-        change - AngleDegrees::from_degrees(360.0)
-    } else {
-        change
-    }
 }
 
 fn combine_torque_offsets(ab: AngleDegrees, torque: AngleDegrees) -> AngleDegrees {
@@ -167,12 +149,13 @@ fn turn_target(
 ) -> AngleDegrees {
     let abs_erpm = erpm.abs().as_revolutions_per_minute();
     let mut target = if config.turn_tilt_strength().value() == 0.0
-        || state.yaw.aggregate.abs() < config.turn_tilt_start_angle()
-        || state.yaw.abs_change() < AngleDegrees::from_degrees(0.04)
+        || state.yaw.aggregate().abs() < config.turn_tilt_start_angle()
+        || state.yaw.change().abs() < AngleDegrees::from_degrees(0.04)
     {
         0.0
     } else {
-        let mut target = state.yaw.abs_change().as_degrees() * config.turn_tilt_strength().value();
+        let mut target =
+            state.yaw.change().abs().as_degrees() * config.turn_tilt_strength().value();
         let boost = if abs_erpm
             < config
                 .turn_tilt_erpm_boost_end()
@@ -189,7 +172,7 @@ fn turn_target(
         target *= boost;
         let damper = if abs_erpm < 2_000.0 { 0.5 } else { 1.0 };
         target *= (1.0
-            + damper * state.yaw.aggregate.abs().as_degrees()
+            + damper * state.yaw.aggregate().abs().as_degrees()
                 / config.turn_tilt_yaw_aggregate().as_degrees())
         .min(2.0);
         target.clamp(
@@ -208,28 +191,6 @@ fn turn_target(
         target *= erpm.signum();
     }
     AngleDegrees::from_degrees(target)
-}
-
-impl YawMotion {
-    fn observe(&mut self, yaw: AngleDegrees) {
-        // C map: yaw filtering and aggregation run before the state switch at
-        // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
-        // `third_party/float-out-boy/src/main.c:800`.
-        let change = wrapped_yaw_delta(yaw, self.last);
-        self.last = yaw;
-        let limited = AngleDegrees::from_degrees(change.as_degrees().clamp(-0.10, 0.10));
-        self.change = self.change * 0.8 + limited * 0.2;
-        if !same_source_sign(self.change, self.aggregate) {
-            self.aggregate = AngleDegrees::ZERO;
-        }
-        if self.abs_change() > AngleDegrees::from_degrees(0.04) {
-            self.aggregate = self.aggregate + self.change;
-        }
-    }
-
-    fn abs_change(self) -> AngleDegrees {
-        self.change.abs()
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -260,7 +221,15 @@ impl RideModifierState {
     }
 
     pub(super) fn aggregate_yaw(&mut self, yaw: AngleDegrees) {
-        self.turn.yaw.observe(yaw);
+        // C map: yaw filtering and aggregation run before the state switch at
+        // `third_party/float-out-boy/src/turn_tilt.c:45-72` and
+        // `third_party/float-out-boy/src/main.c:800`.
+        self.turn.yaw.observe(
+            yaw,
+            AngleDegrees::from_degrees(0.10),
+            vescpkg_rs::Ratio::from_ratio_const(0.2),
+            AngleDegrees::from_degrees(0.04),
+        );
     }
 
     pub(super) fn advance(

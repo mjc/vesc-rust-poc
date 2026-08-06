@@ -96,124 +96,6 @@ pub(crate) struct FloatOutBoyStateTransitionOutput {
     pub(crate) state_engaged: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FloatOutBoyStateTransitionAction {
-    Stop(FloatOutBoyStopEvent),
-    Engage,
-    Preserve,
-}
-
-impl FloatOutBoyStateTransitionAction {
-    #[inline]
-    fn select(input: &FloatOutBoyStateTransitionInput) -> Self {
-        // C map: upstream evaluates stop checks before READY engage, and
-        // then preserves state only when no stop and no engage path fires at
-        // `third_party/float-out-boy/src/main.c:357-509` and
-        // `third_party/float-out-boy/src/main.c:957-1067`.
-        match (input.stop_event, input.state_engage) {
-            (Some(event), _) => Self::Stop(event),
-            (None, true) => Self::Engage,
-            (None, false) => Self::Preserve,
-        }
-    }
-
-    #[inline]
-    fn apply(self, input: FloatOutBoyStateTransitionInput) -> FloatOutBoyStateTransitionOutput {
-        let previous = input.previous;
-        // C map: `state_stop` writes READY/stop condition and clears wheelslip at
-        // `third_party/float-out-boy/src/state.c:29-33`; `state_engage` writes RUNNING,
-        // SAT_CENTERING, and STOP_NONE at `third_party/float-out-boy/src/state.c:36-39`.
-        let (
-            run_state,
-            setpoint_adjustment,
-            stop_condition,
-            wheelslip,
-            state_stopped,
-            state_engaged,
-        ) = match self {
-            Self::Stop(event) => (
-                FloatOutBoyRunState::Ready,
-                previous.setpoint_adjustment(),
-                event.stop_condition(),
-                FloatOutBoyWheelSlipState::None,
-                true,
-                false,
-            ),
-            Self::Engage => (
-                FloatOutBoyRunState::Running,
-                FloatOutBoySetpointAdjustment::Centering,
-                FloatOutBoyStopCondition::None,
-                Self::rolling_wheelslip(previous, input.traction_loss_detected),
-                false,
-                true,
-            ),
-            Self::Preserve => (
-                input.run_state,
-                Self::rolling_setpoint_adjustment(previous, input.traction_loss_detected),
-                previous.stop_condition(),
-                Self::rolling_wheelslip(previous, input.traction_loss_detected),
-                false,
-                false,
-            ),
-        };
-
-        FloatOutBoyStateTransitionOutput {
-            ride_state: FloatOutBoyRideState::new(
-                run_state,
-                Self::mode_after_ready_check(input),
-                setpoint_adjustment,
-                stop_condition,
-            )
-            .with_charging(previous.charging())
-            .with_wheelslip(wheelslip)
-            .with_darkride(previous.darkride()),
-            state_stopped,
-            state_engaged,
-        }
-    }
-
-    #[inline]
-    fn rolling_setpoint_adjustment(
-        previous: FloatOutBoyRideState,
-        traction_loss_detected: bool,
-    ) -> FloatOutBoySetpointAdjustment {
-        // Float Out Boy clears `sat` on the same branch that marks wheelslip at
-        // `third_party/float-out-boy/src/main.c:551-562`.
-        if traction_loss_detected {
-            FloatOutBoySetpointAdjustment::None
-        } else {
-            previous.setpoint_adjustment()
-        }
-    }
-
-    #[inline]
-    fn mode_after_ready_check(input: FloatOutBoyStateTransitionInput) -> FloatOutBoyMode {
-        // C map: READY flywheel abort calls `flywheel_stop(d)` before startup checks at
-        // `third_party/float-out-boy/src/main.c:957-963`; `flywheel_stop` returns mode to NORMAL at
-        // `third_party/float-out-boy/src/main.c:1869-1873`.
-        if input.ready_flywheel_stop {
-            FloatOutBoyMode::Normal
-        } else {
-            input.previous.mode()
-        }
-    }
-
-    #[inline]
-    fn rolling_wheelslip(
-        previous: FloatOutBoyRideState,
-        traction_loss_detected: bool,
-    ) -> FloatOutBoyWheelSlipState {
-        // C map: wheelslip is set in the runtime setpoint path at
-        // `third_party/float-out-boy/src/main.c:551-574` and cleared only by
-        // `state_stop` or the later traction-control clear path.
-        if traction_loss_detected {
-            FloatOutBoyWheelSlipState::Detected
-        } else {
-            previous.wheelslip()
-        }
-    }
-}
-
 /// Apply Float Out Boy's run-state writes after fault and engage decisions.
 ///
 /// Source map: `state_stop` sets READY, stop condition, and clears wheelslip at
@@ -225,7 +107,47 @@ impl FloatOutBoyStateTransitionAction {
 pub(crate) fn float_out_boy_state_transition(
     input: FloatOutBoyStateTransitionInput,
 ) -> FloatOutBoyStateTransitionOutput {
-    FloatOutBoyStateTransitionAction::select(&input).apply(input)
+    let previous = input.previous;
+    let rolling_wheelslip = if input.traction_loss_detected {
+        FloatOutBoyWheelSlipState::Detected
+    } else {
+        previous.wheelslip()
+    };
+    let mode = if input.ready_flywheel_stop {
+        FloatOutBoyMode::Normal
+    } else {
+        previous.mode()
+    };
+    let mut ride_state = previous
+        .with_run_state(input.run_state)
+        .with_mode(mode)
+        .with_wheelslip(rolling_wheelslip);
+    // C map: stop checks win over READY engagement at
+    // `third_party/float-out-boy/src/main.c:357-509,957-1067`.
+    let (state_stopped, state_engaged) = if let Some(event) = input.stop_event {
+        ride_state = ride_state
+            .with_run_state(FloatOutBoyRunState::Ready)
+            .with_stop_condition(event.stop_condition())
+            .with_wheelslip(FloatOutBoyWheelSlipState::None);
+        (true, false)
+    } else if input.state_engage {
+        ride_state = ride_state
+            .with_run_state(FloatOutBoyRunState::Running)
+            .with_setpoint_adjustment(FloatOutBoySetpointAdjustment::Centering)
+            .with_stop_condition(FloatOutBoyStopCondition::None);
+        (false, true)
+    } else {
+        if input.traction_loss_detected {
+            ride_state = ride_state.with_setpoint_adjustment(FloatOutBoySetpointAdjustment::None);
+        }
+        (false, false)
+    };
+
+    FloatOutBoyStateTransitionOutput {
+        ride_state,
+        state_stopped,
+        state_engaged,
+    }
 }
 
 #[cfg(test)]
