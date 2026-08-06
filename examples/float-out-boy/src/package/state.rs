@@ -550,7 +550,7 @@ impl FloatOutBoyPackageState {
         self.motor_control.apply(
             motor,
             run_state,
-            self.motor_kinematics.smoothed_abs_erpm(),
+            self.motor_kinematics.0.smoothed_abs_erpm(),
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
             self.serialized_config.motor_control().brake_current(),

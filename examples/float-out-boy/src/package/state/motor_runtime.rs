@@ -1,5 +1,6 @@
 use super::FloatOutBoyPackageState;
 use super::limits::traction_loss;
+use super::motor_kinematics::MOTOR_KINEMATICS_CONFIG;
 use crate::domain::{FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
@@ -110,7 +111,7 @@ pub(super) fn refresh(
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
-    state.motor_kinematics.record(motor_erpm, elapsed);
+    state.motor_kinematics.0.record(motor_erpm, elapsed);
     state.all_data_payloads = payloads
         .with_motor_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
         .with_electrical_speed(electrical_speed)
@@ -142,5 +143,5 @@ pub(super) fn reconfigure_filters(state: &mut FloatOutBoyPackageState, frequency
         frequency,
         CURRENT_FILTER_Q,
     );
-    state.motor_kinematics.configure(frequency);
+    MOTOR_KINEMATICS_CONFIG.configure(&mut state.motor_kinematics.0, frequency);
 }

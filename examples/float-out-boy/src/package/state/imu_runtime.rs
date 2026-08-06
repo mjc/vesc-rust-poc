@@ -516,7 +516,7 @@ fn evaluate_transition_phase(
         && faults.reversestop_enabled()
         && state.reverse_stop.active()
         && !darkride_active;
-    let motor_acceleration = state.motor_kinematics.average();
+    let motor_acceleration = state.motor_kinematics.0.average();
     let traction_loss_detected = stop_event.is_none()
         && !state_engage
         && !ride_state
@@ -1033,7 +1033,7 @@ pub(super) fn refresh(
         state.balance_loop.reset_pid();
         state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
         state.reverse_stop.reset(state.motor_distance_meters);
-        state.motor_kinematics.reset_acceleration();
+        state.motor_kinematics.0.reset_acceleration();
         state.motor_current_filter.reset();
         state.ride_flags.traction_control = false;
         state.remote_control.reset_runtime_vars();
