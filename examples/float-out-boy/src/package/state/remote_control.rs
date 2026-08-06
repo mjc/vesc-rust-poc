@@ -198,16 +198,14 @@ impl RemoteControlState {
         let speed_time_constant =
             VescSeconds::from_seconds(filter_time_constant.as_seconds() * 0.25);
         self.tilt_setpoint.configure(
-            SmoothSetpointConfig {
-                time_constant: filter_time_constant,
-                on_speed_time_constant: speed_time_constant,
-                off_speed_time_constant: speed_time_constant,
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(100.0),
-                off_speed_up: AngularVelocity::from_degrees_per_second(100.0),
-                on_speed_down: AngularVelocity::from_degrees_per_second(100.0),
-                off_speed_down: AngularVelocity::from_degrees_per_second(100.0),
-            },
+            SmoothSetpointConfig::symmetric(
+                filter_time_constant,
+                speed_time_constant,
+                speed_time_constant,
+                VescSeconds::from_seconds(0.2),
+                AngularVelocity::from_degrees_per_second(100.0),
+                AngularVelocity::from_degrees_per_second(100.0),
+            ),
             SampleRate::from_hertz(1.0 / seconds),
         );
         let upright_target = angle_limit * self.input.as_ratio();

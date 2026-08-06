@@ -4,9 +4,10 @@
 //! `third_party/float-out-boy/src/rt_data.h:38-66` and `third_party/float-out-boy/src/main.c:1876-1960`.
 
 use super::{
-    FloatOutBoyAllDataPayloads, FloatOutBoyBeepReason, FloatOutBoyChargingState,
+    FloatOutBoyAllDataPayloads, FloatOutBoyBeepReason, FloatOutBoyChargingState as ChargingState,
     FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
-    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
+    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState as RunState,
+    FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
@@ -351,13 +352,10 @@ impl FloatOutBoyRealtimeDataHeader {
     #[must_use]
     pub const fn data_mask_compat(self) -> u8 {
         flag_if(
-            matches!(self.ride_state.run_state(), FloatOutBoyRunState::Running),
+            matches!(self.ride_state.run_state(), RunState::Running),
             0x1,
         ) | flag_if(
-            matches!(
-                self.ride_state.charging(),
-                FloatOutBoyChargingState::Charging
-            ),
+            matches!(self.ride_state.charging(), ChargingState::Charging),
             0x2,
         ) | 0x4
     }
@@ -374,22 +372,11 @@ impl FloatOutBoyRealtimeDataHeader {
     /// Return the cutoff internal-realtime packed state flags.
     #[must_use]
     pub fn state_flags_compat(self) -> u32 {
-        let charging = match self.ride_state.charging() {
-            FloatOutBoyChargingState::NotCharging => 0,
-            FloatOutBoyChargingState::Charging => 1,
-        };
-        let fatal_error = match self.fatal_error {
-            FloatOutBoyFatalErrorState::None => 0,
-            FloatOutBoyFatalErrorState::Present => 1,
-        };
-        let darkride = match self.ride_state.darkride() {
-            FloatOutBoyDarkRideState::Upright => 0,
-            FloatOutBoyDarkRideState::Active => 1,
-        };
-        let wheelslip = match self.ride_state.wheelslip() {
-            FloatOutBoyWheelSlipState::None => 0,
-            FloatOutBoyWheelSlipState::Detected => 1,
-        };
+        let charging = u32::from(self.ride_state.charging() == ChargingState::Charging);
+        let fatal_error = u32::from(self.fatal_error == FloatOutBoyFatalErrorState::Present);
+        let darkride = u32::from(self.ride_state.darkride() == FloatOutBoyDarkRideState::Active);
+        let wheelslip =
+            u32::from(self.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected);
         u32::from(self.ride_state.mode().id()) << 28
             | u32::from(self.ride_state.run_state().id()) << 24
             | u32::from(self.footpad_state.id()) << 22

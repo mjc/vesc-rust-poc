@@ -11,30 +11,6 @@ use crate::package::FloatOutBoyPackageState;
 
 use vescpkg_rs::{ExtensionDescriptor, FirmwareVersion, LispArgs, LispValue};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FloatOutBoyLoaderExtension {
-    SetFwVersion,
-    Bms,
-}
-
-impl FloatOutBoyLoaderExtension {
-    const ALL: [Self; 2] = [Self::SetFwVersion, Self::Bms];
-
-    fn name(self) -> vescpkg_rs::ExtensionName {
-        match self {
-            Self::SetFwVersion => vescpkg_rs::extension_name!("ext-set-fw-version"),
-            Self::Bms => vescpkg_rs::extension_name!("ext-bms"),
-        }
-    }
-
-    fn descriptor(self) -> ExtensionDescriptor {
-        match self {
-            Self::SetFwVersion => ExtensionDescriptor::stateful::<ExtSetFwVersion>(self.name()),
-            Self::Bms => ExtensionDescriptor::stateful::<ExtBms>(self.name()),
-        }
-    }
-}
-
 /// Called from Float Out Boy's Lisp loader to pass firmware version components.
 ///
 /// Upstream stores these components into `Data` at `third_party/float-out-boy/src/main.c:2305-2311`.
@@ -76,8 +52,13 @@ fn record_float_out_boy_firmware_version(
 }
 
 /// Return the native extension descriptors required by upstream `package.lisp`.
-fn package_extension_descriptors() -> [ExtensionDescriptor; FloatOutBoyLoaderExtension::ALL.len()] {
-    FloatOutBoyLoaderExtension::ALL.map(FloatOutBoyLoaderExtension::descriptor)
+fn package_extension_descriptors() -> [ExtensionDescriptor; 2] {
+    [
+        ExtensionDescriptor::stateful::<ExtSetFwVersion>(vescpkg_rs::extension_name!(
+            "ext-set-fw-version"
+        )),
+        ExtensionDescriptor::stateful::<ExtBms>(vescpkg_rs::extension_name!("ext-bms")),
+    ]
 }
 
 /// Register Float Out Boy's loader extensions with runtime names and handlers.
