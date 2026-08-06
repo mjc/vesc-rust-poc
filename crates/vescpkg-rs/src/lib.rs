@@ -94,6 +94,7 @@ mod advanced_foc;
 mod ahrs;
 mod audio;
 mod bindings;
+mod bms;
 mod capabilities;
 mod data_recorder;
 mod eeprom;
@@ -301,6 +302,7 @@ pub mod __macro_support;
 #[cfg(feature = "math")]
 pub use ahrs::{Ahrs, AhrsParameterError, AxisMahony, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
+pub use bms::{BmsFaults, BmsMonitor, BmsSample, BmsStartupGrace, BmsTemperature, BmsThresholds};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
     FirmwareEffects, MAX_APP_DATA_PAYLOAD_LEN, StatefulCallbackContext,
