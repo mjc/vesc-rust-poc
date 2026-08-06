@@ -376,7 +376,7 @@ impl FirmwareFault {
 }
 
 /// Firmware fault code encoded in the app-data byte format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct FirmwareFaultWireCode(u8);
 
@@ -395,7 +395,7 @@ impl FirmwareFaultWireCode {
 }
 
 /// Positive motor-current limit magnitude.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MotorCurrentLimit(Current);
 

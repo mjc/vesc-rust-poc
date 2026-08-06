@@ -163,7 +163,7 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
             telemetry.telemetry(),
             imu,
             &[
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));

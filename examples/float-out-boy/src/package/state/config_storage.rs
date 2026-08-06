@@ -1,4 +1,4 @@
-use super::{FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyPackageState};
+use super::{FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
 use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigImage};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
@@ -8,8 +8,9 @@ use vescpkg_rs::{FirmwareEffects, TimestampTicks};
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
+    #[default]
     NotAttempted,
     #[cfg(any(test, target_arch = "arm"))]
     Persisted,
@@ -53,8 +54,9 @@ fn log_config_store_result(effects: &FirmwareEffects, stored: bool) {
     log_config_message(effects, message);
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FirmwareImuMigration {
+    #[default]
     Pending,
     NotRequired,
     Applied,
@@ -221,7 +223,7 @@ pub(in crate::package) fn store_persisted_config(
 impl FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn acknowledge_command_config_write(&mut self, now: TimestampTicks) {
-        self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+        self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         #[cfg(any(test, target_arch = "arm"))]
         self.start_internal_led_confirmation(now);
         #[cfg(not(any(test, target_arch = "arm")))]
@@ -311,7 +313,7 @@ impl FloatOutBoyPackageState {
             config.editor().keep_enabled_while_running();
         }
         if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         }
         self.serialized_config = config;
         self.begin_configure_active(now);
@@ -398,14 +400,12 @@ impl FloatOutBoyPackageState {
             .ride_state()
             .run_state();
         let alert = match run_state {
-            FloatOutBoyRunState::Disabled => {
-                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE)
-            }
+            FloatOutBoyRunState::Disabled => FloatOutBoyBeeperAlert::Short(3),
             // Intentional Refloat 1.2.1 bug fix from upstream 37cf343:
             // leave the beeper free for the READY battery-status alert.
             FloatOutBoyRunState::Startup => return,
             FloatOutBoyRunState::Ready | FloatOutBoyRunState::Running => {
-                FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE)
+                FloatOutBoyBeeperAlert::Short(1)
             }
         };
         self.alert_beeper(alert);
@@ -419,7 +419,7 @@ impl FloatOutBoyPackageState {
         let [package_id, command, ..] = bytes else {
             return false;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return false;
         }
         let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {
@@ -473,7 +473,7 @@ impl FloatOutBoyPackageState {
             store_persisted_config(effects, &config)
         });
         if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
         }
         self.replace_active_config(&config);
         let migration =

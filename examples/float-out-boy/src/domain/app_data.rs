@@ -13,26 +13,7 @@
 
 /// Float Out Boy app-data package ID; upstream writes literal `101` in
 /// `third_party/float-out-boy/src/main.c:1271`, `1318`, `1881`, and `1909`.
-pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: FloatOutBoyAppDataPackageId =
-    FloatOutBoyAppDataPackageId::new(101);
-
-/// Float Out Boy app-data package identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct FloatOutBoyAppDataPackageId(u8);
-
-impl FloatOutBoyAppDataPackageId {
-    /// Build a package ID token from the source-backed package ID.
-    const fn new(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// Explicitly extract the app-data package ID.
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
+pub const FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID: u8 = 101;
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy app-data command IDs.
@@ -135,19 +116,15 @@ impl FloatOutBoyAppDataCommandError {
     }
 }
 
-/// Float Out Boy all-data request mode byte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FloatOutBoyAllDataMode {
-    source_id: u8,
+vescpkg_rs::typed_newtype! {
+    /// Float Out Boy all-data request mode byte.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct FloatOutBoyAllDataMode(u8);
+    from_source_id(source_id);
+    source_id;
 }
 
 impl FloatOutBoyAllDataMode {
-    /// Build a mode token from the upstream Float Out Boy request byte.
-    #[must_use]
-    pub const fn from_source_id(source_id: u8) -> Self {
-        Self { source_id }
-    }
-
     /// Build a base all-data request mode.
     #[must_use]
     pub const fn base() -> Self {
@@ -172,44 +149,34 @@ impl FloatOutBoyAllDataMode {
         Self::from_source_id(4)
     }
 
-    /// Return the source request byte.
-    #[must_use]
-    pub const fn source_id(self) -> u8 {
-        self.source_id
-    }
-
     /// Return whether the mode includes mode 2 extension fields.
     #[must_use]
     pub const fn includes_mode2(self) -> bool {
-        self.source_id >= 2
+        self.source_id() >= 2
     }
 
     /// Return whether the mode includes mode 3 extension fields.
     #[must_use]
     pub const fn includes_mode3(self) -> bool {
-        self.source_id >= 3
+        self.source_id() >= 3
     }
 
     /// Return whether the mode includes mode 4 extension fields.
     #[must_use]
     pub const fn includes_mode4(self) -> bool {
-        self.source_id >= 4
+        self.source_id() >= 4
     }
 }
 
-/// Float Out Boy all-data request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyAllDataRequest {
-    mode: FloatOutBoyAllDataMode,
+vescpkg_rs::typed_newtype! {
+    /// Float Out Boy all-data request.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FloatOutBoyAllDataRequest(FloatOutBoyAllDataMode);
+    new(mode);
+    mode;
 }
 
 impl FloatOutBoyAllDataRequest {
-    /// Build an all-data request.
-    #[must_use]
-    pub const fn new(mode: FloatOutBoyAllDataMode) -> Self {
-        Self { mode }
-    }
-
     /// Parse a Float Out Boy `COMMAND_GET_ALLDATA` app-data packet.
     ///
     /// Upstream dispatches this command at `third_party/float-out-boy/src/main.c:2210-2215`
@@ -226,7 +193,7 @@ impl FloatOutBoyAllDataRequest {
             });
         };
 
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return Err(FloatOutBoyAllDataRequestError::PackageId { value: *package_id });
         }
 
@@ -235,12 +202,6 @@ impl FloatOutBoyAllDataRequest {
         }
 
         Ok(Self::new(FloatOutBoyAllDataMode::from_source_id(*mode)))
-    }
-
-    /// Return the requested all-data mode.
-    #[must_use]
-    pub const fn mode(self) -> FloatOutBoyAllDataMode {
-        self.mode
     }
 }
 

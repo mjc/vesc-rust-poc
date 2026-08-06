@@ -12,9 +12,10 @@ use vescpkg_rs::prelude::Voltage;
 /// Float Out Boy footpad sensor state.
 ///
 /// C map: `third_party/float-out-boy/src/footpad_sensor.h:22-27`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyFootpadState {
     /// No footpad sensor is active.
+    #[default]
     None,
     /// Left footpad sensor is active.
     Left,
@@ -60,7 +61,7 @@ impl FloatOutBoyFootpadState {
 /// Float Out Boy footpad ADC sample and decoded state.
 ///
 /// C map: `third_party/float-out-boy/src/footpad_sensor.h:29-32`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyFootpadSample {
     adc1: Voltage,
     adc2: Voltage,

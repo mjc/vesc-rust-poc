@@ -4,12 +4,11 @@ use crate::{
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState,
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
-        FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
-        FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedFrameUpdate,
-        FloatOutBoyLedPin, FloatOutBoyLedPinConfig, FloatOutBoyLedRenderer,
-        FloatOutBoyLedStatusUpdate, FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
-        FloatOutBoyLedUpdate, FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
-        FloatOutBoyStatusBarIdleTimeout,
+        FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
+        FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+        FloatOutBoyLedRenderer, FloatOutBoyLedStatusUpdate, FloatOutBoyLedStripConfig,
+        FloatOutBoyLedStripOrder, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
+        FloatOutBoyStatusBarConfig,
     },
 };
 use vescpkg_rs::Ratio;
@@ -25,7 +24,7 @@ fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
         color,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Solid,
-        FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     )
 }
 
@@ -37,7 +36,7 @@ fn enabled_config() -> FloatOutBoyLedsConfig {
         solid_bar(FloatOutBoyLedColor::Red),
         black,
         FloatOutBoyStatusBarConfig::new(
-            FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.5),
             Ratio::from_ratio_const(0.2),
             Ratio::from_ratio_const(0.2),
@@ -258,7 +257,7 @@ fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
         ));
     let config = enabled_config();
     let mut renderer = FloatOutBoyLedRenderer::new(hardware, config, 0.0);
-    let frame = FloatOutBoyLedFrameUpdate::new(
+    let frame = FloatOutBoyLedUpdate::with_status(
         FloatOutBoyLedUpdate {
             run_state: FloatOutBoyRunState::Ready,
             mode: FloatOutBoyMode::Normal,
@@ -266,6 +265,9 @@ fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
             footpad: FloatOutBoyFootpadState::None,
             pitch_degrees: 0.0,
             distance: 0.0,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            moving: true,
         },
         FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,

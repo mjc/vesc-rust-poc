@@ -8,11 +8,11 @@ use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent,
 use vescpkg_rs::test_support::FirmwareTest;
 
 const TUNE_DEFAULTS_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneDefaults.id(),
 ];
 const RUNTIME_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::RuntimeTune.id(),
     0xA3,
     0x21,
@@ -33,7 +33,7 @@ const RUNTIME_TUNE_PACKET: &[u8] = &[
     0x82,
 ];
 const TILT_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneTilt.id(),
     1,
     15,
@@ -42,7 +42,7 @@ const TILT_TUNE_PACKET: &[u8] = &[
     30,
 ];
 const OTHER_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneOther.id(),
     0xFE,
     25,
@@ -60,7 +60,7 @@ const OTHER_TUNE_PACKET: &[u8] = &[
     8,
 ];
 const BOOSTER_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::Booster.id(),
     0xA3,
     0x04,
@@ -134,7 +134,7 @@ fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
         &mut now,
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RuntimeTune.id(),
         ],
     ));
@@ -147,11 +147,11 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
     let firmware = FirmwareTest::new();
     let packets: &[&[u8]] = &[
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneDefaults.id(),
         ],
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             25,
@@ -186,7 +186,7 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
     let firmware = FirmwareTest::new();
     let packets: &[&[u8]] = &[
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Booster.id(),
             0,
             0,
@@ -194,7 +194,7 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
             0,
         ],
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneTilt.id(),
             0,
             0,
@@ -281,7 +281,7 @@ fn booster_command_rejects_wrong_payload_length_without_alerting() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Booster.id(),
             0xA3,
             0x04,
@@ -377,7 +377,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RuntimeTune.id(),
             0x11,
         ],
@@ -385,7 +385,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     assert_eq!(state.serialized_config, original);
 
     let mut block_one = [0_u8; 14];
-    block_one[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
+    block_one[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
     block_one[1] = FloatOutBoyAppDataCommand::RuntimeTune.id();
     block_one[2] = 0x22;
     assert!(state.handle_packet_with_telemetry(
@@ -400,7 +400,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     );
 
     let mut block_two = [0_u8; 18];
-    block_two[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
+    block_two[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
     block_two[1] = FloatOutBoyAppDataCommand::RuntimeTune.id();
     block_two[14] = 0x22;
     assert!(state.handle_packet_with_telemetry(
@@ -497,7 +497,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,
@@ -518,7 +518,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,
@@ -542,7 +542,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,

@@ -11,7 +11,7 @@ use super::{
 };
 
 /// Float Out Boy ride state as typed package-domain values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FloatOutBoyRideState {
     run_state: FloatOutBoyRunState,
     mode: FloatOutBoyMode,
@@ -42,82 +42,38 @@ impl FloatOutBoyRideState {
         }
     }
 
-    /// Return this state with the requested charging state.
-    #[must_use]
-    pub const fn with_charging(mut self, charging: FloatOutBoyChargingState) -> Self {
-        self.charging = charging;
-        self
+    vescpkg_rs::const_field_builders! {
+        /// Return this state with the requested charging state.
+        pub fn with_charging(charging: FloatOutBoyChargingState) => charging;
+        /// Return this state with the requested wheel-slip state.
+        pub fn with_wheelslip(wheelslip: FloatOutBoyWheelSlipState) => wheelslip;
+        /// Return this state with the requested darkride/upside-down state.
+        pub fn with_darkride(darkride: FloatOutBoyDarkRideState) => darkride;
+        /// Return this state with the requested setpoint adjustment.
+        pub(crate) fn with_setpoint_adjustment(setpoint_adjustment: FloatOutBoySetpointAdjustment) => setpoint_adjustment;
     }
 
-    /// Return this state with the requested wheel-slip state.
-    #[must_use]
-    pub const fn with_wheelslip(mut self, wheelslip: FloatOutBoyWheelSlipState) -> Self {
-        self.wheelslip = wheelslip;
-        self
-    }
-
-    /// Return this state with the requested darkride/upside-down state.
-    #[must_use]
-    pub const fn with_darkride(mut self, darkride: FloatOutBoyDarkRideState) -> Self {
-        self.darkride = darkride;
-        self
-    }
-
-    /// Return this state with the requested setpoint adjustment.
-    pub(crate) const fn with_setpoint_adjustment(
-        mut self,
-        setpoint_adjustment: FloatOutBoySetpointAdjustment,
-    ) -> Self {
-        self.setpoint_adjustment = setpoint_adjustment;
-        self
-    }
-
-    /// Return the top-level run state.
-    ///
-    /// Mirrors upstream `d->state.state`, read by `set_cfg` at
-    /// `third_party/float-out-boy/src/main.c:2369-2372`.
-    #[must_use]
-    pub const fn run_state(self) -> FloatOutBoyRunState {
-        self.run_state
-    }
-
-    /// Return the runtime mode.
-    ///
-    /// Mirrors upstream `d->state.mode`, read by `set_cfg` at
-    /// `third_party/float-out-boy/src/main.c:2362-2365`.
-    #[must_use]
-    pub const fn mode(self) -> FloatOutBoyMode {
-        self.mode
-    }
-
-    /// Return the setpoint adjustment/pushback state.
-    #[must_use]
-    pub const fn setpoint_adjustment(self) -> FloatOutBoySetpointAdjustment {
-        self.setpoint_adjustment
-    }
-
-    /// Return the stop condition.
-    #[must_use]
-    pub const fn stop_condition(self) -> FloatOutBoyStopCondition {
-        self.stop_condition
-    }
-
-    /// Return the charging state.
-    #[must_use]
-    pub const fn charging(self) -> FloatOutBoyChargingState {
-        self.charging
-    }
-
-    /// Return the wheel-slip state.
-    #[must_use]
-    pub const fn wheelslip(self) -> FloatOutBoyWheelSlipState {
-        self.wheelslip
-    }
-
-    /// Return the darkride/upside-down state.
-    #[must_use]
-    pub const fn darkride(self) -> FloatOutBoyDarkRideState {
-        self.darkride
+    vescpkg_rs::const_field_getters! {
+        /// Return the top-level run state.
+        ///
+        /// Mirrors upstream `d->state.state`, read by `set_cfg` at
+        /// `third_party/float-out-boy/src/main.c:2369-2372`.
+        pub fn run_state -> FloatOutBoyRunState = run_state;
+        /// Return the runtime mode.
+        ///
+        /// Mirrors upstream `d->state.mode`, read by `set_cfg` at
+        /// `third_party/float-out-boy/src/main.c:2362-2365`.
+        pub fn mode -> FloatOutBoyMode = mode;
+        /// Return the setpoint adjustment/pushback state.
+        pub fn setpoint_adjustment -> FloatOutBoySetpointAdjustment = setpoint_adjustment;
+        /// Return the stop condition.
+        pub fn stop_condition -> FloatOutBoyStopCondition = stop_condition;
+        /// Return the charging state.
+        pub fn charging -> FloatOutBoyChargingState = charging;
+        /// Return the wheel-slip state.
+        pub fn wheelslip -> FloatOutBoyWheelSlipState = wheelslip;
+        /// Return the darkride/upside-down state.
+        pub fn darkride -> FloatOutBoyDarkRideState = darkride;
     }
 
     /// Return the Float Out Boy app-data Float State compatibility value.

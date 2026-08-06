@@ -18,6 +18,7 @@ workspace = true
 test-support = ["vescpkg-rs/test-support"]
 
 [dependencies]
+bitflags = { version = "2.13.1", default-features = false }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc", "math"] }
 
 [build-dependencies]

@@ -74,9 +74,7 @@ mod ring_tests;
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
-    recording: bool,
-    autostart: bool,
-    autostop: bool,
+    flags: FloatOutBoyDataRecorderFlags,
     ring: DataRecorderRing,
     #[cfg(test)]
     capability: Option<()>,
@@ -89,9 +87,7 @@ pub(super) struct DataRecorderState {
 impl Default for DataRecorderState {
     fn default() -> Self {
         Self {
-            recording: false,
-            autostart: true,
-            autostop: true,
+            flags: FloatOutBoyDataRecorderFlags::AUTOSTART | FloatOutBoyDataRecorderFlags::AUTOSTOP,
             ring: DataRecorderRing::default(),
             #[cfg(test)]
             capability: Some(()),
@@ -127,42 +123,35 @@ impl DataRecorderState {
         }
     }
 
-    pub(super) const fn flags(&self) -> FloatOutBoyDataRecorderFlags {
+    pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
         if !self.has_capability() {
-            return FloatOutBoyDataRecorderFlags::inactive();
+            return FloatOutBoyDataRecorderFlags::empty();
         }
 
-        let mut flags = FloatOutBoyDataRecorderFlags::inactive();
-        if self.recording {
-            flags = flags.with_recording();
-        }
-        if self.autostart {
-            flags = flags.with_autostart();
-        }
-        if self.autostop {
-            flags = flags.with_autostop();
-        }
-        flags
+        self.flags
     }
 
     fn trigger(&mut self, engage: bool) {
         if !self.has_capability() {
             return;
         }
-        if self.autostart && engage {
+        if self.flags.contains(FloatOutBoyDataRecorderFlags::AUTOSTART) && engage {
             self.start();
-        } else if self.autostop && !engage {
+        } else if self.flags.contains(FloatOutBoyDataRecorderFlags::AUTOSTOP) && !engage {
             self.stop();
         }
     }
 
     fn start(&mut self) {
         self.ring.clear();
-        self.recording = self.has_capability();
+        self.flags.set(
+            FloatOutBoyDataRecorderFlags::RECORDING,
+            self.has_capability(),
+        );
     }
 
     fn stop(&mut self) {
-        self.recording = false;
+        self.flags.remove(FloatOutBoyDataRecorderFlags::RECORDING);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -181,7 +170,7 @@ impl DataRecorderState {
 
     #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
-        if !self.has_capability() || !self.recording {
+        if !self.has_capability() || !self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
             return;
         }
         let capacity = self.capacity();
@@ -353,10 +342,14 @@ impl FloatOutBoyPackageState {
                 self.data_recorder.stop();
             }
             [1, 2, value, ..] => {
-                self.data_recorder.autostart = *value > 0;
+                self.data_recorder
+                    .flags
+                    .set(FloatOutBoyDataRecorderFlags::AUTOSTART, *value > 0);
             }
             [1, 3, value, ..] => {
-                self.data_recorder.autostop = *value > 0;
+                self.data_recorder
+                    .flags
+                    .set(FloatOutBoyDataRecorderFlags::AUTOSTOP, *value > 0);
             }
             [2, 1, ..] => {
                 self.data_recorder.stop();
@@ -370,7 +363,7 @@ impl FloatOutBoyPackageState {
             [2, 2, a, b, c, d, ..] => {
                 let offset = u32::from_be_bytes([*a, *b, *c, *d]);
                 let mut response = FloatOutBoyPacket::<DATA_RESPONSE_CAPACITY>::new();
-                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+                response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
                 response.push(FloatOutBoyAppDataCommand::DataRecordData.id());
                 response.push_u32(offset);
                 let mut sample_index = usize::try_from(offset).unwrap_or(usize::MAX);

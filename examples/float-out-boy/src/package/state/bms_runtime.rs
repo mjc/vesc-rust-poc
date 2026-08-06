@@ -1,7 +1,5 @@
 use super::super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
-use crate::bms::{
-    FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds,
-};
+use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
 use vescpkg_rs::{TimestampTicks, VescSeconds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,16 +16,18 @@ pub(super) struct BmsRuntimeState {
     alert_ticks: TimestampTicks,
 }
 
-impl BmsRuntimeState {
-    pub(super) const fn source_startup() -> Self {
+impl Default for BmsRuntimeState {
+    fn default() -> Self {
         Self {
-            sample: FloatOutBoyBmsSample::source_startup(),
-            faults: FloatOutBoyBmsFaults::NONE,
+            sample: FloatOutBoyBmsSample::default(),
+            faults: FloatOutBoyBmsFaults::empty(),
             start_ticks: None,
             alert_ticks: TimestampTicks::from_ticks(0),
         }
     }
+}
 
+impl BmsRuntimeState {
     pub(super) fn record_sample(&mut self, sample: FloatOutBoyBmsSample) {
         self.sample = sample;
     }
@@ -61,8 +61,8 @@ impl BmsRuntimeState {
         system_time_ticks: TimestampTicks,
         disengage_ticks: TimestampTicks,
     ) -> Option<BmsReadyAlertFault> {
-        let connection = self.faults.contains(FloatOutBoyBmsFault::Connection);
-        let balance = self.faults.contains(FloatOutBoyBmsFault::CellBalance)
+        let connection = self.faults.contains(FloatOutBoyBmsFaults::CONNECTION);
+        let balance = self.faults.contains(FloatOutBoyBmsFaults::CELL_BALANCE)
             && float_out_boy_ticks_elapsed(system_time_ticks, disengage_ticks, 5);
         ((connection || balance)
             && float_out_boy_ticks_elapsed(system_time_ticks, self.alert_ticks, 15))
@@ -76,7 +76,7 @@ impl BmsRuntimeState {
         })
     }
 
-    pub(super) const fn contains(&self, fault: FloatOutBoyBmsFault) -> bool {
+    pub(super) const fn contains(&self, fault: FloatOutBoyBmsFaults) -> bool {
         self.faults.contains(fault)
     }
 

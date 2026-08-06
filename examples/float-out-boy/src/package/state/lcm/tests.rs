@@ -40,7 +40,7 @@ fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
                 replies += 1;
                 true
             },
-            &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command_id],
+            &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, command_id],
         );
         let command = FloatOutBoyAppDataCommand::try_from_id(command_id);
         let expected = matches!(
@@ -71,14 +71,14 @@ fn every_lcm_response_starts_with_the_refloat_package_and_command_ids() {
     assert_eq!(
         &state.light_info_response().as_bytes()[..2],
         [
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::LcmLightInfo.id(),
         ]
     );
     assert_eq!(
         &state.device_info_response().as_bytes()[..2],
         [
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::LcmDeviceInfo.id(),
         ]
     );

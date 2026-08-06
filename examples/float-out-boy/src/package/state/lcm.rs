@@ -62,6 +62,15 @@ pub(super) struct LcmState {
     payload_size: usize,
 }
 
+impl Default for LcmState {
+    fn default() -> Self {
+        Self::new(
+            crate::config::FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE,
+            crate::config::FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED,
+        )
+    }
+}
+
 impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.
@@ -210,7 +219,7 @@ impl LcmState {
 
 fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoyPacket<N> {
     let mut packet = FloatOutBoyPacket::new();
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(command.id());
     packet
 }
@@ -234,7 +243,7 @@ impl FloatOutBoyPackageState {
         let [package_id, command_id, payload @ ..] = bytes else {
             return false;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return false;
         }
         let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command_id) else {
@@ -268,7 +277,7 @@ impl FloatOutBoyPackageState {
                 }
                 let status = self.led_runtime_status();
                 reply(&[
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     FloatOutBoyAppDataCommand::LightsControl.id(),
                     u8::from(status.enabled) | (u8::from(status.headlights_enabled) << 1),
                 ])

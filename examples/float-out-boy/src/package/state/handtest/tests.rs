@@ -62,7 +62,7 @@ fn handtest_packet_toggles_ready_mode_and_safety_config_like_float_out_boy_qml()
     let original_config = *state.serialized_config();
 
     assert!(state.handle_handtest_packet(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::HandTest.id(),
         1,
     ]));
@@ -87,7 +87,7 @@ fn handtest_packet_toggles_ready_mode_and_safety_config_like_float_out_boy_qml()
     );
 
     assert!(state.handle_handtest_packet(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::HandTest.id(),
         0,
     ]));
@@ -118,7 +118,7 @@ fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
         &mut || TimestampTicks::from_ticks(99),
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::HandTest.id(),
             1,
         ],
@@ -130,7 +130,7 @@ fn handtest_disable_only_refreshes_idle_epoch_like_refloat_configure() {
         &mut || TimestampTicks::from_ticks(99),
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::HandTest.id(),
             0,
         ],
@@ -159,12 +159,12 @@ fn handtest_disable_restores_eeprom_not_the_enable_time_image_like_float_out_boy
     state.replace_serialized_config_for_test(&volatile);
 
     assert!(state.handle_handtest_packet(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::HandTest.id(),
         1,
     ]));
     assert!(state.handle_handtest_packet(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::HandTest.id(),
         0,
     ]));
@@ -245,7 +245,7 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

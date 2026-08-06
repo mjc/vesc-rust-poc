@@ -1,6 +1,6 @@
 use super::super::state::FloatOutBoyPackageState;
 use super::tick_float_out_boy_aux_thread_with;
-use crate::beeper::{FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
+use crate::beeper::FloatOutBoyBeeperAlert;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyBeepReason, FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRideState,
@@ -188,7 +188,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     config[242] = 1;
     assert!(state.store_serialized_config(&config));
     state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+    state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     let mut changes = std::vec::Vec::new();
 
     for tick in 1..=160 {
@@ -542,10 +542,10 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
         crate::leds::FloatOutBoyLedColor::Blue,
         crate::leds::FloatOutBoyLedColor::Black,
         crate::leds::FloatOutBoyLedAnimationMode::Solid,
-        crate::leds::FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let status = crate::leds::FloatOutBoyStatusBarConfig::new(
-        crate::leds::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+        0,
         Ratio::from_ratio_const(0.9),
         Ratio::from_ratio_const(0.1),
         Ratio::from_ratio_const(1.0),

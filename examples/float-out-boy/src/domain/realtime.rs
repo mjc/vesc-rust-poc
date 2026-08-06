@@ -101,7 +101,7 @@ realtime_data_items! {
 
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `motor.filt_current` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeFilteredMotorCurrent(DirectionalMotorCurrent);
     new(current);
@@ -110,7 +110,7 @@ vescpkg_rs::typed_newtype! {
 
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `imu.balance_pitch` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeBalancePitch(AngleRadians);
     new(angle);
@@ -127,7 +127,7 @@ impl FloatOutBoyRealtimeBalancePitch {
 
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `remote.input` realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeRemoteInput(SignedRatio);
     new(ratio);
@@ -136,7 +136,7 @@ vescpkg_rs::typed_newtype! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy realtime motor-current values that are always sent.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeMotorCurrents {
         motor: MotorCurrent => motor,
         directional: DirectionalMotorCurrent => directional,
@@ -154,9 +154,16 @@ vescpkg_rs::typed_fields! {
     }
 }
 
+impl Default for FloatOutBoyRealtimeMotorTemperatures {
+    fn default() -> Self {
+        let zero = vescpkg_rs::Temperature::from_degrees_celsius(0.0);
+        Self::new(MosfetTemperature::new(zero), MotorTemperature::new(zero))
+    }
+}
+
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy runtime setpoint angle value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeRuntimeSetpoint(AngleDegrees);
     new(angle);
@@ -165,7 +172,7 @@ vescpkg_rs::typed_newtype! {
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy runtime setpoint values sent only while running.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     pub struct FloatOutBoyRealtimeRuntimeSetpoints {
         board: FloatOutBoyRealtimeRuntimeSetpoint => board => with_board,
         atr: FloatOutBoyRealtimeRuntimeSetpoint => atr,
@@ -178,7 +185,7 @@ vescpkg_rs::typed_fields! {
 
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `balance_current` runtime realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeBalanceCurrent(MotorCurrent);
     new(current);
@@ -187,7 +194,7 @@ vescpkg_rs::typed_newtype! {
 
 vescpkg_rs::typed_newtype! {
     /// Float Out Boy `booster.current` runtime realtime value.
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq)]
     #[repr(transparent)]
     pub struct FloatOutBoyRealtimeBoosterCurrent(MotorCurrent);
     new(current);
@@ -235,28 +242,20 @@ impl FloatOutBoyRealtimeDataHeader {
             footpad_state,
             beep_reason,
             fatal_error: FloatOutBoyFatalErrorState::None,
-            data_recorder: FloatOutBoyDataRecorderFlags::inactive(),
+            data_recorder: FloatOutBoyDataRecorderFlags::empty(),
         }
     }
 
-    /// Return this header with fatal-error state.
-    #[must_use]
-    pub const fn with_fatal_error(mut self, fatal_error: FloatOutBoyFatalErrorState) -> Self {
-        self.fatal_error = fatal_error;
-        self
+    vescpkg_rs::const_field_builders! {
+        /// Return this header with fatal-error state.
+        pub fn with_fatal_error(fatal_error: FloatOutBoyFatalErrorState) => fatal_error;
+        /// Return this header with data-recorder flags.
+        pub fn with_data_recorder(data_recorder: FloatOutBoyDataRecorderFlags) => data_recorder;
     }
 
-    /// Return this header with data-recorder flags.
-    #[must_use]
-    pub const fn with_data_recorder(mut self, data_recorder: FloatOutBoyDataRecorderFlags) -> Self {
-        self.data_recorder = data_recorder;
-        self
-    }
-
-    /// Return the typed VESC system timestamp.
-    #[must_use]
-    pub const fn timestamp(self) -> TimestampTicks {
-        self.timestamp
+    vescpkg_rs::const_field_getters! {
+        /// Return the typed VESC system timestamp.
+        pub fn timestamp -> TimestampTicks = timestamp;
     }
 
     /// Return the Float Out Boy `v1.2.1` realtime data mask byte.

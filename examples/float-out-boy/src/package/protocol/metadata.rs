@@ -71,7 +71,7 @@ pub(in crate::package) fn encode_float_out_boy_info_response(
 ) -> FloatOutBoyInfoResponse {
     let version = request_payload.first().copied().unwrap_or(1);
     let mut packet = FloatOutBoyPacket::new();
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(FloatOutBoyAppDataCommand::Info.id());
     if version == 1 {
         packet.push(FLOAT_OUT_BOY_MAJOR_VERSION * 10 + FLOAT_OUT_BOY_MINOR_VERSION);

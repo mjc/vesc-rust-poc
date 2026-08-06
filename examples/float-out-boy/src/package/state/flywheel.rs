@@ -1,6 +1,6 @@
 #[cfg(any(test, target_arch = "arm"))]
 use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyRunState,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyRunState,
     float_out_boy_command_payload,
 };
 use super::{FloatOutBoyMode, FloatOutBoyPackageState, LoopConfig};
@@ -20,20 +20,13 @@ const FLYWHEEL_RECALIBRATE: u8 = 2;
 #[cfg(any(test, target_arch = "arm"))]
 const FLYWHEEL_RELAX_ROLL: u8 = 4;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyFlywheelOffsets {
     pitch: AngleDegrees,
     roll: AngleDegrees,
 }
 
 impl FloatOutBoyFlywheelOffsets {
-    pub(super) const fn source_startup() -> Self {
-        Self {
-            pitch: AngleDegrees::ZERO,
-            roll: AngleDegrees::ZERO,
-        }
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     fn calibrated(pitch: AngleDegrees, roll: AngleDegrees) -> Self {
         Self { pitch, roll }
@@ -67,7 +60,7 @@ impl FloatOutBoyFlywheelOffsets {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyFlywheelRuntime {
     offsets: FloatOutBoyFlywheelOffsets,
     config: Option<FloatOutBoyFlywheelConfig>,
@@ -75,14 +68,6 @@ pub(super) struct FloatOutBoyFlywheelRuntime {
 }
 
 impl FloatOutBoyFlywheelRuntime {
-    pub(super) const fn source_startup() -> Self {
-        Self {
-            offsets: FloatOutBoyFlywheelOffsets::source_startup(),
-            config: None,
-            abort: false,
-        }
-    }
-
     #[cfg(any(test, target_arch = "arm"))]
     fn needs_calibration(self) -> bool {
         self.offsets.needs_calibration()
@@ -267,9 +252,9 @@ impl FloatOutBoyPackageState {
             }
             self.flywheel
                 .calibrate(pitch, AngleDegrees::from(attitude.roll().angle()));
-            self.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
         } else {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+            self.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
         }
         None
     }

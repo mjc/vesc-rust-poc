@@ -66,7 +66,14 @@ pub(crate) struct PidState {
 }
 
 impl PidState {
+    #[cfg(test)]
     pub(crate) fn source_startup() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for PidState {
+    fn default() -> Self {
         Self {
             integral_current: MotorCurrent::new(Current::ZERO),
             kp_brake_scale: PidScale::new(1.0),
@@ -82,7 +89,7 @@ impl PidState {
 /// Source map: upstream stores these fields in `Data.pid`, `Data.booster`,
 /// `Data.softstart_pid_limit`, and `Data.balance_current` while running
 /// `third_party/float-out-boy/src/main.c:924-954`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct LoopState {
     pub(crate) balance_current: MotorCurrent,
     pub(crate) booster_current: MotorCurrent,
@@ -91,20 +98,9 @@ pub(crate) struct LoopState {
 }
 
 impl LoopState {
-    /// Initial Float Out Boy balance-loop state after package startup.
-    pub(crate) fn source_startup() -> Self {
-        let zero_current = MotorCurrent::new(Current::ZERO);
-        Self {
-            balance_current: zero_current,
-            booster_current: zero_current,
-            pid: PidState::source_startup(),
-            softstart_pid_limit: zero_current,
-        }
-    }
-
     /// Reset transient PID state like upstream `pid_init`.
     pub(crate) fn reset_pid(&mut self) {
-        self.pid = PidState::source_startup();
+        self.pid = PidState::default();
     }
 }
 

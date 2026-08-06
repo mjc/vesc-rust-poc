@@ -28,7 +28,7 @@ fn handle_config_command(
     command: FloatOutBoyAppDataCommand,
     payload: &[u8],
 ) -> bool {
-    let mut packet = vec![FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command.id()];
+    let mut packet = vec![FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, command.id()];
     packet.extend_from_slice(payload);
     state.handle_packet_with_telemetry(
         firmware.telemetry(),
@@ -109,6 +109,13 @@ fn assert_firmware_imu_settings(
 fn assert_live_only_firmware_imu_migration(firmware: &FirmwareTest, float_writes: usize) {
     assert_eq!(firmware.float_setting_write_count(), float_writes);
     assert_eq!(firmware.settings_store_count(), 0);
+}
+
+#[test]
+fn package_default_is_the_complete_source_startup_state() {
+    let source = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+
+    assert_eq!(FloatOutBoyPackageState::default(), source);
 }
 
 #[test]
@@ -630,7 +637,7 @@ fn successful_config_save_starts_led_confirmation_like_refloat() {
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::ConfigSave.id(),
     ];
 
@@ -779,7 +786,7 @@ fn successful_lock_starts_led_confirmation_like_refloat() {
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::Lock.id(),
         1,
     ];

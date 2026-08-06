@@ -25,7 +25,7 @@ impl FloatOutBoyPackageState {
                 _ => TimestampTicks::from_ticks(0),
             };
             let mut response = FloatOutBoyPacket::<ALERTS_RESPONSE_CAPACITY>::new();
-            response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+            response.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
             response.push(FloatOutBoyAppDataCommand::AlertsList.id());
             response.push_u32(u32::from(self.alert_tracker.firmware_fault_active()));
             response.push_u32(0);

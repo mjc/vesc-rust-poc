@@ -44,7 +44,7 @@ fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloa
 
 fn flywheel_packet(payload: &[u8]) -> std::vec::Vec<u8> {
     let mut packet = std::vec![
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::Flywheel.id(),
     ];
     packet.extend_from_slice(payload);
@@ -970,7 +970,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
         firmware.telemetry(),
         firmware.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

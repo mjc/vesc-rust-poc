@@ -29,36 +29,27 @@ impl FloatOutBoyBmsTemperature {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct FloatOutBoyBmsSample {
-    cell_low_voltage: Voltage,
-    cell_high_voltage: Voltage,
-    cell_low_temperature: FloatOutBoyBmsTemperature,
-    cell_high_temperature: FloatOutBoyBmsTemperature,
-    bms_high_temperature: FloatOutBoyBmsTemperature,
-    message_age: VescSeconds,
+vescpkg_rs::typed_fields! {
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub(crate) struct FloatOutBoyBmsSample {
+        cell_low_voltage: Voltage => cell_low_voltage,
+        cell_high_voltage: Voltage => cell_high_voltage,
+        cell_low_temperature: FloatOutBoyBmsTemperature => cell_low_temperature,
+        cell_high_temperature: FloatOutBoyBmsTemperature => cell_high_temperature,
+        bms_high_temperature: FloatOutBoyBmsTemperature => bms_high_temperature,
+        message_age: VescSeconds => message_age,
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl Default for FloatOutBoyBmsSample {
+    fn default() -> Self {
+        Self::source_startup()
+    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsSample {
-    pub(crate) const fn new(
-        cell_low_voltage: Voltage,
-        cell_high_voltage: Voltage,
-        cell_low_temperature: FloatOutBoyBmsTemperature,
-        cell_high_temperature: FloatOutBoyBmsTemperature,
-        bms_high_temperature: FloatOutBoyBmsTemperature,
-        message_age: VescSeconds,
-    ) -> Self {
-        Self {
-            cell_low_voltage,
-            cell_high_voltage,
-            cell_low_temperature,
-            cell_high_temperature,
-            bms_high_temperature,
-            message_age,
-        }
-    }
-
     pub(crate) const fn source_startup() -> Self {
         Self::new(
             Voltage::ZERO,
@@ -109,81 +100,34 @@ impl FloatOutBoyBmsSample {
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct FloatOutBoyBmsThresholds {
-    cell_low_voltage: Voltage,
-    cell_high_voltage: Voltage,
-    cell_balance_voltage: Voltage,
-    cell_low_temperature: FloatOutBoyBmsTemperature,
-    cell_high_temperature: FloatOutBoyBmsTemperature,
-    bms_high_temperature: FloatOutBoyBmsTemperature,
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl FloatOutBoyBmsThresholds {
-    pub(crate) const fn new(
-        cell_low_voltage: Voltage,
-        cell_high_voltage: Voltage,
-        cell_balance_voltage: Voltage,
-        cell_low_temperature: FloatOutBoyBmsTemperature,
-        cell_high_temperature: FloatOutBoyBmsTemperature,
-        bms_high_temperature: FloatOutBoyBmsTemperature,
-    ) -> Self {
-        Self {
-            cell_low_voltage,
-            cell_high_voltage,
-            cell_balance_voltage,
-            cell_low_temperature,
-            cell_high_temperature,
-            bms_high_temperature,
-        }
+vescpkg_rs::typed_fields! {
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub(crate) struct FloatOutBoyBmsThresholds {
+        cell_low_voltage: Voltage => cell_low_voltage,
+        cell_high_voltage: Voltage => cell_high_voltage,
+        cell_balance_voltage: Voltage => cell_balance_voltage,
+        cell_low_temperature: FloatOutBoyBmsTemperature => cell_low_temperature,
+        cell_high_temperature: FloatOutBoyBmsTemperature => cell_high_temperature,
+        bms_high_temperature: FloatOutBoyBmsTemperature => bms_high_temperature,
     }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FloatOutBoyBmsFault {
-    Connection,
-    BmsOverTemperature,
-    CellOverVoltage,
-    CellUnderVoltage,
-    CellOverTemperature,
-    CellUnderTemperature,
-    CellBalance,
-}
-
-#[cfg(any(test, target_arch = "arm"))]
-impl FloatOutBoyBmsFault {
-    const fn bit(self) -> u8 {
-        match self {
-            Self::Connection => 1 << 0,
-            Self::BmsOverTemperature => 1 << 1,
-            Self::CellOverVoltage => 1 << 2,
-            Self::CellUnderVoltage => 1 << 3,
-            Self::CellOverTemperature => 1 << 4,
-            Self::CellUnderTemperature => 1 << 5,
-            Self::CellBalance => 1 << 6,
-        }
+bitflags::bitflags! {
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct FloatOutBoyBmsFaults: u8 {
+        const CONNECTION = 1 << 0;
+        const BMS_OVER_TEMPERATURE = 1 << 1;
+        const CELL_OVER_VOLTAGE = 1 << 2;
+        const CELL_UNDER_VOLTAGE = 1 << 3;
+        const CELL_OVER_TEMPERATURE = 1 << 4;
+        const CELL_UNDER_TEMPERATURE = 1 << 5;
+        const CELL_BALANCE = 1 << 6;
     }
 }
-
-#[cfg(any(test, target_arch = "arm"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub(crate) struct FloatOutBoyBmsFaults(u8);
 
 #[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsFaults {
-    pub(crate) const NONE: Self = Self(0);
-
-    pub(crate) const fn from_fault(fault: FloatOutBoyBmsFault) -> Self {
-        Self(fault.bit())
-    }
-
-    pub(crate) const fn contains(self, fault: FloatOutBoyBmsFault) -> bool {
-        self.0 & fault.bit() != 0
-    }
-
     pub(crate) fn evaluate(
         enabled: bool,
         sample: FloatOutBoyBmsSample,
@@ -191,44 +135,40 @@ impl FloatOutBoyBmsFaults {
         startup_timeout_elapsed: bool,
     ) -> Self {
         if !enabled {
-            return Self::NONE;
+            return Self::empty();
         }
 
-        if sample.message_age > VescSeconds::from_seconds(5.0) && startup_timeout_elapsed {
-            return Self::from_fault(FloatOutBoyBmsFault::Connection);
+        if sample.message_age() > VescSeconds::from_seconds(5.0) && startup_timeout_elapsed {
+            return Self::CONNECTION;
         }
 
-        let mut faults = Self::NONE;
-        if sample.cell_low_voltage < thresholds.cell_low_voltage {
-            faults.insert(FloatOutBoyBmsFault::CellUnderVoltage);
+        let mut faults = Self::empty();
+        if sample.cell_low_voltage() < thresholds.cell_low_voltage() {
+            faults.insert(Self::CELL_UNDER_VOLTAGE);
         }
-        if sample.cell_high_voltage > thresholds.cell_high_voltage {
-            faults.insert(FloatOutBoyBmsFault::CellOverVoltage);
+        if sample.cell_high_voltage() > thresholds.cell_high_voltage() {
+            faults.insert(Self::CELL_OVER_VOLTAGE);
         }
         let zero_temperature = FloatOutBoyBmsTemperature::from_degrees_celsius(0);
-        if thresholds.cell_high_temperature > zero_temperature {
-            if sample.cell_high_temperature > thresholds.cell_high_temperature {
-                faults.insert(FloatOutBoyBmsFault::CellOverTemperature);
+        if thresholds.cell_high_temperature() > zero_temperature {
+            if sample.cell_high_temperature() > thresholds.cell_high_temperature() {
+                faults.insert(Self::CELL_OVER_TEMPERATURE);
             }
-            if sample.cell_low_temperature < thresholds.cell_low_temperature {
-                faults.insert(FloatOutBoyBmsFault::CellUnderTemperature);
+            if sample.cell_low_temperature() < thresholds.cell_low_temperature() {
+                faults.insert(Self::CELL_UNDER_TEMPERATURE);
             }
         }
-        if thresholds.bms_high_temperature > zero_temperature
-            && sample.bms_high_temperature > thresholds.bms_high_temperature
+        if thresholds.bms_high_temperature() > zero_temperature
+            && sample.bms_high_temperature() > thresholds.bms_high_temperature()
         {
-            faults.insert(FloatOutBoyBmsFault::BmsOverTemperature);
+            faults.insert(Self::BMS_OVER_TEMPERATURE);
         }
-        if (sample.cell_low_voltage - sample.cell_high_voltage).abs()
-            > thresholds.cell_balance_voltage
+        if (sample.cell_low_voltage() - sample.cell_high_voltage()).abs()
+            > thresholds.cell_balance_voltage()
         {
-            faults.insert(FloatOutBoyBmsFault::CellBalance);
+            faults.insert(Self::CELL_BALANCE);
         }
         faults
-    }
-
-    fn insert(&mut self, fault: FloatOutBoyBmsFault) {
-        self.0 |= fault.bit();
     }
 }
 

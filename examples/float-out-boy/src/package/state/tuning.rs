@@ -1,6 +1,6 @@
 use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount,
-    FloatOutBoyPackageState, float_out_boy_command_payload,
+    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyPackageState,
+    float_out_boy_command_payload,
 };
 use crate::config::FloatOutBoyConfigEditor;
 use vescpkg_rs::prelude::{
@@ -8,84 +8,54 @@ use vescpkg_rs::prelude::{
     MahonyPitchGain, MotorCurrent, PidScale, RateCurrentGain, Ratio, Rpm, TimestampTicks, WireByte,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FloatOutBoyTuneNibble(u8);
+fn tune_angle_from(value: WireByte, base: AngleDegrees) -> AngleDegrees {
+    base + AngleDegrees::from_degrees(f32::from(value.as_u8()))
+}
 
-impl FloatOutBoyTuneNibble {
-    const fn low(byte: u8) -> Self {
-        Self(byte & 0x0F)
-    }
+fn tune_booster_current(value: WireByte) -> MotorCurrent {
+    MotorCurrent::new(match value.as_u8() {
+        0 => Current::ZERO,
+        value => Current::from_amps(f32::from(value) * 2.0 + 8.0),
+    })
+}
 
-    const fn high(byte: u8) -> Self {
-        Self(byte >> 4)
+fn tune_integral_gain(value: WireByte) -> IntegralCurrentGain {
+    match value.as_u8() {
+        0 => IntegralCurrentGain::new(0.0),
+        1 => IntegralCurrentGain::new(0.005),
+        value => WireByte::new(value.saturating_sub(1)).scaled_ratio(
+            1.0,
+            100.0,
+            0.0,
+            IntegralCurrentGain::new,
+        ),
     }
+}
 
-    fn scaled<T>(self, scale: f32, offset: f32, constructor: fn(f32) -> T) -> T {
-        WireByte::new(self.0).scaled(scale, offset, constructor)
+fn tune_integral_limit(value: WireByte) -> MotorCurrent {
+    if value.as_u8() == 0 {
+        MotorCurrent::new(Current::ZERO)
+    } else {
+        value.scaled(1.0, 19.0, motor_current)
     }
+}
 
-    fn scaled_ratio<T>(
-        self,
-        numerator: f32,
-        denominator: f32,
-        offset: f32,
-        constructor: fn(f32) -> T,
-    ) -> T {
-        WireByte::new(self.0).scaled_ratio(numerator, denominator, offset, constructor)
+fn tune_atr_strength(value: WireByte) -> PidScale {
+    if value.as_u8() == 0 {
+        PidScale::new(0.0)
+    } else {
+        value.divided(10.0, 0.5, PidScale::new)
     }
+}
 
-    fn divided<T>(self, denominator: f32, offset: f32, constructor: fn(f32) -> T) -> T {
-        self.scaled_ratio(1.0, denominator, offset, constructor)
-    }
+fn tune_torque_tilt_strength(value: WireByte) -> PidScale {
+    value
+        .divided(10.0, 0.0, PidScale::new)
+        .scaled_by(PidScale::new(0.3))
+}
 
-    fn angle_from(self, base: AngleDegrees) -> AngleDegrees {
-        base + AngleDegrees::from_degrees(f32::from(self.0))
-    }
-
-    fn booster_current(self) -> MotorCurrent {
-        MotorCurrent::new(match self.0 {
-            0 => Current::ZERO,
-            value => Current::from_amps(f32::from(value) * 2.0 + 8.0),
-        })
-    }
-
-    fn integral_gain(self) -> IntegralCurrentGain {
-        match self.0 {
-            0 => IntegralCurrentGain::new(0.0),
-            1 => IntegralCurrentGain::new(0.005),
-            value => WireByte::new(value.saturating_sub(1)).scaled_ratio(
-                1.0,
-                100.0,
-                0.0,
-                IntegralCurrentGain::new,
-            ),
-        }
-    }
-
-    fn integral_limit(self) -> MotorCurrent {
-        if self.0 == 0 {
-            MotorCurrent::new(Current::ZERO)
-        } else {
-            self.scaled(1.0, 19.0, motor_current)
-        }
-    }
-
-    fn atr_strength(self) -> PidScale {
-        if self.0 == 0 {
-            PidScale::new(0.0)
-        } else {
-            self.divided(10.0, 0.5, PidScale::new)
-        }
-    }
-
-    fn torque_tilt_strength(self) -> PidScale {
-        self.divided(10.0, 0.0, PidScale::new)
-            .scaled_by(PidScale::new(0.3))
-    }
-
-    fn brake_gain(self) -> PidScale {
-        WireByte::new(self.0.saturating_add(1)).scaled_ratio(1.0, 10.0, 0.0, PidScale::new)
-    }
+fn tune_brake_gain(value: WireByte) -> PidScale {
+    WireByte::new(value.as_u8().saturating_add(1)).divided(10.0, 0.0, PidScale::new)
 }
 
 fn motor_current(amps: f32) -> MotorCurrent {
@@ -128,66 +98,75 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
         return true;
     };
 
-    let pid_low = FloatOutBoyTuneNibble::low(*pid);
-    let pid_high = FloatOutBoyTuneNibble::high(*pid);
-    let integral_low = FloatOutBoyTuneNibble::low(*integral);
-    let integral_high = FloatOutBoyTuneNibble::high(*integral);
-    let booster_low = FloatOutBoyTuneNibble::low(*booster);
-    let booster_high = FloatOutBoyTuneNibble::high(*booster);
-    let booster_current = FloatOutBoyTuneNibble::low(*booster_turn);
-    let turn_strength = FloatOutBoyTuneNibble::high(*booster_turn);
-    let turn = FloatOutBoyTuneNibble::low(*turn_filter);
-    let mahony = FloatOutBoyTuneNibble::high(*turn_filter);
-    let atr_up = FloatOutBoyTuneNibble::low(*atr_strength);
-    let atr_down = FloatOutBoyTuneNibble::high(*atr_strength);
-    let atr_speed_sign = FloatOutBoyTuneNibble::low(*atr_speed);
-    let atr_speed_amount = FloatOutBoyTuneNibble::high(*atr_speed);
-    let atr_angle = FloatOutBoyTuneNibble::low(*atr_limits);
-    let atr_speeds = FloatOutBoyTuneNibble::high(*atr_limits);
-    let response_boost = FloatOutBoyTuneNibble::low(*atr_boost);
-    let transition_boost = FloatOutBoyTuneNibble::high(*atr_boost);
-    let accel_ratio = FloatOutBoyTuneNibble::low(*atr_ratios);
-    let decel_ratio = FloatOutBoyTuneNibble::high(*atr_ratios);
-    let brake_strength = FloatOutBoyTuneNibble::low(*brake_tilt);
-    let brake_lingering = FloatOutBoyTuneNibble::high(*brake_tilt);
-    let speed_boost_numerator = if atr_speed_sign.0 == 0 { 5.0 } else { -5.0 };
+    let pid_low = WireByte::low_nibble(*pid);
+    let pid_high = WireByte::high_nibble(*pid);
+    let integral_low = WireByte::low_nibble(*integral);
+    let integral_high = WireByte::high_nibble(*integral);
+    let booster_low = WireByte::low_nibble(*booster);
+    let booster_high = WireByte::high_nibble(*booster);
+    let booster_current = WireByte::low_nibble(*booster_turn);
+    let turn_strength = WireByte::high_nibble(*booster_turn);
+    let turn = WireByte::low_nibble(*turn_filter);
+    let mahony = WireByte::high_nibble(*turn_filter);
+    let atr_up = WireByte::low_nibble(*atr_strength);
+    let atr_down = WireByte::high_nibble(*atr_strength);
+    let atr_speed_sign = WireByte::low_nibble(*atr_speed);
+    let atr_speed_amount = WireByte::high_nibble(*atr_speed);
+    let atr_angle = WireByte::low_nibble(*atr_limits);
+    let atr_speeds = WireByte::high_nibble(*atr_limits);
+    let response_boost = WireByte::low_nibble(*atr_boost);
+    let transition_boost = WireByte::high_nibble(*atr_boost);
+    let accel_ratio = WireByte::low_nibble(*atr_ratios);
+    let decel_ratio = WireByte::high_nibble(*atr_ratios);
+    let brake_strength = WireByte::low_nibble(*brake_tilt);
+    let brake_lingering = WireByte::high_nibble(*brake_tilt);
+    let speed_boost_numerator = match atr_speed_sign.as_u8() {
+        0 => 5.0,
+        _ => -5.0,
+    };
 
     update_active_config(state, |config| {
         [
             config.set_kp(pid_low.scaled(1.0, 15.0, AngleCurrentGain::new)),
             config.set_kp2(pid_high.divided(10.0, 0.0, RateCurrentGain::new)),
-            config.set_ki(integral_low.integral_gain()),
-            config.set_ki_limit(integral_high.integral_limit()),
-            config.set_booster_angle(booster_low.angle_from(AngleDegrees::from_degrees(5.0))),
-            config.set_booster_ramp(booster_high.angle_from(AngleDegrees::from_degrees(2.0))),
-            config.set_booster_current(booster_current.booster_current()),
+            config.set_ki(tune_integral_gain(integral_low)),
+            config.set_ki_limit(tune_integral_limit(integral_high)),
+            config.set_booster_angle(tune_angle_from(
+                booster_low,
+                AngleDegrees::from_degrees(5.0),
+            )),
+            config.set_booster_ramp(tune_angle_from(
+                booster_high,
+                AngleDegrees::from_degrees(2.0),
+            )),
+            config.set_booster_current(tune_booster_current(booster_current)),
             config.set_turn_tilt_strength(turn_strength.scaled(1.0, 0.0, PidScale::new)),
-            config.set_turn_tilt_angle_limit(FloatOutBoyTuneNibble(turn.0 & 0x03).scaled(
+            config.set_turn_tilt_angle_limit(WireByte::new(turn.as_u8() & 0x03).scaled(
                 1.0,
                 2.0,
                 AngleDegrees::from_degrees,
             )),
-            config.set_turn_tilt_start_erpm(FloatOutBoyTuneNibble(turn.0 >> 2).scaled(
+            config.set_turn_tilt_start_erpm(WireByte::new(turn.as_u8() >> 2).scaled(
                 500.0,
                 1000.0,
                 electrical_speed,
             )),
             config.set_mahony_kp(mahony.divided(10.0, 1.5, MahonyPitchGain::new)),
-            config.set_atr_strength_up(atr_up.atr_strength()),
-            config.set_atr_strength_down(atr_down.atr_strength()),
+            config.set_atr_strength_up(tune_atr_strength(atr_up)),
+            config.set_atr_strength_down(tune_atr_strength(atr_down)),
             config.set_atr_speed_boost(atr_speed_amount.scaled_ratio(
                 speed_boost_numerator,
                 100.0,
                 0.0,
                 PidScale::new,
             )),
-            config.set_atr_angle_limit(atr_angle.angle_from(AngleDegrees::from_degrees(5.0))),
-            config.set_atr_on_speed(FloatOutBoyTuneNibble(atr_speeds.0 & 0x03).scaled(
+            config.set_atr_angle_limit(tune_angle_from(atr_angle, AngleDegrees::from_degrees(5.0))),
+            config.set_atr_on_speed(WireByte::new(atr_speeds.as_u8() & 0x03).scaled(
                 1.0,
                 3.0,
                 AngularVelocity::from_degrees_per_second,
             )),
-            config.set_atr_off_speed(FloatOutBoyTuneNibble(atr_speeds.0 >> 2).scaled(
+            config.set_atr_off_speed(WireByte::new(atr_speeds.as_u8() >> 2).scaled(
                 1.0,
                 2.0,
                 AngularVelocity::from_degrees_per_second,
@@ -208,14 +187,14 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
     let Some([threshold, torque, torque_limits, torque_speeds]) = payload.get(12..16) else {
         return true;
     };
-    let threshold_up = FloatOutBoyTuneNibble::low(*threshold);
-    let threshold_down = FloatOutBoyTuneNibble::high(*threshold);
-    let torque_up = FloatOutBoyTuneNibble::low(*torque);
-    let torque_down = FloatOutBoyTuneNibble::high(*torque);
-    let torque_angle = FloatOutBoyTuneNibble::low(*torque_limits);
-    let torque_current = FloatOutBoyTuneNibble::high(*torque_limits);
-    let torque_on = FloatOutBoyTuneNibble::low(*torque_speeds);
-    let torque_off = FloatOutBoyTuneNibble::high(*torque_speeds);
+    let threshold_up = WireByte::low_nibble(*threshold);
+    let threshold_down = WireByte::high_nibble(*threshold);
+    let torque_up = WireByte::low_nibble(*torque);
+    let torque_down = WireByte::high_nibble(*torque);
+    let torque_angle = WireByte::low_nibble(*torque_limits);
+    let torque_current = WireByte::high_nibble(*torque_limits);
+    let torque_on = WireByte::low_nibble(*torque_speeds);
+    let torque_off = WireByte::high_nibble(*torque_speeds);
     update_active_config(state, |config| {
         [
             config.set_atr_threshold_up(threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees)),
@@ -224,8 +203,8 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
                 0.0,
                 AngleDegrees::from_degrees,
             )),
-            config.set_torque_tilt_strength(torque_up.torque_tilt_strength()),
-            config.set_torque_tilt_regen_strength(torque_down.torque_tilt_strength()),
+            config.set_torque_tilt_strength(tune_torque_tilt_strength(torque_up)),
+            config.set_torque_tilt_regen_strength(tune_torque_tilt_strength(torque_down)),
             config.set_torque_tilt_angle_limit(torque_angle.scaled(
                 0.5,
                 0.0,
@@ -254,18 +233,14 @@ fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8])
     };
     let updated = update_active_config(state, |config| {
         [
-            config.set_kp_brake(FloatOutBoyTuneNibble::low(*brake).brake_gain()),
-            config.set_kp2_brake(FloatOutBoyTuneNibble::high(*brake).divided(
-                10.0,
-                0.0,
-                PidScale::new,
-            )),
+            config.set_kp_brake(tune_brake_gain(WireByte::low_nibble(*brake))),
+            config.set_kp2_brake(WireByte::high_nibble(*brake).divided(10.0, 0.0, PidScale::new)),
         ]
         .into_iter()
         .all(core::convert::identity)
     });
     if updated {
-        state.alert_beeper(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::ONE));
+        state.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
     }
     updated
 }
@@ -335,7 +310,7 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
     if !updated {
         return false;
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+    state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     true
 }
 
@@ -491,26 +466,27 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     // current byte is used.
     let updated = update_active_config(state, |config| {
         [
-            config.set_booster_angle(
-                FloatOutBoyTuneNibble::low(*booster).angle_from(AngleDegrees::from_degrees(5.0)),
-            ),
-            config.set_booster_ramp(
-                FloatOutBoyTuneNibble::high(*booster).angle_from(AngleDegrees::from_degrees(2.0)),
-            ),
-            config.set_booster_current(
-                FloatOutBoyTuneNibble::low(*booster_current).booster_current(),
-            ),
-            config.set_brake_booster_angle(
-                FloatOutBoyTuneNibble::low(*brake_booster)
-                    .angle_from(AngleDegrees::from_degrees(5.0)),
-            ),
-            config.set_brake_booster_ramp(
-                FloatOutBoyTuneNibble::high(*brake_booster)
-                    .angle_from(AngleDegrees::from_degrees(2.0)),
-            ),
-            config.set_brake_booster_current(
-                FloatOutBoyTuneNibble::low(*brake_booster_current).booster_current(),
-            ),
+            config.set_booster_angle(tune_angle_from(
+                WireByte::low_nibble(*booster),
+                AngleDegrees::from_degrees(5.0),
+            )),
+            config.set_booster_ramp(tune_angle_from(
+                WireByte::high_nibble(*booster),
+                AngleDegrees::from_degrees(2.0),
+            )),
+            config
+                .set_booster_current(tune_booster_current(WireByte::low_nibble(*booster_current))),
+            config.set_brake_booster_angle(tune_angle_from(
+                WireByte::low_nibble(*brake_booster),
+                AngleDegrees::from_degrees(5.0),
+            )),
+            config.set_brake_booster_ramp(tune_angle_from(
+                WireByte::high_nibble(*brake_booster),
+                AngleDegrees::from_degrees(2.0),
+            )),
+            config.set_brake_booster_current(tune_booster_current(WireByte::low_nibble(
+                *brake_booster_current,
+            ))),
         ]
         .into_iter()
         .all(core::convert::identity)
@@ -518,7 +494,7 @@ pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: 
     if !updated {
         return false;
     }
-    state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    state.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
     true
 }
 

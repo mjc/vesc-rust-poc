@@ -5,21 +5,8 @@ pub(crate) use vescpkg_rs::DigitalOutputLevel as FloatOutBoyBeeperLevel;
 /// Source-defined alert sequences used by Float Out Boy's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FloatOutBoyBeeperAlert {
-    Short(FloatOutBoyBeeperCount),
-    Long(FloatOutBoyBeeperCount),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FloatOutBoyBeeperCount(u8);
-
-impl FloatOutBoyBeeperCount {
-    pub(crate) const ONE: Self = Self(1);
-    pub(crate) const TWO: Self = Self(2);
-    pub(crate) const THREE: Self = Self(3);
-    pub(crate) const FOUR: Self = Self(4);
-    pub(crate) const FIVE: Self = Self(5);
-    pub(crate) const SIX: Self = Self(6);
-    pub(crate) const SEVEN: Self = Self(7);
+    Short(u8),
+    Long(u8),
 }
 
 const SHORT_BEEP_PERIOD: u16 = 80;
@@ -28,14 +15,8 @@ const LONG_BEEP_PERIOD: u16 = 300;
 impl FloatOutBoyBeeperAlert {
     const fn sequence(self) -> (u8, u16) {
         match self {
-            Self::Short(count) => (
-                count.0.saturating_mul(2).saturating_add(1),
-                SHORT_BEEP_PERIOD,
-            ),
-            Self::Long(count) => (
-                count.0.saturating_mul(2).saturating_add(1),
-                LONG_BEEP_PERIOD,
-            ),
+            Self::Short(count) => (count.saturating_mul(2).saturating_add(1), SHORT_BEEP_PERIOD),
+            Self::Long(count) => (count.saturating_mul(2).saturating_add(1), LONG_BEEP_PERIOD),
         }
     }
 }
@@ -48,6 +29,12 @@ pub(crate) struct FloatOutBoyBeeper {
     period: u16,
     countdown: u16,
     pending_level: Option<FloatOutBoyBeeperLevel>,
+}
+
+impl Default for FloatOutBoyBeeper {
+    fn default() -> Self {
+        Self::new(crate::config::FLOAT_OUT_BOY_DEFAULT_BEEPER_ENABLED)
+    }
 }
 
 impl FloatOutBoyBeeper {

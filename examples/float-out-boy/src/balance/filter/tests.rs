@@ -1,7 +1,3 @@
-use super::feedback::AccelConfidence;
-use super::rate::{
-    CorrectedAngularRate, MeasuredAngularRate, PitchAngularRate, RollAngularRate, YawAngularRate,
-};
 use super::{BalanceFilter, MahonyPitchGain, MahonyRollGain};
 use vescpkg_rs::prelude::{
     AccelerationG, AngularVelocity, ImuAcceleration, ImuAccelerationX, ImuAccelerationY,
@@ -149,17 +145,13 @@ fn balance_filter_configures_yaw_kp_from_pitch_and_roll_like_float_out_boy() {
 
     // Float Out Boy averages pitch and roll KP for yaw at
     // `third_party/float-out-boy/src/balance_filter.c:64-70`.
-    let corrected = MeasuredAngularRate::new(
-        RollAngularRate::new(AngularVelocity::from_radians_per_second(10.0)),
-        PitchAngularRate::new(AngularVelocity::from_radians_per_second(10.0)),
-        YawAngularRate::new(AngularVelocity::from_radians_per_second(10.0)),
-    )
-    .with_gravity_feedback(
-        gravity_error,
-        filter.feedback_gains(AccelConfidence::new(0.5)),
-    );
+    let gains = filter.feedback_gains(0.5);
+    let corrected: [AngularVelocity; 3] = core::array::from_fn(|axis| {
+        AngularVelocity::from_radians_per_second(10.0)
+            + AngularVelocity::from_radians_per_second(gains[axis] * gravity_error[axis])
+    });
 
-    assert!((corrected.yaw().as_radians_per_second() - 16.0).abs() < 0.000_001);
+    assert!((corrected[2].as_radians_per_second() - 16.0).abs() < 0.000_001);
 }
 
 #[test]
@@ -171,9 +163,9 @@ fn balance_filter_normalizes_accel_before_correction_like_float_out_boy() {
     ))
     .expect("nonzero accel normalizes");
 
-    assert_f32_eq!(unit.x(), 0.0);
-    assert_f32_eq!(unit.y(), 0.0);
-    assert_f32_eq!(unit.z(), 1.0);
+    assert_f32_eq!(unit[0], 0.0);
+    assert_f32_eq!(unit[1], 0.0);
+    assert_f32_eq!(unit[2], 1.0);
 }
 
 #[test]
@@ -181,10 +173,10 @@ fn balance_filter_skips_accel_correction_for_tiny_sample_like_float_out_boy() {
     let mut filter = BalanceFilter::source_startup();
 
     let gyro = filter.gyro_with_accel_correction(
-        MeasuredAngularRate::new(
-            RollAngularRate::new(AngularVelocity::from_radians_per_second(1.0)),
-            PitchAngularRate::new(AngularVelocity::from_radians_per_second(2.0)),
-            YawAngularRate::new(AngularVelocity::from_radians_per_second(3.0)),
+        imu_angular_rate(
+            imu_roll_rate(AngularVelocity::from_radians_per_second(1.0)),
+            imu_pitch_rate(AngularVelocity::from_radians_per_second(2.0)),
+            imu_yaw_rate(AngularVelocity::from_radians_per_second(3.0)),
         ),
         imu_acceleration(
             imu_accel_x(AccelerationG::from_g(0.0)),
@@ -193,9 +185,9 @@ fn balance_filter_skips_accel_correction_for_tiny_sample_like_float_out_boy() {
         ),
     );
 
-    assert!((gyro.roll().as_radians_per_second() - 1.0).abs() < 0.000_001);
-    assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000_001);
-    assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000_001);
+    assert!((gyro[0].as_radians_per_second() - 1.0).abs() < 0.000_001);
+    assert!((gyro[1].as_radians_per_second() - 2.0).abs() < 0.000_001);
+    assert!((gyro[2].as_radians_per_second() - 3.0).abs() < 0.000_001);
 }
 
 #[test]
@@ -203,10 +195,10 @@ fn balance_filter_applies_gravity_error_feedback_like_float_out_boy() {
     let mut filter = BalanceFilter::source_startup();
 
     let gyro = filter.gyro_with_accel_correction(
-        MeasuredAngularRate::new(
-            RollAngularRate::new(AngularVelocity::from_radians_per_second(1.0)),
-            PitchAngularRate::new(AngularVelocity::from_radians_per_second(2.0)),
-            YawAngularRate::new(AngularVelocity::from_radians_per_second(3.0)),
+        imu_angular_rate(
+            imu_roll_rate(AngularVelocity::from_radians_per_second(1.0)),
+            imu_pitch_rate(AngularVelocity::from_radians_per_second(2.0)),
+            imu_yaw_rate(AngularVelocity::from_radians_per_second(3.0)),
         ),
         imu_acceleration(
             imu_accel_x(AccelerationG::from_g(0.0)),
@@ -215,9 +207,9 @@ fn balance_filter_applies_gravity_error_feedback_like_float_out_boy() {
         ),
     );
 
-    assert!((gyro.roll().as_radians_per_second() - 2.4).abs() < 0.000_001);
-    assert!((gyro.pitch().as_radians_per_second() - 2.0).abs() < 0.000_001);
-    assert!((gyro.yaw().as_radians_per_second() - 3.0).abs() < 0.000_001);
+    assert!((gyro[0].as_radians_per_second() - 2.4).abs() < 0.000_001);
+    assert!((gyro[1].as_radians_per_second() - 2.0).abs() < 0.000_001);
+    assert!((gyro[2].as_radians_per_second() - 3.0).abs() < 0.000_001);
 }
 
 #[test]
@@ -232,17 +224,54 @@ fn balance_filter_integrates_gyro_components_like_float_out_boy() {
     ));
 
     filter.integrate_gyro(
-        CorrectedAngularRate::new(
-            RollAngularRate::new(AngularVelocity::from_radians_per_second(0.2)),
-            PitchAngularRate::new(AngularVelocity::from_radians_per_second(0.4)),
-            YawAngularRate::new(AngularVelocity::from_radians_per_second(0.6)),
-        ),
-        vescpkg_rs::prelude::VescSeconds::from_seconds(0.5),
+        [0.2, 0.4, 0.6].map(AngularVelocity::from_radians_per_second),
+        VescSeconds::from_seconds(0.5),
     );
 
-    let [scalar, body_x, body_y, body_z] = filter.estimated_orientation().wxyz_for_test();
+    let [scalar, body_x, body_y, body_z] = filter.orientation_for_test();
     assert!((scalar - 0.0).abs() < 0.000_001);
     assert!((body_x - 2.1).abs() < 0.000_001);
     assert!((body_y - 3.0).abs() < 0.000_001);
     assert!((body_z - 4.2).abs() < 0.000_001);
+}
+
+#[test]
+fn balance_filter_preserves_multisample_refloat_trajectory() {
+    let mut filter = BalanceFilter::source_startup();
+    for (acceleration, angular_rate, period) in [
+        ([0.2, -0.1, 0.97], [0.3, -0.2, 0.1], 0.01),
+        ([-0.4, 0.3, 0.85], [-0.6, 0.4, -0.2], 0.02),
+        ([0.05, 0.15, 1.1], [0.2, 0.7, 0.5], 0.015),
+    ] {
+        filter.update(imu_sample(
+            imu_acceleration(
+                imu_accel_x(AccelerationG::from_g(acceleration[0])),
+                imu_accel_y(AccelerationG::from_g(acceleration[1])),
+                imu_accel_z(AccelerationG::from_g(acceleration[2])),
+            ),
+            imu_angular_rate(
+                imu_roll_rate(AngularVelocity::from_radians_per_second(angular_rate[0])),
+                imu_pitch_rate(AngularVelocity::from_radians_per_second(angular_rate[1])),
+                imu_yaw_rate(AngularVelocity::from_radians_per_second(angular_rate[2])),
+            ),
+            imu_period(VescSeconds::from_seconds(period)),
+        ));
+    }
+
+    assert_eq!(
+        filter.orientation_for_test().map(f32::to_bits),
+        [
+            0.999_904_33,
+            0.002_009_128_7,
+            0.013_503_214,
+            0.002_211_600_8
+        ]
+        .map(f32::to_bits)
+    );
+}
+
+#[test]
+fn balance_filter_state_stays_one_quaternion_and_four_scalars() {
+    assert_eq!(core::mem::size_of::<BalanceFilter>(), 32);
+    assert_eq!(core::mem::align_of::<BalanceFilter>(), 4);
 }
