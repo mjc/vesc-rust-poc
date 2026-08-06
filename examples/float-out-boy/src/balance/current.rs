@@ -1,4 +1,3 @@
-use super::booster::Branch;
 use super::loop_io::LoopInput;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
@@ -110,11 +109,6 @@ impl RequestedCurrent {
 impl LoopInput {
     #[inline]
     pub(super) fn current_limit(self) -> MotorCurrentLimit {
-        let braking = matches!(
-            Branch::from_motor_current(self.motor_current),
-            Branch::Brake
-        );
-
         match self.mode {
             FloatOutBoyMode::HandTest => {
                 MotorCurrentLimit::new(Current::from_amps(HANDTEST_CURRENT_LIMIT_AMPS))
@@ -122,8 +116,9 @@ impl LoopInput {
             FloatOutBoyMode::Flywheel => {
                 MotorCurrentLimit::new(Current::from_amps(FLYWHEEL_CURRENT_LIMIT_AMPS))
             }
-            FloatOutBoyMode::Normal if braking => self.motor_current_min,
-            FloatOutBoyMode::Normal => self.motor_current_max,
+            FloatOutBoyMode::Normal => self
+                .motor_current_limits
+                .for_current(self.motor_current.current()),
         }
     }
 }

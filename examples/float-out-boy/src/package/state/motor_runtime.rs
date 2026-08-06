@@ -2,12 +2,12 @@ use super::FloatOutBoyPackageState;
 use super::limits::traction_loss;
 use super::motor_kinematics::MOTOR_KINEMATICS_CONFIG;
 use crate::domain::{FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents};
-use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCellCount, BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle,
     DutyCycleLimit, Frequency, InputCurrent, MotorCurrent, MotorCurrentLimit, SampleRate,
     SignedRatio, TemperatureLimitStart,
 };
+use vescpkg_rs::{DirectionalCurrentLimits, MotorTelemetry};
 
 const CURRENT_FILTER_Q: f32 = 0.707;
 const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
@@ -16,10 +16,8 @@ const MOTOR_DATA_EMA_CUTOFF: Frequency = Frequency::from_hertz(1.0);
 #[derive(Clone, Copy)]
 pub(in crate::package) struct MotorConfigSnapshot {
     duty_max_with_margin: DutyCycleLimit,
-    motor_current_max: MotorCurrentLimit,
-    motor_current_min: MotorCurrentLimit,
-    battery_current_max: InputCurrent,
-    battery_current_min: InputCurrent,
+    motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
+    battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
     mosfet_temperature_limit_start: TemperatureLimitStart,
     motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
@@ -42,10 +40,14 @@ pub(in crate::package) fn snapshot_motor_config(
         duty_max_with_margin: telemetry
             .duty_cycle_limit()
             .reduced_by(traction_loss::DUTY_MARGIN),
-        motor_current_max: telemetry.drive_current_limit(),
-        motor_current_min: telemetry.brake_current_limit(),
-        battery_current_max: settings.input_current_max(),
-        battery_current_min: settings.input_current_min(),
+        motor_current_limits: DirectionalCurrentLimits::new(
+            telemetry.drive_current_limit(),
+            telemetry.brake_current_limit(),
+        ),
+        battery_current_limits: DirectionalCurrentLimits::new(
+            settings.input_current_max(),
+            settings.input_current_min(),
+        ),
         mosfet_temperature_limit_start: telemetry.mosfet_temperature_limit_start(),
         motor_temperature_limit_start: telemetry.motor_temperature_limit_start(),
         battery_cell_count: telemetry.battery_cell_count(),
@@ -58,10 +60,8 @@ pub(in crate::package) fn snapshot_motor_config(
 
 pub(super) fn apply_motor_config(state: &mut FloatOutBoyPackageState, config: MotorConfigSnapshot) {
     state.duty_max_with_margin = config.duty_max_with_margin;
-    state.motor_current_max = config.motor_current_max;
-    state.motor_current_min = config.motor_current_min;
-    state.battery_current_max = config.battery_current_max;
-    state.battery_current_min = config.battery_current_min;
+    state.motor_current_limits = config.motor_current_limits;
+    state.battery_current_limits = config.battery_current_limits;
     state.mosfet_temperature_limit_start = config.mosfet_temperature_limit_start;
     state.motor_temperature_limit_start = config.motor_temperature_limit_start;
     state.battery_cell_count = config.battery_cell_count;
