@@ -621,14 +621,16 @@ impl FloatOutBoyPackageState {
     }
 
     fn led_runtime_status(&self) -> crate::leds::FloatOutBoyLedRuntimeStatus {
-        crate::leds::FloatOutBoyLedRuntimeStatus::new(
-            self.led_runtime_overrides
+        crate::leds::FloatOutBoyLedRuntimeStatus {
+            enabled: self
+                .led_runtime_overrides
                 .enabled
                 .unwrap_or_else(|| self.serialized_config.leds_enabled()),
-            self.led_runtime_overrides
+            headlights_enabled: self
+                .led_runtime_overrides
                 .headlights_enabled
                 .unwrap_or_else(|| self.serialized_config.headlights_enabled()),
-        )
+        }
     }
 
     fn effective_led_config(
@@ -639,9 +641,11 @@ impl FloatOutBoyPackageState {
     )> {
         self.serialized_config
             .led_configs()
-            .map(|(hardware, config)| {
+            .map(|(hardware, mut config)| {
                 let status = self.led_runtime_status();
-                (hardware, status.apply(config))
+                config.on = status.enabled;
+                config.headlights_on = status.headlights_enabled;
+                (hardware, config)
             })
     }
 
@@ -777,14 +781,12 @@ impl FloatOutBoyPackageState {
             return restore_flywheel_config;
         }
         let status = self.led_runtime_status();
-        if !status.headlights_enabled()
-            && self.headlights_on_konami.check(footpad, system_time_ticks)
+        if !status.headlights_enabled && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
             self.set_led_runtime_overrides(None, Some(true));
         }
-        if status.headlights_enabled()
-            && self.headlights_off_konami.check(footpad, system_time_ticks)
+        if status.headlights_enabled && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
             self.set_led_runtime_overrides(None, Some(false));

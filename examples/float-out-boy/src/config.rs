@@ -524,44 +524,38 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         let front_strip = self.strip()?;
         let rear_strip = self.strip()?;
 
-        let status = FloatOutBoyStatusBarConfig::new(
-            FloatOutBoyStatusBarIdleTimeout::from_seconds(idle_timeout),
+        let status = FloatOutBoyStatusBarConfig {
+            idle_timeout: FloatOutBoyStatusBarIdleTimeout(idle_timeout),
             duty_threshold,
             red_bar_percentage,
+            show_sensors_while_running: show_sensors,
             brightness_headlights_on,
             brightness_headlights_off,
-        );
-        let status = if show_sensors {
-            status.showing_sensors_while_running()
-        } else {
-            status
         };
-        let leds =
-            FloatOutBoyLedsConfig::new(headlights, taillights, front, rear, status, status_idle)
-                .with_headlights_transition(headlights_transition)
-                .with_direction_transition(direction_transition);
-        let leds = if on { leds.enabled() } else { leds };
-        let leds = if headlights_on {
-            leds.with_headlights_on()
-        } else {
-            leds
+        let leds = FloatOutBoyLedsConfig {
+            on,
+            headlights_on,
+            headlights_transition,
+            direction_transition,
+            lifted: crate::leds::FloatOutBoyLiftedLedsConfig {
+                lights_off: lights_off_when_lifted,
+                status_on_front: status_on_front_when_lifted,
+            },
+            headlights,
+            taillights,
+            front,
+            rear,
+            status,
+            status_idle,
         };
-        let leds = if lights_off_when_lifted {
-            leds.lights_off_when_lifted()
-        } else {
-            leds
+        let hardware = FloatOutBoyHardwareLedsConfig {
+            mode,
+            pin,
+            pin_config,
+            status: status_strip,
+            front: front_strip,
+            rear: rear_strip,
         };
-        let leds = if status_on_front_when_lifted {
-            leds.status_on_front_when_lifted()
-        } else {
-            leds
-        };
-        let hardware = FloatOutBoyHardwareLedsConfig::new(mode)
-            .with_pin(pin)
-            .with_pin_config(pin_config)
-            .with_status_strip(status_strip)
-            .with_front_strip(front_strip)
-            .with_rear_strip(rear_strip);
 
         (self.offset == 242).then_some((hardware, leds))
     }
@@ -632,23 +626,22 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
 
     fn bar(&mut self) -> Option<FloatOutBoyLedBarConfig> {
         let animation_mode = self.enum_value()?;
-        Some(FloatOutBoyLedBarConfig::new(
-            self.ratio(10_000.0)?,
-            self.enum_value()?,
-            self.enum_value()?,
+        Some(FloatOutBoyLedBarConfig {
+            brightness: self.ratio(10_000.0)?,
+            primary_color: self.enum_value()?,
+            secondary_color: self.enum_value()?,
             animation_mode,
-            FloatOutBoyLedAnimationSpeed::from_units(f32::from(self.u16()?) / 1_000.0),
-        ))
+            animation_speed: FloatOutBoyLedAnimationSpeed(f32::from(self.u16()?) / 1_000.0),
+        })
     }
 
     fn strip(&mut self) -> Option<FloatOutBoyLedStripConfig> {
-        let strip =
-            FloatOutBoyLedStripConfig::new(self.enum_value()?, self.byte()?, self.enum_value()?);
-        if self.boolean()? {
-            Some(strip.with_reverse(true))
-        } else {
-            Some(strip)
-        }
+        Some(FloatOutBoyLedStripConfig {
+            order: self.enum_value()?,
+            count: self.byte()?,
+            color_order: self.enum_value()?,
+            reverse: self.boolean()?,
+        })
     }
 
     fn enum_value<T: TryFrom<u8>>(&mut self) -> Option<T> {
