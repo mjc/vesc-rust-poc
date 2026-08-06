@@ -316,10 +316,10 @@ impl LispProcess {
         unsafe { crate::ffi::lbm_eval_is_paused() }
     }
 
-    /// Set the firmware-owned error reason for the current `LispBM` evaluation.
+    /// Set a static error reason retained by the current `LispBM` evaluation.
     #[cfg(not(test))]
     #[must_use]
-    pub fn set_error_reason(reason: crate::FirmwareStr<'_>) -> i32 {
+    pub fn set_error_reason(reason: crate::FirmwareStr<'static>) -> i32 {
         unsafe { crate::ffi::lbm_set_error_reason(reason.as_ptr().cast_mut()) }
     }
 

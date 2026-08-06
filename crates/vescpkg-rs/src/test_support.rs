@@ -381,6 +381,11 @@ impl FirmwareTest {
         crate::test_ffi::set_foc_audio_stop_available(available);
     }
 
+    /// Make the fake firmware audio-table getter return a null pointer.
+    pub fn set_audio_table_null(&self, is_null: bool) {
+        crate::test_ffi::set_foc_audio_table_null(is_null);
+    }
+
     /// Toggle whether the fake firmware exposes the PPM value slot.
     pub fn set_ppm_available(&self, available: bool) {
         crate::test_ffi::set_ppm_available(available);

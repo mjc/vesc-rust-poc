@@ -10,7 +10,7 @@ struct Handler;
 
 impl TerminalHandler for Handler {
     fn run(mut args: vescpkg_rs::TerminalArgs<'_>) {
-        assert_eq!(args.next(), Some("one"));
+        assert_eq!(args.next().unwrap().unwrap(), "one");
     }
 }
 

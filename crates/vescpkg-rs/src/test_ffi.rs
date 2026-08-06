@@ -190,6 +190,7 @@ static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_AUDIO_STOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_AUDIO_TABLE_INSTALLED: AtomicBool = AtomicBool::new(false);
+static FOC_AUDIO_TABLE_NULL: AtomicBool = AtomicBool::new(false);
 static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
@@ -448,6 +449,7 @@ fn reset_motor_state() {
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_AUDIO_STOP_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
+    FOC_AUDIO_TABLE_NULL.store(false, Ordering::Relaxed);
     FOC_TONE_COUNT.store(0, Ordering::Relaxed);
     FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
     FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
@@ -1361,6 +1363,10 @@ pub(crate) fn set_foc_audio_stop_available(available: bool) {
     FOC_AUDIO_STOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_foc_audio_table_null(is_null: bool) {
+    FOC_AUDIO_TABLE_NULL.store(is_null, Ordering::Relaxed);
+}
+
 pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
@@ -1957,7 +1963,13 @@ pub unsafe fn foc_set_audio_sample_table(
 pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
     (FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
         && FOC_AUDIO_TABLE_INSTALLED.load(Ordering::Relaxed))
-    .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
+    .then(|| {
+        if FOC_AUDIO_TABLE_NULL.load(Ordering::Relaxed) {
+            core::ptr::null()
+        } else {
+            AUDIO_SAMPLE_TABLE.as_ptr()
+        }
+    })
 }
 
 pub unsafe fn foc_play_audio_samples(

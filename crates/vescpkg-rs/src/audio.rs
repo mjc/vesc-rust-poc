@@ -162,8 +162,8 @@ impl FocAudio {
         }
     }
 
-    /// Return the firmware-owned table pointer for inspection without erasing
-    /// the firmware's `const` contract.
+    /// Return a non-null firmware-owned table pointer for inspection without
+    /// erasing the firmware's `const` contract.
     ///
     /// # Safety
     ///
@@ -174,6 +174,7 @@ impl FocAudio {
     #[must_use]
     pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<*const f32> {
         unsafe { crate::ffi::foc_get_audio_sample_table(c_int::from(channel.as_u8())) }
+            .filter(|pointer| !pointer.is_null())
     }
 }
 
