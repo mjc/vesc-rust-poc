@@ -543,27 +543,16 @@ impl RideModifierState {
             ),
             frequency,
         );
-        self.torque.configure(
-            config
-                .torque_tilt_filter()
-                .smooth_setpoint_config(winddown_time_constant),
-            frequency,
-        );
-        let filter = config.atr_filter();
-        self.atr.angle.configure(
-            filter.smooth_setpoint_config(winddown_time_constant),
-            frequency,
-        );
+        self.torque
+            .configure(config.torque_tilt_filter(winddown_time_constant), frequency);
+        let filter = config.atr_filter(winddown_time_constant);
+        self.atr.angle.configure(filter, frequency);
         let off_speed = AngularVelocity::from_degrees_per_second(
-            filter.on_speed_limit().as_degrees_per_second()
+            filter.on_speed_up.as_degrees_per_second()
                 / config.brake_tilt_lingering().value().max(1.0),
         );
-        self.brake.configure(
-            filter
-                .smooth_setpoint_config(winddown_time_constant)
-                .with_off_speed(off_speed),
-            frequency,
-        );
+        self.brake
+            .configure(filter.with_off_speed(off_speed), frequency);
     }
 
     pub(super) const fn atr_accel_diff(self) -> f32 {

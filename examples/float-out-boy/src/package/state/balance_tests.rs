@@ -269,9 +269,14 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     // Float Out Boy default `ki_limit` is 30A (`settings.xml:1679-1707`);
     // `pid_update` clamps the I term at `third_party/float-out-boy/src/pid.c:40-46` before RUNNING
     // smooths it into `balance_current` at `third_party/float-out-boy/src/main.c:932-954`.
-    let expected = (30.0 * torque_output_scale(&state))
-        .min(state.motor_current_limits.positive().current().as_amps())
-        * ema_alpha(25.0, configured_sample_rate(&state));
+    let expected = (30.0 * torque_output_scale(&state)).min(
+        state
+            .motor_config
+            .motor_current_limits
+            .positive()
+            .current()
+            .as_amps(),
+    ) * ema_alpha(25.0, configured_sample_rate(&state));
     assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
 }
 
@@ -513,7 +518,12 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
     } else {
         unclamped_i
     };
-    let current_limit = state.motor_current_limits.positive().current().as_amps();
+    let current_limit = state
+        .motor_config
+        .motor_current_limits
+        .positive()
+        .current()
+        .as_amps();
     let new_current = ((setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
         * torque_output_scale(state))
     .clamp(-current_limit, current_limit);

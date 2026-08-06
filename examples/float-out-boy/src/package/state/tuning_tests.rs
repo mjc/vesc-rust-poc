@@ -409,19 +409,19 @@ fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
         AngleDegrees::from_degrees(5.0)
     );
     assert_eq!(
-        config.balance().atr_filter().on_speed_limit(),
+        config.balance().atr_filter_on_speed_limit(),
         AngularVelocity::from_degrees_per_second(6.0)
     );
     assert_eq!(
-        config.balance().atr_filter().off_speed_limit(),
+        config.balance().atr_filter_off_speed_limit(),
         AngularVelocity::from_degrees_per_second(12.0)
     );
     assert_eq!(
-        config.balance().torque_tilt_filter().on_speed_limit(),
+        config.balance().torque_tilt_filter_on_speed_limit(),
         AngularVelocity::from_degrees_per_second(6.0)
     );
     assert_eq!(
-        config.balance().torque_tilt_filter().off_speed_limit(),
+        config.balance().torque_tilt_filter_off_speed_limit(),
         AngularVelocity::from_degrees_per_second(9.0)
     );
 }
@@ -458,14 +458,14 @@ fn runtime_tune_zero_speed_fields_preserve_existing_atr_filter_limits() {
             &packet,
         ));
 
-        let atr = state.serialized_config.balance().atr_filter();
+        let atr = state.serialized_config.balance();
         assert_eq!(
-            atr.on_speed_limit(),
+            atr.atr_filter_on_speed_limit(),
             AngularVelocity::from_degrees_per_second(8.0),
             "extended speeds {optional_extended_speeds:?}",
         );
         assert_eq!(
-            atr.off_speed_limit(),
+            atr.atr_filter_off_speed_limit(),
             AngularVelocity::from_degrees_per_second(10.0),
             "extended speeds {optional_extended_speeds:?}",
         );
