@@ -105,6 +105,38 @@ pub struct SmoothSetpointConfig {
     pub off_speed_down: AngularVelocity,
 }
 
+impl SmoothSetpointConfig {
+    /// Build a configuration with the same slew limits in both travel directions.
+    #[must_use]
+    pub const fn symmetric(
+        time_constant: VescSeconds,
+        on_speed_time_constant: VescSeconds,
+        off_speed_time_constant: VescSeconds,
+        winddown_time_constant: VescSeconds,
+        on_speed: AngularVelocity,
+        off_speed: AngularVelocity,
+    ) -> Self {
+        Self {
+            time_constant,
+            on_speed_time_constant,
+            off_speed_time_constant,
+            winddown_time_constant,
+            on_speed_up: on_speed,
+            off_speed_up: off_speed,
+            on_speed_down: on_speed,
+            off_speed_down: off_speed,
+        }
+    }
+
+    /// Replace the shared forward and reverse disengaging slew limit.
+    #[must_use]
+    pub const fn with_off_speed(mut self, off_speed: AngularVelocity) -> Self {
+        self.off_speed_up = off_speed;
+        self.off_speed_down = off_speed;
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SetpointPhase {
     Engaging,
@@ -260,6 +292,37 @@ mod tests {
             on_speed_down: AngularVelocity::from_degrees_per_second(20.0),
             off_speed_down: AngularVelocity::from_degrees_per_second(10.0),
         }
+    }
+
+    #[test]
+    fn symmetric_config_pairs_forward_and_reverse_speed_limits() {
+        let on_speed = AngularVelocity::from_degrees_per_second(24.0);
+        let off_speed = AngularVelocity::from_degrees_per_second(12.0);
+        let replacement_off_speed = AngularVelocity::from_degrees_per_second(8.0);
+        let config = SmoothSetpointConfig::symmetric(
+            VescSeconds::from_seconds(0.2),
+            VescSeconds::from_seconds(0.08),
+            VescSeconds::from_seconds(0.16),
+            VescSeconds::from_seconds(0.2),
+            on_speed,
+            off_speed,
+        )
+        .with_off_speed(replacement_off_speed);
+
+        assert_eq!(
+            (
+                config.on_speed_up,
+                config.on_speed_down,
+                config.off_speed_up,
+                config.off_speed_down,
+            ),
+            (
+                on_speed,
+                on_speed,
+                replacement_off_speed,
+                replacement_off_speed,
+            )
+        );
     }
 
     fn configured() -> SmoothSetpoint {
