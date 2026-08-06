@@ -233,7 +233,8 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    DecimatedRecordRing, FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    DataRecorder, DataRecorderFlags, DataRecorderProtocol, DataRecorderReply, DecimatedRecordRing,
+    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
     FirmwareDataRecorderDescriptorError, FirmwareDataRecorderVersion, FixedRecordRing,
     FixedRecordStorage, RingCursor,
 };
@@ -260,7 +261,10 @@ pub use can_bus::{
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
     CanStatus6, CanStatusStore,
 };
-pub use eeprom::{CustomEeprom, CustomEepromAddress, EepromError, EepromWord, EepromWordOffset};
+pub use eeprom::{
+    CustomEeprom, CustomEepromAddress, DeferredPersistence, EepromError, EepromWord,
+    EepromWordOffset, PersistedLoadOutcome, PersistedValue,
+};
 pub use encoder::{Encoder, EncoderError, EncoderHandler, EncoderRegistration};
 pub use extension::{ExtensionDescriptor, ExtensionName, ExtensionRegistration};
 pub use extension::{
@@ -277,8 +281,11 @@ pub use inputs::{
 pub use logging::{FirmwareLog, LogError};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
+#[cfg(feature = "math")]
+pub use numeric::MotorKinematicsConfig;
 pub use numeric::{
-    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothSetpoint, SmoothSetpointConfig,
+    SmoothSetpointDirection, SmoothSetpointMultiplier, SmoothedAngleSlew, WrappedAngleMotion,
     angle_step, ema_alpha, slew_toward,
 };
 
@@ -299,13 +306,20 @@ pub use firmware::{
 };
 pub(crate) use firmware::{firmware_array, loader_info_mut};
 pub use gnss::{Gnss, GnssError, GnssSnapshot};
+pub use haptic::{
+    HapticBeatDuration, HapticPlayback, HapticPulsePattern, HapticPulsePlayer,
+    haptic_strength_scale,
+};
 pub use imu::{
     FirmwareAhrs, FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, Imu,
     ImuCalibration, ImuCalibrationError, ImuReadCallback, ImuReadCallbackError,
     ImuReadCallbackLease, ImuReadHandler, register_imu_read_callback,
 };
 pub use init::{PackageStart, PackageStartError};
-pub use motor::{MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry};
+pub use motor::{
+    DirectionalCurrentLimits, MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry,
+    current_limit_saturation,
+};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
 pub use packet::OwnedPacketRegistration;
@@ -323,7 +337,8 @@ pub use thread::{
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
 pub use timer::{
-    WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
+    FixedRateLoopTiming, WrappingTimer, expire_timer_whole_seconds, timer_older,
+    timer_older_whole_seconds,
 };
 pub use uart::{Uart, UartError, UartSession};
 
@@ -333,6 +348,8 @@ mod can_bus;
 mod commands;
 /// GPIO bindings and convenience wrappers for package code.
 mod gpio;
+/// Allocation-free haptic pulse sequencing and strength scaling.
+mod haptic;
 /// IMU bindings and convenience wrappers for package code.
 mod imu;
 /// Device package entrypoint and loader-hook helpers.

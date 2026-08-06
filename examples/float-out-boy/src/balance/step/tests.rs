@@ -1,4 +1,7 @@
 use super::*;
+use crate::motor_torque::{
+    REFLOAT_COMPAT_TORQUE_CONSTANT, motor_torque_constant_from_firmware_config,
+};
 use vescpkg_rs::prelude::{AngleRadians, Rpm};
 
 fn motor_current(current: Current) -> MotorCurrent {
@@ -7,6 +10,16 @@ fn motor_current(current: Current) -> MotorCurrent {
 
 fn motor_current_limit(current: Current) -> MotorCurrentLimit {
     MotorCurrentLimit::new(current)
+}
+
+fn motor_current_limits(
+    positive: Current,
+    negative: Current,
+) -> vescpkg_rs::DirectionalCurrentLimits<MotorCurrentLimit> {
+    vescpkg_rs::DirectionalCurrentLimits::new(
+        motor_current_limit(positive),
+        motor_current_limit(negative),
+    )
 }
 
 fn electrical_speed(speed: Rpm) -> ElectricalSpeed {
@@ -52,12 +65,14 @@ fn base_input() -> LoopInput {
         gyro_yaw: AngularVelocity::from_degrees_per_second(0.0),
         motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
         motor_current: motor_current(Current::from_amps(1.0)),
-        motor_current_max: motor_current_limit(Current::from_amps(100.0)),
-        motor_current_min: motor_current_limit(Current::from_amps(100.0)),
+        motor_current_limits: motor_current_limits(
+            Current::from_amps(100.0),
+            Current::from_amps(100.0),
+        ),
         mode: FloatOutBoyMode::Normal,
         darkride: FloatOutBoyDarkRideState::Upright,
         traction_control: false,
-        motor_torque_constant: MotorTorqueConstant::REFLOAT_COMPAT,
+        motor_torque_constant: REFLOAT_COMPAT_TORQUE_CONSTANT,
     }
 }
 
@@ -75,7 +90,7 @@ fn assert_current(actual: MotorCurrent, expected: MotorCurrent) {
 }
 
 fn low_torque_constant() -> MotorTorqueConstant {
-    MotorTorqueConstant::from_firmware_config(
+    motor_torque_constant_from_firmware_config(
         vescpkg_rs::prelude::FocMotorFluxLinkage::new(
             vescpkg_rs::prelude::FluxLinkage::from_webers(0.004),
         ),
@@ -85,7 +100,7 @@ fn low_torque_constant() -> MotorTorqueConstant {
 
 fn assert_compat_torque(actual: MotorTorque, expected: MotorCurrent) {
     assert_current(
-        MotorTorqueConstant::REFLOAT_COMPAT.motor_current_from_torque(actual),
+        REFLOAT_COMPAT_TORQUE_CONSTANT.motor_current_from_torque(actual),
         expected,
     );
 }
@@ -154,7 +169,7 @@ fn pid_integral_matches_over_equal_elapsed_time_at_different_cadences() {
     }
 
     let integral_amps = |state: LoopState| {
-        MotorTorqueConstant::REFLOAT_COMPAT
+        REFLOAT_COMPAT_TORQUE_CONSTANT
             .current_from_torque(state.pid.integral_torque)
             .as_amps()
     };
@@ -263,8 +278,8 @@ fn pid_torque_converts_to_current_with_the_firmware_motor_constant() {
     assert_f32_eq!(compatibility_amps, alpha(25.0));
     assert_f32_eq!(
         configured_amps / compatibility_amps,
-        MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
-            / low_torque_constant().newton_meters_per_amp()
+        REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp()
+            / low_torque_constant().as_newton_meters_per_amp()
     );
 }
 
@@ -311,7 +326,10 @@ fn firmware_current_limit_still_clamps_after_torque_conversion() {
         },
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(3.0),
+                Current::from_amps(100.0),
+            ),
             motor_torque_constant: low_torque_constant(),
             ..base_input()
         },
@@ -370,7 +388,7 @@ fn balance_loop_preserves_multisample_pid_trajectory() {
         state = output.state;
         [
             output.requested_current.current().as_amps(),
-            MotorTorqueConstant::REFLOAT_COMPAT
+            REFLOAT_COMPAT_TORQUE_CONSTANT
                 .current_from_torque(state.pid.integral_torque)
                 .as_amps(),
             state.pid.kp_brake_scale.value(),
@@ -472,8 +490,10 @@ fn balance_loop_unit_limits_normal_current_like_float_out_boy_main_loop() {
             LoopInput {
                 setpoint: board_setpoint,
                 motor_current: measured_current,
-                motor_current_max: motor_current_limit(Current::from_amps(3.0)),
-                motor_current_min: motor_current_limit(current_limit.current()),
+                motor_current_limits: motor_current_limits(
+                    Current::from_amps(3.0),
+                    current_limit.current(),
+                ),
                 ..base_input()
             },
             base_state(),
@@ -497,8 +517,10 @@ fn balance_loop_unit_treats_motor_current_min_as_magnitude_like_float_out_boy_ma
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(-10.0)),
             motor_current: motor_current(Current::from_amps(-1.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(100.0)),
-            motor_current_min: motor_current_limit(Current::from_amps(-2.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(100.0),
+                Current::from_amps(-2.0),
+            ),
             ..base_input()
         },
         base_state(),
@@ -522,7 +544,7 @@ fn balance_loop_unit_clamps_to_a_zero_firmware_current_limit() {
         },
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
-            motor_current_max: motor_current_limit(Current::ZERO),
+            motor_current_limits: motor_current_limits(Current::ZERO, Current::from_amps(100.0)),
             ..base_input()
         },
         base_state(),
@@ -592,8 +614,10 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(3.0)),
             motor_current: motor_current(Current::from_amps(1.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(3.0)),
-            motor_current_min: motor_current_limit(Current::from_amps(2.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(3.0),
+                Current::from_amps(2.0),
+            ),
             ..base_input()
         },
         LoopState {
@@ -748,7 +772,7 @@ fn balance_loop_preserves_multisample_booster_trajectory() {
     let actual = inputs.map(|input| {
         let output = advance_loop(config, input, state);
         state = output.state;
-        MotorTorqueConstant::REFLOAT_COMPAT
+        REFLOAT_COMPAT_TORQUE_CONSTANT
             .current_from_torque(state.booster_torque)
             .as_amps()
             .to_bits()
