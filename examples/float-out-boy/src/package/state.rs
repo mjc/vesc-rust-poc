@@ -684,7 +684,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> u8 {
+    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> crate::lcm::FloatOutBoyLedMode {
         self.lcm.hardware_mode()
     }
 
@@ -907,7 +907,7 @@ impl FloatOutBoyPackageState {
             false
         };
 
-        if self.serialized_config.hardware_led_mode_id() == 0 {
+        if self.serialized_config.hardware_led_mode() == crate::lcm::FloatOutBoyLedMode::Off {
             return restore_flywheel_config;
         }
         let status = self.led_runtime_status();

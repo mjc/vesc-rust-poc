@@ -67,7 +67,8 @@ pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.
 pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE: SampleRate = SampleRate::from_hertz(500.0);
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[184] != 0;
-pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: u8 = FLOAT_OUT_BOY_DEFAULT_CONFIG[232];
+pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: FloatOutBoyLedMode =
+    FloatOutBoyLedMode::Off;
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_BEEPER_ENABLED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[248] != 0;
 
@@ -210,7 +211,7 @@ impl FloatOutBoyConfigImage {
         #[cfg(any(test, target_arch = "arm"))]
         FOOTPAD_ADC_SWAP_FIELD: CustomConfigFlagField => footpad_adc_swapped -> bool, offset: 247;
         SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField => speed_pushback_threshold -> Speed, offset: 83, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
-        HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 232, map: WireByte::as_u8;
+        HARDWARE_LED_MODE_FIELD: CustomConfigWireByteField => hardware_led_mode -> FloatOutBoyLedMode, offset: 232, map: |value: WireByte| FloatOutBoyLedMode::try_from(value.as_u8()).unwrap_or(FloatOutBoyLedMode::Off);
     }
     // The cutoff schema serializes `is_beeper_enabled` after the 15-byte
     // hardware LED block beginning at offset 232 and immediately before
@@ -346,8 +347,6 @@ vescpkg_rs::generated_custom_config_view! {
         MAX_STRENGTH_SPEED_FIELD: CustomConfigWireByteField => max_strength_speed -> Speed, offset: 268, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
     }
 }
-
-type FloatOutBoyHardwareLedMode = WireByte;
 
 fn decode_led_config(
     bytes: &[u8; FLOAT_OUT_BOY_CONFIG_LEN],

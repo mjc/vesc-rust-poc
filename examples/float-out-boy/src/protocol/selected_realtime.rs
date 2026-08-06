@@ -1,7 +1,8 @@
 //! Float Out Boy cutoff command 33 mask-selected realtime encoding.
 
 use super::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
+    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyPacket, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeLiveValues, FloatOutBoyRealtimeMask1, FloatOutBoyRealtimeMask2,
     FloatOutBoyRealtimePrecision, FloatOutBoyRealtimeSelectedRequest, realtime_value,
@@ -22,36 +23,6 @@ const MASK2_ODOMETER: u32 = 1 << 0;
 const MASK2_GNSS_LAT: u32 = 1 << 9;
 const MASK2_GNSS_LON: u32 = 1 << 10;
 const MASK2_GNSS_LAST_UPDATE: u32 = 1 << 14;
-
-const MASK1_ITEMS_BEFORE_SOC: [(u32, FloatOutBoyRealtimeDataItem); 8] = [
-    (1 << 6, FloatOutBoyRealtimeDataItem::MotorSpeed),
-    (1 << 7, FloatOutBoyRealtimeDataItem::MotorErpm),
-    (1 << 8, FloatOutBoyRealtimeDataItem::MotorCurrent),
-    (1 << 9, FloatOutBoyRealtimeDataItem::MotorDirectionalCurrent),
-    (1 << 10, FloatOutBoyRealtimeDataItem::MotorFilteredCurrent),
-    (1 << 11, FloatOutBoyRealtimeDataItem::MotorDutyCycle),
-    (1 << 12, FloatOutBoyRealtimeDataItem::MotorBatteryVoltage),
-    (1 << 13, FloatOutBoyRealtimeDataItem::MotorBatteryCurrent),
-];
-
-const MASK1_ITEMS_AFTER_SOC: [(u32, FloatOutBoyRealtimeDataItem); 16] = [
-    (1 << 15, FloatOutBoyRealtimeDataItem::MotorMosfetTemperature),
-    (1 << 16, FloatOutBoyRealtimeDataItem::MotorTemperature),
-    (1 << 17, FloatOutBoyRealtimeDataItem::ImuPitch),
-    (1 << 18, FloatOutBoyRealtimeDataItem::ImuBalancePitch),
-    (1 << 19, FloatOutBoyRealtimeDataItem::ImuRoll),
-    (1 << 20, FloatOutBoyRealtimeDataItem::FootpadAdc1),
-    (1 << 21, FloatOutBoyRealtimeDataItem::FootpadAdc2),
-    (1 << 22, FloatOutBoyRealtimeDataItem::RemoteInput),
-    (1 << 23, FloatOutBoyRealtimeDataItem::Setpoint),
-    (1 << 24, FloatOutBoyRealtimeDataItem::AtrSetpoint),
-    (1 << 25, FloatOutBoyRealtimeDataItem::BrakeTiltSetpoint),
-    (1 << 26, FloatOutBoyRealtimeDataItem::TorqueTiltSetpoint),
-    (1 << 27, FloatOutBoyRealtimeDataItem::TurnTiltSetpoint),
-    (1 << 28, FloatOutBoyRealtimeDataItem::RemoteSetpoint),
-    (1 << 29, FloatOutBoyRealtimeDataItem::BalanceCurrent),
-    (1 << 30, FloatOutBoyRealtimeDataItem::ControlFrequency),
-];
 
 /// Encode one cutoff command 33 response.
 #[must_use]
@@ -102,7 +73,10 @@ fn append_mask1(
     if mask.selects(MASK1_STATE_FLAGS) {
         packet.push_u32(header.state_flags_compat());
     }
-    for (bit, item) in MASK1_ITEMS_BEFORE_SOC {
+    for (bit, item) in (6..14)
+        .map(|shift| 1_u32.wrapping_shl(shift))
+        .zip(FLOAT_OUT_BOY_REALTIME_DATA_ITEMS[2..10].iter().copied())
+    {
         push_selected(
             packet,
             mask.selects(bit),
@@ -116,7 +90,13 @@ fn append_mask1(
         precision,
         payloads.battery_level().as_fraction(),
     );
-    for (bit, item) in MASK1_ITEMS_AFTER_SOC {
+    let after_soc = FLOAT_OUT_BOY_REALTIME_DATA_ITEMS[10..]
+        .iter()
+        .chain(FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS[..7].iter())
+        .copied()
+        .chain([FloatOutBoyRealtimeDataItem::ControlFrequency]);
+    let bits = (15..31).map(|shift| 1_u32.wrapping_shl(shift));
+    for (bit, item) in bits.zip(after_soc) {
         push_selected(
             packet,
             mask.selects(bit),
@@ -138,24 +118,19 @@ fn append_mask2(
             payloads.odometer().as_meters(),
         ));
     }
-    for (bit, value) in [
-        (1 << 1, payloads.distance_abs().distance().as_meters()),
-        (1 << 2, payloads.charging_voltage().voltage().as_volts()),
-        (1 << 3, payloads.charging_current().current().as_amps()),
-        (1 << 4, payloads.discharged_charge().charge().as_amp_hours()),
-        (1 << 5, payloads.charged_charge().charge().as_amp_hours()),
-        (
-            1 << 6,
-            payloads.discharged_energy().energy().as_watt_hours(),
-        ),
-        (1 << 7, payloads.charged_energy().energy().as_watt_hours()),
-        (
-            1 << 8,
-            payloads
-                .foc_id_current()
-                .map_or(0.0, |current| current.current().as_amps()),
-        ),
-    ] {
+    let bits = (1..9).map(|shift| 1_u32.wrapping_shl(shift));
+    for (bit, value) in bits.zip([
+        payloads.distance_abs().distance().as_meters(),
+        payloads.charging_voltage().voltage().as_volts(),
+        payloads.charging_current().current().as_amps(),
+        payloads.discharged_charge().charge().as_amp_hours(),
+        payloads.charged_charge().charge().as_amp_hours(),
+        payloads.discharged_energy().energy().as_watt_hours(),
+        payloads.charged_energy().energy().as_watt_hours(),
+        payloads
+            .foc_id_current()
+            .map_or(0.0, |current| current.current().as_amps()),
+    ]) {
         push_selected(packet, mask.selects(bit), precision, value);
     }
     let Some(gnss) = gnss else { return };
@@ -165,11 +140,12 @@ fn append_mask2(
     if mask.selects(MASK2_GNSS_LON) {
         packet.extend(&gnss.longitude().longitude().as_degrees().to_be_bytes());
     }
-    for (bit, value) in [
-        (1 << 11, gnss.altitude().altitude().as_meters()),
-        (1 << 12, gnss.speed().speed().as_kilometers_per_hour()),
-        (1 << 13, gnss.hdop().as_unitless()),
-    ] {
+    let bits = (11..14).map(|shift| 1_u32.wrapping_shl(shift));
+    for (bit, value) in bits.zip([
+        gnss.altitude().altitude().as_meters(),
+        gnss.speed().speed().as_kilometers_per_hour(),
+        gnss.hdop().as_unitless(),
+    ]) {
         push_selected(packet, mask.selects(bit), precision, value);
     }
     if mask.selects(MASK2_GNSS_LAST_UPDATE) {
