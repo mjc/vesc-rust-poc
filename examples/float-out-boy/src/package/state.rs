@@ -484,7 +484,7 @@ impl FloatOutBoyPackageState {
         // the serialized config as source of truth until full `Data` parity.
         self.motor_control.apply(
             motor,
-            run_state,
+            run_state.into(),
             self.motor_kinematics.0.smoothed_abs_erpm(),
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
