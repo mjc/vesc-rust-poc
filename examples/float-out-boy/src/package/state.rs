@@ -16,7 +16,7 @@ use crate::domain::{
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::{MotorTorqueConstant, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
@@ -194,7 +194,7 @@ pub struct FloatOutBoyPackageState {
     #[pin]
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: vescpkg_rs::BiquadLowPass,
-    motor_torque_constant: MotorTorqueConstant,
+    motor_torque_constant: Option<MotorTorqueConstant>,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
@@ -303,6 +303,11 @@ impl FloatOutBoyPackageState {
             internal_led_confirmation_pending: Default::default(),
             firmware_version: Default::default(),
         })
+    }
+
+    fn motor_torque_constant(&self) -> MotorTorqueConstant {
+        self.motor_torque_constant
+            .unwrap_or(REFLOAT_COMPAT_TORQUE_CONSTANT)
     }
 
     fn realtime_live_values(&self) -> FloatOutBoyRealtimeLiveValues {
@@ -599,7 +604,7 @@ impl FloatOutBoyPackageState {
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
                     traction_control: self.ride_flags.traction_control,
-                    motor_torque_constant: self.motor_torque_constant,
+                    motor_torque_constant: self.motor_torque_constant(),
                 },
                 sample.period().duration(),
             );
