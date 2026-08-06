@@ -74,6 +74,63 @@ macro_rules! assert_f32_ne {
     }};
 }
 
+macro_rules! const_field_getters {
+    ($( $(#[$attribute:meta])* $visibility:vis fn $name:ident -> $output:ty = $field:ident; )+) => {
+        $(
+            $(#[$attribute])*
+            #[must_use]
+            $visibility const fn $name(self) -> $output {
+                self.$field
+            }
+        )+
+    };
+}
+
+macro_rules! wire_enum {
+    (
+        $(#[$enum_attribute:meta])*
+        $visibility:vis enum $name:ident {
+            $(
+                $(#[$variant_attribute:meta])*
+                $variant:ident = $id:literal,
+            )+
+        }
+    ) => {
+        $(#[$enum_attribute])*
+        #[repr(u8)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        $visibility enum $name {
+            $(
+                $(#[$variant_attribute])*
+                $variant = $id,
+            )+
+        }
+
+        impl $name {
+            /// Return the Float Out Boy `v1.2.1` wire ID.
+            #[must_use]
+            #[expect(
+                clippy::as_conversions,
+                reason = "the repr(u8) discriminant is the firmware wire value"
+            )]
+            pub const fn id(self) -> u8 {
+                self as u8
+            }
+        }
+
+        impl TryFrom<u8> for $name {
+            type Error = u8;
+
+            fn try_from(value: u8) -> Result<Self, Self::Error> {
+                match value {
+                    $($id => Ok(Self::$variant),)+
+                    _ => Err(value),
+                }
+            }
+        }
+    };
+}
+
 #[cfg(not(target_arch = "arm"))]
 fn main() {}
 

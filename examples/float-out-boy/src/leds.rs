@@ -5,55 +5,12 @@
 
 use vescpkg_rs::prelude::Ratio;
 
-/// Float Out Boy hardware LED output pin.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyLedPin {
-    /// STM32 pin B6.
-    B6 = 0,
-    /// STM32 pin B7.
-    B7 = 1,
-    /// STM32 pin C9.
-    C9 = 2,
-}
+pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
+    Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
+};
 
-impl FloatOutBoyLedPin {
-    /// Return the Float Out Boy `v1.2.1` LED pin ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
-}
-
-/// Float Out Boy hardware LED pin pull-up configuration.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FloatOutBoyLedPinConfig {
-    /// Enable the 5V pull-up.
-    PullupTo5v = 0,
-    /// Leave the LED pin without pull-up.
-    NoPullup = 1,
-}
-
-impl FloatOutBoyLedPinConfig {
-    /// Return the Float Out Boy `v1.2.1` LED pin config ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
-}
-
+wire_enum! {
 /// Float Out Boy LED color channel order.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedColorOrder {
     /// Green, red, blue.
     Grb = 0,
@@ -64,22 +21,13 @@ pub enum FloatOutBoyLedColorOrder {
     /// White, red, green, blue.
     Wrgb = 3,
 }
-
-impl FloatOutBoyLedColorOrder {
-    /// Return the Float Out Boy `v1.2.1` LED color order ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
+wire_enum! {
 /// Float Out Boy named LED color.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// C map: these IDs follow the `enumNames` order for LED color config fields at
+/// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
 pub enum FloatOutBoyLedColor {
     /// Black/off.
     Black = 0,
@@ -146,20 +94,6 @@ pub enum FloatOutBoyLedColor {
     /// Lavender.
     Lavender = 31,
 }
-
-impl FloatOutBoyLedColor {
-    /// Return the Float Out Boy `v1.2.1` LED color ID.
-    ///
-    /// C map: these IDs follow the `enumNames` order for LED color config fields at
-    /// `third_party/float-out-boy/src/conf/settings.xml:3456-3487`.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// One renderer pixel in red, green, blue, white channel order.
@@ -233,10 +167,9 @@ impl FloatOutBoyLedPixel {
         Self { channels }
     }
 
-    /// Return the pixel as red, green, blue, white channel values.
-    #[must_use]
-    pub const fn channels(self) -> [u8; 4] {
-        self.channels
+    const_field_getters! {
+        /// Return the pixel as red, green, blue, white channel values.
+        pub fn channels -> [u8; 4] = channels;
     }
 
     /// Gamma-correct and reorder this pixel for one physical strip.
@@ -278,36 +211,20 @@ impl FloatOutBoyLedPixel {
     }
 
     fn blend(first: Self, second: Self, blend: f32) -> Self {
-        if blend <= 0.0 {
-            return first;
+        if blend.is_nan() {
+            return Self::default();
         }
-        if blend >= 1.0 {
-            return second;
-        }
-        let first_weight = 1.0 - blend;
-        let channels = core::array::from_fn(|index| {
-            let first = first.channels.get(index).copied().unwrap_or_default();
-            let second = second.channels.get(index).copied().unwrap_or_default();
-            crate::wire::saturating_trunc_f32_to_u8(
-                f32::from(first) * first_weight + f32::from(second) * blend,
-            )
-        });
-        Self { channels }
+        first.scaled_and_blended(second, Ratio::from_ratio_const(1.0), Ratio::clamped(blend))
     }
 }
 
 fn refloat_led_gamma(channel: u8) -> u8 {
     let channel = u16::from(channel);
-    channel
-        .checked_mul(channel)
-        .and_then(|square| square.checked_add(channel))
-        .and_then(|value| u8::try_from(value / 256).ok())
-        .unwrap_or_default()
+    u8::try_from(channel.saturating_mul(channel.saturating_add(1)) / 256).unwrap_or_default()
 }
 
+wire_enum! {
 /// Float Out Boy LED animation mode.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedAnimationMode {
     /// Solid color.
     Solid = 0,
@@ -328,22 +245,10 @@ pub enum FloatOutBoyLedAnimationMode {
     /// Roll rainbow colors.
     RainbowRoll = 8,
 }
-
-impl FloatOutBoyLedAnimationMode {
-    /// Return the Float Out Boy `v1.2.1` LED animation mode ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
+wire_enum! {
 /// Float Out Boy LED transition mode.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedTransition {
     /// Fade directly to the target bar.
     Fade = 0,
@@ -354,17 +259,6 @@ pub enum FloatOutBoyLedTransition {
     /// Monochrome cipher transition.
     MonoCipher = 3,
 }
-
-impl FloatOutBoyLedTransition {
-    /// Return the Float Out Boy `v1.2.1` LED transition ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// Float Out Boy LED animation speed scalar.
@@ -415,34 +309,17 @@ impl FloatOutBoyLedBarConfig {
         }
     }
 
-    /// Return the configured brightness.
-    #[must_use]
-    pub const fn brightness(self) -> Ratio {
-        self.brightness
-    }
-
-    /// Return the primary LED color.
-    #[must_use]
-    pub const fn primary_color(self) -> FloatOutBoyLedColor {
-        self.primary_color
-    }
-
-    /// Return the secondary LED color.
-    #[must_use]
-    pub const fn secondary_color(self) -> FloatOutBoyLedColor {
-        self.secondary_color
-    }
-
-    /// Return the animation mode.
-    #[must_use]
-    pub const fn animation_mode(self) -> FloatOutBoyLedAnimationMode {
-        self.animation_mode
-    }
-
-    /// Return the animation speed.
-    #[must_use]
-    pub const fn animation_speed(self) -> FloatOutBoyLedAnimationSpeed {
-        self.animation_speed
+    const_field_getters! {
+        /// Return the configured brightness.
+        pub fn brightness -> Ratio = brightness;
+        /// Return the primary LED color.
+        pub fn primary_color -> FloatOutBoyLedColor = primary_color;
+        /// Return the secondary LED color.
+        pub fn secondary_color -> FloatOutBoyLedColor = secondary_color;
+        /// Return the animation mode.
+        pub fn animation_mode -> FloatOutBoyLedAnimationMode = animation_mode;
+        /// Return the animation speed.
+        pub fn animation_speed -> FloatOutBoyLedAnimationSpeed = animation_speed;
     }
 }
 
@@ -503,40 +380,19 @@ impl FloatOutBoyStatusBarConfig {
         self
     }
 
-    /// Return the idle timeout.
-    #[must_use]
-    pub const fn idle_timeout(self) -> FloatOutBoyStatusBarIdleTimeout {
-        self.idle_timeout
-    }
-
-    /// Return the duty threshold for switching status display.
-    #[must_use]
-    pub const fn duty_threshold(self) -> Ratio {
-        self.duty_threshold
-    }
-
-    /// Return the red-bar percentage threshold.
-    #[must_use]
-    pub const fn red_bar_percentage(self) -> Ratio {
-        self.red_bar_percentage
-    }
-
-    /// Return whether sensors are shown while running.
-    #[must_use]
-    pub const fn shows_sensors_while_running(self) -> bool {
-        self.show_sensors_while_running
-    }
-
-    /// Return status brightness when headlights are on.
-    #[must_use]
-    pub const fn brightness_headlights_on(self) -> Ratio {
-        self.brightness_headlights_on
-    }
-
-    /// Return status brightness when headlights are off.
-    #[must_use]
-    pub const fn brightness_headlights_off(self) -> Ratio {
-        self.brightness_headlights_off
+    const_field_getters! {
+        /// Return the idle timeout.
+        pub fn idle_timeout -> FloatOutBoyStatusBarIdleTimeout = idle_timeout;
+        /// Return the duty threshold for switching status display.
+        pub fn duty_threshold -> Ratio = duty_threshold;
+        /// Return the red-bar percentage threshold.
+        pub fn red_bar_percentage -> Ratio = red_bar_percentage;
+        /// Return whether sensors are shown while running.
+        pub fn shows_sensors_while_running -> bool = show_sensors_while_running;
+        /// Return status brightness when headlights are on.
+        pub fn brightness_headlights_on -> Ratio = brightness_headlights_on;
+        /// Return status brightness when headlights are off.
+        pub fn brightness_headlights_off -> Ratio = brightness_headlights_off;
     }
 }
 
@@ -577,14 +433,9 @@ impl FloatOutBoyLedRuntimeStatus {
         }
     }
 
-    #[must_use]
-    pub(crate) const fn enabled(self) -> bool {
-        self.enabled
-    }
-
-    #[must_use]
-    pub(crate) const fn headlights_enabled(self) -> bool {
-        self.headlights_enabled
+    const_field_getters! {
+        pub(crate) fn enabled -> bool = enabled;
+        pub(crate) fn headlights_enabled -> bool = headlights_enabled;
     }
 
     #[must_use]
@@ -669,28 +520,15 @@ impl FloatOutBoyLedsConfig {
         self
     }
 
-    /// Return whether LEDs are enabled.
-    #[must_use]
-    pub const fn is_enabled(self) -> bool {
-        self.on
-    }
-
-    /// Return whether headlights are on.
-    #[must_use]
-    pub const fn are_headlights_on(self) -> bool {
-        self.headlights_on
-    }
-
-    /// Return the headlights transition.
-    #[must_use]
-    pub const fn headlights_transition(self) -> FloatOutBoyLedTransition {
-        self.headlights_transition
-    }
-
-    /// Return the direction transition.
-    #[must_use]
-    pub const fn direction_transition(self) -> FloatOutBoyLedTransition {
-        self.direction_transition
+    const_field_getters! {
+        /// Return whether LEDs are enabled.
+        pub fn is_enabled -> bool = on;
+        /// Return whether headlights are on.
+        pub fn are_headlights_on -> bool = headlights_on;
+        /// Return the headlights transition.
+        pub fn headlights_transition -> FloatOutBoyLedTransition = headlights_transition;
+        /// Return the direction transition.
+        pub fn direction_transition -> FloatOutBoyLedTransition = direction_transition;
     }
 
     /// Return whether lights are turned off while lifted.
@@ -705,46 +543,24 @@ impl FloatOutBoyLedsConfig {
         self.lifted.status_on_front
     }
 
-    /// Return the headlights LED bar config.
-    #[must_use]
-    pub const fn headlights(self) -> FloatOutBoyLedBarConfig {
-        self.headlights
-    }
-
-    /// Return the taillights LED bar config.
-    #[must_use]
-    pub const fn taillights(self) -> FloatOutBoyLedBarConfig {
-        self.taillights
-    }
-
-    /// Return the front LED bar config.
-    #[must_use]
-    pub const fn front(self) -> FloatOutBoyLedBarConfig {
-        self.front
-    }
-
-    /// Return the rear LED bar config.
-    #[must_use]
-    pub const fn rear(self) -> FloatOutBoyLedBarConfig {
-        self.rear
-    }
-
-    /// Return the status-bar config.
-    #[must_use]
-    pub const fn status(self) -> FloatOutBoyStatusBarConfig {
-        self.status
-    }
-
-    /// Return the idle status LED bar config.
-    #[must_use]
-    pub const fn status_idle(self) -> FloatOutBoyLedBarConfig {
-        self.status_idle
+    const_field_getters! {
+        /// Return the headlights LED bar config.
+        pub fn headlights -> FloatOutBoyLedBarConfig = headlights;
+        /// Return the taillights LED bar config.
+        pub fn taillights -> FloatOutBoyLedBarConfig = taillights;
+        /// Return the front LED bar config.
+        pub fn front -> FloatOutBoyLedBarConfig = front;
+        /// Return the rear LED bar config.
+        pub fn rear -> FloatOutBoyLedBarConfig = rear;
+        /// Return the status-bar config.
+        pub fn status -> FloatOutBoyStatusBarConfig = status;
+        /// Return the idle status LED bar config.
+        pub fn status_idle -> FloatOutBoyLedBarConfig = status_idle;
     }
 }
 
+wire_enum! {
 /// Float Out Boy physical LED strip order.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyLedStripOrder {
     /// No strip is assigned.
     None = 0,
@@ -755,17 +571,6 @@ pub enum FloatOutBoyLedStripOrder {
     /// Third LED strip.
     Third = 3,
 }
-
-impl FloatOutBoyLedStripOrder {
-    /// Return the Float Out Boy `v1.2.1` LED strip order ID.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the firmware wire value"
-    )]
-    pub const fn id(self) -> u8 {
-        self as u8
-    }
 }
 
 /// Float Out Boy LED strip configuration.
@@ -800,28 +605,15 @@ impl FloatOutBoyLedStripConfig {
         self
     }
 
-    /// Return the physical strip order.
-    #[must_use]
-    pub const fn order(self) -> FloatOutBoyLedStripOrder {
-        self.order
-    }
-
-    /// Return the configured LED count.
-    #[must_use]
-    pub const fn count(self) -> u8 {
-        self.count
-    }
-
-    /// Return the configured color channel order.
-    #[must_use]
-    pub const fn color_order(self) -> FloatOutBoyLedColorOrder {
-        self.color_order
-    }
-
-    /// Return whether LED indexing is reversed.
-    #[must_use]
-    pub const fn is_reversed(self) -> bool {
-        self.reverse
+    const_field_getters! {
+        /// Return the physical strip order.
+        pub fn order -> FloatOutBoyLedStripOrder = order;
+        /// Return the configured LED count.
+        pub fn count -> u8 = count;
+        /// Return the configured color channel order.
+        pub fn color_order -> FloatOutBoyLedColorOrder = color_order;
+        /// Return whether LED indexing is reversed.
+        pub fn is_reversed -> bool = reverse;
     }
 }
 
@@ -837,6 +629,16 @@ enum FloatOutBoyHeadlightsState {
     TransitioningOn,
     On,
     TransitioningOff,
+}
+
+impl FloatOutBoyHeadlightsState {
+    const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    const fn is_transitioning(self) -> bool {
+        matches!(self, Self::TransitioningOn | Self::TransitioningOff)
+    }
 }
 
 /// Inputs copied into one pure 30 Hz LED state update.
@@ -892,10 +694,6 @@ impl FloatOutBoyLedDynamics {
     }
 
     /// Advance the pure renderer decisions by one source-rate 30 Hz tick.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the ordered Refloat state update stays contiguous for source comparison"
-    )]
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
@@ -931,57 +729,34 @@ impl FloatOutBoyLedDynamics {
             self.board_is_upright = false;
         }
 
+        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
         if run_state != self.run_state {
-            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled) {
+            if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled)
+                || matches!(run_state, crate::FloatOutBoyRunState::Disabled)
+            {
                 self.on_off_fade = 0.0;
             }
-            if matches!(run_state, crate::FloatOutBoyRunState::Running)
-                && !matches!(
-                    self.headlights_state,
-                    FloatOutBoyHeadlightsState::TransitioningOn
-                        | FloatOutBoyHeadlightsState::TransitioningOff
-                )
-            {
+            if running && !self.headlights_state.is_transitioning() {
                 self.direction_forward = pitch_degrees >= 0.0;
                 self.direction_split = if self.direction_forward { 1.0 } else { -1.0 };
-            } else if matches!(run_state, crate::FloatOutBoyRunState::Disabled) {
-                self.on_off_fade = 0.0;
             }
         }
         self.run_state = run_state;
 
-        let running = matches!(run_state, crate::FloatOutBoyRunState::Running);
-        let (left, right) = if config.status().shows_sensors_while_running() || !running {
-            (
-                (!running
-                    && matches!(
-                        footpad,
-                        crate::FloatOutBoyFootpadState::Left | crate::FloatOutBoyFootpadState::Both
-                    ))
-                    || matches!(footpad, crate::FloatOutBoyFootpadState::Left),
-                (!running
-                    && matches!(
-                        footpad,
-                        crate::FloatOutBoyFootpadState::Right
-                            | crate::FloatOutBoyFootpadState::Both
-                    ))
-                    || matches!(footpad, crate::FloatOutBoyFootpadState::Right),
-            )
-        } else {
-            (false, false)
-        };
+        let show_sensors = config.status().shows_sensors_while_running() || !running;
+        let both = !running && matches!(footpad, crate::FloatOutBoyFootpadState::Both);
+        let left =
+            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
+        let right =
+            show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
         self.left_sensor = rate_limit(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
         self.right_sensor = rate_limit(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
 
         let headlights_should = matches!(run_state, crate::FloatOutBoyRunState::Running)
             && !matches!(mode, crate::FloatOutBoyMode::Flywheel)
             && config.are_headlights_on();
-        let headlights_on = matches!(self.headlights_state, FloatOutBoyHeadlightsState::On);
-        let transitioning = matches!(
-            self.headlights_state,
-            FloatOutBoyHeadlightsState::TransitioningOn
-                | FloatOutBoyHeadlightsState::TransitioningOff
-        );
+        let headlights_on = self.headlights_state.is_on();
+        let transitioning = self.headlights_state.is_transitioning();
         let was_headlights_transitioning = transitioning;
         if headlights_should != headlights_on && !transitioning {
             self.headlights_split = -1.0;
@@ -1015,11 +790,7 @@ impl FloatOutBoyLedDynamics {
 
         if matches!(run_state, crate::FloatOutBoyRunState::Running)
             && !was_headlights_transitioning
-            && !matches!(
-                self.headlights_state,
-                FloatOutBoyHeadlightsState::TransitioningOn
-                    | FloatOutBoyHeadlightsState::TransitioningOff
-            )
+            && !self.headlights_state.is_transitioning()
         {
             let distance_change = if darkride {
                 self.split_distance - distance
@@ -1052,10 +823,9 @@ impl FloatOutBoyLedDynamics {
         )
     }
 
-    /// Return whether the lifted-board hysteresis is on its upright side.
-    #[must_use]
-    pub const fn is_board_upright(self) -> bool {
-        self.board_is_upright
+    const_field_getters! {
+        /// Return whether the lifted-board hysteresis is on its upright side.
+        pub fn is_board_upright -> bool = board_is_upright;
     }
 
     /// Return the current headlight transition split and settled state.
@@ -1063,12 +833,8 @@ impl FloatOutBoyLedDynamics {
     pub const fn headlights(self) -> (f32, bool, bool) {
         (
             self.headlights_split,
-            matches!(self.headlights_state, FloatOutBoyHeadlightsState::On),
-            matches!(
-                self.headlights_state,
-                FloatOutBoyHeadlightsState::TransitioningOn
-                    | FloatOutBoyHeadlightsState::TransitioningOff
-            ),
+            self.headlights_state.is_on(),
+            self.headlights_state.is_transitioning(),
         )
     }
 
@@ -1114,19 +880,6 @@ impl FloatOutBoyLedFrameUpdate {
     #[must_use]
     pub const fn new(ride: FloatOutBoyLedUpdate, status: FloatOutBoyLedStatusUpdate) -> Self {
         Self { ride, status }
-    }
-
-    /// Build a frame input when only ride behavior is under test.
-    #[must_use]
-    pub const fn ride_only(ride: FloatOutBoyLedUpdate) -> Self {
-        Self::new(
-            ride,
-            FloatOutBoyLedStatusUpdate {
-                battery_level: 0.0,
-                duty_cycle: 0.0,
-                moving: true,
-            },
-        )
     }
 }
 
@@ -1613,22 +1366,10 @@ pub enum FloatOutBoyStatusProgress {
 
 /// Shared brightness and blend inputs for one LED overlay.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyLedOverlay {
+struct FloatOutBoyLedOverlay {
     strip_brightness: Ratio,
     on_off_fade: Ratio,
     blend: Ratio,
-}
-
-impl FloatOutBoyLedOverlay {
-    /// Build checked overlay inputs.
-    #[must_use]
-    pub const fn new(strip_brightness: Ratio, on_off_fade: Ratio, blend: Ratio) -> Self {
-        Self {
-            strip_brightness,
-            on_off_fade,
-            blend,
-        }
-    }
 }
 
 impl FloatOutBoyLedStripFrame {
@@ -1668,15 +1409,8 @@ impl FloatOutBoyLedStripFrame {
         self.pixels.get(logical_index).copied()
     }
 
-    /// Render a solid bar with Refloat's brightness and blend ordering.
-    pub fn render_solid(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, blend: Ratio) {
-        let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
-        let target = FloatOutBoyLedPixel::from_named(bar.primary_color());
-        self.render_target(target, brightness, blend);
-    }
-
     /// Paint Refloat's left/right footpad indicator over this strip.
-    pub fn render_footpads(
+    fn render_footpads(
         &mut self,
         left: Ratio,
         right: Ratio,
@@ -1753,7 +1487,11 @@ impl FloatOutBoyLedStripFrame {
             }
         }
 
-        let overlay = |amount| FloatOutBoyLedOverlay::new(brightness, fade, amount);
+        let overlay = |amount| FloatOutBoyLedOverlay {
+            strip_brightness: brightness,
+            on_off_fade: fade,
+            blend: amount,
+        };
         if idle_blend.as_ratio() < 1.0 && duty_blend.as_ratio() < 1.0 {
             self.render_status_progress(
                 battery,
@@ -1783,7 +1521,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     /// Paint Refloat's battery or duty progress display over this strip.
-    pub fn render_status_progress(
+    fn render_status_progress(
         &mut self,
         value: f32,
         kind: FloatOutBoyStatusProgress,
@@ -1916,31 +1654,25 @@ impl FloatOutBoyLedStripFrame {
     /// Render one currently implemented Refloat bar animation.
     pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let time = time * bar.animation_speed().as_units();
-        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Felony) {
-            self.render_felony(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(
-            bar.animation_mode(),
-            FloatOutBoyLedAnimationMode::RainbowCycle
-                | FloatOutBoyLedAnimationMode::RainbowFade
-                | FloatOutBoyLedAnimationMode::RainbowRoll
-        ) {
-            self.render_rainbow(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Pulse) {
-            self.render_pulse(bar, on_off_fade, time);
-            return;
-        }
-        if matches!(
-            bar.animation_mode(),
-            FloatOutBoyLedAnimationMode::KnightRider
-        ) {
-            self.render_knight_rider(bar, on_off_fade, time);
-            return;
-        }
         let target = match bar.animation_mode() {
+            FloatOutBoyLedAnimationMode::Felony => {
+                self.render_felony(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::RainbowCycle
+            | FloatOutBoyLedAnimationMode::RainbowFade
+            | FloatOutBoyLedAnimationMode::RainbowRoll => {
+                self.render_rainbow(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::Pulse => {
+                self.render_pulse(bar, on_off_fade, time);
+                return;
+            }
+            FloatOutBoyLedAnimationMode::KnightRider => {
+                self.render_knight_rider(bar, on_off_fade, time);
+                return;
+            }
             FloatOutBoyLedAnimationMode::Solid => {
                 FloatOutBoyLedPixel::from_named(bar.primary_color())
             }
@@ -1957,12 +1689,6 @@ impl FloatOutBoyLedStripFrame {
                 };
                 FloatOutBoyLedPixel::from_named(color)
             }
-            FloatOutBoyLedAnimationMode::Pulse
-            | FloatOutBoyLedAnimationMode::KnightRider
-            | FloatOutBoyLedAnimationMode::Felony
-            | FloatOutBoyLedAnimationMode::RainbowCycle
-            | FloatOutBoyLedAnimationMode::RainbowFade
-            | FloatOutBoyLedAnimationMode::RainbowRoll => return,
         };
         let brightness = Ratio::clamped(bar.brightness().as_ratio() * on_off_fade.as_ratio());
         self.render_target(target, brightness, Ratio::from_ratio_const(1.0));
@@ -2424,6 +2150,17 @@ mod renderer_tests {
         super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled()
     }
 
+    fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedFrameUpdate {
+        super::FloatOutBoyLedFrameUpdate::new(
+            ride,
+            super::FloatOutBoyLedStatusUpdate {
+                battery_level: 0.0,
+                duty_cycle: 0.0,
+                moving: true,
+            },
+        )
+    }
+
     #[test]
     fn named_led_colors_match_refloat_1_2_1_rgba_channels() {
         let cases = [
@@ -2463,6 +2200,104 @@ mod renderer_tests {
 
         for (color, channels) in cases {
             assert_eq!(FloatOutBoyLedPixel::from_named(color).channels(), channels);
+        }
+    }
+
+    #[test]
+    fn led_config_enum_ids_match_refloat_1_2_1_settings() {
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPin::B6.id(),
+                super::FloatOutBoyLedPin::B7.id(),
+                super::FloatOutBoyLedPin::C9.id(),
+            ],
+            [0, 1, 2]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedPinConfig::PullupTo5v.id(),
+                super::FloatOutBoyLedPinConfig::NoPullup.id(),
+            ],
+            [0, 1]
+        );
+        assert_eq!(
+            [
+                FloatOutBoyLedColorOrder::Grb.id(),
+                FloatOutBoyLedColorOrder::Grbw.id(),
+                FloatOutBoyLedColorOrder::Rgb.id(),
+                FloatOutBoyLedColorOrder::Wrgb.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedAnimationMode::Solid.id(),
+                super::FloatOutBoyLedAnimationMode::Fade.id(),
+                super::FloatOutBoyLedAnimationMode::Pulse.id(),
+                super::FloatOutBoyLedAnimationMode::Strobe.id(),
+                super::FloatOutBoyLedAnimationMode::KnightRider.id(),
+                super::FloatOutBoyLedAnimationMode::Felony.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowCycle.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowFade.id(),
+                super::FloatOutBoyLedAnimationMode::RainbowRoll.id(),
+            ],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedTransition::Fade.id(),
+                super::FloatOutBoyLedTransition::FadeOutIn.id(),
+                super::FloatOutBoyLedTransition::Cipher.id(),
+                super::FloatOutBoyLedTransition::MonoCipher.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+        assert_eq!(
+            [
+                super::FloatOutBoyLedStripOrder::None.id(),
+                super::FloatOutBoyLedStripOrder::First.id(),
+                super::FloatOutBoyLedStripOrder::Second.id(),
+                super::FloatOutBoyLedStripOrder::Third.id(),
+            ],
+            [0, 1, 2, 3]
+        );
+
+        let colors = [
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::WhiteFull,
+            FloatOutBoyLedColor::WhiteRgb,
+            FloatOutBoyLedColor::WhiteSingle,
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Ferrari,
+            FloatOutBoyLedColor::Flame,
+            FloatOutBoyLedColor::Coral,
+            FloatOutBoyLedColor::Sunset,
+            FloatOutBoyLedColor::Sunrise,
+            FloatOutBoyLedColor::Gold,
+            FloatOutBoyLedColor::Orange,
+            FloatOutBoyLedColor::Yellow,
+            FloatOutBoyLedColor::Banana,
+            FloatOutBoyLedColor::Lime,
+            FloatOutBoyLedColor::Acid,
+            FloatOutBoyLedColor::Sage,
+            FloatOutBoyLedColor::Green,
+            FloatOutBoyLedColor::Mint,
+            FloatOutBoyLedColor::Tiffany,
+            FloatOutBoyLedColor::Cyan,
+            FloatOutBoyLedColor::Steel,
+            FloatOutBoyLedColor::Sky,
+            FloatOutBoyLedColor::Azure,
+            FloatOutBoyLedColor::Sapphire,
+            FloatOutBoyLedColor::Blue,
+            FloatOutBoyLedColor::Violet,
+            FloatOutBoyLedColor::Amethyst,
+            FloatOutBoyLedColor::Magenta,
+            FloatOutBoyLedColor::Pink,
+            FloatOutBoyLedColor::Fuchsia,
+            FloatOutBoyLedColor::Lavender,
+        ];
+        for (expected, color) in (0_u8..).zip(colors) {
+            assert_eq!(color.id(), expected, "wrong ID for {color:?}");
         }
     }
 
@@ -2521,6 +2356,40 @@ mod renderer_tests {
     }
 
     #[test]
+    fn pixel_blend_matches_refloat_channel_math_for_every_byte_pair() {
+        for first in 0_u8..=u8::MAX {
+            for second in 0_u8..=u8::MAX {
+                for blend in [f32::NAN, -1.0, 0.0, 0.1, 0.5, 0.999, 1.0, 2.0] {
+                    let expected = if blend <= 0.0 {
+                        first
+                    } else if blend >= 1.0 {
+                        second
+                    } else {
+                        crate::wire::saturating_trunc_f32_to_u8(
+                            f32::from(first) * (1.0 - blend) + f32::from(second) * blend,
+                        )
+                    };
+
+                    assert_eq!(
+                        FloatOutBoyLedPixel::blend(
+                            FloatOutBoyLedPixel {
+                                channels: [first; 4],
+                            },
+                            FloatOutBoyLedPixel {
+                                channels: [second; 4],
+                            },
+                            blend,
+                        )
+                        .channels(),
+                        [expected; 4],
+                        "first={first}, second={second}, blend={blend}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn strip_frame_maps_logical_pixels_to_checked_physical_order() {
         let config = super::FloatOutBoyLedStripConfig::new(
             super::FloatOutBoyLedStripOrder::First,
@@ -2563,9 +2432,9 @@ mod renderer_tests {
             super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
         );
 
-        frame.render_solid(
-            bar,
-            Ratio::from_ratio_const(0.5),
+        frame.render_target(
+            FloatOutBoyLedPixel::from_named(bar.primary_color()),
+            Ratio::clamped(bar.brightness().as_ratio() * 0.5),
             Ratio::from_ratio_const(0.5),
         );
 
@@ -2873,11 +2742,7 @@ mod renderer_tests {
 
         for (transition, progress, seed, expected) in cases {
             let mut frame = super::FloatOutBoyLedStripFrame::new(config);
-            frame.render_solid(
-                from,
-                Ratio::from_ratio_const(1.0),
-                Ratio::from_ratio_const(1.0),
-            );
+            frame.render_bar(from, Ratio::from_ratio_const(1.0), 0.0);
             frame.render_transition(
                 transition,
                 progress,
@@ -2914,11 +2779,11 @@ mod renderer_tests {
                     .unwrap_or_default()
             })
         };
-        let overlay = super::FloatOutBoyLedOverlay::new(
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(1.0),
-            Ratio::from_ratio_const(1.0),
-        );
+        let overlay = super::FloatOutBoyLedOverlay {
+            strip_brightness: Ratio::from_ratio_const(1.0),
+            on_off_fade: Ratio::from_ratio_const(1.0),
+            blend: Ratio::from_ratio_const(1.0),
+        };
 
         let mut footpads = super::FloatOutBoyLedStripFrame::new(config);
         footpads.render_footpads(
@@ -3129,7 +2994,7 @@ mod renderer_tests {
         .with_front_strip(strip)
         .with_rear_strip(strip);
         let input = |run_state, distance| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,
@@ -3560,11 +3425,7 @@ mod renderer_tests {
             crate::lcm::FloatOutBoyLedMode::Internal,
         );
         let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, off, 0.0);
-        assert!(!renderer.update(
-            off,
-            super::FloatOutBoyLedFrameUpdate::ride_only(running),
-            2.0,
-        ));
+        assert!(!renderer.update(off, ride_only(running), 2.0,));
     }
 
     #[test]
@@ -3580,7 +3441,7 @@ mod renderer_tests {
         )
         .with_front_strip(strip);
         let frame = |run_state| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,
@@ -3624,7 +3485,7 @@ mod renderer_tests {
             crate::lcm::FloatOutBoyLedMode::Internal,
         );
         let frame = |run_state| {
-            super::FloatOutBoyLedFrameUpdate::ride_only(super::FloatOutBoyLedUpdate {
+            ride_only(super::FloatOutBoyLedUpdate {
                 run_state,
                 mode: crate::FloatOutBoyMode::Normal,
                 darkride: false,

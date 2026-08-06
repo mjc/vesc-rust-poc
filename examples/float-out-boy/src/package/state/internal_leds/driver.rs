@@ -19,7 +19,7 @@ pub(super) struct FloatOutBoyInternalLedDriver {
     #[cfg(not(target_arch = "arm"))]
     pulses: [u16; MAX_PULSES],
     #[cfg(target_arch = "arm")]
-    pulses: Option<super::hardware::PulseAllocation>,
+    pulses: Option<vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer>,
     pulse_count: usize,
     initialized: bool,
     operational: bool,
@@ -87,11 +87,7 @@ impl FloatOutBoyInternalLedDriver {
         if !self.operational {
             return false;
         }
-        if !quiesce(self.hardware.pin()) {
-            self.operational = false;
-            return false;
-        }
-        if !self.encode(renderer) {
+        if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
             self.operational = false;
             return false;
         }
@@ -123,7 +119,7 @@ impl FloatOutBoyInternalLedDriver {
         }
         let layout = self.hardware.internal_layout().ok()?;
         let bits = layout.roles().iter().try_fold(0_usize, |bits, role| {
-            let strip = self.strip(*role);
+            let strip = strip_for(self.hardware, *role);
             (usize::from(strip.count()) <= MAX_STRIP_PIXELS)
                 .then_some(strip)
                 .and_then(|strip| {
@@ -143,7 +139,7 @@ impl FloatOutBoyInternalLedDriver {
 
     #[cfg(target_arch = "arm")]
     fn prepare_pulses(&mut self, pulse_count: usize) -> bool {
-        self.pulses = super::hardware::PulseAllocation::new(pulse_count);
+        self.pulses = vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer::new(pulse_count);
         self.pulses.is_some()
     }
 
@@ -177,14 +173,6 @@ impl FloatOutBoyInternalLedDriver {
     #[cfg(target_arch = "arm")]
     fn pulse_slice(&self, pulse_count: usize) -> Option<&[u16]> {
         self.pulses.as_ref()?.as_slice(pulse_count)
-    }
-
-    const fn strip(&self, role: FloatOutBoyLedStripRole) -> FloatOutBoyLedStripConfig {
-        match role {
-            FloatOutBoyLedStripRole::Status => self.hardware.status_strip(),
-            FloatOutBoyLedStripRole::Front => self.hardware.front_strip(),
-            FloatOutBoyLedStripRole::Rear => self.hardware.rear_strip(),
-        }
     }
 
     fn encode(&mut self, renderer: &FloatOutBoyLedRenderer) -> bool {
@@ -246,9 +234,7 @@ fn frame_for(
 
 fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
     for bit in (0..8).rev() {
-        let Some(mask) = 1_u8.checked_shl(bit) else {
-            return false;
-        };
+        let mask = 1_u8.wrapping_shl(bit);
         let Some(pulse) = pulses.get_mut(*index) else {
             return false;
         };
@@ -287,7 +273,7 @@ mod tests {
     };
     use vescpkg_rs::Ratio;
 
-    use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO};
+    use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO, encode_byte};
 
     fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
         FloatOutBoyLedBarConfig::new(
@@ -357,6 +343,35 @@ mod tests {
         assert_eq!(driver.pulses()[..64], [WS2812_ZERO; 64]);
         assert_eq!(driver.pulses()[64], WS2812_RESET);
         assert!(driver.is_operational());
+    }
+
+    #[test]
+    fn every_byte_maps_to_exact_ws2812_pulses() {
+        let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
+
+        for byte in 0_u8..=u8::MAX {
+            let mut pulses = [WS2812_RESET; 8];
+            let mut index = 0;
+            assert!(encode_byte(&mut pulses, &mut index, byte));
+            assert_eq!(index, 8);
+            assert_eq!(
+                pulses,
+                masks.map(|mask| {
+                    if byte & mask == 0 {
+                        WS2812_ZERO
+                    } else {
+                        WS2812_ONE
+                    }
+                }),
+                "wrong pulses for byte {byte:#04x}"
+            );
+        }
+
+        let mut short = [WS2812_RESET; 7];
+        let mut index = 0;
+        assert!(!encode_byte(&mut short, &mut index, u8::MAX));
+        assert_eq!(index, short.len());
+        assert_eq!(short, [WS2812_ONE; 7]);
     }
 
     #[test]

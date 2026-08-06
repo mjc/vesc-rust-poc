@@ -10,6 +10,11 @@ use core::ptr::{self, NonNull};
 
 use crate::DigitalPin;
 
+/// Provisional Float Out Boy/Refloat WS2812 driver.
+///
+/// This is intentionally package-specific rather than a generic VESC LED API.
+pub mod float_out_boy_ws2812;
+
 /// A resolved STM32 GPIO port/pad pair.
 #[derive(Debug, Clone, Copy)]
 pub struct Stm32Pad {
