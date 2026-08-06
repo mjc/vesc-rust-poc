@@ -2,7 +2,85 @@
 #![cfg(feature = "test-support")]
 
 use vescpkg_rs::test_support::FirmwareTest;
-use vescpkg_rs::{CustomEepromAddress, EepromError, EepromWord, EepromWordOffset};
+use vescpkg_rs::{
+    CustomEepromAddress, DeferredPersistence, EepromError, EepromWord, EepromWordOffset,
+    PersistedLoadOutcome,
+};
+
+#[test]
+fn deferred_persistence_keeps_the_latest_value_and_retries_failures() {
+    let mut state = DeferredPersistence::default();
+
+    assert_eq!(state.request(1, false), None);
+    assert_eq!(state.request(2, false), None);
+    assert_eq!(state.begin_pending(true), Some(2));
+    assert!(state.is_writing());
+
+    assert_eq!(state.request(3, true), None);
+    state.finish(2, true);
+    assert_eq!(state.begin_pending(true), Some(3));
+    state.finish(3, false);
+    assert_eq!(state.begin_pending(true), None);
+
+    state.retry_failed();
+    assert_eq!(state.begin_pending(true), Some(3));
+    state.supersede(4);
+    state.finish(3, true);
+    assert_eq!(state.begin_pending(true), Some(4));
+}
+
+#[test]
+fn validated_image_reads_distinguish_persisted_invalid_and_missing_data() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let effects = firmware.effects();
+    let decode = |image: &[u8; 8]| (image[0] == 1).then_some(image[4]);
+
+    let missing = eeprom.read_validated_or_default(effects, decode);
+    assert_eq!(
+        missing.outcome(),
+        PersistedLoadOutcome::DefaultAfterReadFailure
+    );
+    assert_eq!(*missing.value(), 0);
+
+    assert!(
+        eeprom
+            .write_image(effects, &[1, 2, 3, 4, 5, 6, 7, 8])
+            .is_ok()
+    );
+    let persisted = eeprom.read_validated_or_default(effects, decode);
+    assert_eq!(persisted.outcome(), PersistedLoadOutcome::Persisted);
+    assert_eq!(*persisted.value(), 5);
+
+    assert!(eeprom.write_image(effects, &[0; 8]).is_ok());
+    let invalid = eeprom.read_validated_or_default(effects, decode);
+    assert_eq!(
+        invalid.outcome(),
+        PersistedLoadOutcome::DefaultAfterInvalidImage
+    );
+    assert_eq!(*invalid.value(), 0);
+}
+
+#[test]
+fn signature_committed_prefix_writes_zero_pad_the_fixed_image() {
+    let firmware = FirmwareTest::new();
+    let eeprom = firmware.eeprom();
+    let effects = firmware.effects();
+
+    assert!(
+        eeprom
+            .write_signature_committed_prefix::<8>(effects, &[1, 2, 3, 4, 5])
+            .is_ok()
+    );
+    assert_eq!(
+        eeprom.read_image::<8>(effects),
+        Ok([1, 2, 3, 4, 5, 0, 0, 0])
+    );
+    assert_eq!(
+        eeprom.write_signature_committed_prefix::<8>(effects, &[0; 9]),
+        Err(EepromError::ImageTooLong)
+    );
+}
 
 #[test]
 fn byte_image_round_trips_complete_and_partial_words() {

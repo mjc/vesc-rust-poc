@@ -120,6 +120,8 @@ pub enum EepromError {
     Missing,
     /// A signature-committed image did not contain a complete first word.
     ImageTooShort,
+    /// A byte prefix does not fit in its fixed-size EEPROM image.
+    ImageTooLong,
     /// The requested consecutive word address cannot be represented by the ABI.
     AddressOverflow,
     /// Firmware rejected a word write.
@@ -131,6 +133,7 @@ impl core::fmt::Display for EepromError {
         formatter.write_str(match self {
             Self::Missing => "custom EEPROM word is unavailable",
             Self::ImageTooShort => "custom EEPROM image has no complete signature word",
+            Self::ImageTooLong => "custom EEPROM image prefix exceeds its fixed capacity",
             Self::AddressOverflow => "custom EEPROM address range overflows the ABI",
             Self::FirmwareRejected => "firmware rejected the custom EEPROM write",
         })
@@ -138,6 +141,122 @@ impl core::fmt::Display for EepromError {
 }
 
 impl core::error::Error for EepromError {}
+
+/// Outcome of decoding a fixed-size persisted image with a default fallback.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum PersistedLoadOutcome {
+    /// No read has been attempted yet.
+    #[default]
+    NotAttempted,
+    /// Firmware returned a complete image and package validation accepted it.
+    Persisted,
+    /// Firmware could not return the complete image.
+    DefaultAfterReadFailure,
+    /// Firmware returned an image that package validation rejected.
+    DefaultAfterInvalidImage,
+}
+
+/// A decoded persisted value together with the reason it was selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PersistedValue<T> {
+    value: T,
+    outcome: PersistedLoadOutcome,
+}
+
+impl<T> PersistedValue<T> {
+    /// Borrow the decoded or default value.
+    #[must_use]
+    pub const fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Return whether the value was persisted or selected as a fallback.
+    #[must_use]
+    pub const fn outcome(&self) -> PersistedLoadOutcome {
+        self.outcome
+    }
+}
+
+/// Latest-value-wins state for persistence performed outside a live-state lock.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum DeferredPersistence<T> {
+    /// No write is pending or active.
+    #[default]
+    Clean,
+    /// A value is waiting until package policy permits a write.
+    Pending(T),
+    /// A write is active, optionally with a newer value queued behind it.
+    Writing(Option<T>),
+    /// The last write failed and may be retried when package policy permits.
+    Failed(T),
+}
+
+impl<T> DeferredPersistence<T> {
+    /// Request persistence, beginning now when allowed and otherwise retaining the latest value.
+    pub fn request(&mut self, value: T, can_begin: bool) -> Option<T> {
+        if let Self::Writing(pending) = self {
+            *pending = Some(value);
+            return None;
+        }
+        if can_begin {
+            *self = Self::Writing(None);
+            Some(value)
+        } else {
+            *self = Self::Pending(value);
+            None
+        }
+    }
+
+    /// Begin a queued write when package policy permits it.
+    pub fn begin_pending(&mut self, can_begin: bool) -> Option<T> {
+        if !can_begin {
+            return None;
+        }
+        match core::mem::take(self) {
+            Self::Pending(value) => {
+                *self = Self::Writing(None);
+                Some(value)
+            }
+            state => {
+                *self = state;
+                None
+            }
+        }
+    }
+
+    /// Finish an active write, retaining a newer queued value or the failed value.
+    pub fn finish(&mut self, attempted: T, stored: bool) {
+        *self = match core::mem::take(self) {
+            Self::Writing(Some(pending)) => Self::Pending(pending),
+            Self::Writing(None) if stored => Self::Clean,
+            Self::Writing(None) => Self::Failed(attempted),
+            state => state,
+        };
+    }
+
+    /// Discard inactive work, or queue a value behind the write currently in progress.
+    pub fn supersede(&mut self, value: T) {
+        *self = if matches!(self, Self::Writing(_)) {
+            Self::Writing(Some(value))
+        } else {
+            Self::Clean
+        };
+    }
+
+    /// Move a failed value back to the pending state.
+    pub fn retry_failed(&mut self) {
+        *self = match core::mem::take(self) {
+            Self::Failed(value) => Self::Pending(value),
+            state => state,
+        };
+    }
+
+    /// Return whether persistence is currently executing outside the live-state lock.
+    #[must_use]
+    pub const fn is_writing(&self) -> bool {
+        matches!(self, Self::Writing(_))
+    }
+}
 
 /// Firmware-backed package custom-EEPROM capability.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -266,6 +385,30 @@ impl CustomEeprom {
         Ok(image)
     }
 
+    /// Read and validate a fixed-size image, selecting `T::default()` on either failure class.
+    pub fn read_validated_or_default<T: Default, const N: usize>(
+        self,
+        effects: &crate::FirmwareEffects,
+        decode: impl FnOnce(&[u8; N]) -> Option<T>,
+    ) -> PersistedValue<T> {
+        match self.read_image::<N>(effects) {
+            Ok(image) => decode(&image).map_or_else(
+                || PersistedValue {
+                    value: T::default(),
+                    outcome: PersistedLoadOutcome::DefaultAfterInvalidImage,
+                },
+                |value| PersistedValue {
+                    value,
+                    outcome: PersistedLoadOutcome::Persisted,
+                },
+            ),
+            Err(_) => PersistedValue {
+                value: T::default(),
+                outcome: PersistedLoadOutcome::DefaultAfterReadFailure,
+            },
+        }
+    }
+
     /// Store a serialized byte image in consecutive custom-EEPROM words.
     ///
     /// A final partial word is padded with zeroes. Returns a typed error after
@@ -350,6 +493,20 @@ impl CustomEeprom {
             signature_offset,
             EepromWord::from_ne_bytes(signature),
         )
+    }
+
+    /// Zero-pad a byte prefix and store it as one signature-committed fixed-size image.
+    pub fn write_signature_committed_prefix<const N: usize>(
+        self,
+        effects: &crate::FirmwareEffects,
+        prefix: &[u8],
+    ) -> Result<(), EepromError> {
+        let mut image = [0; N];
+        image
+            .get_mut(..prefix.len())
+            .ok_or(EepromError::ImageTooLong)?
+            .copy_from_slice(prefix);
+        self.write_signature_committed_image(effects, &image)
     }
 
     /// Store an owned fixed-size byte image at a typed word offset.
