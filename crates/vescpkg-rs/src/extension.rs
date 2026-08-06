@@ -56,9 +56,11 @@ impl LispSymbol {
     /// Look up a firmware symbol by name without letting the borrowed name escape.
     #[cfg(not(test))]
     #[must_use]
-    pub fn lookup(name: &CStr) -> Option<Self> {
+    pub fn lookup(name: crate::FirmwareStr<'_>) -> Option<Self> {
         let mut symbol = 0;
-        let result = unsafe { crate::ffi::lbm_get_symbol_by_name(name.as_ptr(), &raw mut symbol) };
+        let result = unsafe {
+            crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &raw mut symbol)
+        };
         (result != 0).then_some(Self::new(symbol))
     }
 }
@@ -317,7 +319,7 @@ impl LispProcess {
     /// Set the firmware-owned error reason for the current `LispBM` evaluation.
     #[cfg(not(test))]
     #[must_use]
-    pub fn set_error_reason(reason: &CStr) -> i32 {
+    pub fn set_error_reason(reason: crate::FirmwareStr<'_>) -> i32 {
         unsafe { crate::ffi::lbm_set_error_reason(reason.as_ptr().cast_mut()) }
     }
 
@@ -570,10 +572,10 @@ impl LispValue {
 
     /// Borrow firmware-owned string bytes for the duration of a callback.
     ///
-    /// The callback boundary prevents the returned `CStr` from escaping the
+    /// The callback boundary prevents the returned string from escaping the
     /// evaluation that owns the `LispBM` storage.
     #[cfg(not(test))]
-    pub fn with_str<R>(self, f: impl FnOnce(&CStr) -> R) -> Option<R> {
+    pub fn with_str<R>(self, f: impl FnOnce(&str) -> R) -> Option<R> {
         if !self.is_byte_array() {
             return None;
         }
@@ -581,9 +583,9 @@ impl LispValue {
         (!pointer.is_null()).then(|| {
             // SAFETY: LispBM returns a NUL-terminated string pointer that remains
             // valid for the duration of this firmware callback.
-            let value = unsafe { CStr::from_ptr(pointer) };
-            f(value)
-        })
+            let value = unsafe { CStr::from_ptr(pointer) }.to_str().ok()?;
+            Some(f(value))
+        })?
     }
 
     /// Encode a firmware symbol identifier as a `LispBM` value.

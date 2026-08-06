@@ -4,7 +4,7 @@
     reason = "error variants document failures"
 )]
 
-use core::ffi::{CStr, c_char};
+use core::ffi::c_char;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -39,8 +39,8 @@ pub trait EncoderHandler {
     fn read_degrees() -> AngleDegrees;
     /// Return whether the encoder currently reports a fault.
     fn has_fault() -> bool;
-    /// Return a static NUL-terminated encoder description.
-    fn info() -> &'static CStr;
+    /// Return a static encoder description backed by firmware-compatible storage.
+    fn info() -> crate::FirmwareStr<'static>;
 }
 
 /// Optional custom encoder capability handle.
@@ -157,8 +157,8 @@ mod tests {
             false
         }
 
-        fn info() -> &'static CStr {
-            c"test-encoder"
+        fn info() -> crate::FirmwareStr<'static> {
+            crate::firmware_str!("test-encoder")
         }
     }
 

@@ -5,6 +5,7 @@
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
     LispContextId, LispFlatValue, LispFlatValueError, LispProcess, LispSymbol, LispValue,
+    firmware_str,
 };
 
 #[test]
@@ -68,11 +69,8 @@ fn lisp_values_expose_explicit_kind_predicates() {
     assert!(string.is_array());
     assert!(string.is_string());
     assert!(!string.is_number());
-    assert_eq!(
-        string.with_str(|value| value.to_bytes() == b"vesc"),
-        Some(true)
-    );
-    assert_eq!(integer.with_str(|value| value.to_bytes() == b"vesc"), None);
+    assert_eq!(string.with_str(|value| value == "vesc"), Some(true));
+    assert_eq!(integer.with_str(|value| value == "vesc"), None);
 
     assert_eq!(LispValue::try_byte_array(usize::MAX), None);
     assert!(!integer.is_array());
@@ -136,20 +134,23 @@ fn lisp_lists_validate_tails_and_iterate_fallibly() {
 }
 
 #[test]
-fn lisp_process_sets_error_reason_from_a_scoped_c_string() {
+fn lisp_process_sets_error_reason_from_scoped_firmware_text() {
     let _firmware = FirmwareTest::new();
-    let reason = c"invalid argument";
+    let reason = firmware_str!("invalid argument");
 
     assert_eq!(LispProcess::set_error_reason(reason), 1);
-    assert_eq!(LispProcess::set_error_reason(c""), 1);
+    assert_eq!(LispProcess::set_error_reason(firmware_str!("")), 1);
 }
 
 #[test]
-fn lisp_symbols_can_be_looked_up_from_a_scoped_c_string() {
+fn lisp_symbols_can_be_looked_up_from_scoped_firmware_text() {
     let _firmware = FirmwareTest::new();
 
-    assert_eq!(LispSymbol::lookup(c"vesc"), Some(LispSymbol::new(7)));
-    assert_eq!(LispSymbol::lookup(c"missing"), None);
+    assert_eq!(
+        LispSymbol::lookup(firmware_str!("vesc")),
+        Some(LispSymbol::new(7))
+    );
+    assert_eq!(LispSymbol::lookup(firmware_str!("missing")), None);
 }
 
 #[test]

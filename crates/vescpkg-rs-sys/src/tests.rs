@@ -289,7 +289,7 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     );
     assert_eq!(
         VescIfAbi::SOURCE_COMMIT,
-        "0fc12dab64f2c06c2801bfdebf61256b0989ee06"
+        "2a8de79a5f573521c4af0f3d98b1c1699d2e5382"
     );
     assert_eq!(VescIfAbi::SOURCE_HEADER, "lispBM/c_libs/vesc_c_if.h");
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
@@ -354,6 +354,22 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
             .count(),
         VescIfAbi::CALLABLE_SLOT_COUNT
     );
+}
+
+#[test]
+fn firmware_700_symbol_name_parameters_match_the_release_header() {
+    for name in ["lbm_add_symbol_const", "lbm_get_symbol_by_name"] {
+        let signature = VescIfAbi::ALL_ENTRIES
+            .iter()
+            .find(|entry| entry.c_decl() == name)
+            .expect("firmware 7.00 symbol slot")
+            .signature();
+
+        assert!(
+            signature.contains("* mut :: core :: ffi :: c_char"),
+            "{name} must retain the mutable character pointer from release_7_00: {signature}"
+        );
+    }
 }
 
 #[test]

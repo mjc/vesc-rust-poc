@@ -100,6 +100,7 @@ mod eeprom;
 mod encoder;
 mod extension;
 mod firmware;
+mod firmware_str;
 mod gnss;
 mod lifecycle_core;
 mod logging;
@@ -121,6 +122,7 @@ mod terminal;
 mod test_ffi;
 mod uart;
 
+pub use firmware_str::FirmwareStr;
 pub use uart::UartDuplexMode;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -361,7 +363,7 @@ pub mod prelude {
         FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareCapabilities,
         FirmwareClock, FirmwareEffects, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting,
         FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
-        FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
+        FirmwareStr, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
         FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
         ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
         LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError, LispList,
@@ -396,6 +398,7 @@ macro_rules! firmware_section_static {
 
 #[cfg(test)]
 mod tests {
+    use crate::FirmwareStr;
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
@@ -409,6 +412,19 @@ mod tests {
         QVoltage, RemoteAge, SystemDuration, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
         TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
+
+    #[test]
+    fn firmware_str_hides_its_terminator() {
+        let value = FirmwareStr::from_str_with_nul("encoder\0").unwrap();
+
+        assert_eq!(value.as_str(), "encoder");
+    }
+
+    #[test]
+    fn firmware_str_rejects_missing_or_interior_terminators() {
+        assert!(FirmwareStr::from_str_with_nul("encoder").is_none());
+        assert!(FirmwareStr::from_str_with_nul("bad\0encoder\0").is_none());
+    }
     use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,

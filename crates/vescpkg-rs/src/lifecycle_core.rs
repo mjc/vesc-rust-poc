@@ -106,7 +106,7 @@ impl<B: LbmBindings> PackageLifecycle<B> {
 
     /// Register an extension whose handler address is relative to a loaded native image.
     ///
-    /// The descriptor name is a Rust `CStr` reference produced by package code, so on target it is
+    /// The descriptor name is validated static text produced by package code, so on target it is
     /// already a runtime PC-relative pointer. PIC may materialize the handler as either an image
     /// offset or an already loaded address, so loader metadata resolves both forms.
     ///

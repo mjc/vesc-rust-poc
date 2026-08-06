@@ -6,7 +6,7 @@ use quote::ToTokens;
 use syn::{Fields, GenericArgument, Item, PathArguments, Type};
 
 const HEADER_REPO: &str = "https://github.com/vedderb/bldc";
-const HEADER_COMMIT: &str = "0fc12dab64f2c06c2801bfdebf61256b0989ee06";
+const HEADER_COMMIT: &str = "2a8de79a5f573521c4af0f3d98b1c1699d2e5382";
 const HEADER_PATH: &str = "lispBM/c_libs/vesc_c_if.h";
 const VENDORED_HEADER_PATH: &str = "vendor/vesc_pkg_lib/vesc_c_if.h";
 

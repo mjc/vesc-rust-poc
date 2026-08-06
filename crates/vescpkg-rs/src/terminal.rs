@@ -42,11 +42,11 @@ pub struct TerminalArgs<'a> {
     argv: *const *const c_char,
     index: usize,
     length: usize,
-    _lifetime: PhantomData<&'a CStr>,
+    _lifetime: PhantomData<&'a str>,
 }
 
 impl<'a> Iterator for TerminalArgs<'a> {
-    type Item = &'a CStr;
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.length || self.argv.is_null() {
@@ -57,7 +57,7 @@ impl<'a> Iterator for TerminalArgs<'a> {
         if pointer.is_null() {
             return None;
         }
-        Some(unsafe { CStr::from_ptr(pointer) })
+        unsafe { CStr::from_ptr(pointer) }.to_str().ok()
     }
 }
 
@@ -68,7 +68,7 @@ pub struct Terminal;
 /// Exclusive terminal callback registration.
 pub struct TerminalRegistration<'a, H: TerminalHandler> {
     _handler: PhantomData<H>,
-    _borrowed_strings: PhantomData<&'a CStr>,
+    _borrowed_strings: PhantomData<crate::FirmwareStr<'a>>,
 }
 
 impl Terminal {
@@ -79,9 +79,9 @@ impl Terminal {
     /// Register one command while retaining its metadata and callback owner.
     pub fn register<'a, H: TerminalHandler>(
         &'a self,
-        command: &'a CStr,
-        help: &'a CStr,
-        arg_names: &'a CStr,
+        command: crate::FirmwareStr<'a>,
+        help: crate::FirmwareStr<'a>,
+        arg_names: crate::FirmwareStr<'a>,
     ) -> Result<TerminalRegistration<'a, H>, TerminalError> {
         if TERMINAL_OWNED
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
