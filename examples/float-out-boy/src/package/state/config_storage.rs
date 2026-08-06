@@ -473,15 +473,11 @@ impl FloatOutBoyPackageState {
             .configure(filter.mahony_kp(), filter.mahony_kp_roll());
     }
 
-    pub(crate) fn configured_loop_time_us(&self) -> u32 {
+    #[cfg(test)]
+    pub(crate) const fn configured_loop_time_us() -> u32 {
         // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz; legacy `hertz`
         // bytes are retained only as storage-layout padding.
-        self.serialized_config.startup().loop_time_us()
-    }
-
-    #[cfg(target_arch = "arm")]
-    pub(crate) fn configured_main_loop_sample_rate(&self) -> vescpkg_rs::prelude::SampleRate {
-        self.serialized_config.startup().sample_rate()
+        crate::config::FLOAT_OUT_BOY_MAIN_THREAD_LOOP_TIME_US
     }
 
     #[cfg(test)]

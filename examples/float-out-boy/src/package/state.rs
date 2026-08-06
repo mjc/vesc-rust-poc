@@ -571,7 +571,7 @@ impl FloatOutBoyPackageState {
         now: TimestampTicks,
     ) {
         self.frequency_trackers.main = frequency_tracker::FrequencyTracker::new(
-            self.serialized_config.startup().sample_rate(),
+            crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
             now,
             frequency_tracker::TRACKING_POLICY,
         );

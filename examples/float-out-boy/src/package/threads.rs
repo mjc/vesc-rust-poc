@@ -7,13 +7,13 @@ use super::state::FloatOutBoyPackageState;
 #[cfg(all(not(test), target_arch = "arm"))]
 use super::state::snapshot_motor_config;
 use core::time::Duration;
+#[cfg(all(not(test), target_arch = "arm"))]
+use vescpkg_rs::FixedRateLoopTiming;
 use vescpkg_rs::ThreadWorkingAreaSize;
 use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks, VescSeconds};
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{AnalogPin, DigitalPin};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
-#[cfg(all(not(test), target_arch = "arm"))]
-use vescpkg_rs::{FixedRateLoopTiming, SampleRate};
 
 // C map: `LEDS_REFRESH_RATE` is `30` at `third_party/float-out-boy/src/leds.h:26`;
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
@@ -76,6 +76,7 @@ pub(crate) fn run_float_out_boy_main_thread_with<F: FnMut() -> u32>(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyMainThreadTick {
+    #[cfg(test)]
     pub(crate) sleep_us: u32,
     pub(crate) beeper_pin_level: Option<vescpkg_rs::DigitalOutputLevel>,
 }
@@ -141,7 +142,8 @@ fn finish_float_out_boy_main_thread_tick(
     };
 
     FloatOutBoyMainThreadTick {
-        sleep_us: state.configured_loop_time_us(),
+        #[cfg(test)]
+        sleep_us: FloatOutBoyPackageState::configured_loop_time_us(),
         beeper_pin_level,
     }
 }
@@ -158,7 +160,9 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
     system_time_ticks: TimestampTicks,
 ) -> FloatOutBoyMainThreadTick {
     let elapsed = VescSeconds::from_seconds(
-        f32::from(u16::try_from(state.configured_loop_time_us()).unwrap_or(u16::MAX)) / 1_000_000.0,
+        f32::from(
+            u16::try_from(FloatOutBoyPackageState::configured_loop_time_us()).unwrap_or(u16::MAX),
+        ) / 1_000_000.0,
     );
     let prepared = prepare_float_out_boy_main_thread_tick(
         state,
@@ -288,13 +292,9 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             state.initialize_frequency_tracking(imu_frequency, frequency_epoch);
         });
 
-        let mut timing = ctx
-            .with_state_mut(|state| {
-                FixedRateLoopTiming::from_sample_rate(state.configured_main_loop_sample_rate())
-            })
-            .unwrap_or_else(|| {
-                FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0))
-            });
+        let timing = FixedRateLoopTiming::from_sample_rate(
+            crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
+        );
         let mut next_sleep = timing.nominal_sleep();
         let mut loop_timer = ctx.firmware().clock().timer_now();
         while !ctx.firmware().threads().should_terminate() {
@@ -361,11 +361,6 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             });
             if let Some(level) = tick.and_then(|tick| tick.beeper_pin_level) {
                 let _ = ctx.firmware().gpio().write_digital(DigitalPin::PPM, level);
-            }
-            if let Some(configured) = ctx.with_state_mut(|state| {
-                FixedRateLoopTiming::from_sample_rate(state.configured_main_loop_sample_rate())
-            }) {
-                timing = configured;
             }
             next_sleep =
                 timing.sleep_after_work(ctx.firmware().clock().timer_elapsed_since(loop_timer));

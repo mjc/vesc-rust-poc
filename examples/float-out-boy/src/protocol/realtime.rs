@@ -6,8 +6,8 @@
 use super::{
     FloatOutBoyAllDataPayloads, FloatOutBoyBeepReason, FloatOutBoyChargingState as ChargingState,
     FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
-    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState as RunState,
-    FloatOutBoyWheelSlipState,
+    FloatOutBoyFootpadState, FloatOutBoyPacket, FloatOutBoyRideState,
+    FloatOutBoyRunState as RunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
@@ -23,6 +23,15 @@ pub enum FloatOutBoyRealtimePrecision {
     Float16,
     /// Encode selected numeric fields with the 32-bit float codec.
     Float32,
+}
+
+impl FloatOutBoyRealtimePrecision {
+    pub(crate) fn push<const N: usize>(self, packet: &mut FloatOutBoyPacket<N>, value: f32) {
+        match self {
+            Self::Float16 => packet.push_float16_auto(value),
+            Self::Float32 => packet.push_float32_auto(value),
+        }
+    }
 }
 
 vescpkg_rs::typed_newtypes! {
@@ -254,6 +263,7 @@ vescpkg_rs::typed_field_groups! {
         battery: BatteryCurrent => battery,
     }
     /// Float Out Boy realtime motor-temperature values that are always sent.
+    #[derive(Default)]
     pub struct FloatOutBoyRealtimeMotorTemperatures {
         mosfet: MosfetTemperature => mosfet,
         motor: MotorTemperature => motor,
@@ -293,13 +303,6 @@ impl FloatOutBoyRealtimeBalancePitch {
     #[must_use]
     pub fn angle_degrees(self) -> AngleDegrees {
         AngleDegrees::from(self.0)
-    }
-}
-
-impl Default for FloatOutBoyRealtimeMotorTemperatures {
-    fn default() -> Self {
-        let zero = vescpkg_rs::Temperature::from_degrees_celsius(0.0);
-        Self::new(MosfetTemperature::new(zero), MotorTemperature::new(zero))
     }
 }
 
