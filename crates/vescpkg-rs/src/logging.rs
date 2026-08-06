@@ -75,6 +75,17 @@ impl<const CAPACITY: usize> FirmwareLog<CAPACITY> {
         }
     }
 
+    /// Append one byte value as allocation-free base-10 ASCII.
+    pub fn write_u8_decimal(&mut self, value: u8) {
+        let digits = [
+            b'0' + value / 100,
+            b'0' + value / 10 % 10,
+            b'0' + value % 10,
+        ];
+        let first = usize::from(value < 100) + usize::from(value < 10);
+        self.write_bytes(&digits[first..]);
+    }
+
     /// Send the complete message through firmware's constant `%s` path.
     pub fn flush(&self, _effects: &crate::FirmwareEffects) -> Result<usize, LogError> {
         if self.truncated {

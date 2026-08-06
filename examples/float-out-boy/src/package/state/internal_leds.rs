@@ -89,14 +89,7 @@ impl FloatOutBoyPackageState {
         if runtime.driver.setup(hardware::setup, |pin| {
             let _ = hardware::teardown(pin);
         }) {
-            #[cfg(test)]
-            {
-                self.internal_leds = Some(runtime);
-            }
-            #[cfg(target_arch = "arm")]
-            {
-                self.internal_leds = Some(runtime);
-            }
+            self.internal_leds = Some(runtime);
         }
     }
 
@@ -218,14 +211,13 @@ impl FloatOutBoyPackageState {
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
         let runtime = self.internal_leds.as_deref_mut();
-        if let Some(runtime) = runtime {
-            if runtime.renderer.update(runtime.config, frame, current_time)
-                && runtime
-                    .driver
-                    .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
-            {
-                paint(&runtime.renderer);
-            }
+        if let Some(runtime) = runtime
+            && runtime.renderer.update(runtime.config, frame, current_time)
+            && runtime
+                .driver
+                .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+        {
+            paint(&runtime.renderer);
         }
     }
 }

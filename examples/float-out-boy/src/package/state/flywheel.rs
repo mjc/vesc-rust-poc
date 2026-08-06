@@ -115,26 +115,26 @@ impl FloatOutBoyFlywheelRequest {
         Some(Self::Start(FloatOutBoyFlywheelStart {
             recalibrate: command == FLYWHEEL_RECALIBRATE,
             config: FloatOutBoyFlywheelConfig {
-                kp: if *kp == 0 {
-                    AngleCurrentGain::new(8.0)
-                } else {
-                    WireByte::new(*kp).scaled(0.1, 0.0, AngleCurrentGain::new)
-                },
-                kp2: if *kp2 == 0 {
-                    RateCurrentGain::new(0.3)
-                } else {
-                    WireByte::new(*kp2).scaled(0.01, 0.0, RateCurrentGain::new)
-                },
-                duty_angle: if *duty_angle == 0 {
-                    AngleDegrees::from_degrees(2.0)
-                } else {
-                    WireByte::new(*duty_angle).scaled(0.1, 0.0, AngleDegrees::from_degrees)
-                },
-                duty_threshold: if *duty_threshold == 0 {
-                    Ratio::from_ratio_const(0.1)
-                } else {
-                    WireByte::new(*duty_threshold).scaled(0.01, 0.0, Ratio::from_ratio_const)
-                },
+                kp: WireByte::new(*kp).scaled_or(
+                    AngleCurrentGain::new(8.0),
+                    0.1,
+                    AngleCurrentGain::new,
+                ),
+                kp2: WireByte::new(*kp2).scaled_or(
+                    RateCurrentGain::new(0.3),
+                    0.01,
+                    RateCurrentGain::new,
+                ),
+                duty_angle: WireByte::new(*duty_angle).scaled_or(
+                    AngleDegrees::from_degrees(2.0),
+                    0.1,
+                    AngleDegrees::from_degrees,
+                ),
+                duty_threshold: WireByte::new(*duty_threshold).scaled_or(
+                    Ratio::from_ratio_const(0.1),
+                    0.01,
+                    Ratio::from_ratio_const,
+                ),
                 duty_speed,
                 relaxed_roll: command & FLYWHEEL_RELAX_ROLL != 0,
             },
