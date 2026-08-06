@@ -21,8 +21,8 @@ use crate::types::{
     TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
-use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
-use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
+use crate::units::{Charge, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
+use crate::units::{Current, Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
 use crate::{PwmCallback, PwmCallbackError, PwmCallbackLease};
 
 /// Outcome of waiting for firmware to release motor output.
@@ -65,6 +65,17 @@ impl MotorReleaseOutcome {
     #[must_use]
     pub const fn is_timed_out(self) -> bool {
         matches!(self, Self::TimedOut)
+    }
+}
+
+/// Return the bounded magnitude of current relative to a signed current limit.
+#[must_use]
+pub fn current_limit_saturation(current: Current, limit: Current) -> Ratio {
+    let limit = limit.abs();
+    if limit.is_positive() {
+        Ratio::clamped(current.abs().as_amps() / limit.as_amps())
+    } else {
+        Ratio::ZERO
     }
 }
 
@@ -957,9 +968,10 @@ pub struct MotorControlApi<B> {
 #[cfg(test)]
 mod tests {
     use super::{
-        battery_cell_count_from_firmware, duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
+        battery_cell_count_from_firmware, current_limit_saturation, duty_cycle_from_firmware,
+        duty_cycle_limit_from_firmware,
     };
-    use crate::{DutyCycle, Ratio, SignedRatio};
+    use crate::{Current, DutyCycle, Ratio, SignedRatio};
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
@@ -1002,6 +1014,22 @@ mod tests {
                 .magnitude()
                 .as_ratio(),
             0.85
+        );
+    }
+
+    #[test]
+    fn current_limit_saturation_normalizes_sign_zero_and_overload() {
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(-10.0), Current::from_amps(-20.0)),
+            Ratio::from_ratio_const(0.5)
+        );
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(5.0), Current::ZERO),
+            Ratio::ZERO
+        );
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(30.0), Current::from_amps(20.0)),
+            Ratio::FULL
         );
     }
 }
