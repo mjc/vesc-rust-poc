@@ -95,6 +95,41 @@ pub struct MotorKinematics<const N: usize> {
     window: usize,
 }
 
+/// Cutoff-based configuration for a fixed-storage motor kinematics tracker.
+#[cfg(feature = "math")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MotorKinematicsConfig {
+    absolute_speed_cutoff: Frequency,
+    acceleration_cutoff: Frequency,
+}
+
+#[cfg(feature = "math")]
+impl MotorKinematicsConfig {
+    /// Define the absolute-speed EMA and acceleration-window cutoffs.
+    #[must_use]
+    pub const fn new(absolute_speed_cutoff: Frequency, acceleration_cutoff: Frequency) -> Self {
+        Self {
+            absolute_speed_cutoff,
+            acceleration_cutoff,
+        }
+    }
+
+    /// Configure a tracker for one package sample rate.
+    pub fn configure<const N: usize>(
+        self,
+        tracker: &mut MotorKinematics<N>,
+        sample_rate: SampleRate,
+    ) {
+        let smoothing = Ratio::clamped(ema_alpha(self.absolute_speed_cutoff, sample_rate));
+        let normalized_cutoff = self.acceleration_cutoff.as_hertz() / sample_rate.as_hertz();
+        let window = usize::try_from(crate::protocol_buffer::saturating_trunc_f32_to_u32(
+            crate::sqrt(0.196_202 + normalized_cutoff * normalized_cutoff) / normalized_cutoff,
+        ))
+        .unwrap_or(N);
+        tracker.configure(smoothing, window);
+    }
+}
+
 impl<const N: usize> Default for MotorKinematics<N> {
     fn default() -> Self {
         Self {
@@ -358,6 +393,8 @@ impl SmoothAngle {
 mod tests {
     #[cfg(feature = "math")]
     use super::BiquadLowPass;
+    #[cfg(feature = "math")]
+    use super::MotorKinematicsConfig;
     use super::{
         FixedRingIndex, MotorKinematics, SmoothAngle, SmoothSetpoint, SmoothSetpointConfig,
         SmoothSetpointDirection, SmoothSetpointMultiplier, SmoothedAngleSlew, WrappedAngleMotion,
@@ -496,6 +533,49 @@ mod tests {
             VescSeconds::from_seconds(1.0),
         );
         assert_f32_eq!(tracker.average().as_revolutions_per_minute(), 40.0);
+    }
+
+    #[test]
+    #[cfg(feature = "math")]
+    fn motor_kinematics_config_preserves_cutoff_based_smoothing_and_windows() {
+        let config =
+            MotorKinematicsConfig::new(Frequency::from_hertz(10.0), Frequency::from_hertz(8.0));
+        let mut at_500_hz = MotorKinematics::<222>::default();
+        config.configure(&mut at_500_hz, SampleRate::from_hertz(500.0));
+        let mut at_832_hz = MotorKinematics::<222>::default();
+        config.configure(&mut at_832_hz, SampleRate::from_hertz(832.0));
+        assert_eq!(at_500_hz.window, 27);
+        assert_eq!(at_832_hz.window, 46);
+
+        for step in 1_u8..=27 {
+            at_500_hz.record(
+                Rpm::from_revolutions_per_minute(f32::from(step) * 10.0),
+                VescSeconds::from_seconds(0.002),
+            );
+        }
+        for step in 1_u8..=46 {
+            at_832_hz.record(
+                Rpm::from_revolutions_per_minute(f32::from(step) * 10.0),
+                VescSeconds::from_seconds(1.0 / 832.0),
+            );
+        }
+
+        let assert_close = |actual: f32, expected: f32| {
+            assert!((actual - expected).abs() <= f32::EPSILON * expected * 4.0);
+        };
+        assert_close(at_500_hz.average().as_revolutions_per_minute(), 5_000.0);
+        assert_close(at_832_hz.average().as_revolutions_per_minute(), 8_320.0);
+
+        let mut smoothing = MotorKinematics::<222>::default();
+        config.configure(&mut smoothing, SampleRate::from_hertz(500.0));
+        smoothing.record(
+            Rpm::from_revolutions_per_minute(-1_000.0),
+            VescSeconds::from_seconds(0.002),
+        );
+        assert_close(
+            smoothing.smoothed_abs_erpm().as_revolutions_per_minute(),
+            117.768_03,
+        );
     }
 
     #[test]
