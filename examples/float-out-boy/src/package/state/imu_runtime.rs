@@ -4,6 +4,7 @@ use super::limits::{
     DarkrideLimits, MovingFaultLimits, PushStartLimits, QuickStopLimits, RemoteSetpointFaultLimit,
     ReverseStopLimits, TractionLossLimits,
 };
+use super::transition::FloatOutBoyStateTransitionOutput;
 use super::{
     AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
@@ -851,17 +852,12 @@ fn transition_control_conditions(
     )
 }
 
-struct TransitionOutcome {
-    ride_state: FloatOutBoyRideState,
-    stopped: bool,
-}
-
 struct TransitionActivity<'a> {
     input: &'a FaultInputs,
     normal: &'a NormalFaultEvaluation,
     darkride: &'a DarkrideFaultEvaluation,
     control: &'a ControlConditions,
-    state_engage: bool,
+    engagement: &'a EngagementEvaluation,
     stop_event: Option<FloatOutBoyStopEvent>,
 }
 
@@ -869,12 +865,12 @@ fn apply_transition_activity(
     state: &mut FloatOutBoyPackageState,
     system_time_ticks: TimestampTicks,
     activity: &TransitionActivity<'_>,
-) -> TransitionOutcome {
+) -> FloatOutBoyStateTransitionOutput {
     let transition = float_out_boy_state_transition(FloatOutBoyStateTransitionInput {
         previous: activity.input.ride_state,
         run_state: activity.input.run_state,
         ready_flywheel_stop: activity.input.ready_flywheel_stop,
-        state_engage: activity.state_engage,
+        state_engage: activity.engagement.engage,
         traction_loss_detected: activity.control.traction_loss_detected,
         stop_event: activity.stop_event,
     });
@@ -927,10 +923,7 @@ fn apply_transition_activity(
     if !activity.normal.angles.pitch {
         state.fault_angle_pitch_ticks = system_time_ticks;
     }
-    TransitionOutcome {
-        ride_state: transition.ride_state,
-        stopped: transition.state_stopped,
-    }
+    transition
 }
 
 fn evaluate_transition_phase(
@@ -999,7 +992,7 @@ fn evaluate_transition_phase(
             normal: &normal,
             darkride: &darkride,
             control: &control,
-            state_engage: engagement.engage,
+            engagement: &engagement,
             stop_event,
         },
     );
@@ -1012,7 +1005,7 @@ fn evaluate_transition_phase(
         events: TransitionEvents {
             startup_became_ready: start.startup_became_ready,
             state_engage: engagement.engage,
-            state_stop_fault: outcome.stopped,
+            state_stop_fault: outcome.state_stopped,
         },
         #[cfg(any(test, target_arch = "arm"))]
         ready_flywheel_stop: readiness.ready_stop,
