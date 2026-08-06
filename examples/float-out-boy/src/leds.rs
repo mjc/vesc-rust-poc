@@ -560,24 +560,28 @@ impl FloatOutBoyLedDynamics {
         true
     }
 
-    /// Return the global renderer fade.
+    /// Return the global renderer fade for characterizations.
+    #[cfg(test)]
     #[must_use]
     pub fn on_off_fade(self) -> Ratio {
         self.on_off_fade
     }
 
-    /// Return the left/right footpad indicator fades.
+    /// Return the left/right footpad indicator fades for characterizations.
+    #[cfg(test)]
     #[must_use]
     pub fn sensor_fades(self) -> (Ratio, Ratio) {
         (self.left_sensor, self.right_sensor)
     }
 
+    #[cfg(test)]
     vescpkg_rs::const_field_getters! {
         /// Return whether the lifted-board hysteresis is on its upright side.
         pub fn is_board_upright -> bool = board_is_upright;
     }
 
-    /// Return the current headlight transition split and settled state.
+    /// Return the current headlight transition split and settled state for characterizations.
+    #[cfg(test)]
     #[must_use]
     pub const fn headlights(self) -> (f32, bool, bool) {
         (
@@ -587,7 +591,8 @@ impl FloatOutBoyLedDynamics {
         )
     }
 
-    /// Return the current travel-direction split and settled direction.
+    /// Return the current travel-direction split and settled direction for characterizations.
+    #[cfg(test)]
     #[must_use]
     pub const fn direction(self) -> (f32, bool) {
         (self.direction_split, self.direction_forward)
@@ -799,17 +804,16 @@ impl FloatOutBoyLedRenderer {
         input: FloatOutBoyLedUpdate,
         current_time: f32,
     ) -> bool {
-        let was_startup = matches!(self.dynamics.run_state, crate::FloatOutBoyRunState::Startup);
-        let old_headlights = self.dynamics.headlights();
-        let old_direction = self.dynamics.direction();
-        let was_upright = self.dynamics.is_board_upright();
+        let previous = self.dynamics;
+        let was_startup = matches!(previous.run_state, crate::FloatOutBoyRunState::Startup);
+        let was_upright = previous.board_is_upright;
         if !self.dynamics.update(config, input, current_time) {
             return false;
         }
-        let upright = self.dynamics.is_board_upright();
+        let upright = self.dynamics.board_is_upright;
         let upright_changed = upright != was_upright;
 
-        let fade = self.dynamics.on_off_fade();
+        let fade = self.dynamics.on_off_fade;
         if was_startup {
             self.animation_start = current_time;
             self.status_dynamics.idle_time = current_time;
@@ -855,7 +859,7 @@ impl FloatOutBoyLedRenderer {
         }
 
         let status_config = config.status;
-        let sensors = self.dynamics.sensor_fades();
+        let sensors = (self.dynamics.left_sensor, self.dynamics.right_sensor);
         let (utilization, utilization_kind, utilization_blend, idle_blend, idle_animation_time) =
             self.status_dynamics
                 .update(config, input, sensors, upright_changed, current_time);
@@ -892,17 +896,8 @@ impl FloatOutBoyLedRenderer {
         self.front.render_bar(front_bar, fade, animation_time);
         self.rear.render_bar(rear_bar, fade, animation_time);
 
-        let headlights = self.dynamics.headlights();
-        let direction = self.dynamics.direction();
         let seed = crate::wire::saturating_trunc_f32_to_u32(self.animation_start);
-        self.compose_transitions(
-            config,
-            input,
-            current_time,
-            (seed, fade),
-            (old_headlights, headlights),
-            (old_direction, direction),
-        );
+        self.compose_transitions(config, input, previous, current_time, seed, fade);
         let blend = self.status_on_front_blend;
         if config.lifted.status_on_front && !blend.is_zero() {
             let mut layers = status_layers;
@@ -920,41 +915,50 @@ impl FloatOutBoyLedRenderer {
         &mut self,
         config: FloatOutBoyLedsConfig,
         input: FloatOutBoyLedUpdate,
+        previous: FloatOutBoyLedDynamics,
         current_time: f32,
-        (seed, fade): (u32, Ratio),
-        (old_headlights, headlights): ((f32, bool, bool), (f32, bool, bool)),
-        (old_direction, direction): ((f32, bool), (f32, bool)),
+        seed: u32,
+        fade: Ratio,
     ) {
-        if headlights.2 || old_headlights.2 {
-            let targets = if headlights.2 {
+        let current = self.dynamics;
+        let headlights_transitioning = current.headlights_state.is_transitioning();
+        if headlights_transitioning || previous.headlights_state.is_transitioning() {
+            let targets = if headlights_transitioning {
                 let should_be_on = input.run_state == crate::FloatOutBoyRunState::Running
                     && input.mode != crate::FloatOutBoyMode::Flywheel
                     && config.headlights_on;
-                select_front_rear_bars(config, should_be_on, old_direction.1)
+                select_front_rear_bars(config, should_be_on, previous.direction_forward)
             } else {
-                select_front_rear_bars(config, headlights.1, direction.1)
+                select_front_rear_bars(
+                    config,
+                    current.headlights_state.is_on(),
+                    current.direction_forward,
+                )
             };
             self.render_pair_transition(
                 config.headlights_transition,
-                headlights.0,
+                current.headlights_split,
                 seed,
                 fade,
                 targets,
             );
-            if !headlights.2 {
+            if !headlights_transitioning {
                 (self.front_bar, self.rear_bar) = targets;
                 self.animation_start = current_time;
             }
         }
-        if headlights.1 && !headlights.2 && direction.0.to_bits() != old_direction.0.to_bits() {
-            let targets = select_front_rear_bars(config, true, !old_direction.1);
-            let progress = if old_direction.1 {
-                -direction.0
+        if current.headlights_state.is_on()
+            && !headlights_transitioning
+            && current.direction_split.to_bits() != previous.direction_split.to_bits()
+        {
+            let targets = select_front_rear_bars(config, true, !previous.direction_forward);
+            let progress = if previous.direction_forward {
+                -current.direction_split
             } else {
-                direction.0
+                current.direction_split
             };
             self.render_pair_transition(config.direction_transition, progress, seed, fade, targets);
-            if direction.1 != old_direction.1 {
+            if current.direction_forward != previous.direction_forward {
                 (self.front_bar, self.rear_bar) = targets;
                 self.animation_start = current_time;
             }

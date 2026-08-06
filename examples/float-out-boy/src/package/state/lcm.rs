@@ -20,7 +20,6 @@ use crate::domain::{
 use crate::lcm::FloatOutBoyLedMode;
 use crate::wire::{FloatOutBoyPacket, degrees};
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::FirmwareFault;
 
 const MAX_LCM_NAME_LENGTH: usize = 20;
 const MAX_LCM_PAYLOAD_LENGTH: usize = 64;
@@ -149,7 +148,8 @@ impl LcmState {
             state |= 0x80;
         }
         packet.push(state);
-        packet.push(firmware_fault_code(telemetry.firmware_fault()));
+        let (_, firmware_fault) = telemetry.firmware_fault().active_and_wire_code();
+        packet.push(firmware_fault.wire_code());
 
         let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
@@ -208,13 +208,6 @@ fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoy
     packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(command.id());
     packet
-}
-
-fn firmware_fault_code(fault: FirmwareFault) -> u8 {
-    match fault {
-        FirmwareFault::Active(fault) => fault.wire_code().wire_code(),
-        FirmwareFault::None | FirmwareFault::Unknown => 0,
-    }
 }
 
 impl FloatOutBoyPackageState {
