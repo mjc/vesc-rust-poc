@@ -1,4 +1,4 @@
-//! Float Out Boy ride-state compatibility mapping.
+//! Ride-state compatibility mapping owned by Float Out Boy.
 //!
 //! Source map: compact all-data uses `state_compat`/`sat_compat` at
 //! `third_party/float-out-boy/src/main.c:1279-1285` and

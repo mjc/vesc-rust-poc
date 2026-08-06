@@ -1,35 +1,8 @@
 //! Float Out Boy LED support types.
 //!
-//! This crate deliberately owns FOB-specific LED configuration and rendering. It is
+//! This module deliberately owns FOB-specific LED configuration and rendering. It is
 //! not a generic VESC or `vescpkg-rs` LED API. Raw config field packing stays at
 //! package/config boundaries.
-
-#![no_std]
-#![deny(warnings, clippy::pedantic)]
-#![forbid(unused_extern_crates)]
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::allow_attributes,
-        clippy::allow_attributes_without_reason,
-        clippy::arithmetic_side_effects,
-        clippy::as_conversions,
-        clippy::expect_used,
-        clippy::indexing_slicing,
-        clippy::mem_forget,
-        clippy::missing_safety_doc,
-        clippy::multiple_unsafe_ops_per_block,
-        clippy::panic,
-        clippy::todo,
-        clippy::undocumented_unsafe_blocks,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
-
-#[cfg(test)]
-extern crate std;
 
 #[cfg(test)]
 macro_rules! assert_f32_eq {
@@ -55,19 +28,11 @@ mod test_support;
 
 pub use self::hardware::FloatOutBoyHardwareLedsConfig;
 pub use self::mode::FloatOutBoyLedMode;
-pub use vesc_float_out_boy_protocol::{
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState,
-};
+pub use crate::protocol::{FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState};
 
 /// Compatibility namespace for FOB hardware LED configuration.
 pub mod lcm {
-    pub use crate::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
-}
-
-mod wire {
-    pub(crate) use vesc_float_out_boy_protocol::{
-        saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
-    };
+    pub use super::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
 }
 
 use vescpkg_rs::prelude::Ratio;

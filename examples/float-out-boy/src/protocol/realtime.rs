@@ -1,4 +1,4 @@
-//! Float Out Boy realtime protocol payload types.
+//! Realtime protocol payload types owned by Float Out Boy.
 //!
 //! Source map: realtime ID lists and payloads mirror the pinned Refloat cutoff at
 //! `third_party/float-out-boy/src/rt_data.h:38-66` and `third_party/float-out-boy/src/main.c:1876-1960`.
@@ -183,9 +183,9 @@ realtime_data_items! {
         MotorBatteryCurrent => "batt_current" => motor.battery_current().current().as_amps(),
         MotorMosfetTemperature => "mosfet_temp" => temperatures.mosfet().temperature().as_degrees_celsius(),
         MotorTemperature => "motor_temp" => temperatures.motor().temperature().as_degrees_celsius(),
-        ImuPitch => "pitch" => crate::degrees(attitude.pitch().angle()),
-        ImuBalancePitch => "balance_pitch" => crate::degrees(attitude.balance_pitch().angle()),
-        ImuRoll => "roll" => crate::degrees(attitude.roll().angle()),
+        ImuPitch => "pitch" => super::degrees(attitude.pitch().angle()),
+        ImuBalancePitch => "balance_pitch" => super::degrees(attitude.balance_pitch().angle()),
+        ImuRoll => "roll" => super::degrees(attitude.roll().angle()),
         FootpadAdc1 => "adc_left" => base.footpad().left_voltage().as_volts(),
         FootpadAdc2 => "adc_right" => base.footpad().right_voltage().as_volts(),
         RemoteInput => "remote.input" => live.remote_input().ratio().as_ratio(),

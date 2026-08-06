@@ -1,4 +1,4 @@
-//! Float Out Boy compact all-data response types.
+//! Compact Float Out Boy all-data response types.
 //!
 //! C map: `cmd_send_all_data` encodes these response variants at
 //! `third_party/float-out-boy/src/main.c:1313-1399`.
@@ -8,6 +8,7 @@ use super::all_data_wire::{
     float_out_boy_append_all_data_mode4, float_out_boy_degrees, float_out_boy_offset_scaled_u8,
     float_out_boy_scaled_u8,
 };
+use super::packet::FloatOutBoyPacket;
 use super::realtime::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeFilteredMotorCurrent,
@@ -19,7 +20,6 @@ use super::{
     FloatOutBoyFootpadSample, FloatOutBoyRideState,
 };
 use super::{FloatOutBoyBeepReason, FloatOutBoyMode};
-use crate::packet::FloatOutBoyPacket;
 use vescpkg_rs::prelude::{
     AmpHoursCharged, AmpHoursDischarged, BatteryCurrent, BatteryLevel, BatteryVoltage,
     DirectionalMotorCurrent, DutyCycle, ElectricalSpeed, FirmwareFaultWireCode, ImuPitch, ImuRoll,
@@ -187,7 +187,7 @@ impl FloatOutBoyAllDataBasePayload {
 
     fn encode_motor_response<const N: usize>(&self, packet: &mut FloatOutBoyPacket<N>) {
         packet.push_scaled_i16(self.motor.battery_voltage().voltage().as_volts(), 10.0);
-        packet.push_i16(crate::packet::saturating_trunc_f32_to_i16(
+        packet.push_i16(super::packet::saturating_trunc_f32_to_i16(
             self.motor
                 .electrical_speed()
                 .rpm()

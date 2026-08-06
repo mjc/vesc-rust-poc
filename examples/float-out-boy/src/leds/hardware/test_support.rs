@@ -1,10 +1,10 @@
 #![expect(missing_docs, reason = "compact FOB LED hardware construction API")]
 
+use super::super::{FloatOutBoyLedColorOrder, FloatOutBoyLedStripOrder};
 use super::{
     FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
     FloatOutBoyLedStripConfig,
 };
-use crate::{FloatOutBoyLedColorOrder, FloatOutBoyLedStripOrder};
 
 impl FloatOutBoyLedMode {
     #[must_use]
