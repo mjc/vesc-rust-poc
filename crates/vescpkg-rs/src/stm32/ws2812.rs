@@ -35,6 +35,8 @@ pub enum OutputDrive {
 
 const WS2812_ZERO: u16 = 31;
 const WS2812_ONE: u16 = 72;
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+const WS2812_RESET: u16 = 0;
 
 /// Encode one byte with the VESC package WS2812 PWM duty values.
 #[must_use]
@@ -53,6 +55,116 @@ pub fn encode_byte(pulses: &mut [u16], index: &mut usize, byte: u8) -> bool {
     }
     *index = index.saturating_add(written);
     written == 8
+}
+
+/// DMA-backed WS2812 pulse buffer with explicit quiesce and teardown ownership.
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+#[derive(Debug, PartialEq)]
+#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
+pub struct Ws2812DmaBuffer<const N: usize> {
+    storage: super::DmaHalfWordStorage<N>,
+    initialized: bool,
+    operational: bool,
+}
+
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+impl<const N: usize> Ws2812DmaBuffer<N> {
+    /// Build an unallocated, inactive pulse buffer.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            storage: super::DmaHalfWordStorage::new(),
+            initialized: false,
+            operational: false,
+        }
+    }
+
+    /// Prepare zero pixels plus the trailing reset pulse and start DMA.
+    #[must_use]
+    pub fn setup(
+        &mut self,
+        pulse_count: usize,
+        setup: impl FnOnce(&mut [u16]) -> bool,
+        rollback: impl FnOnce(),
+    ) -> bool {
+        if !self.storage.prepare(pulse_count) {
+            return false;
+        }
+        let Some((reset, data)) = self.storage.as_mut_slice().and_then(<[_]>::split_last_mut)
+        else {
+            self.storage.release();
+            return false;
+        };
+        data.fill(WS2812_ZERO);
+        *reset = WS2812_RESET;
+        self.operational = setup(self.storage.as_mut_slice().unwrap_or_default());
+        self.initialized = self.operational;
+        if !self.operational {
+            rollback();
+            self.storage.release();
+        }
+        self.operational
+    }
+
+    /// Quiesce DMA, replace pixel pulses, and restart the stable source buffer.
+    #[must_use]
+    pub fn update(
+        &mut self,
+        encode: impl FnOnce(&mut [u16]) -> bool,
+        quiesce: impl FnOnce() -> bool,
+        restart: impl FnOnce(&[u16]) -> bool,
+    ) -> bool {
+        if !self.operational || !quiesce() {
+            self.operational = false;
+            return false;
+        }
+        let encoded = self
+            .storage
+            .as_mut_slice()
+            .and_then(<[_]>::split_last_mut)
+            .is_some_and(|(_, data)| encode(data));
+        if !encoded {
+            self.operational = false;
+            return false;
+        }
+        self.operational = self.storage.as_slice().is_some_and(restart);
+        self.operational
+    }
+
+    /// Stop DMA and release storage only after teardown succeeds.
+    #[must_use]
+    pub fn teardown(&mut self, teardown: impl FnOnce() -> bool) -> bool {
+        if !self.initialized {
+            return true;
+        }
+        self.operational = false;
+        if !teardown() {
+            return false;
+        }
+        self.initialized = false;
+        self.storage.release();
+        true
+    }
+
+    /// Return whether the stream can currently accept an update.
+    #[must_use]
+    pub const fn is_operational(&self) -> bool {
+        self.operational
+    }
+
+    /// Borrow host fixture pulses for package-driver characterization.
+    #[cfg(all(not(target_arch = "arm"), any(test, feature = "test-support")))]
+    #[must_use]
+    pub fn pulses_for_test(&self) -> &[u16] {
+        self.storage.as_slice().unwrap_or_default()
+    }
+}
+
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+impl<const N: usize> Default for Ws2812DmaBuffer<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(any(test, target_arch = "arm"))]
@@ -267,9 +379,11 @@ pub unsafe fn teardown(pin: OutputPin) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use super::{
         DMA1_BASE, OutputDrive, OutputPin, PAL_MODE_ALTERNATE_2_MID_SPEED, PAL_OPEN_DRAIN,
-        PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4, encode_byte, output_mode,
+        PinHardware, TIM_CCR1, TIM_CCR2, TIM_CCR4, Ws2812DmaBuffer, encode_byte, output_mode,
     };
 
     #[test]
@@ -350,5 +464,57 @@ mod tests {
             output_mode(OutputDrive::OpenDrain),
             PAL_MODE_ALTERNATE_2_MID_SPEED | PAL_OPEN_DRAIN
         );
+    }
+
+    #[test]
+    fn dma_buffer_owns_one_complete_setup_update_and_teardown_interval() {
+        let mut buffer = Ws2812DmaBuffer::<9>::new();
+        assert!(buffer.setup(
+            9,
+            |pulses| {
+                assert_eq!(pulses, [31, 31, 31, 31, 31, 31, 31, 31, 0]);
+                true
+            },
+            || panic!("successful setup rolled back")
+        ));
+        assert!(buffer.is_operational());
+
+        assert!(buffer.update(
+            |data| {
+                assert_eq!(data.len(), 8);
+                data.fill(72);
+                true
+            },
+            || true,
+            |pulses| {
+                assert_eq!(pulses, [72, 72, 72, 72, 72, 72, 72, 72, 0]);
+                true
+            },
+        ));
+        assert!(buffer.teardown(|| true));
+        assert!(!buffer.is_operational());
+        assert!(buffer.storage.is_empty());
+    }
+
+    #[test]
+    fn dma_buffer_rolls_back_failed_setup_and_retains_storage_until_safe_teardown() {
+        let rollbacks = Cell::new(0);
+        let mut buffer = Ws2812DmaBuffer::<9>::new();
+        assert!(!buffer.setup(9, |_| false, || rollbacks.set(rollbacks.get() + 1)));
+        assert_eq!(rollbacks.get(), 1);
+        assert!(buffer.storage.is_empty());
+
+        assert!(buffer.setup(9, |_| true, || panic!("successful setup rolled back")));
+        assert!(!buffer.update(
+            |_| true,
+            || false,
+            |_| panic!("restart followed failed quiesce")
+        ));
+        assert!(!buffer.is_operational());
+        assert!(!buffer.storage.is_empty());
+        assert!(!buffer.teardown(|| false));
+        assert!(!buffer.storage.is_empty());
+        assert!(buffer.teardown(|| true));
+        assert!(buffer.storage.is_empty());
     }
 }

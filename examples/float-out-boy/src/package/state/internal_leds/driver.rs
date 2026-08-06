@@ -34,9 +34,11 @@ fn ordered_strips(
     })
 }
 
+#[cfg(test)]
 const WS2812_ZERO: u16 = 31;
 #[cfg(test)]
 const WS2812_ONE: u16 = 72;
+#[cfg(test)]
 const WS2812_RESET: u16 = 0;
 const MAX_STRIP_PIXELS: usize = 30;
 const MAX_PULSES: usize = MAX_STRIP_PIXELS * 3 * 32 + 1;
@@ -45,18 +47,14 @@ const MAX_PULSES: usize = MAX_STRIP_PIXELS * 3 * 32 + 1;
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
 pub(super) struct FloatOutBoyInternalLedDriver {
     hardware: FloatOutBoyHardwareLedsConfig,
-    pulses: vescpkg_rs::stm32::DmaHalfWordStorage<MAX_PULSES>,
-    initialized: bool,
-    operational: bool,
+    buffer: vescpkg_rs::stm32::ws2812::Ws2812DmaBuffer<MAX_PULSES>,
 }
 
 impl FloatOutBoyInternalLedDriver {
     pub(super) const fn new(hardware: FloatOutBoyHardwareLedsConfig) -> Self {
         Self {
             hardware,
-            pulses: vescpkg_rs::stm32::DmaHalfWordStorage::new(),
-            initialized: false,
-            operational: false,
+            buffer: vescpkg_rs::stm32::ws2812::Ws2812DmaBuffer::new(),
         }
     }
 
@@ -68,31 +66,16 @@ impl FloatOutBoyInternalLedDriver {
         let Some(pulse_count) = self.required_pulse_count() else {
             return false;
         };
-        if !self.pulses.prepare(pulse_count) {
-            return false;
-        }
         let hardware = self.hardware;
-        let Some(pulses) = self.pulses.as_mut_slice() else {
-            self.pulses.release();
-            return false;
-        };
-        let Some((reset, data)) = pulses.split_last_mut() else {
-            self.pulses.release();
-            return false;
-        };
-        data.fill(WS2812_ZERO);
-        *reset = WS2812_RESET;
-        self.operational = setup(hardware.pin, hardware.pin_config, pulses);
-        self.initialized = self.operational;
-        if !self.operational {
-            rollback(self.hardware.pin);
-            self.pulses.release();
-        }
-        self.operational
+        self.buffer.setup(
+            pulse_count,
+            |pulses| setup(hardware.pin, hardware.pin_config, pulses),
+            || rollback(hardware.pin),
+        )
     }
 
     pub(super) const fn is_operational(&self) -> bool {
-        self.operational
+        self.buffer.is_operational()
     }
 
     pub(super) fn paint(
@@ -101,32 +84,16 @@ impl FloatOutBoyInternalLedDriver {
         quiesce: impl FnOnce(FloatOutBoyLedPin) -> bool,
         restart: impl FnOnce(FloatOutBoyLedPin, &[u16]) -> bool,
     ) -> bool {
-        if !self.operational {
-            return false;
-        }
-        if !quiesce(self.hardware.pin) || !self.encode(renderer) {
-            self.operational = false;
-            return false;
-        }
-        let Some(pulses) = self.pulses.as_slice() else {
-            self.operational = false;
-            return false;
-        };
-        self.operational = restart(self.hardware.pin, pulses);
-        self.operational
+        let hardware = self.hardware;
+        self.buffer.update(
+            |pulses| encode(hardware, renderer, pulses),
+            || quiesce(hardware.pin),
+            |pulses| restart(hardware.pin, pulses),
+        )
     }
 
     pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin) -> bool) -> bool {
-        if !self.initialized {
-            return true;
-        }
-        self.operational = false;
-        if !teardown(self.hardware.pin) {
-            return false;
-        }
-        self.initialized = false;
-        self.pulses.release();
-        true
+        self.buffer.teardown(|| teardown(self.hardware.pin))
     }
 
     fn required_pulse_count(&self) -> Option<usize> {
@@ -148,40 +115,33 @@ impl FloatOutBoyInternalLedDriver {
         (bits > 0).then(|| bits.saturating_add(1))
     }
 
-    fn encode(&mut self, renderer: &FloatOutBoyLedRenderer) -> bool {
-        let Some(data_pulse_count) = self.pulses.len().checked_sub(1) else {
-            return false;
-        };
-        let hardware = self.hardware;
-        let Some(pulses) = self
-            .pulses
-            .as_mut_slice()
-            .and_then(|pulses| pulses.get_mut(..data_pulse_count))
-        else {
-            return false;
-        };
-        let mut pulse_index = 0;
-        for (role, strip) in ordered_strips(hardware) {
-            let frame = frame_for(renderer, role);
-            for pixel_index in 0..usize::from(strip.count) {
-                let Some(pixel) = frame.physical_pixel(pixel_index) else {
+    #[cfg(test)]
+    fn pulses(&self) -> &[u16] {
+        self.buffer.pulses_for_test()
+    }
+}
+
+fn encode(
+    hardware: FloatOutBoyHardwareLedsConfig,
+    renderer: &FloatOutBoyLedRenderer,
+    pulses: &mut [u16],
+) -> bool {
+    let mut pulse_index = 0;
+    for (role, strip) in ordered_strips(hardware) {
+        let frame = frame_for(renderer, role);
+        for pixel_index in 0..usize::from(strip.count) {
+            let Some(pixel) = frame.physical_pixel(pixel_index) else {
+                return false;
+            };
+            let (channels, channel_count) = pixel.physical_channels(strip.color_order);
+            for channel in channels.into_iter().take(channel_count) {
+                if !vescpkg_rs::stm32::ws2812::encode_byte(pulses, &mut pulse_index, channel) {
                     return false;
-                };
-                let (channels, channel_count) = pixel.physical_channels(strip.color_order);
-                for channel in channels.into_iter().take(channel_count) {
-                    if !vescpkg_rs::stm32::ws2812::encode_byte(pulses, &mut pulse_index, channel) {
-                        return false;
-                    }
                 }
             }
         }
-        pulse_index == data_pulse_count
     }
-
-    #[cfg(test)]
-    fn pulses(&self) -> &[u16] {
-        self.pulses.as_slice().unwrap_or_default()
-    }
+    pulse_index == pulses.len()
 }
 
 fn frame_for(
