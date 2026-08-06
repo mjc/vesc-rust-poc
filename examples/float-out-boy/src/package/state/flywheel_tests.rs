@@ -324,7 +324,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
             AngleDegrees::from_degrees(80.0),
             AngleDegrees::ZERO,
         ));
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(
             state
                 .serialized_config
@@ -353,7 +353,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         for _ in 0..900 {
             let _ = state.tick_beeper();
         }
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(7));
         set_ride_state(&mut state, run_state);
         set_footpad(&mut state, FloatOutBoyFootpadState::None);
         assert!(state.handle_packet_with_telemetry(
@@ -362,7 +362,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
             &mut |_bytes| true,
             &flywheel_packet(&[0x80, 0, 0, 0, 0, 0]),
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
 
         assert_eq!(
             state

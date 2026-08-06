@@ -33,7 +33,7 @@ fn float_out_boy_command(bytes: &[u8]) -> Option<(FloatOutBoyAppDataCommand, &[u
     if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
         return None;
     }
-    FloatOutBoyAppDataCommand::try_from_id(*command)
+    FloatOutBoyAppDataCommand::try_from(*command)
         .ok()
         .map(|command| (command, payload))
 }

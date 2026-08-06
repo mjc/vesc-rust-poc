@@ -83,9 +83,6 @@ impl TryFrom<u8> for PinConfig {
     }
 }
 
-#[cfg(all(feature = "alloc", target_arch = "arm"))]
-pub use super::DmaHalfWordBuffer as PulseBuffer;
-
 #[cfg(any(test, target_arch = "arm"))]
 const DMA1_BASE: usize = 0x4002_6000;
 #[cfg(any(test, target_arch = "arm"))]

@@ -24,22 +24,22 @@ impl FloatOutBoyConfigEditor<'_> {
     #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn apply_flywheel_overrides(&mut self, config: FloatOutBoyFlywheelConfig) -> bool {
         self.apply_handtest_safety_overrides()
-            && S::set_startup_pitch_tolerance(self, AngleDegrees::from_degrees(0.2))
-            && S::set_startup_roll_tolerance(self, AngleDegrees::from_degrees(25.0))
+            && self.set(S::PITCH_TOLERANCE_FIELD, AngleDegrees::from_degrees(0.2))
+            && self.set(S::ROLL_TOLERANCE_FIELD, AngleDegrees::from_degrees(25.0))
             && self.set(F::PITCH_FIELD, AngleDegrees::from_degrees(6.0))
             && self.set(
                 F::ROLL_FIELD,
                 AngleDegrees::from_degrees(if config.relaxed_roll { 90.0 } else { 35.0 }),
             )
-            && B::set_kp(self, config.kp)
-            && B::set_kp2(self, config.kp2)
-            && C::set_duty_pushback_angle(self, config.duty_angle)
-            && C::set_duty_pushback_threshold(self, config.duty_threshold)
-            && C::set_duty_pushback_speed(self, config.duty_speed)
-            && C::set_tiltback_return_speed(self, config.duty_speed)
-            && M::set_brake_current(self, MotorCurrent::new(Current::ZERO))
-            && F::set_darkride_enabled(self, false)
-            && F::set_reversestop_enabled(self, false)
-            && C::set_tiltback_variable_max(self, AngleDegrees::ZERO)
+            && self.set(B::KP_FIELD, config.kp)
+            && self.set(B::KP2_FIELD, config.kp2)
+            && self.set(C::DUTY_PUSHBACK_ANGLE_FIELD, config.duty_angle)
+            && self.set(C::DUTY_PUSHBACK_THRESHOLD_FIELD, config.duty_threshold)
+            && self.set(C::DUTY_PUSHBACK_SPEED_FIELD, config.duty_speed)
+            && self.set(C::TILTBACK_RETURN_SPEED_FIELD, config.duty_speed)
+            && self.set(M::BRAKE_CURRENT_FIELD, MotorCurrent::new(Current::ZERO))
+            && self.set(F::DARKRIDE_FIELD, false)
+            && self.set(F::REVERSESTOP_FIELD, false)
+            && self.set(C::TILTBACK_VARIABLE_MAX_FIELD, AngleDegrees::ZERO)
     }
 }

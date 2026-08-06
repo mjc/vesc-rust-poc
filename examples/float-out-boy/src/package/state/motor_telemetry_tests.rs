@@ -156,7 +156,7 @@ fn base_all_data_does_not_refresh_distance_or_temperatures() {
             &mut state,
             app_data,
             telemetry,
-            FloatOutBoyAllDataMode::base().source_id(),
+            FloatOutBoyAllDataMode::from_source_id(1).source_id(),
         )
         .unwrap()
         .len(),
@@ -177,7 +177,7 @@ fn base_battery_voltage_refreshes_from_motor_telemetry() {
         &mut state,
         app_data,
         telemetry,
-        FloatOutBoyAllDataMode::base().source_id(),
+        FloatOutBoyAllDataMode::from_source_id(1).source_id(),
     )
     .unwrap();
     assert_eq!(packet.len(), 34);
@@ -413,6 +413,6 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
         ride_state.setpoint_adjustment(),
         crate::domain::FloatOutBoySetpointAdjustment::None
     );
-    assert_eq!(state.wheelslip_ticks, expected_wheelslip_ticks);
+    assert_eq!(state.wheelslip_ticks.started(), expected_wheelslip_ticks);
     assert_f32_eq!(firmware.commanded_current().current().as_amps(), 0.0);
 }

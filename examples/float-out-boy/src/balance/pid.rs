@@ -1,10 +1,6 @@
-use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::FloatOutBoyDarkRideState;
-use vescpkg_rs::prelude::{
-    AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit, PidScale,
-    SampleRate,
-};
+use vescpkg_rs::prelude::{AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, PidScale};
 use vescpkg_rs::{Rpm, cos, sin};
 
 /// Float Out Boy pitch rate after roll/yaw mixing and darkride sign handling.
@@ -40,36 +36,9 @@ impl PitchRate {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct Currents {
-    angle_proportional: MotorCurrent,
-    rate_damping: MotorCurrent,
-    integral: MotorCurrent,
-}
-
-impl Currents {
-    #[inline]
-    pub(super) fn pitch_based_current(
-        self,
-        booster_current: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
-    ) -> PitchBasedCurrent {
-        PitchBasedCurrent::from_rate_and_booster(
-            self.rate_damping,
-            booster_current,
-            softstart_pid_limit,
-            motor_current_max,
-            hertz,
-        )
-    }
-
-    #[inline]
-    pub(super) fn requested_with_pitch_based(
-        self,
-        pitch_based: PitchBasedCurrent,
-    ) -> RequestedCurrent {
-        RequestedCurrent(self.angle_proportional + self.integral + pitch_based.current)
-    }
+    pub(super) angle_proportional: MotorCurrent,
+    pub(super) rate_damping: MotorCurrent,
+    pub(super) integral: MotorCurrent,
 }
 
 #[inline]

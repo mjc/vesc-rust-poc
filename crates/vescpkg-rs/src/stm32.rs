@@ -13,6 +13,8 @@ use crate::DigitalPin;
 mod circular_dma_pwm;
 #[cfg(all(feature = "alloc", target_arch = "arm"))]
 pub use circular_dma_pwm::DmaHalfWordBuffer;
+#[cfg(any(not(target_arch = "arm"), feature = "alloc"))]
+pub use circular_dma_pwm::DmaHalfWordStorage;
 pub use circular_dma_pwm::{Stm32F4CircularDmaPwm, Stm32F4CircularDmaPwmConfig};
 
 /// Provisional Float Out Boy/Refloat WS2812 driver.
@@ -22,7 +24,26 @@ pub mod float_out_boy_ws2812;
 
 #[cfg(test)]
 mod circular_dma_pwm_tests {
-    use super::{Stm32F4CircularDmaPwm, Stm32F4CircularDmaPwmConfig};
+    use super::{DmaHalfWordStorage, Stm32F4CircularDmaPwm, Stm32F4CircularDmaPwmConfig};
+
+    #[test]
+    fn dma_half_word_storage_tracks_exclusive_preparation_and_explicit_release() {
+        let mut storage = DmaHalfWordStorage::<4>::new();
+        assert!(storage.is_empty());
+        assert!(storage.prepare(3));
+        assert_eq!(storage.len(), 3);
+        assert!(!storage.prepare(2));
+        storage
+            .as_mut_slice()
+            .expect("prepared storage")
+            .copy_from_slice(&[1, 2, 3]);
+        assert_eq!(storage.as_slice(), Some([1, 2, 3].as_slice()));
+
+        storage.release();
+        assert!(storage.is_empty());
+        assert_eq!(storage.as_slice(), None);
+        assert!(!storage.prepare(5));
+    }
 
     #[test]
     fn circular_dma_pwm_retains_the_source_backed_peripheral_map() {

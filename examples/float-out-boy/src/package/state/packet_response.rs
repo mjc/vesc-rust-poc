@@ -1,4 +1,5 @@
 use super::super::protocol::{
+    encode_float_out_boy_all_data_fault_response,
     encode_float_out_boy_get_realtime_data_response_with_remote,
     encode_float_out_boy_info_response, encode_float_out_boy_realtime_data_ids_response,
     encode_float_out_boy_realtime_data_response_with_runtime,
@@ -7,8 +8,8 @@ use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataResponse, FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader,
-    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeTail,
+    FloatOutBoyAppDataCommand, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
+    FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
@@ -139,7 +140,7 @@ impl FloatOutBoyPackageState {
         ) {
             (Err(_), _) | (Ok(_), FirmwareFault::Unknown) => false,
             (Ok(_), FirmwareFault::Active(fault)) => {
-                let response = FloatOutBoyAllDataResponse::fault(fault.wire_code());
+                let response = encode_float_out_boy_all_data_fault_response(fault.wire_code());
                 reply(response.as_bytes())
             }
             // Preserve the fail-closed behavior for an ABI value this SDK

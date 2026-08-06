@@ -11,11 +11,14 @@ impl FloatOutBoyConfigEditor<'_> {
         // C map: HANDTEST temporarily clears these tune fields at
         // `third_party/float-out-boy/src/main.c:1431-1444`; the serialized offsets
         // follow `third_party/float-out-boy/src/conf/settings.xml:3943-3981`.
-        B::set_ki(self, IntegralCurrentGain::new(0.0))
-            && B::set_kp_brake(self, PidScale::new(1.0))
-            && B::set_kp2_brake(self, PidScale::new(1.0))
-            && B::set_booster_angle(self, AngleDegrees::from_degrees(100.0))
-            && B::set_brake_booster_angle(self, AngleDegrees::from_degrees(100.0))
+        self.set(B::KI_FIELD, IntegralCurrentGain::new(0.0))
+            && self.set(B::KP_BRAKE_FIELD, PidScale::new(1.0))
+            && self.set(B::KP2_BRAKE_FIELD, PidScale::new(1.0))
+            && self.set(B::BOOSTER_ANGLE_FIELD, AngleDegrees::from_degrees(100.0))
+            && self.set(
+                B::BRAKE_BOOSTER_ANGLE_FIELD,
+                AngleDegrees::from_degrees(100.0),
+            )
             && self.clear_handtest_tune_fields()
             && self.set(F::DELAY_PITCH_FIELD, VescSeconds::from_seconds(0.05))
             && self.set(F::DELAY_ROLL_FIELD, VescSeconds::from_seconds(0.05))

@@ -4,9 +4,9 @@
 //! `third_party/float-out-boy/src/rt_data.h:38-66` and `third_party/float-out-boy/src/main.c:1876-1960`.
 
 use super::{
-    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadState,
-    FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
+    FloatOutBoyAllDataPayloads, FloatOutBoyBeepReason, FloatOutBoyChargingState,
+    FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
+    FloatOutBoyFootpadState, FloatOutBoyRideState, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCurrent, DirectionalMotorCurrent, FirmwareFaultWireCode,
@@ -15,8 +15,10 @@ use vescpkg_rs::prelude::{
 
 macro_rules! realtime_data_items {
     (
-        always { $( $always:ident => $always_id:literal, )+ }
-        runtime { $( $runtime:ident => $runtime_id:literal, )+ }
+        project($payloads:ident, $remote_input:ident, $atr_accel_diff:ident, $atr_speed_boost:ident;
+            $base:ident, $motor:ident, $attitude:ident, $setpoints:ident, $temperatures:ident);
+        always { $( $always:ident => $always_id:literal => $always_value:expr, )+ }
+        runtime { $( $runtime:ident => $runtime_id:literal => $runtime_value:expr, )+ }
         recorded { $( $recorded:ident, )+ }
     ) => {
         /// Float Out Boy realtime-data item ID.
@@ -48,42 +50,66 @@ macro_rules! realtime_data_items {
                 }
             }
         }
+
+        /// Project one typed FOB realtime item to its protocol float value.
+        #[must_use]
+        pub fn realtime_value(
+            $payloads: &FloatOutBoyAllDataPayloads,
+            item: FloatOutBoyRealtimeDataItem,
+            $remote_input: FloatOutBoyRealtimeRemoteInput,
+            $atr_accel_diff: f32,
+            $atr_speed_boost: f32,
+        ) -> f32 {
+            let $base = $payloads.base();
+            let $motor = $base.motor();
+            let $attitude = $base.attitude();
+            let $setpoints = $base.setpoints();
+            let $temperatures = $payloads.mode2().temperatures();
+            match item {
+                $(FloatOutBoyRealtimeDataItem::$always => $always_value,)+
+                $(FloatOutBoyRealtimeDataItem::$runtime => $runtime_value,)+
+            }
+        }
     };
 }
 
 // C map: order, grouping, and IDs mirror `RT_DATA_ITEMS` / `RT_DATA_RUNTIME_ITEMS` in
 // `third_party/float-out-boy/src/rt_data.h:38-66`. The recorded subset follows the port's
 // current data-recorder model and remains intentionally separate from the upstream lists.
+// Projections mirror `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1943-1948`;
+// motor speed stays in the km/h expected by the VESC Tool consumer.
 realtime_data_items! {
+    project(payloads, remote_input, atr_accel_diff, atr_speed_boost;
+        base, motor, attitude, setpoints, temperatures);
     always {
-        MotorSpeed => "motor.speed",
-        MotorErpm => "motor.erpm",
-        MotorCurrent => "motor.current",
-        MotorDirectionalCurrent => "motor.dir_current",
-        MotorFilteredCurrent => "motor.filt_current",
-        MotorDutyCycle => "motor.duty_cycle",
-        MotorBatteryVoltage => "motor.batt_voltage",
-        MotorBatteryCurrent => "motor.batt_current",
-        MotorMosfetTemperature => "motor.mosfet_temp",
-        MotorTemperature => "motor.motor_temp",
-        ImuPitch => "imu.pitch",
-        ImuBalancePitch => "imu.balance_pitch",
-        ImuRoll => "imu.roll",
-        FootpadAdc1 => "footpad.adc1",
-        FootpadAdc2 => "footpad.adc2",
-        RemoteInput => "remote.input",
+        MotorSpeed => "motor.speed" => motor.vehicle_speed().speed().as_kilometers_per_hour(),
+        MotorErpm => "motor.erpm" => motor.electrical_speed().rpm().as_revolutions_per_minute(),
+        MotorCurrent => "motor.current" => motor.motor_current().current().as_amps(),
+        MotorDirectionalCurrent => "motor.dir_current" => motor.directional_motor_current().current().as_amps(),
+        MotorFilteredCurrent => "motor.filt_current" => motor.filtered_motor_current().current().current().as_amps(),
+        MotorDutyCycle => "motor.duty_cycle" => motor.duty_cycle().ratio().as_ratio(),
+        MotorBatteryVoltage => "motor.batt_voltage" => motor.battery_voltage().voltage().as_volts(),
+        MotorBatteryCurrent => "motor.batt_current" => motor.battery_current().current().as_amps(),
+        MotorMosfetTemperature => "motor.mosfet_temp" => temperatures.mosfet().temperature().as_degrees_celsius(),
+        MotorTemperature => "motor.motor_temp" => temperatures.motor().temperature().as_degrees_celsius(),
+        ImuPitch => "imu.pitch" => crate::degrees(attitude.pitch().angle()),
+        ImuBalancePitch => "imu.balance_pitch" => crate::degrees(attitude.balance_pitch().angle()),
+        ImuRoll => "imu.roll" => crate::degrees(attitude.roll().angle()),
+        FootpadAdc1 => "footpad.adc1" => base.footpad().adc1_volts(),
+        FootpadAdc2 => "footpad.adc2" => base.footpad().adc2_volts(),
+        RemoteInput => "remote.input" => remote_input.ratio().as_ratio(),
     }
     runtime {
-        Setpoint => "setpoint",
-        AtrSetpoint => "atr.setpoint",
-        BrakeTiltSetpoint => "brake_tilt.setpoint",
-        TorqueTiltSetpoint => "torque_tilt.setpoint",
-        TurnTiltSetpoint => "turn_tilt.setpoint",
-        RemoteSetpoint => "remote.setpoint",
-        BalanceCurrent => "balance_current",
-        AtrAccelDiff => "atr.accel_diff",
-        AtrSpeedBoost => "atr.speed_boost",
-        BoosterCurrent => "booster.current",
+        Setpoint => "setpoint" => setpoints.board().angle().as_degrees(),
+        AtrSetpoint => "atr.setpoint" => setpoints.atr().angle().as_degrees(),
+        BrakeTiltSetpoint => "brake_tilt.setpoint" => setpoints.brake_tilt().angle().as_degrees(),
+        TorqueTiltSetpoint => "torque_tilt.setpoint" => setpoints.torque_tilt().angle().as_degrees(),
+        TurnTiltSetpoint => "turn_tilt.setpoint" => setpoints.turn_tilt().angle().as_degrees(),
+        RemoteSetpoint => "remote.setpoint" => setpoints.remote().angle().as_degrees(),
+        BalanceCurrent => "balance_current" => base.balance_current().current().current().as_amps(),
+        AtrAccelDiff => "atr.accel_diff" => atr_accel_diff,
+        AtrSpeedBoost => "atr.speed_boost" => atr_speed_boost,
+        BoosterCurrent => "booster.current" => base.booster_current().current().current().as_amps(),
     }
     recorded {
         MotorErpm,

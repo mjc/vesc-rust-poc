@@ -9,9 +9,6 @@ use crate::domain::{
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
 #[cfg(any(test, target_arch = "arm"))]
-use vesc_float_out_boy_protocol::encode_float_out_boy_float16;
-use vescpkg_rs::RingCursor;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
@@ -21,30 +18,30 @@ const DATA_RESPONSE_CAPACITY: usize = 511;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
+#[cfg(test)]
+type DataRecorderStorage = Option<[u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]>;
+#[cfg(all(not(test), target_arch = "arm"))]
+type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
+#[cfg(all(not(test), not(target_arch = "arm")))]
+type DataRecorderStorage = Option<[u8; 0]>;
+
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
     flags: FloatOutBoyDataRecorderFlags,
-    ring: RingCursor,
-    #[cfg(test)]
-    capability: Option<()>,
-    #[cfg(test)]
-    buffer: [u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-    #[cfg(all(not(test), target_arch = "arm"))]
-    buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>,
+    records: vescpkg_rs::FixedRecordRing<DataRecorderStorage, SAMPLE_SIZE>,
 }
 
 impl Default for DataRecorderState {
     fn default() -> Self {
         Self {
             flags: FloatOutBoyDataRecorderFlags::AUTOSTART | FloatOutBoyDataRecorderFlags::AUTOSTOP,
-            ring: RingCursor::default(),
             #[cfg(test)]
-            capability: Some(()),
-            #[cfg(test)]
-            buffer: [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
-            #[cfg(all(not(test), target_arch = "arm"))]
-            buffer: None,
+            records: vescpkg_rs::FixedRecordRing::new(Some(
+                [0; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE],
+            )),
+            #[cfg(not(test))]
+            records: vescpkg_rs::FixedRecordRing::new(None),
         }
     }
 }
@@ -52,25 +49,13 @@ impl Default for DataRecorderState {
 impl DataRecorderState {
     #[cfg(all(not(test), target_arch = "arm"))]
     fn initialize(&mut self, buffer: Option<vescpkg_rs::FirmwareDataRecorderBuffer>) {
-        self.buffer = buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE);
+        self.records
+            .replace_storage(buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE));
         self.stop();
-        self.ring.clear();
     }
 
-    pub(super) const fn has_capability(&self) -> bool {
-        #[cfg(test)]
-        {
-            self.capability.is_some()
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer.is_some()
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = self;
-            false
-        }
+    pub(super) fn has_capability(&self) -> bool {
+        self.records.capacity() > 0
     }
 
     pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
@@ -93,7 +78,7 @@ impl DataRecorderState {
     }
 
     fn start(&mut self) {
-        self.ring.clear();
+        self.records.clear();
         self.flags.set(
             FloatOutBoyDataRecorderFlags::RECORDING,
             self.has_capability(),
@@ -107,109 +92,22 @@ impl DataRecorderState {
     #[cfg(any(test, target_arch = "arm"))]
     fn shutdown(&mut self) {
         self.stop();
-        self.ring.clear();
-        #[cfg(test)]
-        {
-            self.capability = None;
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer = None;
-        }
+        self.records.replace_storage(None);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
-        if !self.has_capability() || !self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
-            return;
-        }
-        let capacity = self.capacity();
-        let Some(slot) = self.ring.write_slot(capacity) else {
-            return;
-        };
-        let Some(offset) = slot.checked_mul(SAMPLE_SIZE) else {
-            return;
-        };
-        if self.write(offset, sample) {
-            self.ring.commit_write(capacity);
+        if self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
+            let _ = self.records.push(sample);
         }
     }
 
     fn sample_count(&self) -> usize {
-        self.ring.len(self.capacity())
-    }
-
-    fn capacity(&self) -> usize {
-        #[cfg(test)]
-        {
-            let _ = self;
-            TEST_SAMPLE_CAPACITY
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .map_or(0, |buffer| buffer.len() / SAMPLE_SIZE)
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = self;
-            0
-        }
+        self.records.len()
     }
 
     fn sample_at(&self, index: usize) -> Option<[u8; SAMPLE_SIZE]> {
-        let capacity = self.capacity();
-        let slot = self.ring.slot_at(index, capacity)?;
-        let offset = slot.checked_mul(SAMPLE_SIZE)?;
-        let mut bytes = [0; SAMPLE_SIZE];
-        self.read(offset, &mut bytes).then_some(bytes)
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
-    fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
-        #[cfg(test)]
-        {
-            let Some(end) = offset.checked_add(bytes.len()) else {
-                return false;
-            };
-            let Some(target) = self.buffer.get_mut(offset..end) else {
-                return false;
-            };
-            target.copy_from_slice(bytes);
-            true
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_mut()
-                .is_some_and(|buffer| buffer.write(offset, bytes))
-        }
-    }
-
-    fn read(&self, offset: usize, bytes: &mut [u8]) -> bool {
-        #[cfg(test)]
-        {
-            let Some(end) = offset.checked_add(bytes.len()) else {
-                return false;
-            };
-            let Some(source) = self.buffer.get(offset..end) else {
-                return false;
-            };
-            bytes.copy_from_slice(source);
-            true
-        }
-        #[cfg(all(not(test), target_arch = "arm"))]
-        {
-            self.buffer
-                .as_ref()
-                .is_some_and(|buffer| buffer.read(offset, bytes))
-        }
-        #[cfg(all(not(test), not(target_arch = "arm")))]
-        {
-            let _ = (self, offset, bytes);
-            false
-        }
+        self.records.get(index)
     }
 }
 
@@ -229,7 +127,7 @@ impl FloatOutBoyPackageState {
 
     #[cfg(test)]
     pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.capability = None;
+        self.data_recorder.records.replace_storage(None);
         self.data_recorder.stop();
     }
 
@@ -243,7 +141,7 @@ impl FloatOutBoyPackageState {
             | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
             | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
-            encode_float_out_boy_float16(realtime_value(
+            vescpkg_rs::protocol_buffer::float16_auto_bits(realtime_value(
                 &payloads,
                 item,
                 self.remote_control.input(),

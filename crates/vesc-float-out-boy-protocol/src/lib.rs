@@ -34,7 +34,6 @@ extern crate std;
 mod all_data;
 mod all_data_wire;
 mod app_data;
-mod float16;
 mod footpad;
 mod metadata;
 mod packet;
@@ -47,12 +46,12 @@ pub use self::all_data::{
     FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode2Payload,
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
+    encode_float_out_boy_all_data_fault_response,
 };
 pub use self::app_data::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand, FloatOutBoyAppDataCommandError,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand,
 };
-pub use self::float16::{encode_float_out_boy_float16, push_float_out_boy_float16};
 pub use self::footpad::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};
 pub use self::metadata::{
     FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN, FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN,
@@ -73,11 +72,11 @@ pub use self::realtime::{
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
-    FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeTail, realtime_value,
 };
 pub use self::realtime_encoder::{
     FloatOutBoyRealtimeDataResponse, encode_float_out_boy_get_realtime_data_response_with_remote,
-    encode_float_out_boy_realtime_data_response_with_runtime, realtime_value,
+    encode_float_out_boy_realtime_data_response_with_runtime,
 };
 pub use self::ride_state::FloatOutBoyRideState;
 pub use self::state::{

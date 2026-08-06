@@ -121,6 +121,7 @@ mod sync;
 mod terminal;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
+mod timer;
 mod uart;
 
 pub use uart::UartDuplexMode;
@@ -232,7 +233,7 @@ pub use capabilities::{
 };
 pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
-    FirmwareDataRecorderDescriptorError, RingCursor,
+    FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage, RingCursor,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vesc_protocol::{
@@ -249,7 +250,7 @@ pub use vescpkg_rs_units::{
 };
 
 #[cfg(feature = "alloc")]
-pub use alloc::VescAllocator;
+pub use alloc::{FallibleBox, VescAllocator};
 pub use can_bus::{
     CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanReceiverHandler,
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
@@ -270,7 +271,7 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
-pub use numeric::slew_toward;
+pub use numeric::{FixedRingIndex, SmoothAngle, angle_step, slew_toward};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.
@@ -310,6 +311,9 @@ pub use thread::{
     Firmware, FirmwareClock, FirmwareThread, FirmwareThreads, StatelessFirmwareThread,
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
+};
+pub use timer::{
+    WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
 };
 pub use uart::{Uart, UartError, UartSession};
 

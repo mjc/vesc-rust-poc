@@ -7,7 +7,9 @@ use crate::{
     },
 };
 
-use super::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage, FloatOutBoyLedConfigDecoder};
+use super::{
+    FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage, decode_led_config, validate_led_config,
+};
 
 #[test]
 fn decodes_refloat_1_2_1_default_led_config() {
@@ -103,10 +105,8 @@ fn led_validation_acceptance_matches_typed_decode_for_every_single_byte_mutation
             bytes[offset] = value;
 
             assert_eq!(
-                FloatOutBoyLedConfigDecoder::new(&bytes)
-                    .validate()
-                    .is_some(),
-                FloatOutBoyLedConfigDecoder::new(&bytes).decode().is_some(),
+                validate_led_config(&bytes).is_some(),
+                decode_led_config(&bytes).is_some(),
                 "different acceptance at offset {offset} for value {value}"
             );
         }

@@ -1,15 +1,16 @@
+use crate::domain::encode_float_out_boy_all_data_fault_response;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS, FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS,
     FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode,
     FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload,
     FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyBeepReason, FloatOutBoyChargingState,
-    FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
-    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
+    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
+    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,
+    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, FloatOutBoyRideState,
@@ -45,7 +46,7 @@ fn package_author_builds_source_startup_all_data_payload() {
     let payloads = FloatOutBoyAllDataPayloads::source_startup();
     assert_eq!(payloads, FloatOutBoyAllDataPayloads::source_startup());
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
-        FloatOutBoyAllDataMode::with_mode4(),
+        FloatOutBoyAllDataMode::from_source_id(4),
     ));
 
     assert_eq!(
@@ -246,13 +247,12 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
 
     assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 101);
     assert!(commands.into_iter().all(|(id, command)| {
-        FloatOutBoyAppDataCommand::try_from_id(id)
+        FloatOutBoyAppDataCommand::try_from(id)
             .is_ok_and(|parsed| parsed == command && parsed.id() == id)
     }));
     assert_eq!(
-        FloatOutBoyAppDataCommand::try_from_id(200)
-            .expect_err("unstable command should stay explicit")
-            .value(),
+        FloatOutBoyAppDataCommand::try_from(200)
+            .expect_err("unstable command should stay explicit"),
         200
     );
 }
@@ -266,7 +266,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     ])
     .expect("all-data mode 4 request should parse");
 
-    assert_eq!(request.mode(), FloatOutBoyAllDataMode::with_mode4());
+    assert_eq!(request.mode(), FloatOutBoyAllDataMode::from_source_id(4));
     assert_eq!(request.mode().source_id(), 4);
     assert!(request.mode().includes_mode2());
     assert!(request.mode().includes_mode3());
@@ -582,87 +582,9 @@ fn package_author_encodes_all_data_base_response_like_float_out_boy_v1_2_1() {
 #[test]
 fn package_author_encodes_all_data_fault_response_like_float_out_boy_v1_2_1() {
     assert_eq!(
-        FloatOutBoyAllDataResponse::fault(FirmwareFaultWireCode::from_wire_code(5)).as_bytes(),
+        encode_float_out_boy_all_data_fault_response(FirmwareFaultWireCode::from_wire_code(5))
+            .as_bytes(),
         &[101, 10, 69, 5]
-    );
-}
-
-#[test]
-fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
-    let ride_state = FloatOutBoyRideState::new(
-        FloatOutBoyRunState::Running,
-        FloatOutBoyMode::Normal,
-        FloatOutBoySetpointAdjustment::None,
-        FloatOutBoyStopCondition::None,
-    );
-    let footpad = FloatOutBoyFootpadSample::new(
-        Voltage::from_volts(0.60),
-        Voltage::from_volts(0.40),
-        FloatOutBoyFootpadState::Both,
-    );
-    let setpoints = FloatOutBoyRealtimeRuntimeSetpoints::new(
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-1.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
-    );
-    let payload = FloatOutBoyAllDataBasePayload::new(
-        FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
-        FloatOutBoyAllDataAttitude::new(
-            FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from_radians(1.2)),
-            ImuRoll::new(AngleRadians::from_radians(-0.5)),
-            ImuPitch::new(AngleRadians::from_radians(2.3)),
-        ),
-        FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
-        footpad,
-        setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
-        FloatOutBoyAllDataMotorPayload::new(
-            BatteryVoltage::new(Voltage::from_volts(72.0)),
-            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
-            VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-            FloatOutBoyRealtimeMotorCurrents::new(
-                MotorCurrent::new(Current::from_amps(5.0)),
-                DirectionalMotorCurrent::new(Current::from_amps(5.0)),
-                FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-                    Current::from_amps(5.0),
-                )),
-                BatteryCurrent::new(Current::from_amps(-2.0)),
-            ),
-            DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-            Some(MotorCurrent::new(Current::from_amps(2.0))),
-        ),
-    );
-    let mode2 = FloatOutBoyAllDataMode2Payload::new(
-        TripDistance::new(Distance::from_meters(64.0)),
-        FloatOutBoyRealtimeMotorTemperatures::new(
-            MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
-            MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
-        ),
-        None,
-    );
-    let mode3 = FloatOutBoyAllDataMode3Payload::new(
-        OdometerMeters::from_meters(123_456),
-        AmpHoursDischarged::new(Charge::from_amp_hours(3.2)),
-        AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
-        WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
-        WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-        BatteryLevel::from_fraction(0.72),
-    );
-    let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        BatteryCurrent::new(Current::from_amps(1.2)),
-        BatteryVoltage::new(Voltage::from_volts(82.4)),
-    );
-
-    assert_eq!(
-        payload.encode_mode4_response(mode2, mode3, mode4),
-        [
-            101, 10, 4, 0, 90, 2, 175, 254, 226, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143, 5,
-            37, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103, 0, 0,
-            1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144, 0, 12, 3, 56,
-        ]
     );
 }
 
@@ -744,7 +666,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::base()
+                FloatOutBoyAllDataMode::from_source_id(1)
             ))
             .as_bytes(),
         &[
@@ -755,7 +677,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::with_mode2()
+                FloatOutBoyAllDataMode::from_source_id(2)
             ))
             .as_bytes(),
         &[
@@ -766,7 +688,7 @@ fn package_author_dispatches_all_data_responses_from_typed_request_mode() {
     assert_eq!(
         payloads
             .encode_response(FloatOutBoyAllDataRequest::new(
-                FloatOutBoyAllDataMode::with_mode3()
+                FloatOutBoyAllDataMode::from_source_id(3)
             ))
             .as_bytes(),
         &[

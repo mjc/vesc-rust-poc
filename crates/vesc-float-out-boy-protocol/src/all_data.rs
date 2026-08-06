@@ -27,44 +27,22 @@ use vescpkg_rs::prelude::{
     WattHoursDischarged,
 };
 
-/// Fixed-size Float Out Boy all-data response bytes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FloatOutBoyAllDataResponse {
-    /// Fault response bytes.
-    Fault([u8; 4]),
-    /// Base response bytes.
-    Base([u8; 34]),
-    /// Mode 2 response bytes.
-    Mode2([u8; 41]),
-    /// Mode 3 response bytes.
-    Mode3([u8; 54]),
-    /// Mode 4 response bytes.
-    Mode4([u8; 58]),
-}
+/// Maximum-capacity Float Out Boy all-data response bytes.
+pub type FloatOutBoyAllDataResponse = FloatOutBoyPacket<58>;
 
-impl FloatOutBoyAllDataResponse {
-    /// Encode a Float Out Boy all-data fault response.
-    #[must_use]
-    pub const fn fault(fault: FirmwareFaultWireCode) -> Self {
-        Self::Fault([
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-            FloatOutBoyAppDataCommand::GetAllData.id(),
-            69,
-            fault.wire_code(),
-        ])
-    }
-
-    /// Return the encoded response bytes.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8] {
-        match self {
-            Self::Fault(bytes) => bytes,
-            Self::Base(bytes) => bytes,
-            Self::Mode2(bytes) => bytes,
-            Self::Mode3(bytes) => bytes,
-            Self::Mode4(bytes) => bytes,
-        }
-    }
+/// Encode a Float Out Boy all-data fault response.
+#[must_use]
+pub fn encode_float_out_boy_all_data_fault_response(
+    fault: FirmwareFaultWireCode,
+) -> FloatOutBoyAllDataResponse {
+    let mut response = FloatOutBoyAllDataResponse::new();
+    response.extend(&[
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::GetAllData.id(),
+        69,
+        fault.wire_code(),
+    ]);
+    response
 }
 
 vescpkg_rs::typed_fields! {
@@ -76,6 +54,10 @@ vescpkg_rs::typed_fields! {
         pitch: ImuPitch => pitch,
     }
 }
+
+#[cfg(test)]
+#[path = "all_data/tests.rs"]
+mod tests;
 
 vescpkg_rs::typed_fields! {
     /// Float Out Boy compact all-data status fields.
@@ -218,36 +200,6 @@ impl FloatOutBoyAllDataBasePayload {
         }));
     }
 
-    /// Encode the compact all-data mode 4 response bytes.
-    #[must_use]
-    pub fn encode_mode4_response(
-        &self,
-        mode2: FloatOutBoyAllDataMode2Payload,
-        mode3: FloatOutBoyAllDataMode3Payload,
-        mode4: FloatOutBoyAllDataMode4Payload,
-    ) -> [u8; 58] {
-        self.encode_extended(4, mode2, Some(mode3), Some(mode4))
-    }
-
-    fn encode_extended<const N: usize>(
-        &self,
-        mode: u8,
-        mode2: FloatOutBoyAllDataMode2Payload,
-        mode3: Option<FloatOutBoyAllDataMode3Payload>,
-        mode4: Option<FloatOutBoyAllDataMode4Payload>,
-    ) -> [u8; N] {
-        let mut packet = FloatOutBoyPacket::new();
-        packet.extend(&self.encode_base_response(mode));
-        float_out_boy_append_all_data_mode2(&mut packet, mode2);
-        if let Some(mode3) = mode3 {
-            float_out_boy_append_all_data_mode3(&mut packet, mode3);
-        }
-        if let Some(mode4) = mode4 {
-            float_out_boy_append_all_data_mode4(&mut packet, mode4);
-        }
-        packet.into_bytes()
-    }
-
     /// Return base all-data fields with refreshed motor battery voltage.
     #[must_use]
     pub const fn with_motor_battery_voltage(self, battery_voltage: BatteryVoltage) -> Self {
@@ -288,30 +240,18 @@ impl FloatOutBoyAllDataPayloads {
         request: FloatOutBoyAllDataRequest,
     ) -> FloatOutBoyAllDataResponse {
         let mode = request.mode();
-        if mode.includes_mode4() {
-            FloatOutBoyAllDataResponse::Mode4(self.base.encode_extended(
-                mode.source_id(),
-                self.mode2,
-                Some(self.mode3),
-                Some(self.mode4),
-            ))
-        } else if mode.includes_mode3() {
-            FloatOutBoyAllDataResponse::Mode3(self.base.encode_extended(
-                mode.source_id(),
-                self.mode2,
-                Some(self.mode3),
-                None,
-            ))
-        } else if mode.includes_mode2() {
-            FloatOutBoyAllDataResponse::Mode2(self.base.encode_extended(
-                mode.source_id(),
-                self.mode2,
-                None,
-                None,
-            ))
-        } else {
-            FloatOutBoyAllDataResponse::Base(self.base.encode_base_response(mode.source_id()))
+        let mut response = FloatOutBoyAllDataResponse::new();
+        response.extend(&self.base.encode_base_response(mode.source_id()));
+        if mode.includes_mode2() {
+            float_out_boy_append_all_data_mode2(&mut response, self.mode2);
         }
+        if mode.includes_mode3() {
+            float_out_boy_append_all_data_mode3(&mut response, self.mode3);
+        }
+        if mode.includes_mode4() {
+            float_out_boy_append_all_data_mode4(&mut response, self.mode4);
+        }
+        response
     }
 
     /// Return a payload snapshot with refreshed base battery voltage.

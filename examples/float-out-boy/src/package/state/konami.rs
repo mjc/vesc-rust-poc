@@ -5,9 +5,8 @@
 //! allocation-free in the package image.
 
 use crate::domain::FloatOutBoyFootpadState;
-use crate::package::time::float_out_boy_ticks_elapsed_seconds;
-use vescpkg_rs::ImuPitch;
 use vescpkg_rs::prelude::{AngleRadians, TimestampTicks, VescSeconds};
+use vescpkg_rs::{ImuPitch, WrappingTimer};
 
 const STEP_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.15);
 const SEQUENCE_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.5);
@@ -16,7 +15,7 @@ const SEQUENCE_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.5);
 pub(super) struct FloatOutBoyKonami {
     sequence: &'static [FloatOutBoyFootpadState],
     state: usize,
-    timer: TimestampTicks,
+    timer: WrappingTimer,
 }
 
 impl FloatOutBoyKonami {
@@ -24,7 +23,7 @@ impl FloatOutBoyKonami {
         Self {
             sequence,
             state: 0,
-            timer: TimestampTicks::from_ticks(0),
+            timer: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
         }
     }
 
@@ -65,20 +64,19 @@ impl FloatOutBoyKonami {
         if self.sequence.is_empty() {
             return false;
         }
-        if self.state > 0 && float_out_boy_ticks_elapsed_seconds(now, self.timer, SEQUENCE_TIMEOUT)
-        {
+        if self.state > 0 && self.timer.older_than(now, SEQUENCE_TIMEOUT) {
             self.reset();
         }
 
         if self.sequence.get(self.state).copied() == Some(footpad)
-            && float_out_boy_ticks_elapsed_seconds(now, self.timer, STEP_TIMEOUT)
+            && self.timer.older_than(now, STEP_TIMEOUT)
         {
             self.state = self.state.saturating_add(1);
             if self.state == self.sequence.len() {
                 self.reset();
                 return true;
             }
-            self.timer = now;
+            self.timer.restart(now);
         } else if self
             .state
             .checked_sub(1)

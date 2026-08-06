@@ -1,6 +1,3 @@
-#[cfg(any(test, target_arch = "arm"))]
-use super::time::float_out_boy_expire_timer;
-use super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::FloatOutBoyBeeperLevel;
@@ -29,7 +26,7 @@ use vescpkg_rs::prelude::{
     MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
     TemperatureLimitStart, TimestampTicks,
 };
-use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
+use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry, WrappingTimer};
 
 mod alert_tracker;
 mod alerts;
@@ -202,20 +199,20 @@ pub struct FloatOutBoyPackageState {
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
-    charging_ticks: TimestampTicks,
-    engage_ticks: TimestampTicks,
-    disengage_ticks: TimestampTicks,
-    idle_ticks: TimestampTicks,
-    nag_ticks: TimestampTicks,
+    charging_ticks: WrappingTimer,
+    engage_ticks: WrappingTimer,
+    disengage_ticks: WrappingTimer,
+    idle_ticks: WrappingTimer,
+    nag_ticks: WrappingTimer,
     idle_voltage: BatteryVoltage,
-    fault_switch_ticks: TimestampTicks,
-    fault_switch_half_ticks: TimestampTicks,
-    reverse_ticks: TimestampTicks,
-    fault_angle_pitch_ticks: TimestampTicks,
-    fault_angle_roll_ticks: TimestampTicks,
-    high_voltage_ticks: TimestampTicks,
-    wheelslip_ticks: TimestampTicks,
-    upside_down_fault_ticks: TimestampTicks,
+    fault_switch_ticks: WrappingTimer,
+    fault_switch_half_ticks: WrappingTimer,
+    reverse_ticks: WrappingTimer,
+    fault_angle_pitch_ticks: WrappingTimer,
+    fault_angle_roll_ticks: WrappingTimer,
+    high_voltage_ticks: WrappingTimer,
+    wheelslip_ticks: WrappingTimer,
+    upside_down_fault_ticks: WrappingTimer,
     upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
@@ -235,7 +232,7 @@ pub struct FloatOutBoyPackageState {
     #[cfg(any(test, target_arch = "arm"))]
     aux_backup_failures: u32,
     #[cfg(any(test, target_arch = "arm"))]
-    aux_motor_config_refresh_ticks: TimestampTicks,
+    aux_motor_config_refresh_ticks: WrappingTimer,
     #[cfg(test)]
     internal_leds: Option<FloatOutBoyInternalLedRuntime>,
     #[cfg(target_arch = "arm")]
@@ -350,13 +347,12 @@ impl FloatOutBoyPackageState {
         telemetry: &impl MotorTelemetry,
         now: TimestampTicks,
     ) {
-        if float_out_boy_ticks_elapsed_seconds(
-            now,
-            self.aux_motor_config_refresh_ticks,
-            vescpkg_rs::VescSeconds::from_seconds(0.5),
-        ) {
+        if self
+            .aux_motor_config_refresh_ticks
+            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
+        {
             self.refresh_motor_config_runtime_state(telemetry);
-            self.aux_motor_config_refresh_ticks = now;
+            self.aux_motor_config_refresh_ticks.restart(now);
         }
     }
 
@@ -459,6 +455,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Apply and clear a pending motor-current request.
+    #[cfg(test)]
     pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.motor_control.apply_requested_current(motor)
     }
@@ -517,11 +514,11 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
-        self.idle_ticks = now;
+        self.idle_ticks.restart(now);
     }
 
     pub(super) fn refresh_running_epochs(&mut self, now: TimestampTicks) {
-        self.disengage_ticks = now;
+        self.disengage_ticks.restart(now);
         self.refresh_idle_epoch(now);
     }
 
@@ -529,20 +526,20 @@ impl FloatOutBoyPackageState {
     pub(super) fn initialize_time_epochs(&mut self, now: TimestampTicks) {
         // Refloat fixed its 1.2.1 tick/second mismatch in `f727e1d` so the
         // startup disengage epoch is actually one minute old.
-        self.engage_ticks = now;
-        self.disengage_ticks = float_out_boy_expire_timer(now, 60);
-        self.idle_ticks = now;
+        self.engage_ticks.restart(now);
+        self.disengage_ticks.expire_whole_seconds(now, 60);
+        self.idle_ticks.restart(now);
         self.bms.initialize_start_epoch(now);
     }
 
     #[cfg(test)]
     pub(super) fn replace_idle_epoch_for_test(&mut self, now: TimestampTicks) {
-        self.idle_ticks = now;
+        self.idle_ticks.restart(now);
     }
 
     #[cfg(test)]
     pub(super) const fn idle_epoch_for_test(&self) -> TimestampTicks {
-        self.idle_ticks
+        self.idle_ticks.started()
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -814,7 +811,7 @@ impl FloatOutBoyPackageState {
         if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
             return None;
         }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
             return None;
         };
 
@@ -1004,7 +1001,7 @@ impl FloatOutBoyPackageState {
         match charging::handle_packet(self.all_data_payloads, bytes) {
             Some(payloads) => {
                 self.all_data_payloads = payloads;
-                self.charging_ticks = now();
+                self.charging_ticks.restart(now());
                 true
             }
             None => false,

@@ -3,47 +3,8 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
+use vescpkg_rs::SmoothAngle;
 use vescpkg_rs::prelude::{AngleDegrees, Current, MotorCurrent, Rpm, SampleRate};
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-struct SmoothAngle {
-    target: AngleDegrees,
-    ramped_step: AngleDegrees,
-    setpoint: AngleDegrees,
-}
-
-fn loop_step(speed: vescpkg_rs::AngularVelocity, sample_rate: SampleRate) -> AngleDegrees {
-    sample_rate
-        .sample_period()
-        .map_or(AngleDegrees::ZERO, |period| {
-            AngleDegrees::from(speed * period)
-        })
-}
-
-fn smooth_ramp(state: &mut SmoothAngle, target: AngleDegrees, step: AngleDegrees, smoothing: f32) {
-    // C map: all four modifier modules use `smooth_rampf` from
-    // `third_party/float-out-boy/src/utils.c:36-64` with a 1.5 degree center window.
-    state.target = target;
-    let diff = target - state.setpoint;
-    if diff.abs() < AngleDegrees::from_degrees(1.5) {
-        state.ramped_step =
-            step * (smoothing * diff.as_degrees() / 2.0) + state.ramped_step * (1.0 - smoothing);
-        let centering = state
-            .ramped_step
-            .abs()
-            .min(step * (diff.as_degrees().abs() / 2.0))
-            * diff.signum();
-        state.setpoint = if diff.abs() < centering.abs() {
-            target
-        } else {
-            state.setpoint + centering
-        };
-    } else {
-        state.ramped_step =
-            step * (smoothing * diff.signum()) + state.ramped_step * (1.0 - smoothing);
-        state.setpoint = state.setpoint + state.ramped_step;
-    }
-}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct AtrState {
@@ -108,8 +69,8 @@ fn atr_step(
     if abs_erpm > 6_000.0 {
         response *= config.atr_response_boost().value();
     }
-    let on = loop_step(config.atr_on_speed(), sample_rate);
-    let off = loop_step(config.atr_off_speed(), sample_rate);
+    let on = vescpkg_rs::angle_step(config.atr_on_speed(), sample_rate);
+    let off = vescpkg_rs::angle_step(config.atr_off_speed(), sample_rate);
     let mut step = if forward {
         if setpoint.is_negative() {
             if setpoint < target {
@@ -271,12 +232,6 @@ impl YawMotion {
     }
 }
 
-impl TurnTiltState {
-    fn aggregate(&mut self, yaw: AngleDegrees) {
-        self.yaw.observe(yaw);
-    }
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct RideModifierState {
     nose: AngleDegrees,
@@ -305,7 +260,7 @@ impl RideModifierState {
     }
 
     pub(super) fn aggregate_yaw(&mut self, yaw: AngleDegrees) {
-        self.turn.aggregate(yaw);
+        self.turn.yaw.observe(yaw);
     }
 
     pub(super) fn advance(
@@ -380,7 +335,7 @@ impl RideModifierState {
         self.nose = vescpkg_rs::slew_toward(
             self.nose,
             nose_target(config, erpm),
-            loop_step(config.nose_angling_speed(), sample_rate),
+            vescpkg_rs::angle_step(config.nose_angling_speed(), sample_rate),
         );
     }
 
@@ -395,8 +350,8 @@ impl RideModifierState {
         // C map: torque target and on/off ramp selection mirror
         // `third_party/float-out-boy/src/torque_tilt.c:44-82`.
         let target = torque_target(config, current, braking);
-        let on = loop_step(config.torque_tilt_on_speed(), sample_rate);
-        let off = loop_step(config.torque_tilt_off_speed(), sample_rate);
+        let on = vescpkg_rs::angle_step(config.torque_tilt_on_speed(), sample_rate);
+        let off = vescpkg_rs::angle_step(config.torque_tilt_off_speed(), sample_rate);
         let mut step = if self.torque.setpoint.as_degrees() * target.as_degrees() < 0.0 {
             on.max(off)
         } else if self.torque.setpoint.abs() > target.abs() {
@@ -407,7 +362,7 @@ impl RideModifierState {
         if abs_erpm < 500.0 {
             step = step / 2.0;
         }
-        smooth_ramp(&mut self.torque, target, step, 0.04);
+        self.torque.advance(target, step, 0.04);
     }
 
     fn update_atr(
@@ -492,7 +447,7 @@ impl RideModifierState {
         let target = AngleDegrees::from_degrees(filtered);
         let setpoint = self.atr.angle.setpoint;
         let step = atr_step(config, target, forward, abs_erpm, sample_rate, setpoint);
-        smooth_ramp(&mut self.atr.angle, target, step, 0.05);
+        self.atr.angle.advance(target, step, 0.05);
     }
 
     fn update_brake(
@@ -531,8 +486,8 @@ impl RideModifierState {
                 target = balance_offset / (factor * downhill);
             }
         }
-        let on = loop_step(config.atr_on_speed(), sample_rate);
-        let off = loop_step(config.atr_off_speed(), sample_rate);
+        let on = vescpkg_rs::angle_step(config.atr_on_speed(), sample_rate);
+        let off = vescpkg_rs::angle_step(config.atr_off_speed(), sample_rate);
         let mut step = off / config.brake_tilt_lingering().value().max(1.0);
         if target.abs() > self.brake.setpoint.abs() {
             step = on * 1.5;
@@ -542,7 +497,7 @@ impl RideModifierState {
         if abs_erpm < 500.0 {
             step = step / 2.0;
         }
-        smooth_ramp(&mut self.brake, target, step, 0.05);
+        self.brake.advance(target, step, 0.05);
     }
 
     fn update_turn(
@@ -554,10 +509,9 @@ impl RideModifierState {
         // C map: turn target gates, boosts, direction, and ramp mirror
         // `third_party/float-out-boy/src/turn_tilt.c:74-130`.
         let target = turn_target(&self.turn, config, erpm);
-        smooth_ramp(
-            &mut self.turn.angle,
+        self.turn.angle.advance(
             target,
-            loop_step(config.turn_tilt_speed(), sample_rate),
+            vescpkg_rs::angle_step(config.turn_tilt_speed(), sample_rate),
             0.04,
         );
     }
