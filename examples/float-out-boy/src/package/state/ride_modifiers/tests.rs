@@ -24,7 +24,7 @@ fn nominal_rate() -> SampleRate {
 }
 
 fn compat_torque(current_amps: f32) -> MotorTorque {
-    MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(Current::from_amps(current_amps))
+    REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_current(Current::from_amps(current_amps))
 }
 
 #[test]
@@ -437,7 +437,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
     assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
     assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
     let current = Current::from_amps(30.0);
-    let low_torque_constant = MotorTorqueConstant::from_firmware_config(
+    let low_torque_constant = crate::motor_torque::motor_torque_constant_from_firmware_config(
         vescpkg_rs::prelude::FocMotorFluxLinkage::new(
             vescpkg_rs::prelude::FluxLinkage::from_webers(0.004),
         ),
@@ -446,7 +446,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
 
     let compatibility_target = torque_target(
         config.balance(),
-        MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(current),
+        REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_current(current),
         false,
     );
     let configured_target = torque_target(
@@ -463,7 +463,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
 fn atr_expected_acceleration_switches_slope_at_fifteen_newton_meters() {
     let erpm = Rpm::from_revolutions_per_minute(1_000.0);
     let ratio = PidScale::new(2.0);
-    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let compatibility_constant = REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
     let factor = 2.0 * compatibility_constant;
     let offset = 8.0 * compatibility_constant;
 

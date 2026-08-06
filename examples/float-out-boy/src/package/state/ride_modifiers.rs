@@ -3,7 +3,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use crate::motor_torque::{MotorTorque, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::WrappedAngleMotion;
 #[cfg(test)]
 use vescpkg_rs::prelude::Current;
@@ -114,9 +114,8 @@ fn torque_target(
     } else {
         config.torque_tilt_strength().value()
     };
-    let strength =
-        configured_strength / MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
-    let start_torque = MotorTorqueConstant::REFLOAT_COMPAT
+    let strength = configured_strength / REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
+    let start_torque = REFLOAT_COMPAT_TORQUE_CONSTANT
         .torque_from_current(config.torque_tilt_start_current().current());
     AngleDegrees::from_degrees(
         ((torque.abs().as_newton_meters() - start_torque.as_newton_meters()).max(0.0) * strength)
@@ -128,7 +127,7 @@ fn torque_target(
 fn atr_expected_acceleration(torque: MotorTorque, erpm: Rpm, configured_ratio: PidScale) -> f32 {
     let torque = torque.as_newton_meters();
     let abs_torque = torque.abs();
-    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let compatibility_constant = REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
     let torque_offset = 8.0 * compatibility_constant;
     let factor = configured_ratio.value() * compatibility_constant;
     if abs_torque < 15.0 {

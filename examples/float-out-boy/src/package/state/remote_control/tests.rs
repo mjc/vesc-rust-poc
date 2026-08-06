@@ -1,9 +1,9 @@
-use super::{PhysicalRemoteInput, RemoteControlState, RemoteMoveTarget};
+use super::{PhysicalRemoteInput, RemoteControlState};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
     FloatOutBoyRealtimeRemoteInput,
 };
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::REFLOAT_COMPAT_TORQUE_CONSTANT;
 use crate::package::state::FloatOutBoyPackageState;
 use vescpkg_rs::prelude::{
     AngleDegrees, Ratio, SampleRate, SignedRatio, Speed, TimestampTicks, VescSeconds,
@@ -284,7 +284,7 @@ fn command_move_requires_strict_two_second_disengage_grace() {
     ));
     assert_eq!(
         remote_control.move_target,
-        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(8.0)))
+        Some(Speed::from_kilometers_per_hour(8.0))
     );
 }
 
@@ -299,7 +299,7 @@ fn command_move_uses_five_kph_default_when_configured_limit_is_zero() {
     ));
     assert_eq!(
         remote_control.move_target,
-        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(5.0)))
+        Some(Speed::from_kilometers_per_hour(5.0))
     );
 }
 
@@ -360,7 +360,6 @@ fn physical_remote_applies_deadband_and_tilt_inversion_but_not_move_inversion() 
         (remote_control
             .move_target
             .expect("physical move target")
-            .speed()
             .as_kilometers_per_hour()
             - 4.0)
             .abs()
@@ -394,7 +393,7 @@ fn physical_move_uses_the_configured_strict_disengage_grace_boundary() {
     });
     assert_eq!(
         remote_control.move_target,
-        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(7.0)))
+        Some(Speed::from_kilometers_per_hour(7.0))
     );
 }
 
@@ -457,7 +456,7 @@ fn physical_remote_neutral_holds_zero_speed_through_one_second_then_releases() {
         maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
         move_grace: VescSeconds::from_seconds(2.0),
     });
-    assert_eq!(remote_control.move_target, Some(RemoteMoveTarget::STOPPED));
+    assert_eq!(remote_control.move_target, Some(Speed::ZERO));
     remote_control.refresh_physical_input(PhysicalRemoteInput {
         raw: Some(physical_input(0.0)),
         now: TimestampTicks::from_ticks(40_002),
@@ -501,14 +500,14 @@ fn stale_physical_remote_clears_tilt_and_move_immediately() {
 #[test]
 fn ready_move_pi_uses_elapsed_time_and_clamps_to_ten_newton_metres() {
     let mut remote_control = RemoteControlState {
-        move_target: Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(5.0))),
+        move_target: Some(Speed::from_kilometers_per_hour(5.0)),
         ..RemoteControlState::default()
     };
     let current = remote_control
         .request_ready_current(
             Speed::ZERO,
             VescSeconds::from_seconds(0.1),
-            MotorTorqueConstant::REFLOAT_COMPAT,
+            REFLOAT_COMPAT_TORQUE_CONSTANT,
         )
         .expect("active move target");
     assert!(
@@ -520,7 +519,7 @@ fn ready_move_pi_uses_elapsed_time_and_clamps_to_ten_newton_metres() {
         .request_ready_current(
             Speed::from_kilometers_per_hour(-100.0),
             VescSeconds::from_seconds(1.0),
-            MotorTorqueConstant::REFLOAT_COMPAT,
+            REFLOAT_COMPAT_TORQUE_CONSTANT,
         )
         .expect("active move target");
     assert!((clamped.current().as_amps() - 10.0 / 0.6075).abs() < 0.0001);
@@ -529,22 +528,17 @@ fn ready_move_pi_uses_elapsed_time_and_clamps_to_ten_newton_metres() {
 #[test]
 fn inactive_move_resets_integral_and_requests_no_current() {
     let mut remote_control = RemoteControlState {
-        move_integral: super::RemoteMoveIntegral(
-            MotorTorqueConstant::REFLOAT_COMPAT
-                .torque_from_current(vescpkg_rs::Current::from_amps(1.0)),
-        ),
+        move_integral: REFLOAT_COMPAT_TORQUE_CONSTANT
+            .torque_from_current(vescpkg_rs::Current::from_amps(1.0)),
         ..RemoteControlState::default()
     };
     assert_eq!(
         remote_control.request_ready_current(
             Speed::ZERO,
             VescSeconds::from_seconds(0.1),
-            MotorTorqueConstant::REFLOAT_COMPAT,
+            REFLOAT_COMPAT_TORQUE_CONSTANT,
         ),
         None
     );
-    assert_eq!(
-        remote_control.move_integral,
-        super::RemoteMoveIntegral::ZERO
-    );
+    assert_eq!(remote_control.move_integral, vescpkg_rs::MotorTorque::ZERO);
 }

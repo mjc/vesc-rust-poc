@@ -8,7 +8,7 @@ use crate::domain::{
     FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::REFLOAT_COMPAT_TORQUE_CONSTANT;
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
@@ -315,7 +315,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed
     );
-    assert_f32_eq!(state.motor_torque_constant.newton_meters_per_amp(), 0.042);
+    assert_f32_eq!(
+        state.motor_torque_constant().as_newton_meters_per_amp(),
+        0.042
+    );
 }
 
 #[test]
@@ -334,8 +337,8 @@ fn old_firmware_flux_uses_refloat_compatibility_torque_after_config_refresh() {
     state.refresh_motor_config_runtime_state(firmware.telemetry());
 
     assert_eq!(
-        state.motor_torque_constant,
-        MotorTorqueConstant::REFLOAT_COMPAT
+        state.motor_torque_constant(),
+        REFLOAT_COMPAT_TORQUE_CONSTANT
     );
 }
 

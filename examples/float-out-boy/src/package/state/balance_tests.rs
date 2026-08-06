@@ -14,7 +14,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::REFLOAT_COMPAT_TORQUE_CONSTANT;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -28,14 +28,14 @@ fn configured_sample_rate(state: &FloatOutBoyPackageState) -> SampleRate {
 }
 
 fn integral_current_amps(state: &FloatOutBoyPackageState) -> f32 {
-    MotorTorqueConstant::REFLOAT_COMPAT
+    REFLOAT_COMPAT_TORQUE_CONSTANT
         .current_from_torque(state.balance_loop.pid.integral_torque)
         .as_amps()
 }
 
 fn torque_output_scale(state: &FloatOutBoyPackageState) -> f32 {
-    MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
-        / state.motor_torque_constant.newton_meters_per_amp()
+    REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp()
+        / state.motor_torque_constant().as_newton_meters_per_amp()
 }
 
 #[test]

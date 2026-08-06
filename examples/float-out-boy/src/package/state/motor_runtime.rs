@@ -48,7 +48,7 @@ pub(in crate::package) fn snapshot_motor_config(
         mosfet_temperature_limit_start: telemetry.mosfet_temperature_limit_start(),
         motor_temperature_limit_start: telemetry.motor_temperature_limit_start(),
         battery_cell_count: telemetry.battery_cell_count(),
-        motor_torque_constant: crate::motor_torque::MotorTorqueConstant::from_firmware_config(
+        motor_torque_constant: crate::motor_torque::motor_torque_constant_from_firmware_config(
             settings.foc_motor_flux_linkage(),
             settings.motor_pole_count().ok(),
         ),
@@ -64,7 +64,7 @@ pub(super) fn apply_motor_config(state: &mut FloatOutBoyPackageState, config: Mo
     state.mosfet_temperature_limit_start = config.mosfet_temperature_limit_start;
     state.motor_temperature_limit_start = config.motor_temperature_limit_start;
     state.battery_cell_count = config.battery_cell_count;
-    state.motor_torque_constant = config.motor_torque_constant;
+    state.motor_torque_constant = Some(config.motor_torque_constant);
 }
 
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {

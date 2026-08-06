@@ -4,7 +4,7 @@ use crate::domain::{
     FloatOutBoyAllDataStatus, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRideState,
 };
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::REFLOAT_COMPAT_TORQUE_CONSTANT;
 use crate::package::test_support::{
     imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
     sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
@@ -985,8 +985,8 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let base = state.all_data_payloads().base();
     let error = base.setpoints().board().angle().as_degrees()
         - base.attitude().balance_pitch().angle_degrees().as_degrees();
-    let torque_output_scale = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
-        / state.motor_torque_constant.newton_meters_per_amp();
+    let torque_output_scale = REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp()
+        / state.motor_torque_constant().as_newton_meters_per_amp();
     let expected = error * 8.0 * torque_output_scale * output_alpha();
     let actual = firmware.commanded_current().current().as_amps();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.
