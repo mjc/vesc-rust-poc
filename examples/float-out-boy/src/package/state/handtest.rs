@@ -7,25 +7,6 @@ use crate::domain::FloatOutBoyAppDataCommand;
 use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-struct FloatOutBoyHandtestSafetyConfig(FloatOutBoyConfigImage);
-
-impl FloatOutBoyHandtestSafetyConfig {
-    fn from_config(mut config: FloatOutBoyConfigImage) -> Option<Self> {
-        // C map: `cmd_handtest` applies temporary safety overrides only in
-        // `third_party/float-out-boy/src/main.c:1431-1446`.
-        config
-            .editor()
-            .apply_handtest_safety_overrides()
-            .then_some(Self(config))
-    }
-
-    const fn into_image(self) -> FloatOutBoyConfigImage {
-        self.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FloatOutBoyHandtestRequest {
     Enable,
     Disable,
@@ -150,8 +131,11 @@ impl FloatOutBoyPackageState {
         // Float Out Boy C applies temporary HANDTEST safety config at
         // `third_party/float-out-boy/src/main.c:1431-1446` and restores from EEPROM on off at
         // `third_party/float-out-boy/src/main.c:1447-1449`.
-        FloatOutBoyHandtestSafetyConfig::from_config(*config)
-            .map(FloatOutBoyHandtestSafetyConfig::into_image)
+        let mut config = *config;
+        config
+            .editor()
+            .apply_handtest_safety_overrides()
+            .then_some(config)
     }
 }
 

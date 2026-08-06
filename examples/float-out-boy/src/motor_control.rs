@@ -125,13 +125,13 @@ impl FloatOutBoyMotorControl {
         // `third_party/float-out-boy/src/motor_control.c:66-70`; enum values come from
         // `third_party/float-out-boy/src/conf/datatypes.h:31-33`.
         let parking_brake_was_active = self.parking_brake_active;
-        if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Always)
-            || matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Idle)
+        if parking_brake_mode == FloatOutBoyParkingBrakeMode::ALWAYS
+            || parking_brake_mode == FloatOutBoyParkingBrakeMode::IDLE
                 && run_state != FloatOutBoyRunState::Running
                 && abs_erpm < Rpm::from_revolutions_per_minute(50.0)
         {
             self.parking_brake_active = true;
-        } else if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Never)
+        } else if parking_brake_mode == FloatOutBoyParkingBrakeMode::NEVER
             || run_state == FloatOutBoyRunState::Running
         {
             self.parking_brake_active = false;

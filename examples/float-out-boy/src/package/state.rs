@@ -170,8 +170,8 @@ macro_rules! float_out_boy_package_state {
     ($( $(#[$attribute:meta])* $field:ident: $field_type:ty $(=> $initializer:expr)?, )+) => {
         /// Float Out Boy package state.
         #[pin_init::pin_init]
-        #[derive(Debug, Default)]
-        #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(Default, Clone, Copy, PartialEq))]
         pub struct FloatOutBoyPackageState {
             $( $(#[$attribute])* $field: $field_type, )+
         }
@@ -196,7 +196,7 @@ float_out_boy_package_state! {
     deferred_config_persistence: DeferredConfigPersistence,
     startup_configured: bool,
     firmware_imu_migration: FirmwareImuMigration,
-    data_recorder: DataRecorderState,
+    data_recorder: DataRecorderState => data_recorder::default_data_recorder(),
     alert_tracker: AlertTrackerState,
     lcm: LcmState,
     led_runtime_overrides: LedRuntimeOverrides,
@@ -274,6 +274,7 @@ impl FloatOutBoyPackageState {
 
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
+    #[cfg(test)]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::default();
         state.all_data_payloads = all_data_payloads;

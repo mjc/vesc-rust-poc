@@ -656,33 +656,24 @@ impl FloatOutBoyBmsConfig<'_> {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FloatOutBoyParkingBrakeMode {
-    #[default]
-    Always,
-    Idle,
-    Never,
-    Unknown(u8),
+#[repr(transparent)]
+pub(crate) struct FloatOutBoyParkingBrakeMode(u8);
+
+impl FloatOutBoyParkingBrakeMode {
+    pub(crate) const ALWAYS: Self = Self(0);
+    pub(crate) const IDLE: Self = Self(1);
+    pub(crate) const NEVER: Self = Self(2);
 }
 
 impl From<u8> for FloatOutBoyParkingBrakeMode {
     fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Always,
-            1 => Self::Idle,
-            2 => Self::Never,
-            value => Self::Unknown(value),
-        }
+        Self(value)
     }
 }
 
 impl From<FloatOutBoyParkingBrakeMode> for u8 {
     fn from(value: FloatOutBoyParkingBrakeMode) -> Self {
-        match value {
-            FloatOutBoyParkingBrakeMode::Always => 0,
-            FloatOutBoyParkingBrakeMode::Idle => 1,
-            FloatOutBoyParkingBrakeMode::Never => 2,
-            FloatOutBoyParkingBrakeMode::Unknown(value) => value,
-        }
+        value.0
     }
 }
 
