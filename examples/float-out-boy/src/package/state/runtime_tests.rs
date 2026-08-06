@@ -8,7 +8,8 @@ use crate::domain::{
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
     FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
-    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyWheelSlipState,
+    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
+    FloatOutBoyWheelSlipState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
@@ -697,6 +698,68 @@ fn running_reverse_stop_fixture(
     state.reverse_total_erpm = reverse_total_erpm;
 
     (now, telemetry, state)
+}
+
+#[test]
+fn running_reverse_stop_uses_pitch_typed_timer_boundaries_like_float_out_boy() {
+    let cases = [
+        (
+            AngleDegrees::from_degrees(11.0),
+            TimestampTicks::from_ticks(10_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(11.0),
+            TimestampTicks::from_ticks(10_001),
+            FloatOutBoyRunState::Ready,
+        ),
+        (
+            AngleDegrees::from_degrees(6.0),
+            TimestampTicks::from_ticks(20_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(6.0),
+            TimestampTicks::from_ticks(20_001),
+            FloatOutBoyRunState::Ready,
+        ),
+    ];
+
+    for (pitch, now, expected_run_state) in cases {
+        let (reverse_started, telemetry, mut state) = running_reverse_stop_fixture(
+            Rpm::ZERO,
+            AngleDegrees::ZERO,
+            Rpm::from_revolutions_per_minute(-1.0),
+        );
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::ZERO),
+            ImuPitch::new(AngleRadians::from(pitch)),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        state.reverse_ticks = reverse_started;
+
+        assert!(tick_float_out_boy_state_and_handle_packet(
+            &mut state,
+            now,
+            telemetry.telemetry(),
+            telemetry.imu(),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.run_state(), expected_run_state);
+        assert_eq!(
+            ride_state.stop_condition(),
+            if matches!(expected_run_state, FloatOutBoyRunState::Ready) {
+                FloatOutBoyStopCondition::ReverseStop
+            } else {
+                FloatOutBoyStopCondition::None
+            },
+        );
+    }
 }
 
 #[test]
