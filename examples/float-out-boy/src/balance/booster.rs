@@ -67,12 +67,14 @@ impl LoopInput {
         self,
         config: LoopConfig,
         previous: MotorCurrent,
+        elapsed: vescpkg_rs::prelude::VescSeconds,
     ) -> MotorCurrent {
         let branch = Branch::from_motor_current(self.motor_current);
         // C map: `main.c:921-922` subtracts brake tilt and raw pitch.
         let proportional =
             self.setpoint.angle() - self.brake_tilt_setpoint.angle() - self.raw_pitch;
-        // C map: `booster.c:74-75` uses a 1% target / 99% previous filter.
-        branch.target_current(config, self.motor_erpm, proportional) * 0.01 + previous * 0.99
+        // C map: Refloat configures booster current as a 1 Hz EMA.
+        let target = branch.target_current(config, self.motor_erpm, proportional);
+        previous + (target - previous) * super::ema_alpha(1.0, elapsed)
     }
 }

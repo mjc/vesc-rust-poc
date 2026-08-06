@@ -18,7 +18,7 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
 
@@ -119,22 +119,29 @@ fn package_default_is_the_complete_source_startup_state() {
 }
 
 #[test]
-fn configured_loop_time_uses_float_out_boy_hertz_config() {
+fn legacy_loop_hertz_is_ignored_without_shifting_stored_config() {
     let _firmware = FirmwareTest::new();
     let mut incoming = default_float_out_boy_config_bytes();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
-    assert_eq!(state.configured_loop_time_us(), 1201);
+    assert_eq!(state.configured_loop_time_us(), 2_000);
 
     incoming.edit_float_out_boy_config(|config| {
-        assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(500.0)));
+        assert!(config.set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(50.0)));
+        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0)));
+        assert!(config.set_meta_is_default(false));
     });
+    let expected = incoming;
     assert!(state.store_serialized_config(&incoming));
 
-    // Upstream generated serialization places `hertz` after the first
-    // seven float16 config fields; `configure(d)` then uses it as
-    // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
-    assert_eq!(state.configured_loop_time_us(), 2000);
+    // The old field is padding: accepting a v1.2.1 image must not shift or
+    // corrupt startup pitch or anything after it.
+    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(*state.serialized_config.as_bytes(), expected);
+    assert_eq!(
+        state.serialized_config.startup().pitch_tolerance(),
+        AngleDegrees::from_degrees(7.0)
+    );
 }
 
 #[test]
@@ -174,7 +181,7 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
         .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)),);
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)),);
 }
 
 #[test]
@@ -491,9 +498,9 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -762,9 +769,9 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -1133,21 +1140,21 @@ fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_ref
             false,
             FloatOutBoyRunState::Ready,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
         (
             false,
             true,
             FloatOutBoyRunState::Disabled,
             7,
-            (560, FloatOutBoyBeeperLevel::Low),
+            (42, FloatOutBoyBeeperLevel::Low),
         ),
         (
             true,
             true,
             FloatOutBoyRunState::Disabled,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
     ] {
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
@@ -1219,7 +1226,7 @@ fn failed_config_write_still_applies_valid_custom_config_like_refloat() {
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -1367,7 +1374,7 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
 }
 
 #[test]
-fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
+fn storing_internal_led_config_while_both_footpads_are_pressed_still_sets_up() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Ready,
@@ -1377,12 +1384,13 @@ fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
     bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
 
     assert!(state.store_serialized_config(&bytes));
-    assert!(state.internal_leds.is_none());
-    assert!(!state.internal_leds_operational());
+    state.apply_pending_internal_led_refresh();
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }
 
 #[test]
-fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
+fn startup_sets_up_internal_leds_after_the_physical_footpad_sample_even_when_both_are_pressed() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut bytes = default_float_out_boy_config_bytes();
@@ -1402,5 +1410,6 @@ fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
         state.all_data_payloads().base().footpad().state(),
         crate::FloatOutBoyFootpadState::Both,
     );
-    assert!(state.internal_leds.is_none());
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }

@@ -304,6 +304,8 @@ impl FloatOutBoyLedUpdate {
         Self {
             battery_level: status.battery_level,
             duty_cycle: status.duty_cycle,
+            motor_current_saturation: status.motor_current_saturation,
+            battery_current_saturation: status.battery_current_saturation,
             moving: status.moving,
             ..ride
         }

@@ -68,7 +68,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
     assert_eq!(telemetry.thread_sleep_count(), 1);
     assert_eq!(
         telemetry.thread_sleep_durations(),
-        [Duration::from_micros(1201), Duration::ZERO]
+        [Duration::from_millis(2), Duration::ZERO]
     );
 }
 
@@ -179,7 +179,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     let mut changes = std::vec::Vec::new();
 
-    for tick in 1..=160 {
+    for tick in 1..=42 {
         let result = super::tick_float_out_boy_main_thread_with(
             &mut state,
             telemetry.telemetry(),
@@ -187,7 +187,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
             motor,
             AdcVoltage::new(Voltage::ZERO),
             AdcVoltage::new(Voltage::ZERO),
-            TimestampTicks::from_ticks(0),
+            TimestampTicks::from_ticks(tick * 100),
         );
         if let Some(level) = result.beeper_pin_level {
             changes.push((tick, level));
@@ -198,8 +198,13 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
         changes,
         [
             (1, DigitalOutputLevel::Low),
-            (80, DigitalOutputLevel::Low),
-            (160, DigitalOutputLevel::High),
+            (6, DigitalOutputLevel::Low),
+            (12, DigitalOutputLevel::High),
+            (18, DigitalOutputLevel::Low),
+            (24, DigitalOutputLevel::High),
+            (30, DigitalOutputLevel::Low),
+            (36, DigitalOutputLevel::High),
+            (42, DigitalOutputLevel::Low),
         ]
     );
 }
@@ -395,7 +400,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
 }
 
 #[test]
-fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy_loop() {
+fn float_out_boy_main_thread_sleeps_with_fixed_loop_time_like_refloat() {
     let firmware = FirmwareTest::new();
     firmware.terminate_threads_after_checks(2);
     let threads = firmware.threads();
@@ -403,9 +408,7 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
 
     super::run_float_out_boy_main_thread_with(threads, || {
         tick_calls += 1;
-        // Upstream `configure(d)` stores `d->loop_time_us` from
-        // `d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`, then
-        // `float_out_boy_thd` sleeps that configured value at `third_party/float-out-boy/src/main.c:1080`.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz.
         2000
     });
 
@@ -415,6 +418,31 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
     assert_eq!(
         firmware.thread_sleep_durations(),
         [Duration::from_millis(2), Duration::ZERO]
+    );
+}
+
+#[test]
+fn refloat_main_loop_timing_uses_system_ticks_and_compensates_work() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
+
+    assert_eq!(timing.nominal_sleep(), Duration::from_micros(1_200));
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.000_31)),
+        Duration::from_micros(900),
+    );
+}
+
+#[test]
+fn refloat_main_loop_timing_keeps_one_tick_after_a_delayed_iteration() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
+
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.025)),
+        Duration::from_micros(100),
+    );
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(f32::NAN)),
+        timing.nominal_sleep(),
     );
 }
 

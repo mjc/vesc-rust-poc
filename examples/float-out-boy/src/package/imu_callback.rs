@@ -7,9 +7,13 @@ impl vescpkg_rs::ImuReadHandler for FloatOutBoyImuRead {
     type State = FloatOutBoyPackageState;
 
     fn read(state: &mut Self::State, sample: ImuReadSample) {
-        // C map: `imu_ref_callback` resolves `Data` through `ARG` and updates
-        // its balance filter at `third_party/float-out-boy/src/main.c:759-764`.
-        state.update_balance_filter(sample);
+        let firmware = vescpkg_rs::Firmware::new();
+        state.handle_imu_control_sample(
+            sample,
+            firmware.imu(),
+            firmware.motor(),
+            firmware.clock().now(),
+        );
     }
 }
 
@@ -20,7 +24,7 @@ pub(super) fn float_out_boy_imu_callback_with_state(
     state: &mut FloatOutBoyPackageState,
     sample: ImuReadSample,
 ) {
-    state.update_balance_filter(sample);
+    <FloatOutBoyImuRead as vescpkg_rs::ImuReadHandler>::read(state, sample);
 }
 
 /// Register Float Out Boy's concrete IMU read handler.

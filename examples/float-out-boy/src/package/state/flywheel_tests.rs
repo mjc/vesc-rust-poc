@@ -15,6 +15,11 @@ use vescpkg_rs::prelude::{
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw, WireByte};
 
+fn output_alpha() -> f32 {
+    let omega = 2.0 * core::f32::consts::PI * 25.0 / 500.0;
+    omega - 0.5 * omega * omega
+}
+
 fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloads {
     let payloads = sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Ready,
@@ -389,9 +394,9 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         assert_eq!(
             changes,
             [
-                (80, FloatOutBoyBeeperLevel::Low),
-                (160, FloatOutBoyBeeperLevel::High),
-                (240, FloatOutBoyBeeperLevel::Low),
+                (6, FloatOutBoyBeeperLevel::Low),
+                (12, FloatOutBoyBeeperLevel::High),
+                (18, FloatOutBoyBeeperLevel::Low),
             ],
         );
     }
@@ -585,7 +590,7 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
     );
     let initial_board_setpoint = state.all_data_payloads().base().setpoints().board().angle();
-    let duty_step = AngleDegrees::from_degrees(5.0 / 832.0);
+    let duty_step = AngleDegrees::from_degrees(5.0 / 500.0);
 
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 
@@ -979,12 +984,11 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let base = state.all_data_payloads().base();
     let error = base.setpoints().board().angle().as_degrees()
         - base.attitude().balance_pitch().angle_degrees().as_degrees();
-    let expected = error * 8.0 * 0.2;
+    let expected = error * 8.0 * output_alpha();
     let actual = firmware.commanded_current().current().as_amps();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.
-    // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 0.2 output
-    // smoothing from rest, the final motor command follows the signed
-    // setpoint error exactly.
+    // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 25 Hz output
+    // EMA, the final motor command follows the signed setpoint error.
     assert!(expected < 0.0, "error={error}");
     assert!(base.booster_current().current().is_zero());
     assert!(

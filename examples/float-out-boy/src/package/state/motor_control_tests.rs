@@ -15,6 +15,11 @@ use crate::domain::{
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
+fn output_alpha() -> f32 {
+    let omega = 2.0 * core::f32::consts::PI * 25.0 / 500.0;
+    omega - 0.5 * omega * omega
+}
+
 #[test]
 fn requested_current_applies_like_float_out_boy_motor_control() {
     let motor = FirmwareTest::new();
@@ -85,7 +90,8 @@ fn idle_motor_control_uses_smoothed_erpm_for_one_sample_spike_like_refloat() {
 #[test]
 fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    for (motor_current, expected_current) in [(1.0_f32, 0.6_f32), (-1.0_f32, -0.4_f32)] {
+    for (motor_current, current_limit) in [(1.0_f32, 3.0_f32), (-1.0_f32, -2.0_f32)] {
+        let expected_current = current_limit * output_alpha();
         let telemetry = FirmwareTest::new()
             .with_runtime_motor(
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
