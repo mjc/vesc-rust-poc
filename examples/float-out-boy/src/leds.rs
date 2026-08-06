@@ -41,9 +41,46 @@ const LED_FADE_STEP: Ratio = Ratio::from_ratio_const(3.0 / 30.0);
 const SENSOR_FADE_STEP: Ratio = Ratio::from_ratio_const(10.0 / 30.0);
 const UTILIZATION_FADE_STEP: Ratio = Ratio::from_ratio_const(5.0 / 30.0);
 
-pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
-    Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
-};
+vescpkg_rs::wire_enum! {
+/// Refloat-compatible internal LED output pin.
+pub enum FloatOutBoyLedPin {
+    /// STM32 B6.
+    B6 = 0,
+    /// STM32 B7.
+    B7 = 1,
+    /// STM32 C9.
+    C9 = 2,
+}
+}
+
+vescpkg_rs::wire_enum! {
+/// Refloat-compatible internal LED output-drive configuration.
+pub enum FloatOutBoyLedPinConfig {
+    /// Open drain for an external 5 V pull-up.
+    PullupTo5v = 0,
+    /// Push-pull alternate-function output.
+    NoPullup = 1,
+}
+}
+
+impl From<FloatOutBoyLedPin> for vescpkg_rs::stm32::ws2812::OutputPin {
+    fn from(pin: FloatOutBoyLedPin) -> Self {
+        match pin {
+            FloatOutBoyLedPin::B6 => Self::B6,
+            FloatOutBoyLedPin::B7 => Self::B7,
+            FloatOutBoyLedPin::C9 => Self::C9,
+        }
+    }
+}
+
+impl From<FloatOutBoyLedPinConfig> for vescpkg_rs::stm32::ws2812::OutputDrive {
+    fn from(config: FloatOutBoyLedPinConfig) -> Self {
+        match config {
+            FloatOutBoyLedPinConfig::PullupTo5v => Self::OpenDrain,
+            FloatOutBoyLedPinConfig::NoPullup => Self::PushPull,
+        }
+    }
+}
 
 vescpkg_rs::wire_enum! {
 /// Float Out Boy LED color channel order.
