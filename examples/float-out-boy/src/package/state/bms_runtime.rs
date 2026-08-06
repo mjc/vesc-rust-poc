@@ -9,19 +9,10 @@ pub(super) enum BmsReadyAlertFault {
     CellBalance,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct BmsRuntimeState {
     monitor: BmsMonitor,
     alert_ticks: WrappingTimer,
-}
-
-impl Default for BmsRuntimeState {
-    fn default() -> Self {
-        Self {
-            monitor: BmsMonitor::default(),
-            alert_ticks: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
-        }
-    }
 }
 
 impl Deref for BmsRuntimeState {

@@ -615,7 +615,7 @@ pub struct FloatOutBoyLedStatusUpdate {
     pub moving: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct FloatOutBoyStatusDynamics {
     brightness: Ratio,
     utilization_blend: Ratio,
@@ -649,16 +649,6 @@ struct FloatOutBoyStatusLayers {
 }
 
 impl FloatOutBoyStatusDynamics {
-    const fn new() -> Self {
-        Self {
-            brightness: Ratio::ZERO,
-            utilization_blend: Ratio::ZERO,
-            idle_blend: Ratio::ZERO,
-            idle_time: 0.0,
-            animation_start: 0.0,
-        }
-    }
-
     fn update_brightness(&mut self, config: FloatOutBoyLedsConfig) -> Ratio {
         let status_config = config.status;
         let mut target_brightness = if config.headlights_on {
@@ -777,7 +767,7 @@ impl FloatOutBoyLedRenderer {
     ) -> Self {
         Self {
             dynamics: FloatOutBoyLedDynamics::new(distance),
-            status_dynamics: FloatOutBoyStatusDynamics::new(),
+            status_dynamics: FloatOutBoyStatusDynamics::default(),
             status: FloatOutBoyLedStripFrame::new(hardware.status),
             front: FloatOutBoyLedStripFrame::new(hardware.front),
             rear: FloatOutBoyLedStripFrame::new(hardware.rear),
