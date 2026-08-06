@@ -12,6 +12,16 @@ fn motor_current_limit(current: Current) -> MotorCurrentLimit {
     MotorCurrentLimit::new(current)
 }
 
+fn motor_current_limits(
+    positive: Current,
+    negative: Current,
+) -> vescpkg_rs::DirectionalCurrentLimits<MotorCurrentLimit> {
+    vescpkg_rs::DirectionalCurrentLimits::new(
+        motor_current_limit(positive),
+        motor_current_limit(negative),
+    )
+}
+
 fn electrical_speed(speed: Rpm) -> ElectricalSpeed {
     ElectricalSpeed::new(speed)
 }
@@ -55,8 +65,10 @@ fn base_input() -> LoopInput {
         gyro_yaw: AngularVelocity::from_degrees_per_second(0.0),
         motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(0.0)),
         motor_current: motor_current(Current::from_amps(1.0)),
-        motor_current_max: motor_current_limit(Current::from_amps(100.0)),
-        motor_current_min: motor_current_limit(Current::from_amps(100.0)),
+        motor_current_limits: motor_current_limits(
+            Current::from_amps(100.0),
+            Current::from_amps(100.0),
+        ),
         mode: FloatOutBoyMode::Normal,
         darkride: FloatOutBoyDarkRideState::Upright,
         traction_control: false,
@@ -314,7 +326,10 @@ fn firmware_current_limit_still_clamps_after_torque_conversion() {
         },
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(3.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(3.0),
+                Current::from_amps(100.0),
+            ),
             motor_torque_constant: low_torque_constant(),
             ..base_input()
         },
@@ -475,8 +490,10 @@ fn balance_loop_unit_limits_normal_current_like_float_out_boy_main_loop() {
             LoopInput {
                 setpoint: board_setpoint,
                 motor_current: measured_current,
-                motor_current_max: motor_current_limit(Current::from_amps(3.0)),
-                motor_current_min: motor_current_limit(current_limit.current()),
+                motor_current_limits: motor_current_limits(
+                    Current::from_amps(3.0),
+                    current_limit.current(),
+                ),
                 ..base_input()
             },
             base_state(),
@@ -500,8 +517,10 @@ fn balance_loop_unit_treats_motor_current_min_as_magnitude_like_float_out_boy_ma
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(-10.0)),
             motor_current: motor_current(Current::from_amps(-1.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(100.0)),
-            motor_current_min: motor_current_limit(Current::from_amps(-2.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(100.0),
+                Current::from_amps(-2.0),
+            ),
             ..base_input()
         },
         base_state(),
@@ -525,7 +544,7 @@ fn balance_loop_unit_clamps_to_a_zero_firmware_current_limit() {
         },
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
-            motor_current_max: motor_current_limit(Current::ZERO),
+            motor_current_limits: motor_current_limits(Current::ZERO, Current::from_amps(100.0)),
             ..base_input()
         },
         base_state(),
@@ -595,8 +614,10 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
         LoopInput {
             setpoint: setpoint(AngleDegrees::from_degrees(3.0)),
             motor_current: motor_current(Current::from_amps(1.0)),
-            motor_current_max: motor_current_limit(Current::from_amps(3.0)),
-            motor_current_min: motor_current_limit(Current::from_amps(2.0)),
+            motor_current_limits: motor_current_limits(
+                Current::from_amps(3.0),
+                Current::from_amps(2.0),
+            ),
             ..base_input()
         },
         LoopState {

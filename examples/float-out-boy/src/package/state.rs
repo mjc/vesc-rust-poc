@@ -25,7 +25,8 @@ use vescpkg_rs::prelude::{
     TemperatureLimitStart, TimestampTicks,
 };
 use vescpkg_rs::{
-    Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry, WrappingTimer,
+    DirectionalCurrentLimits, Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry,
+    WrappingTimer,
 };
 
 mod alert_tracker;
@@ -215,10 +216,8 @@ pub struct FloatOutBoyPackageState {
     upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
-    motor_current_max: MotorCurrentLimit,
-    motor_current_min: MotorCurrentLimit,
-    battery_current_max: InputCurrent,
-    battery_current_min: InputCurrent,
+    motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
+    battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     mosfet_temperature_limit_start: TemperatureLimitStart,
@@ -287,10 +286,8 @@ impl FloatOutBoyPackageState {
             upside_down_flags: Default::default(),
             motor_duty_raw: Default::default(),
             duty_max_with_margin: Default::default(),
-            motor_current_max: Default::default(),
-            motor_current_min: Default::default(),
-            battery_current_max: Default::default(),
-            battery_current_min: Default::default(),
+            motor_current_limits: Default::default(),
+            battery_current_limits: Default::default(),
             mosfet_temperature: Default::default(),
             motor_temperature: Default::default(),
             mosfet_temperature_limit_start: Default::default(),
@@ -601,8 +598,7 @@ impl FloatOutBoyPackageState {
                     gyro_yaw: angular_rate.yaw(),
                     motor_erpm: payloads.electrical_speed(),
                     motor_current: payloads.motor_current(),
-                    motor_current_max: self.motor_current_max,
-                    motor_current_min: self.motor_current_min,
+                    motor_current_limits: self.motor_current_limits,
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
                     traction_control: self.ride_flags.traction_control,
@@ -945,20 +941,13 @@ impl FloatOutBoyPackageState {
         let payloads = self.all_data_payloads;
         let ride_state = payloads.ride_state();
         let filtered_current = payloads.filtered_motor_current().current().current();
-        let braking = payloads.motor_current().is_negative();
-        let current_limit = if braking {
-            self.motor_current_min
-        } else {
-            self.motor_current_max
-        };
+        let motor_limit = self
+            .motor_current_limits
+            .for_current(payloads.motor_current().current());
         let motor_saturation =
-            vescpkg_rs::current_limit_saturation(filtered_current, current_limit.current());
+            vescpkg_rs::current_limit_saturation(filtered_current, motor_limit.current());
         let battery_current = payloads.battery_current().current();
-        let battery_limit = if battery_current.is_negative() {
-            self.battery_current_min
-        } else {
-            self.battery_current_max
-        };
+        let battery_limit = self.battery_current_limits.for_current(battery_current);
         let battery_saturation =
             vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current());
         let duty_solid_threshold = Ratio::clamped(

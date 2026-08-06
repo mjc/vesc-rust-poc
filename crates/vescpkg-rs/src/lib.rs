@@ -319,7 +319,8 @@ pub use imu::{
 };
 pub use init::{PackageStart, PackageStartError};
 pub use motor::{
-    MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry, current_limit_saturation,
+    DirectionalCurrentLimits, MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry,
+    current_limit_saturation,
 };
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
