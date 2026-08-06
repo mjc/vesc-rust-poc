@@ -343,7 +343,7 @@ mod slots {
     fn_slot!(lbm_continue_eval as unsafe extern "C" fn());
     fn_slot!(lbm_eval_is_paused as unsafe extern "C" fn() -> bool);
     fn_slot!(lbm_add_symbol_const as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
-    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*mut c_char, *mut u32) -> c_int);
+    fn_slot!(lbm_get_symbol_by_name as unsafe extern "C" fn(*const c_char, *mut u32) -> c_int);
     fn_slot!(lbm_enc_u as unsafe extern "C" fn(u32) -> LbmValue);
     fn_slot!(lbm_enc_i32 as unsafe extern "C" fn(i32) -> LbmValue);
     fn_slot!(lbm_is_symbol_nil as unsafe extern "C" fn(u32) -> bool);
@@ -2407,7 +2407,7 @@ pub unsafe fn lbm_add_symbol_const(name: *mut c_char, symbol: *mut u32) -> c_int
 }
 
 /// Look up a LispBM symbol by name and write its numeric identifier.
-pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+pub unsafe fn lbm_get_symbol_by_name(name: *const c_char, symbol: *mut u32) -> c_int {
     unsafe { slots::lbm_get_symbol_by_name()(name, symbol) }
 }
 

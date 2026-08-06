@@ -793,7 +793,7 @@ pub unsafe fn lbm_dec_sym(_value: LbmValue) -> u32 {
     LBM_SYMBOL_ID.load(Ordering::Relaxed)
 }
 
-pub unsafe fn lbm_get_symbol_by_name(name: *mut c_char, symbol: *mut u32) -> c_int {
+pub unsafe fn lbm_get_symbol_by_name(name: *const c_char, symbol: *mut u32) -> c_int {
     if name.is_null() || symbol.is_null() {
         return 0;
     }
@@ -843,8 +843,9 @@ pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) ->
     if buffer_size > FLAT_BUFFER.len() {
         return Some(false);
     }
+    let buffer_size = u32::try_from(buffer_size).ok()?;
     value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
-    value.buf_size = u32::try_from(buffer_size).unwrap_or(u32::MAX);
+    value.buf_size = buffer_size;
     value.buf_pos = 0;
     Some(true)
 }

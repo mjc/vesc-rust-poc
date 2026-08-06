@@ -58,9 +58,7 @@ impl LispSymbol {
     #[must_use]
     pub fn lookup(name: &CStr) -> Option<Self> {
         let mut symbol = 0;
-        let result = unsafe {
-            crate::ffi::lbm_get_symbol_by_name(name.as_ptr().cast_mut(), &raw mut symbol)
-        };
+        let result = unsafe { crate::ffi::lbm_get_symbol_by_name(name.as_ptr(), &raw mut symbol) };
         (result != 0).then_some(Self::new(symbol))
     }
 }
