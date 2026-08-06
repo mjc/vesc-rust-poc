@@ -809,6 +809,12 @@ impl FirmwareTest {
     pub fn pid_position_offset_was_stored(&self) -> bool {
         crate::test_ffi::pid_position_offset_stored()
     }
+
+    #[must_use]
+    /// Return the number of PID-position offset writes.
+    pub fn pid_position_offset_command_count(&self) -> usize {
+        crate::test_ffi::pid_position_offset_command_count()
+    }
 }
 
 #[cfg(all(feature = "test-support", not(test)))]

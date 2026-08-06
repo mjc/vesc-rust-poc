@@ -95,8 +95,8 @@ impl FloatOutBoyMotorControl {
     }
 
     #[inline]
-    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> bool {
-        self.requested_current.take().is_some_and(|command| {
+    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> Option<bool> {
+        self.requested_current.take().map(|command| {
             // Upstream keeps this sign unchanged: `motor_control_request_current`
             // stores it at `third_party/float-out-boy/src/motor_control.c:44-47`, then
             // `motor_control_apply` passes it to `mc_set_current` at
@@ -124,7 +124,7 @@ impl FloatOutBoyMotorControl {
                 let applied = motor
                     .set_current(MotorCurrent::new(Current::from_amps(0.0)))
                     .is_ok();
-                self.disabled = true;
+                self.disabled = applied;
                 return applied;
             }
             return false;
@@ -176,8 +176,8 @@ impl FloatOutBoyMotorControl {
             }));
         }
 
-        if self.apply_requested_current(motor) {
-            return true;
+        if let Some(applied) = self.apply_requested_current(motor) {
+            return applied;
         }
 
         motor.keep_alive();
@@ -341,6 +341,27 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
+    }
+
+    #[test]
+    fn failed_requested_current_does_not_fall_through_to_idle_output() {
+        let motor = FirmwareTest::new();
+        let mut control = FloatOutBoyMotorControl::new();
+        control.request_current(MotorCurrent::new(Current::from_amps(f32::NAN)));
+
+        assert!(!control.apply(
+            motor.motor(),
+            FloatOutBoyRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            FloatOutBoyParkingBrakeMode::Never,
+            MotorCurrent::new(Current::from_amps(50.0)),
+        ));
+        assert_eq!(motor.keep_alive_count(), 1);
+        assert_eq!(motor.current_off_delay_count(), 1);
+        assert_eq!(motor.current_command_count(), 0);
+        assert_eq!(motor.duty_command_count(), 0);
+        assert_eq!(motor.brake_current_command_count(), 0);
     }
 
     #[test]

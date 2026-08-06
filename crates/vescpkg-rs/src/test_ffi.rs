@@ -217,6 +217,7 @@ static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
 static PID_POSITION_OFFSET: AtomicU32 = AtomicU32::new(0);
 static PID_POSITION_OFFSET_STORED: AtomicBool = AtomicBool::new(false);
+static PID_POSITION_OFFSET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static AMP_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static AMP_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
@@ -473,6 +474,7 @@ fn reset_motor_state() {
     ODOMETER.store(0, Ordering::Relaxed);
     PID_POSITION_OFFSET.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PID_POSITION_OFFSET_STORED.store(false, Ordering::Relaxed);
+    PID_POSITION_OFFSET_COUNT.store(0, Ordering::Relaxed);
     AMP_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     AMP_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -1515,6 +1517,10 @@ pub(crate) fn pid_position_offset_stored() -> bool {
     PID_POSITION_OFFSET_STORED.load(Ordering::Relaxed)
 }
 
+pub(crate) fn pid_position_offset_command_count() -> usize {
+    PID_POSITION_OFFSET_COUNT.load(Ordering::Relaxed)
+}
+
 pub unsafe fn timeout_reset() {
     KEEP_ALIVE_COUNT.fetch_add(1, Ordering::Relaxed);
     TIMEOUT_OCCURRED.store(false, Ordering::Relaxed);
@@ -2080,6 +2086,7 @@ pub unsafe fn mc_get_pid_pos_now() -> f32 {
 }
 
 pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    PID_POSITION_OFFSET_COUNT.fetch_add(1, Ordering::Relaxed);
     PID_POSITION_OFFSET.store(angle_now.to_bits(), Ordering::Relaxed);
     PID_POSITION_OFFSET_STORED.store(store, Ordering::Relaxed);
 }

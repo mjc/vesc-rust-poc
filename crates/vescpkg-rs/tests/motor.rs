@@ -292,16 +292,22 @@ fn motor_exposes_typed_handbrake_commands() {
         MotorReleaseOutcome::Released
     );
     firmware.motor().reset_statistics();
-    firmware.motor().update_pid_position_offset(
-        PidPosition::new(AngleDegrees::from_degrees(5.0)),
-        PidPositionOffsetPersistence::Persistent,
-    );
+    firmware
+        .motor()
+        .update_pid_position_offset(
+            PidPosition::new(AngleDegrees::from_degrees(5.0)),
+            PidPositionOffsetPersistence::Persistent,
+        )
+        .unwrap();
     assert_eq!(firmware.pid_position_offset().angle().as_degrees(), 5.0);
     assert!(firmware.pid_position_offset_was_stored());
-    firmware.motor().update_pid_position_offset(
-        PidPosition::new(AngleDegrees::from_degrees(6.0)),
-        PidPositionOffsetPersistence::Volatile,
-    );
+    firmware
+        .motor()
+        .update_pid_position_offset(
+            PidPosition::new(AngleDegrees::from_degrees(6.0)),
+            PidPositionOffsetPersistence::Volatile,
+        )
+        .unwrap();
     assert_eq!(firmware.pid_position_offset().angle().as_degrees(), 6.0);
     assert!(!firmware.pid_position_offset_was_stored());
     firmware
@@ -421,10 +427,18 @@ fn motor_control_rejects_non_finite_commands_before_ffi() {
         motor.set_pid_position(PidPosition::new(AngleDegrees::from_degrees(f32::NAN))),
         Err(vescpkg_rs::MotorCommandError::NonFinite)
     );
+    assert_eq!(
+        motor.update_pid_position_offset(
+            PidPosition::new(AngleDegrees::from_degrees(f32::NAN)),
+            PidPositionOffsetPersistence::Persistent,
+        ),
+        Err(vescpkg_rs::MotorCommandError::NonFinite)
+    );
 
     assert_eq!(firmware.current_command_count(), 0);
     assert_eq!(firmware.current_off_delay_count(), 0);
     assert_eq!(firmware.brake_current_command_count(), 0);
+    assert_eq!(firmware.pid_position_offset_command_count(), 0);
 }
 
 #[test]

@@ -41,7 +41,7 @@ fn main() {
         assert_eq!(
             fs::read(&header).expect("read vendored VESC header"),
             fs::read(&workspace_header).expect("read pinned VESC header"),
-            "vendored VESC header must match the pinned vesc_pkg_lib submodule"
+            "vendored VESC header must match the pinned vedderb/bldc header"
         );
     }
 

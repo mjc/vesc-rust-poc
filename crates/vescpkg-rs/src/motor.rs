@@ -308,7 +308,11 @@ pub trait MotorControlBindings {
     /// Reset accumulated motor statistics.
     fn reset_statistics(&self);
     /// Update the firmware PID-position offset and optionally persist it.
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        store: bool,
+    ) -> Result<(), MotorCommandError>;
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
     /// Set the relative tachometer and return its previous value.
@@ -713,8 +717,13 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_stat_reset() };
     }
 
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        store: bool,
+    ) -> Result<(), MotorCommandError> {
         unsafe { crate::ffi::mc_update_pid_pos_offset(position.angle().as_degrees(), store) };
+        Ok(())
     }
 
     fn set_odometer(&self, odometer: OdometerMeters) {
@@ -937,7 +946,7 @@ pub trait MotorOutput: private::MotorOutput {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    );
+    ) -> Result<(), MotorCommandError>;
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
     /// Set the relative tachometer and return its previous value.
@@ -1632,9 +1641,10 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    ) {
+    ) -> Result<(), MotorCommandError> {
+        ensure_finite(position.angle().as_degrees())?;
         self.bindings
-            .update_pid_position_offset(position, persistence.stores());
+            .update_pid_position_offset(position, persistence.stores())
     }
 
     /// Set the firmware-owned odometer distance in meters.
@@ -1738,8 +1748,8 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    ) {
-        MotorControlApi::update_pid_position_offset(self, position, persistence);
+    ) -> Result<(), MotorCommandError> {
+        MotorControlApi::update_pid_position_offset(self, position, persistence)
     }
 
     fn set_odometer(&self, odometer: OdometerMeters) {
