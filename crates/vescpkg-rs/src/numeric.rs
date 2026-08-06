@@ -2,6 +2,11 @@ use core::ops::{Add, Sub};
 
 use crate::{AngleDegrees, AngularVelocity, Frequency, Ratio, Rpm, SampleRate, VescSeconds};
 
+mod smooth_setpoint;
+pub use smooth_setpoint::{
+    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
+};
+
 /// Cursor for replacing the oldest value in a small fixed-size ring.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct FixedRingIndex<const N: usize>(u8);
@@ -354,12 +359,40 @@ mod tests {
     #[cfg(feature = "math")]
     use super::BiquadLowPass;
     use super::{
-        FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+        FixedRingIndex, MotorKinematics, SmoothAngle, SmoothSetpoint, SmoothSetpointConfig,
+        SmoothSetpointDirection, SmoothSetpointMultiplier, SmoothedAngleSlew, WrappedAngleMotion,
         angle_step, slew_toward,
     };
-    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, VescSeconds};
     #[cfg(feature = "math")]
-    use crate::{Frequency, SampleRate};
+    use crate::Frequency;
+    use crate::{AngleDegrees, AngularVelocity, Ratio, Rpm, SampleRate, VescSeconds};
+
+    #[test]
+    fn smooth_setpoint_preserves_the_refloat_second_order_step() {
+        let mut state = SmoothSetpoint::default();
+        state.configure(
+            SmoothSetpointConfig {
+                time_constant: VescSeconds::from_seconds(0.2),
+                on_speed_time_constant: VescSeconds::from_seconds(0.08),
+                off_speed_time_constant: VescSeconds::from_seconds(0.16),
+                winddown_time_constant: VescSeconds::from_seconds(0.2),
+                on_speed_up: AngularVelocity::from_degrees_per_second(24.0),
+                off_speed_up: AngularVelocity::from_degrees_per_second(12.0),
+                on_speed_down: AngularVelocity::from_degrees_per_second(20.0),
+                off_speed_down: AngularVelocity::from_degrees_per_second(10.0),
+            },
+            SampleRate::from_hertz(500.0),
+        );
+
+        state.update(
+            AngleDegrees::from_degrees(10.0),
+            SmoothSetpointDirection::Forward,
+            SmoothSetpointMultiplier::ONE,
+            VescSeconds::from_seconds(0.002),
+        );
+
+        assert!((state.value().as_degrees() - 0.000_112_55).abs() < 0.000_000_1);
+    }
 
     #[test]
     fn typed_angle_ramp_preserves_centering_and_per_sample_step() {

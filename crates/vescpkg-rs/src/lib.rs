@@ -280,7 +280,8 @@ pub use logging::{FirmwareLog, LogError};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
 pub use numeric::{
-    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothSetpoint, SmoothSetpointConfig,
+    SmoothSetpointDirection, SmoothSetpointMultiplier, SmoothedAngleSlew, WrappedAngleMotion,
     angle_step, ema_alpha, slew_toward,
 };
 

@@ -2,14 +2,14 @@ use crate::domain::FloatOutBoyRealtimeRemoteInput;
 #[cfg(test)]
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
-use crate::package::state::smooth_setpoint::{
-    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
-};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::Ratio;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, MotorCurrent, SampleRate, SignedRatio, Speed, TimestampTicks,
     VescSeconds,
+};
+use vescpkg_rs::{
+    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
 
 #[cfg(any(test, target_arch = "arm"))]
