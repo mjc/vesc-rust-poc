@@ -40,6 +40,8 @@ mod config_storage;
 mod data_recorder;
 #[cfg(test)]
 mod data_recorder_tests;
+#[cfg(test)]
+mod default_tests;
 mod flywheel;
 mod footpad_runtime;
 mod frequency_tracker;
@@ -164,11 +166,30 @@ impl Default for KonamiRuntime {
     }
 }
 
-/// Float Out Boy package state.
-#[pin_init::pin_init]
-#[derive(Debug, Default)]
-#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
-pub struct FloatOutBoyPackageState {
+macro_rules! float_out_boy_package_state {
+    ($( $(#[$attribute:meta])* $field:ident: $field_type:ty $(=> $initializer:expr)?, )+) => {
+        /// Float Out Boy package state.
+        #[pin_init::pin_init]
+        #[derive(Debug, Default)]
+        #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
+        pub struct FloatOutBoyPackageState {
+            $( $(#[$attribute])* $field: $field_type, )+
+        }
+
+        impl FloatOutBoyPackageState {
+            pub(crate) fn default_in_place(
+            ) -> impl pin_init::Init<Self, core::convert::Infallible> {
+                pin_init::init_pin!(FloatOutBoyPackageState {
+                    $( $field: float_out_boy_package_state!(@init $($initializer)?), )+
+                })
+            }
+        }
+    };
+    (@init $initializer:expr) => { $initializer };
+    (@init) => { Default::default() };
+}
+
+float_out_boy_package_state! {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     config_load_outcome: FloatOutBoyConfigLoadOutcome,
@@ -193,7 +214,7 @@ pub struct FloatOutBoyPackageState {
     reverse_stop: ReverseStop,
     motor_distance_meters: f32,
     #[pin]
-    motor_kinematics: MotorKinematicsTracker,
+    motor_kinematics: MotorKinematicsTracker => MotorKinematicsTracker::default_in_place(),
     motor_current_filter: vescpkg_rs::BiquadLowPass,
     motor_torque_constant: Option<MotorTorqueConstant>,
     remote_control: RemoteControlState,
@@ -233,75 +254,6 @@ pub struct FloatOutBoyPackageState {
 }
 
 impl FloatOutBoyPackageState {
-    #[expect(
-        clippy::default_trait_access,
-        reason = "the in-place initializer infers every field type without duplicating the state declaration"
-    )]
-    pub(crate) fn default_in_place() -> impl pin_init::Init<Self, core::convert::Infallible> {
-        pin_init::init_pin!(FloatOutBoyPackageState {
-            all_data_payloads: Default::default(),
-            serialized_config: Default::default(),
-            config_load_outcome: Default::default(),
-            deferred_config_persistence: Default::default(),
-            startup_configured: Default::default(),
-            firmware_imu_migration: Default::default(),
-            data_recorder: Default::default(),
-            alert_tracker: Default::default(),
-            lcm: Default::default(),
-            led_runtime_overrides: Default::default(),
-            konami: Default::default(),
-            haptic_feedback: Default::default(),
-            beeper: Default::default(),
-            beeper_flags: Default::default(),
-            bms: Default::default(),
-            flywheel: Default::default(),
-            ride_flags: Default::default(),
-            motor_control: Default::default(),
-            balance_filter: Default::default(),
-            balance_loop: Default::default(),
-            frequency_trackers: Default::default(),
-            reverse_stop: Default::default(),
-            motor_distance_meters: Default::default(),
-            motor_kinematics: MotorKinematicsTracker::default_in_place(),
-            motor_current_filter: Default::default(),
-            motor_torque_constant: Default::default(),
-            remote_control: Default::default(),
-            runtime_board_setpoint: Default::default(),
-            ride_modifiers: Default::default(),
-            charging_ticks: Default::default(),
-            engage_ticks: Default::default(),
-            disengage_ticks: Default::default(),
-            idle_ticks: Default::default(),
-            nag_ticks: Default::default(),
-            idle_voltage: Default::default(),
-            fault_switch_ticks: Default::default(),
-            fault_switch_half_ticks: Default::default(),
-            fault_angle_pitch_ticks: Default::default(),
-            fault_angle_roll_ticks: Default::default(),
-            high_voltage_ticks: Default::default(),
-            wheelslip_ticks: Default::default(),
-            upside_down_fault_ticks: Default::default(),
-            upside_down_flags: Default::default(),
-            motor_duty_raw: Default::default(),
-            duty_max_with_margin: Default::default(),
-            motor_current_limits: Default::default(),
-            battery_current_limits: Default::default(),
-            mosfet_temperature: Default::default(),
-            motor_temperature: Default::default(),
-            mosfet_temperature_limit_start: Default::default(),
-            motor_temperature_limit_start: Default::default(),
-            battery_cell_count: Default::default(),
-            motor_config_initialized: Default::default(),
-            aux_odometer: Default::default(),
-            aux_backup_failures: Default::default(),
-            aux_motor_config_refresh_ticks: Default::default(),
-            internal_leds: Default::default(),
-            internal_led_refresh_pending: Default::default(),
-            internal_led_confirmation_pending: Default::default(),
-            firmware_version: Default::default(),
-        })
-    }
-
     fn motor_torque_constant(&self) -> MotorTorqueConstant {
         self.motor_torque_constant
             .unwrap_or(REFLOAT_COMPAT_TORQUE_CONSTANT)
