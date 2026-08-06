@@ -63,7 +63,9 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
             FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
             footpad,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(4.0),
+            ),
             FloatOutBoyAllDataMotorPayload::new(
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
@@ -117,7 +119,8 @@ pub(super) fn balance_filter_with_pitch(pitch: AngleRadians) -> BalanceFilter {
     ))
 }
 
-pub(super) fn default_float_out_boy_config_bytes() -> [u8; 276] {
+pub(super) fn default_float_out_boy_config_bytes() -> [u8; crate::config::FLOAT_OUT_BOY_CONFIG_LEN]
+{
     *include_bytes!("../../conf/default_config.dat")
 }
 
@@ -139,7 +142,7 @@ pub(super) trait FloatOutBoyConfigTestBytes {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>));
 }
 
-impl FloatOutBoyConfigTestBytes for [u8; 276] {
+impl FloatOutBoyConfigTestBytes for [u8; crate::config::FLOAT_OUT_BOY_CONFIG_LEN] {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>)) {
         let mut config =
             FloatOutBoyConfigImage::from_serialized(self).expect("valid Float Out Boy config");

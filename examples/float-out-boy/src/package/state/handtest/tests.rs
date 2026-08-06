@@ -4,7 +4,7 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
 };
@@ -216,7 +216,7 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::ZERO),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -227,11 +227,6 @@ fn app_data_handtest_running_recenters_start_setpoint_like_float_out_boy_loop() 
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.0)));
     let mut config = editable_config_from_state(&state);
-    assert!(
-        config
-            .editor()
-            .set_legacy_hertz_for_test(vescpkg_rs::SampleRate::from_hertz(100.0))
-    );
     assert!(
         config
             .editor()

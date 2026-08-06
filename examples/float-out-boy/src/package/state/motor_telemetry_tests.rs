@@ -5,9 +5,10 @@ use crate::domain::{
     FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand, FloatOutBoyDarkRideState,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use crate::package::test_support::{
     sample_all_data_payloads, sample_all_data_payloads_with_ride_state,
 };
@@ -302,6 +303,28 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed
     );
+    assert_f32_eq!(state.motor_torque_constant.newton_meters_per_amp(), 0.042);
+}
+
+#[test]
+fn old_firmware_flux_uses_refloat_compatibility_torque_after_config_refresh() {
+    let firmware = FirmwareTest::new();
+    firmware.with_effects(|effects| {
+        FirmwareSettings
+            .set_foc_motor_flux_linkage(
+                effects,
+                FocMotorFluxLinkage::new(FluxLinkage::from_webers(0.001)),
+            )
+            .unwrap();
+    });
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    state.refresh_motor_config_runtime_state(firmware.telemetry());
+
+    assert_eq!(
+        state.motor_torque_constant,
+        MotorTorqueConstant::REFLOAT_COMPAT
+    );
 }
 
 #[test]
@@ -332,10 +355,10 @@ fn realtime_voltage_and_temperatures_refresh_from_motor_telemetry() {
     ));
     // Float Out Boy writes realtime values as float16 at `third_party/float-out-boy/src/main.c:1943-1954`
     // using `buffer_append_float16_auto` from `third_party/float-out-boy/src/conf/buffer.c:143-145`.
-    assert_eq!(packet.len(), 53);
+    assert_eq!(packet.len(), 57);
     assert_eq!(&packet[..3], &[101, 31, 4]);
-    assert_eq!(&packet[24..26], &[85, 67]);
-    assert_eq!(&packet[28..32], &[80, 160, 82, 16]);
+    assert_eq!(&packet[28..30], &[85, 67]);
+    assert_eq!(&packet[32..36], &[80, 160, 82, 16]);
 }
 
 #[test]
@@ -395,7 +418,9 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             no_footpads,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+            ),
             motor,
         ),
         payloads.mode2(),

@@ -2,8 +2,8 @@ use super::FloatOutBoyPackageState;
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::package::test_support::sample_all_data_payloads;
 use std::vec::Vec;
-use vescpkg_rs::TimestampTicks;
 use vescpkg_rs::test_support::FirmwareTest;
+use vescpkg_rs::{SampleRate, TimestampTicks};
 
 fn handle(state: &mut FloatOutBoyPackageState, request: &[u8]) -> (bool, Vec<Vec<u8>>) {
     let firmware = FirmwareTest::new();
@@ -33,13 +33,13 @@ fn recorder_control_updates_live_realtime_flags() {
         &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
     );
     assert!(handled);
-    assert!(sent.is_empty());
+    assert_eq!(sent, [vec![101, 41, 1, 0b111, 1, 0, 3]]);
 
     let (_, sent) = handle(
         &mut state,
         &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
     );
-    assert_eq!(sent[0][3] & 0x07, 0x07);
+    assert_eq!(sent[0][3], 1);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn recorder_samples_and_streams_source_wire_packets() {
         &mut state,
         &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[2, 1]),
     );
-    assert_eq!(&header[0][..7], &[101, 42, 0, 0, 0, 1, 10]);
+    assert_eq!(&header[0][..7], &[101, 42, 0, 0, 0, 1, 13]);
 
     let (_, data) = handle(
         &mut state,
@@ -94,7 +94,7 @@ fn recorder_samples_and_streams_source_wire_packets() {
         &data[0][..11],
         &[101, 43, 0, 0, 0, 0, 1, 2, 3, 4, 0b0000_1101]
     );
-    assert_eq!(data[0].len(), 31);
+    assert_eq!(data[0].len(), 37);
 }
 
 #[test]
@@ -114,6 +114,102 @@ fn recorder_control_preserves_autostart_and_autostop_policy() {
         &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
     );
     assert_eq!(sent[0][3] & 0x07, 0);
+}
+
+#[test]
+fn recorder_status_and_each_control_return_the_complete_cutoff_state() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+
+    for (payload, expected) in [
+        (&[1, 0][..], [101, 41, 1, 0b110, 1, 0, 3]),
+        (&[1, 2, 0][..], [101, 41, 1, 0b100, 1, 0, 3]),
+        (&[1, 3, 0][..], [101, 41, 1, 0, 1, 0, 3]),
+        (&[1, 4, 0][..], [101, 41, 1, 0, 1, 0, 3]),
+        (&[1, 4, 3][..], [101, 41, 1, 0, 3, 0, 3]),
+        (&[1, 1, 1][..], [101, 41, 1, 1, 3, 0, 3]),
+    ] {
+        let (_, sent) = handle(
+            &mut state,
+            &request(FloatOutBoyAppDataCommand::DataRecordRequest, payload),
+        );
+        assert_eq!(sent, [expected.to_vec()], "payload {payload:?}");
+    }
+}
+
+#[test]
+fn recorder_initial_rate_calculates_decimation_and_live_rate_only_changes_duration() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    state.initialize_data_recorder_sample_rate(SampleRate::from_hertz(48.0));
+
+    let (_, initial) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 0]),
+    );
+    assert_eq!(initial, [vec![101, 41, 1, 0b110, 20, 0, 50]]);
+
+    state.refresh_data_recorder_sample_rate(SampleRate::from_hertz(24.0));
+    let (_, refreshed) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 0]),
+    );
+    assert_eq!(refreshed, [vec![101, 41, 1, 0b110, 20, 0, 100]]);
+}
+
+#[test]
+fn recorder_decimation_records_only_every_nth_sample_and_start_resets_the_counter() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 4, 3]),
+    );
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
+    );
+    for timestamp in 1..=3 {
+        state.sample_data_recorder(TimestampTicks::from_ticks(timestamp));
+    }
+
+    let (_, header) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[2, 1]),
+    );
+    assert_eq!(&header[0][2..6], &[0, 0, 0, 1]);
+
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
+    );
+    state.sample_data_recorder(TimestampTicks::from_ticks(4));
+    state.sample_data_recorder(TimestampTicks::from_ticks(5));
+    let (_, restarted_header) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[2, 1]),
+    );
+    assert_eq!(&restarted_header[0][2..6], &[0, 0, 0, 0]);
+}
+
+#[test]
+fn recorder_makes_duplicate_and_regressing_timestamps_strictly_increasing() {
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let _ = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
+    );
+    for timestamp in [0, 0, 1, 1] {
+        state.sample_data_recorder(TimestampTicks::from_ticks(timestamp));
+    }
+
+    let (_, data) = handle(
+        &mut state,
+        &request(
+            FloatOutBoyAppDataCommand::DataRecordRequest,
+            &[2, 2, 0, 0, 0, 0],
+        ),
+    );
+    for (offset, expected) in [(6, 1), (37, 2), (68, 3), (99, 4)] {
+        assert_eq!(&data[0][offset..offset + 4], &u32::to_be_bytes(expected));
+    }
 }
 
 #[test]
@@ -182,7 +278,7 @@ fn unavailable_recorder_fails_closed_across_commands_flags_and_capability() {
         &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
     );
     assert!(handled);
-    assert!(recorder_response.is_empty());
+    assert_eq!(recorder_response, [vec![101, 41, 0, 0b110, 1, 0, 3]]);
 
     let (_, realtime_response) = handle(
         &mut state,
@@ -211,7 +307,6 @@ fn malformed_and_unknown_recorder_requests_are_recognized_noops() {
         &[][..],
         &[1][..],
         &[1, 1][..],
-        &[1, 9, 1][..],
         &[2, 2][..],
         &[2, 2, 0, 0, 0][..],
         &[9, 9, 9][..],
@@ -224,6 +319,14 @@ fn malformed_and_unknown_recorder_requests_are_recognized_noops() {
         assert!(handled, "payload {payload:?}");
         assert!(sent.is_empty(), "payload {payload:?}");
     }
+
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let (handled, sent) = handle(
+        &mut state,
+        &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 9, 1]),
+    );
+    assert!(handled);
+    assert_eq!(sent, [vec![101, 41, 1, 0b110, 1, 0, 3]]);
 }
 
 #[test]
@@ -337,20 +440,20 @@ fn data_response_paginates_at_the_refloat_send_buffer_boundary() {
             &[2, 2, 0, 0, 0, 0],
         ),
     );
-    assert_eq!(first_page[0].len(), 506);
+    assert_eq!(first_page[0].len(), 502);
     assert_eq!(&first_page[0][2..6], &[0, 0, 0, 0]);
     assert_eq!(&first_page[0][6..10], &[0, 0, 0, 1]);
-    assert_eq!(&first_page[0][481..485], &[0, 0, 0, 20]);
+    assert_eq!(&first_page[0][471..475], &[0, 0, 0, 16]);
 
     let (_, second_page) = handle(
         &mut state,
         &request(
             FloatOutBoyAppDataCommand::DataRecordRequest,
-            &[2, 2, 0, 0, 0, 20],
+            &[2, 2, 0, 0, 0, 16],
         ),
     );
-    assert_eq!(second_page[0].len(), 106);
-    assert_eq!(&second_page[0][2..6], &[0, 0, 0, 20]);
-    assert_eq!(&second_page[0][6..10], &[0, 0, 0, 21]);
-    assert_eq!(&second_page[0][81..85], &[0, 0, 0, 24]);
+    assert_eq!(second_page[0].len(), 254);
+    assert_eq!(&second_page[0][2..6], &[0, 0, 0, 16]);
+    assert_eq!(&second_page[0][6..10], &[0, 0, 0, 17]);
+    assert_eq!(&second_page[0][223..227], &[0, 0, 0, 24]);
 }

@@ -116,7 +116,7 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
     let (atr_up, atr_down) = WireByte::nibbles(*atr_strength);
     let (atr_speed_sign, atr_speed_amount) = WireByte::nibbles(*atr_speed);
     let (atr_angle, atr_speeds) = WireByte::nibbles(*atr_limits);
-    let (response_boost, transition_boost) = WireByte::nibbles(*atr_boost);
+    let (_, transition_boost) = WireByte::nibbles(*atr_boost);
     let (accel_ratio, decel_ratio) = WireByte::nibbles(*atr_ratios);
     let (brake_strength, brake_lingering) = WireByte::nibbles(*brake_tilt);
     let speed_boost_numerator = match atr_speed_sign.as_u8() {
@@ -141,9 +141,8 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
             B::ATR_STRENGTH_DOWN_FIELD => tune_atr_strength(atr_down),
             B::ATR_SPEED_BOOST_FIELD => atr_speed_amount.scaled_ratio(speed_boost_numerator, 100.0, 0.0, PidScale::new),
             B::ATR_ANGLE_LIMIT_FIELD => tune_angle_from(atr_angle, AngleDegrees::from_degrees(5.0)),
-            B::ATR_ON_SPEED_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
-            B::ATR_OFF_SPEED_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
-            B::ATR_RESPONSE_BOOST_FIELD => response_boost.divided(10.0, 1.0, PidScale::new),
+            B::ATR_FILTER_ON_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() & 0x03), 3.0),
+            B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD => tune_angular_velocity(WireByte::new(atr_speeds.as_u8() >> 2), 2.0),
             B::ATR_TRANSITION_BOOST_FIELD => transition_boost.divided(5.0, 1.0, PidScale::new),
             B::ATR_AMPS_ACCEL_RATIO_FIELD => accel_ratio.scaled(1.0, 5.0, PidScale::new),
             B::ATR_AMPS_DECEL_RATIO_FIELD => decel_ratio.scaled(1.0, 5.0, PidScale::new),
@@ -161,6 +160,11 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
     let (torque_up, torque_down) = WireByte::nibbles(*torque);
     let (torque_angle, torque_current) = WireByte::nibbles(*torque_limits);
     let (torque_on, torque_off) = WireByte::nibbles(*torque_speeds);
+    let torque_on = if payload.len() >= 19 {
+        torque_on.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second)
+    } else {
+        torque_on.scaled(0.5, 0.0, AngularVelocity::from_degrees_per_second)
+    };
     update_active_config(state, |config| {
         write_fields!(config;
             B::ATR_THRESHOLD_UP_FIELD => threshold_up.scaled(0.5, 0.0, AngleDegrees::from_degrees),
@@ -169,9 +173,44 @@ fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]
             B::TORQUE_TILT_REGEN_STRENGTH_FIELD => tune_torque_tilt_strength(torque_down),
             B::TORQUE_TILT_ANGLE_LIMIT_FIELD => torque_angle.scaled(0.5, 0.0, AngleDegrees::from_degrees),
             B::TORQUE_TILT_START_CURRENT_FIELD => torque_current.scaled(1.0, 15.0, motor_current),
-            B::TORQUE_TILT_ON_SPEED_FIELD => torque_on.scaled(0.5, 0.0, AngularVelocity::from_degrees_per_second),
-            B::TORQUE_TILT_OFF_SPEED_FIELD => torque_off.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second),
+            B::TORQUE_TILT_FILTER_ON_SPEED_LIMIT_FIELD => torque_on,
+            B::TORQUE_TILT_FILTER_OFF_SPEED_LIMIT_FIELD => torque_off.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second),
         )
+    })
+}
+
+fn apply_extended_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
+    let Some([orientation, atr_speeds]) = payload.get(17..19) else {
+        return true;
+    };
+    let (roll_gain, turn_start_angle) = WireByte::nibbles(*orientation);
+    let (atr_on, atr_off) = WireByte::nibbles(*atr_speeds);
+
+    update_active_config(state, |config| {
+        let mut updated = true;
+        if roll_gain.as_u8() > 0 {
+            updated &= config.set(
+                H::MAHONY_KP_ROLL_FIELD,
+                roll_gain.divided(10.0, 1.0, vescpkg_rs::MahonyRollGain::new),
+            );
+        }
+        if turn_start_angle.as_u8() > 0 {
+            updated &= config.set(
+                B::TURN_TILT_START_ANGLE_FIELD,
+                turn_start_angle.scaled(1.0, 0.0, AngleDegrees::from_degrees),
+            );
+        }
+        if atr_on.as_u8() > 0 && atr_off.as_u8() > 0 {
+            updated &= config.set(
+                B::ATR_FILTER_ON_SPEED_LIMIT_FIELD,
+                atr_on.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
+            );
+            updated &= config.set(
+                B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD,
+                atr_off.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
+            );
+        }
+        updated
     })
 }
 
@@ -205,7 +244,8 @@ pub(super) fn handle_runtime_tune_packet(
 
     let updated = apply_primary_runtime_tune(state, payload)
         && apply_torque_runtime_tune(state, payload)
-        && apply_brake_runtime_tune(state, payload);
+        && apply_brake_runtime_tune(state, payload)
+        && apply_extended_runtime_tune(state, payload);
     if !updated {
         return false;
     }
@@ -311,7 +351,7 @@ pub(super) fn handle_other_tune_packet(
             }
         }
 
-        if updated && let [input, input_speed, ..] = optional_input {
+        if updated && let [input, _input_speed, ..] = optional_input {
             let remote_type = *input & 0x03;
             if remote_type <= 2 {
                 updated = config.set(C::INPUT_TILT_REMOTE_TYPE_FIELD, WireByte::new(remote_type));
@@ -319,14 +359,6 @@ pub(super) fn handle_other_tune_packet(
                     updated &= config.set(
                         C::INPUT_TILT_ANGLE_LIMIT_FIELD,
                         WireByte::new(*input >> 2).scaled(1.0, 0.0, AngleDegrees::from_degrees),
-                    );
-                    updated &= config.set(
-                        C::INPUT_TILT_SPEED_FIELD,
-                        WireByte::new(*input_speed).scaled(
-                            1.0,
-                            0.0,
-                            AngularVelocity::from_degrees_per_second,
-                        ),
                     );
                 }
             }

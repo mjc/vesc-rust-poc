@@ -129,6 +129,47 @@ fn app_data_callback_rejects_malformed_legacy_realtime_data_requests() {
 }
 
 #[test]
+fn app_data_callback_routes_unified_remote_without_reply_and_rejects_removed_rc_move() {
+    let mut sent = Vec::new();
+    let telemetry = FirmwareTest::new();
+    let imu = telemetry.imu();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    ));
+    let now = TimestampTicks::from_ticks(30_001);
+    let command = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::Remote.id(),
+        127,
+    ];
+
+    assert!(handle_packet(
+        &mut state,
+        now,
+        &mut sent,
+        telemetry.telemetry(),
+        imu,
+        AppDataPacket::from_bytes(&command),
+    ));
+    assert_eq!(
+        state.remote_input_for_test().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+    assert!(sent.is_empty());
+
+    assert!(!handle_packet(
+        &mut state,
+        now,
+        &mut sent,
+        telemetry.telemetry(),
+        imu,
+        AppDataPacket::from_bytes(&[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 7, 1, 40, 2, 42]),
+    ));
+    assert!(sent.is_empty());
+}
+
+#[test]
 fn app_data_callback_dispatches_without_main_loop_refresh_like_float_out_boy() {
     let app_data = TimestampTicks::from_ticks(0);
     let mut sent = Vec::new();

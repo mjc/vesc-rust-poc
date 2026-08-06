@@ -2,16 +2,17 @@ use super::super::protocol::realtime_value;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags,
+    FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags, FloatOutBoyRunState,
+    FloatOutBoyWheelSlipState,
 };
-use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
-use vescpkg_rs::TimestampTicks;
+use vescpkg_rs::{SampleRate, TimestampTicks};
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
-const HEADER_RESPONSE_LEN: usize = 159;
+const HEADER_RESPONSE_LEN: usize = 172;
 const DATA_RESPONSE_CAPACITY: usize = 511;
+const DEFAULT_SAMPLE_RATE_HZ: u16 = 620;
 #[cfg(test)]
 const TEST_SAMPLE_CAPACITY: usize = 24;
 
@@ -25,6 +26,10 @@ type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
 pub(super) struct DataRecorderState {
     flags: FloatOutBoyDataRecorderFlags,
     records: vescpkg_rs::FixedRecordRing<DataRecorderStorage, SAMPLE_SIZE>,
+    decimation: u8,
+    decimation_counter: u8,
+    sample_rate_hz: u16,
+    last_timestamp: TimestampTicks,
 }
 
 impl Default for DataRecorderState {
@@ -37,6 +42,10 @@ impl Default for DataRecorderState {
             )),
             #[cfg(not(test))]
             records: vescpkg_rs::FixedRecordRing::new(None),
+            decimation: 1,
+            decimation_counter: 0,
+            sample_rate_hz: DEFAULT_SAMPLE_RATE_HZ,
+            last_timestamp: TimestampTicks::from_ticks(0),
         }
     }
 }
@@ -47,6 +56,7 @@ impl DataRecorderState {
         self.records
             .replace_storage(buffer.filter(|buffer| buffer.len() >= SAMPLE_SIZE));
         self.stop();
+        self.recalculate_decimation();
     }
 
     pub(super) fn has_capability(&self) -> bool {
@@ -54,11 +64,11 @@ impl DataRecorderState {
     }
 
     pub(super) fn flags(&self) -> FloatOutBoyDataRecorderFlags {
-        if !self.has_capability() {
-            return FloatOutBoyDataRecorderFlags::empty();
+        if self.has_capability() {
+            self.flags
+        } else {
+            FloatOutBoyDataRecorderFlags::empty()
         }
-
-        self.flags
     }
 
     fn trigger(&mut self, engage: bool) {
@@ -74,6 +84,8 @@ impl DataRecorderState {
 
     fn start(&mut self) {
         self.records.clear();
+        self.decimation_counter = 0;
+        self.last_timestamp = TimestampTicks::from_ticks(0);
         self.flags.set(
             FloatOutBoyDataRecorderFlags::RECORDING,
             self.has_capability(),
@@ -89,10 +101,24 @@ impl DataRecorderState {
         self.records.replace_storage(None);
     }
 
-    fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
-        if self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
-            let _ = self.records.push(sample);
+    fn sample(&mut self, mut sample: [u8; SAMPLE_SIZE]) {
+        if !self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
+            return;
         }
+        self.decimation_counter = self.decimation_counter.wrapping_add(1);
+        if self.decimation_counter < self.decimation {
+            return;
+        }
+        self.decimation_counter = 0;
+        let timestamp = u32::from_be_bytes(sample[..4].try_into().unwrap_or_default());
+        let timestamp = if timestamp <= self.last_timestamp.as_ticks() {
+            self.last_timestamp.as_ticks().wrapping_add(1)
+        } else {
+            timestamp
+        };
+        self.last_timestamp = TimestampTicks::from_ticks(timestamp);
+        sample[..4].copy_from_slice(&timestamp.to_be_bytes());
+        let _ = self.records.push(&sample);
     }
 
     fn sample_count(&self) -> usize {
@@ -101,6 +127,53 @@ impl DataRecorderState {
 
     fn sample_at(&self, index: usize) -> Option<[u8; SAMPLE_SIZE]> {
         self.records.get(index)
+    }
+
+    fn configure_sample_rate(&mut self, sample_rate: SampleRate, recalculate_decimation: bool) {
+        let rate = crate::wire::saturating_trunc_f32_to_u32(sample_rate.as_hertz()).max(1);
+        self.sample_rate_hz = u16::try_from(rate).unwrap_or(u16::MAX);
+        if recalculate_decimation {
+            self.recalculate_decimation();
+        }
+    }
+
+    fn recalculate_decimation(&mut self) {
+        let sample_count = u32::try_from(self.records.capacity())
+            .unwrap_or(u32::MAX)
+            .max(1);
+        let value = u32::from(self.sample_rate_hz)
+            .saturating_mul(10)
+            .checked_div(sample_count)
+            .unwrap_or(0)
+            .max(1);
+        let [wire_value, ..] = value.to_le_bytes();
+        self.decimation = wire_value;
+    }
+
+    fn recording_duration_centiseconds(&self) -> u16 {
+        #[cfg(test)]
+        let capacity = TEST_SAMPLE_CAPACITY;
+        #[cfg(not(test))]
+        let capacity = self.records.capacity();
+        let capacity = u32::try_from(capacity).unwrap_or(u32::MAX);
+        let duration = capacity
+            .saturating_mul(100)
+            .checked_div(u32::from(self.sample_rate_hz))
+            .unwrap_or(0);
+        u16::try_from(duration).unwrap_or(u16::MAX)
+    }
+
+    fn status_response(&self) -> [u8; 7] {
+        let duration = self.recording_duration_centiseconds().to_be_bytes();
+        [
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::DataRecordRequest.id(),
+            u8::from(self.has_capability()),
+            self.flags.bits(),
+            self.decimation,
+            duration[0],
+            duration[1],
+        ]
     }
 }
 
@@ -123,6 +196,16 @@ impl FloatOutBoyPackageState {
         self.data_recorder.stop();
     }
 
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn initialize_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
+        self.data_recorder.configure_sample_rate(sample_rate, true);
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn refresh_data_recorder_sample_rate(&mut self, sample_rate: SampleRate) {
+        self.data_recorder.configure_sample_rate(sample_rate, false);
+    }
+
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
         let base = payloads.base();
@@ -135,9 +218,7 @@ impl FloatOutBoyPackageState {
             vescpkg_rs::protocol_buffer::float16_auto_bits(realtime_value(
                 &payloads,
                 item,
-                self.remote_control.input(),
-                self.ride_modifiers.atr_accel_diff(),
-                self.ride_modifiers.atr_speed_boost(),
+                self.realtime_live_values(),
             ))
         });
         let mut sample = [0; SAMPLE_SIZE];
@@ -146,7 +227,7 @@ impl FloatOutBoyPackageState {
         for (target, value) in sample[5..].chunks_exact_mut(2).zip(values) {
             target.copy_from_slice(&value.to_be_bytes());
         }
-        self.data_recorder.sample(&sample);
+        self.data_recorder.sample(sample);
     }
 
     pub(super) fn trigger_data_recorder(&mut self, engage: bool) {
@@ -163,35 +244,37 @@ impl FloatOutBoyPackageState {
         else {
             return false;
         };
-        if !self.data_recorder.has_capability() {
+        let control = matches!(payload, [1, _, ..]);
+        if !self.data_recorder.has_capability() && !control {
             return true;
         }
 
         match payload {
-            [1, 1, value, ..] if *value > 0 => {
-                self.data_recorder.start();
+            [1, 1, value, ..] => {
+                if *value > 0 {
+                    self.data_recorder.start();
+                } else {
+                    self.data_recorder.stop();
+                }
             }
-            [1, 1, ..] => {
-                self.data_recorder.stop();
-            }
-            [1, 2, value, ..] => {
-                self.data_recorder
-                    .flags
-                    .set(FloatOutBoyDataRecorderFlags::AUTOSTART, *value > 0);
-            }
-            [1, 3, value, ..] => {
-                self.data_recorder
-                    .flags
-                    .set(FloatOutBoyDataRecorderFlags::AUTOSTOP, *value > 0);
-            }
+            [1, 2, value, ..] => self
+                .data_recorder
+                .flags
+                .set(FloatOutBoyDataRecorderFlags::AUTOSTART, *value > 0),
+            [1, 3, value, ..] => self
+                .data_recorder
+                .flags
+                .set(FloatOutBoyDataRecorderFlags::AUTOSTOP, *value > 0),
+            [1, 4, value, ..] => self.data_recorder.decimation = (*value).max(1),
+            [1, 0, ..] | [1, _, _, ..] => {}
             [2, 1, ..] => {
                 self.data_recorder.stop();
                 let mut response = DATA_RECORD_HEADER_BYTES;
                 response[1] = FloatOutBoyAppDataCommand::DataRecordHeader.id();
-                let sample_count =
-                    u32::try_from(self.data_recorder.sample_count()).unwrap_or(u32::MAX);
-                response[2..6].copy_from_slice(&sample_count.to_be_bytes());
+                let count = u32::try_from(self.data_recorder.sample_count()).unwrap_or(u32::MAX);
+                response[2..6].copy_from_slice(&count.to_be_bytes());
                 let _ = reply(&response);
+                return true;
             }
             [2, 2, a, b, c, d, ..] => {
                 let offset = u32::from_be_bytes([*a, *b, *c, *d]);
@@ -210,21 +293,26 @@ impl FloatOutBoyPackageState {
                 if self.data_recorder.sample_count() > 0 {
                     let _ = reply(response.as_bytes());
                 }
+                return true;
             }
-            _ => {}
+            _ => return true,
         }
+        let _ = reply(&self.data_recorder.status_response());
         true
     }
 }
 
-const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0a\
-    \x0amotor.erpm\
-    \x11motor.dir_current\
-    \x10motor.duty_cycle\
-    \x12motor.batt_voltage\
-    \x09imu.pitch\
-    \x11imu.balance_pitch\
+const DATA_RECORD_HEADER_BYTES: [u8; HEADER_RESPONSE_LEN] = *b"\x65\0\0\0\0\0\x0d\
+    \x0acontrol.dt\
+    \x0ccontrol.freq\
+    \x04erpm\
+    \x0bdir_current\
+    \x0aduty_cycle\
+    \x0cbatt_voltage\
+    \x05pitch\
+    \x0dbalance_pitch\
     \x08setpoint\
     \x0catr.setpoint\
     \x14torque_tilt.setpoint\
-    \x0fbalance_current";
+    \x0fbalance_current\
+    \x14atr.transition_boost";

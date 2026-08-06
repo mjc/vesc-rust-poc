@@ -370,7 +370,9 @@ impl FloatOutBoyPackageState {
         self.serialized_config.bms().enabled()
     }
 
-    pub(in crate::package) fn serialized_config(&self) -> &[u8; 276] {
+    pub(in crate::package) fn serialized_config(
+        &self,
+    ) -> &[u8; crate::config::FLOAT_OUT_BOY_CONFIG_LEN] {
         // C map: `get_cfg(..., is_default=false)` serializes the current
         // `d->float_conf` image at `third_party/float-out-boy/src/main.c:2335-2356`.
         self.serialized_config.as_bytes()

@@ -34,7 +34,7 @@ fn ready_darkride_payloads() -> FloatOutBoyAllDataPayloads {
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     FloatOutBoyAllDataPayloads::new(base, payloads.mode2(), payloads.mode3(), payloads.mode4())

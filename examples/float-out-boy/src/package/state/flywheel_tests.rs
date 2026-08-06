@@ -2,8 +2,9 @@ use super::*;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRideState,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRideState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use crate::package::test_support::{
     imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
     sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
@@ -38,7 +39,7 @@ fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloa
             FloatOutBoyAllDataStatus::new(base.status().ride_state(), base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -76,7 +77,7 @@ fn set_ride_state(state: &mut FloatOutBoyPackageState, run_state: FloatOutBoyRun
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -95,7 +96,7 @@ fn set_footpad(state: &mut FloatOutBoyPackageState, footpad: FloatOutBoyFootpadS
             base.status(),
             FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, footpad),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -145,7 +146,7 @@ fn set_duty_cycle(state: &mut FloatOutBoyPackageState, duty_cycle: DutyCycle) {
             base.status(),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             motor,
         ),
         payloads.mode2(),
@@ -437,7 +438,7 @@ fn rejected_forced_recalibration_restores_the_persisted_config() {
             FloatOutBoyAllDataStatus::new(base.status().ride_state(), base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -875,7 +876,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
     assert!(state.serialized_config.headlights_enabled());
 
@@ -961,7 +962,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
             base.status(),
             base.footpad(),
             base.setpoints(),
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::ZERO)),
+            FloatOutBoyRealtimeBoosterTorque::new(crate::motor_torque::MotorTorque::ZERO),
             base.motor(),
         ),
         payloads.mode2(),
@@ -984,13 +985,18 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let base = state.all_data_payloads().base();
     let error = base.setpoints().board().angle().as_degrees()
         - base.attitude().balance_pitch().angle_degrees().as_degrees();
-    let expected = error * 8.0 * output_alpha();
+    let torque_output_scale = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
+        / state.motor_torque_constant.newton_meters_per_amp();
+    let expected = error * 8.0 * torque_output_scale * output_alpha();
     let actual = firmware.commanded_current().current().as_amps();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.
     // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 25 Hz output
     // EMA, the final motor command follows the signed setpoint error.
     assert!(expected < 0.0, "error={error}");
-    assert!(base.booster_current().current().is_zero());
+    assert_eq!(
+        base.booster_torque().torque(),
+        crate::motor_torque::MotorTorque::ZERO
+    );
     assert!(
         (actual - expected).abs() < 0.000_1,
         "actual={actual}, expected={expected}, base={base:?}",

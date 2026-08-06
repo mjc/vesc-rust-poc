@@ -6,10 +6,9 @@ use vescpkg_rs::prelude::SYSTEM_TICK_RATE_HZ;
 // `third_party/float-out-boy/src/main.c:2070-2139`.
 /// Length of the FOB version-2 package-info response.
 pub const FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN: usize = 60;
-// Float Out Boy v1.2.1 `cmd_realtime_data_ids` writes the counted ID-list packet at
-// `third_party/float-out-boy/src/main.c:1876-1901`.
+// The pinned cutoff writes this counted realtime-data ID-list packet.
 /// Length of the FOB realtime-data ID-list response.
-pub const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
+pub const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 370;
 
 const FLOAT_OUT_BOY_PACKAGE_NAME: &[u8] = b"Float Out Boy";
 const FLOAT_OUT_BOY_VERSION_SUFFIX: &[u8] = b"";
@@ -34,23 +33,25 @@ vescpkg_rs::firmware_section_static!(
         // the complete packet as a compile-time byte string eliminates runtime
         // construction and every potentially panicking indexed write.
         *b"\x65\x20\
-            \x10\x0bmotor.speed\
-            \x0amotor.erpm\
-            \x0dmotor.current\
-            \x11motor.dir_current\
-            \x12motor.filt_current\
-            \x10motor.duty_cycle\
-            \x12motor.batt_voltage\
-            \x12motor.batt_current\
-            \x11motor.mosfet_temp\
-            \x10motor.motor_temp\
-            \x09imu.pitch\
-            \x11imu.balance_pitch\
-            \x08imu.roll\
-            \x0cfootpad.adc1\
-            \x0cfootpad.adc2\
+            \x12\x0acontrol.dt\
+            \x0ccontrol.freq\
+            \x05speed\
+            \x04erpm\
+            \x07current\
+            \x0bdir_current\
+            \x0cfilt_current\
+            \x0aduty_cycle\
+            \x0cbatt_voltage\
+            \x0cbatt_current\
+            \x0bmosfet_temp\
+            \x0amotor_temp\
+            \x05pitch\
+            \x0dbalance_pitch\
+            \x04roll\
+            \x08adc_left\
+            \x09adc_right\
             \x0cremote.input\
-            \x0a\x08setpoint\
+            \x0b\x08setpoint\
             \x0catr.setpoint\
             \x13brake_tilt.setpoint\
             \x14torque_tilt.setpoint\
@@ -59,7 +60,8 @@ vescpkg_rs::firmware_section_static!(
             \x0fbalance_current\
             \x0eatr.accel_diff\
             \x0fatr.speed_boost\
-            \x0fbooster.current"
+            \x14atr.transition_boost\
+            \x0ebooster.torque"
 );
 
 /// Fixed-capacity FOB package-info response.

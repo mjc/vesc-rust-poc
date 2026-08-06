@@ -1,18 +1,25 @@
-use super::{RemoteControlState, RemoteMove, handle_packet};
+use super::{PhysicalRemoteInput, RemoteControlState, RemoteMoveTarget};
 use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
-    FloatOutBoyRealtimeRemoteInput, FloatOutBoyRunState,
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
+    FloatOutBoyRealtimeRemoteInput,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use crate::package::state::FloatOutBoyPackageState;
-use crate::package::test_support::{
-    FloatOutBoyConfigTestBytes, editable_config_from_bytes,
-    sample_all_data_payloads_with_ride_state,
-};
-use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::{
-    AngleDegrees, Current, DeciampCurrent, MotorCurrent, Rpm, SampleRate, SignedRatio,
-    TimestampTicks, VescSeconds,
+    AngleDegrees, Ratio, SampleRate, SignedRatio, Speed, TimestampTicks, VescSeconds,
 };
+
+fn remote_packet(value: i8) -> [u8; 3] {
+    [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::Remote.id(),
+        value.to_ne_bytes()[0],
+    ]
+}
+
+fn physical_input(value: f32) -> SignedRatio {
+    SignedRatio::clamped(value)
+}
 
 #[test]
 fn input_tilt_first_update_matches_refloat_smooth_setpoint() {
@@ -23,11 +30,37 @@ fn input_tilt_first_update_matches_refloat_smooth_setpoint() {
 
     let setpoint = remote_control.update_input_tilt(
         AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.2),
         SampleRate::from_hertz(500.0),
         false,
     );
 
     assert!((setpoint.as_degrees() - 0.000_178_73).abs() < 0.000_000_1);
+}
+
+#[test]
+fn input_tilt_uses_serialized_filter_time_constant() {
+    let input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(1.0));
+    let mut faster = RemoteControlState::default();
+    let mut slower = RemoteControlState::default();
+    faster.set_input(input);
+    slower.set_input(input);
+
+    let faster_setpoint = faster.update_input_tilt(
+        AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.1),
+        SampleRate::from_hertz(500.0),
+        false,
+    );
+    let slower_setpoint = slower.update_input_tilt(
+        AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.4),
+        SampleRate::from_hertz(500.0),
+        false,
+    );
+
+    assert!(faster_setpoint > slower_setpoint);
+    assert!(slower_setpoint > AngleDegrees::ZERO);
 }
 
 #[test]
@@ -39,16 +72,26 @@ fn input_tilt_reversal_eventually_crosses_zero() {
     let angle_limit = AngleDegrees::from_degrees(10.0);
     let sample_rate = SampleRate::from_hertz(500.0);
     for _ in 0..100 {
-        remote_control.update_input_tilt(angle_limit, sample_rate, false);
+        remote_control.update_input_tilt(
+            angle_limit,
+            VescSeconds::from_seconds(0.2),
+            sample_rate,
+            false,
+        );
     }
-    let rising = remote_control.input_tilt.value();
+    let rising = remote_control.tilt_setpoint.value();
     remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
         SignedRatio::from_ratio_const(-1.0),
     ));
     for _ in 0..500 {
-        remote_control.update_input_tilt(angle_limit, sample_rate, false);
+        remote_control.update_input_tilt(
+            angle_limit,
+            VescSeconds::from_seconds(0.2),
+            sample_rate,
+            false,
+        );
     }
-    let reversed = remote_control.input_tilt.value();
+    let reversed = remote_control.tilt_setpoint.value();
 
     assert!(rising.is_positive());
     assert!(reversed.is_negative());
@@ -57,25 +100,35 @@ fn input_tilt_reversal_eventually_crosses_zero() {
 #[test]
 fn input_tilt_stays_within_five_percent_over_equal_time_at_different_cadences() {
     let angle_limit = AngleDegrees::from_degrees(10.0);
-    let input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(1.0));
     let mut nominal = RemoteControlState::default();
     let mut delayed = RemoteControlState::default();
+    let input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(1.0));
     nominal.set_input(input);
     delayed.set_input(input);
 
     for _ in 0..50 {
-        nominal.update_input_tilt_elapsed(angle_limit, VescSeconds::from_seconds(0.002), false);
+        nominal.update_input_tilt_elapsed(
+            angle_limit,
+            VescSeconds::from_seconds(0.2),
+            VescSeconds::from_seconds(0.002),
+            false,
+        );
     }
     for _ in 0..25 {
-        delayed.update_input_tilt_elapsed(angle_limit, VescSeconds::from_seconds(0.004), false);
+        delayed.update_input_tilt_elapsed(
+            angle_limit,
+            VescSeconds::from_seconds(0.2),
+            VescSeconds::from_seconds(0.004),
+            false,
+        );
     }
 
-    let difference = (delayed.input_tilt.value() - nominal.input_tilt.value()).abs();
+    let difference = (delayed.tilt_setpoint.value() - nominal.tilt_setpoint.value()).abs();
     assert!(
-        difference.as_degrees() / nominal.input_tilt.value().as_degrees() < 0.05,
+        difference.as_degrees() / nominal.tilt_setpoint.value().as_degrees() < 0.05,
         "nominal={:?} delayed={:?}",
-        nominal.input_tilt.value(),
-        delayed.input_tilt.value(),
+        nominal.tilt_setpoint.value(),
+        delayed.tilt_setpoint.value(),
     );
 }
 
@@ -88,11 +141,24 @@ fn darkride_mirrors_the_remote_tilt_setpoint() {
     darkride.set_input(input);
     let elapsed = VescSeconds::from_seconds(0.002);
     for _ in 0..100 {
-        upright.update_input_tilt_elapsed(AngleDegrees::from_degrees(10.0), elapsed, false);
-        darkride.update_input_tilt_elapsed(AngleDegrees::from_degrees(10.0), elapsed, true);
+        upright.update_input_tilt_elapsed(
+            AngleDegrees::from_degrees(10.0),
+            VescSeconds::from_seconds(0.2),
+            elapsed,
+            false,
+        );
+        darkride.update_input_tilt_elapsed(
+            AngleDegrees::from_degrees(10.0),
+            VescSeconds::from_seconds(0.2),
+            elapsed,
+            true,
+        );
     }
 
-    assert_eq!(darkride.input_tilt.value(), -upright.input_tilt.value());
+    assert_eq!(
+        darkride.tilt_setpoint.value(),
+        -upright.tilt_setpoint.value()
+    );
 }
 
 #[test]
@@ -103,131 +169,382 @@ fn runtime_reset_clears_remote_tilt_motion() {
     ));
     remote_control.update_input_tilt(
         AngleDegrees::from_degrees(10.0),
+        VescSeconds::from_seconds(0.2),
         SampleRate::from_hertz(500.0),
         false,
     );
 
     remote_control.reset_runtime_vars();
 
-    assert_eq!(remote_control.input_tilt.value(), AngleDegrees::ZERO);
+    assert_eq!(remote_control.tilt_setpoint.value(), AngleDegrees::ZERO);
 }
 
 #[test]
-fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
-    let mut remote_control = RemoteControlState::default();
-    remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
-        SignedRatio::from_ratio_const(0.5),
-    ));
-    let state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
-    let mut config = *state.serialized_config();
-    config.edit_float_out_boy_config(|config| {
-        assert!(
-            config.set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0,)))
-        );
-    });
-    config.edit_float_out_boy_config(|config| {
-        assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
-    });
-    let config = editable_config_from_bytes(&config);
-    let remote_throttle = config.remote_throttle();
+fn cutoff_remote_config_decodes_zero_move_limit_and_ten_second_grace() {
+    let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
-    let requested_current = remote_control
-        .request_remote_throttle_current(
-            remote_throttle,
-            TimestampTicks::from_ticks(1),
-            WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
-        )
-        .expect("remote throttle should request current");
-
-    // Upstream `do_rc_move(d)` uses default inverted throttle and filters
-    // `rc_current = old * 0.95 + target * 0.05` before requesting current
-    // at `third_party/float-out-boy/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
-    assert_f32_eq!(requested_current.current().as_amps(), -0.25);
-}
-
-#[test]
-fn rc_move_command_checksum_failure_becomes_zero_current_step_like_float_out_boy() {
-    // C map: `cmd_rc_move` compares `sum != time + current` as ints, then
-    // sets `current = 0` at `third_party/float-out-boy/src/main.c:1735-1741`.
     assert_eq!(
-        RemoteMove::from_float_out_boy_command(1, 1, 255, 0),
-        RemoteMove {
-            target: DeciampCurrent::from_deciamps(0),
-            duration_steps: 1
-        }
+        state.serialized_config.remote().max_move_speed(),
+        Speed::ZERO
+    );
+    assert_eq!(
+        state.serialized_config.remote().grace_period(),
+        VescSeconds::from_seconds(10.0)
     );
 }
 
 #[test]
-fn rc_move_command_steps_idle_current_like_float_out_boy_do_rc_move() {
+fn unified_remote_command_requires_a_value_but_ignores_trailing_bytes() {
     let mut remote_control = RemoteControlState::default();
-    remote_control.queue_move(RemoteMove::from_float_out_boy_command(1, 40, 2, 42));
+    let now = TimestampTicks::from_ticks(30_001);
 
-    let requested_current = remote_control
-        .request_active_move_current(Rpm::ZERO)
-        .expect("active RC move should request current");
-
-    // Upstream `cmd_rc_move` sets `rc_steps = time * 100` and target
-    // current/10 at `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` filters the first
-    // READY tick by 5% at `third_party/float-out-boy/src/main.c:276-286`.
-    assert!((requested_current.current().as_amps() - 0.2).abs() < 0.0001);
+    assert!(!remote_control.handle_packet(
+        now,
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::Remote.id()
+        ],
+    ));
+    assert!(remote_control.handle_packet(
+        now,
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::Remote.id(),
+            127,
+            99
+        ],
+    ));
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
 }
 
 #[test]
-fn active_move_saturates_its_tick_counter_instead_of_panicking() {
+fn unified_remote_command_normalizes_signed_endpoints_and_ignores_minus_128() {
+    let now = TimestampTicks::from_ticks(30_001);
+    let mut remote_control = RemoteControlState::default();
+
+    assert!(remote_control.handle_packet(
+        now,
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &remote_packet(-127),
+    ));
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(-1.0)
+    );
+    assert!(remote_control.handle_packet(
+        TimestampTicks::from_ticks(35_000),
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &remote_packet(i8::MIN),
+    ));
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(-1.0)
+    );
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(1.0)),
+        now: TimestampTicks::from_ticks(35_002),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::ZERO,
+        move_grace: VescSeconds::from_seconds(0.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+}
+
+#[test]
+fn command_move_requires_strict_two_second_disengage_grace() {
+    let mut remote_control = RemoteControlState::default();
+    let disengage = TimestampTicks::from_ticks(1_000);
+
+    assert!(remote_control.handle_packet(
+        TimestampTicks::from_ticks(21_000),
+        disengage,
+        Speed::from_kilometers_per_hour(8.0),
+        &remote_packet(127),
+    ));
+    assert_eq!(remote_control.move_target, None);
+    assert!(remote_control.handle_packet(
+        TimestampTicks::from_ticks(21_001),
+        disengage,
+        Speed::from_kilometers_per_hour(8.0),
+        &remote_packet(127),
+    ));
+    assert_eq!(
+        remote_control.move_target,
+        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(8.0)))
+    );
+}
+
+#[test]
+fn command_move_uses_five_kph_default_when_configured_limit_is_zero() {
+    let mut remote_control = RemoteControlState::default();
+    assert!(remote_control.handle_packet(
+        TimestampTicks::from_ticks(20_001),
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &remote_packet(127),
+    ));
+    assert_eq!(
+        remote_control.move_target,
+        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(5.0)))
+    );
+}
+
+#[test]
+fn command_input_owns_remote_through_the_exact_half_second_boundary() {
+    let mut remote_control = RemoteControlState::default();
+    let command_time = TimestampTicks::from_ticks(30_001);
+    assert!(remote_control.handle_packet(
+        command_time,
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+        &remote_packet(127),
+    ));
+
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(-1.0)),
+        now: TimestampTicks::from_ticks(35_001),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::ZERO,
+        move_grace: VescSeconds::from_seconds(0.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(-1.0)),
+        now: TimestampTicks::from_ticks(35_002),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::ZERO,
+        move_grace: VescSeconds::from_seconds(0.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(-1.0)
+    );
+}
+
+#[test]
+fn physical_remote_applies_deadband_and_tilt_inversion_but_not_move_inversion() {
+    let mut remote_control = RemoteControlState::default();
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(0.6)),
+        now: TimestampTicks::from_ticks(30_001),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.2),
+        inverted: true,
+        maximum_move_speed: Speed::from_kilometers_per_hour(8.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+
+    assert!((remote_control.input().ratio().as_ratio() + 0.5).abs() < 0.000_001);
+    assert!(
+        (remote_control
+            .move_target
+            .expect("physical move target")
+            .speed()
+            .as_kilometers_per_hour()
+            - 4.0)
+            .abs()
+            < 0.000_001
+    );
+}
+
+#[test]
+fn physical_move_uses_the_configured_strict_disengage_grace_boundary() {
+    let mut remote_control = RemoteControlState::default();
+    let disengage = TimestampTicks::from_ticks(1_000);
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(1.0)),
+        now: TimestampTicks::from_ticks(101_000),
+        disengage_epoch: disengage,
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(7.0),
+        move_grace: VescSeconds::from_seconds(10.0),
+    });
+    assert_eq!(remote_control.move_target, None);
+
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(1.0)),
+        now: TimestampTicks::from_ticks(101_001),
+        disengage_epoch: disengage,
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(7.0),
+        move_grace: VescSeconds::from_seconds(10.0),
+    });
+    assert_eq!(
+        remote_control.move_target,
+        Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(7.0)))
+    );
+}
+
+#[test]
+fn command_priority_timeout_uses_wrapping_system_ticks() {
+    let mut remote_control = RemoteControlState::default();
+    let command_time = TimestampTicks::from_ticks(u32::MAX - 1_000);
+    assert!(remote_control.handle_packet(
+        command_time,
+        TimestampTicks::from_ticks(u32::MAX.wrapping_sub(30_000)),
+        Speed::ZERO,
+        &remote_packet(127),
+    ));
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(-1.0)),
+        now: TimestampTicks::from_ticks(3_999),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::ZERO,
+        move_grace: VescSeconds::from_seconds(0.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(-1.0)),
+        now: TimestampTicks::from_ticks(4_000),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::ZERO,
+        move_grace: VescSeconds::from_seconds(0.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(-1.0)
+    );
+}
+
+#[test]
+fn physical_remote_neutral_holds_zero_speed_through_one_second_then_releases() {
+    let mut remote_control = RemoteControlState::default();
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(1.0)),
+        now: TimestampTicks::from_ticks(30_001),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(0.0)),
+        now: TimestampTicks::from_ticks(40_001),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+    assert_eq!(remote_control.move_target, Some(RemoteMoveTarget::STOPPED));
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(0.0)),
+        now: TimestampTicks::from_ticks(40_002),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+    assert_eq!(remote_control.move_target, None);
+}
+
+#[test]
+fn stale_physical_remote_clears_tilt_and_move_immediately() {
+    let mut remote_control = RemoteControlState::default();
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: Some(physical_input(1.0)),
+        now: TimestampTicks::from_ticks(30_001),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+    remote_control.refresh_physical_input(PhysicalRemoteInput {
+        raw: None,
+        now: TimestampTicks::from_ticks(30_002),
+        disengage_epoch: TimestampTicks::from_ticks(0),
+        deadband: Ratio::from_ratio_const(0.0),
+        inverted: false,
+        maximum_move_speed: Speed::from_kilometers_per_hour(5.0),
+        move_grace: VescSeconds::from_seconds(2.0),
+    });
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(0.0)
+    );
+    assert_eq!(remote_control.move_target, None);
+}
+
+#[test]
+fn ready_move_pi_uses_elapsed_time_and_clamps_to_ten_newton_metres() {
     let mut remote_control = RemoteControlState {
-        steps: 1,
-        counter: u16::MAX,
+        move_target: Some(RemoteMoveTarget(Speed::from_kilometers_per_hour(5.0))),
         ..RemoteControlState::default()
     };
-
+    let current = remote_control
+        .request_ready_current(
+            Speed::ZERO,
+            VescSeconds::from_seconds(0.1),
+            MotorTorqueConstant::REFLOAT_COMPAT,
+        )
+        .expect("active move target");
     assert!(
-        remote_control
-            .request_active_move_current(Rpm::ZERO)
-            .is_some()
+        (current.current().as_amps() - 6.5 / 0.6075).abs() < 0.0001,
+        "{current:?}"
     );
-    assert_eq!(remote_control.counter, u16::MAX);
+
+    let clamped = remote_control
+        .request_ready_current(
+            Speed::from_kilometers_per_hour(-100.0),
+            VescSeconds::from_seconds(1.0),
+            MotorTorqueConstant::REFLOAT_COMPAT,
+        )
+        .expect("active move target");
+    assert!((clamped.current().as_amps() - 10.0 / 0.6075).abs() < 0.0001);
 }
 
 #[test]
-fn rc_move_rejects_a_trailing_payload_byte_without_queueing_current() {
-    let mut remote_control = RemoteControlState::default();
-    let payloads = sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
+fn inactive_move_resets_integral_and_requests_no_current() {
+    let mut remote_control = RemoteControlState {
+        move_integral: super::RemoteMoveIntegral(
+            MotorTorqueConstant::REFLOAT_COMPAT
+                .torque_from_current(vescpkg_rs::Current::from_amps(1.0)),
+        ),
+        ..RemoteControlState::default()
+    };
+    assert_eq!(
+        remote_control.request_ready_current(
+            Speed::ZERO,
+            VescSeconds::from_seconds(0.1),
+            MotorTorqueConstant::REFLOAT_COMPAT,
+        ),
+        None
     );
-    let packet = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-        FloatOutBoyAppDataCommand::RcMove.id(),
-        1,
-        40,
-        2,
-        42,
-        0,
-    ];
-
-    assert!(!handle_packet(payloads, &mut remote_control, &packet));
-    assert_eq!(remote_control.request_active_move_current(Rpm::ZERO), None);
-}
-
-#[test]
-fn rc_move_halves_large_target_after_500_steps_like_float_out_boy_do_rc_move() {
-    let mut remote_control = RemoteControlState::default();
-    remote_control.queue_move(RemoteMove::from_float_out_boy_command(1, 60, 6, 66));
-
-    for _ in 0..500 {
-        assert!(
-            remote_control
-                .request_active_move_current(Rpm::ZERO)
-                .is_some()
-        );
-    }
-
-    // Upstream `do_rc_move(d)` halves targets above 2A when `rc_counter`
-    // reaches 500 at `third_party/float-out-boy/src/main.c:281-284`, after decrementing steps.
-    assert_eq!(remote_control.target_deciamps_for_test(), 30);
-    assert_eq!(remote_control.remaining_steps_for_test(), 100);
+    assert_eq!(
+        remote_control.move_integral,
+        super::RemoteMoveIntegral::ZERO
+    );
 }

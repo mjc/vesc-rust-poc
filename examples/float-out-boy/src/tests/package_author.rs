@@ -9,7 +9,7 @@ use crate::domain::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterTorque,
     FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRuntimeSetpoint,
@@ -219,7 +219,6 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (4, FloatOutBoyAppDataCommand::ConfigSave),
         (5, FloatOutBoyAppDataCommand::ConfigRestore),
         (6, FloatOutBoyAppDataCommand::TuneOther),
-        (7, FloatOutBoyAppDataCommand::RcMove),
         (8, FloatOutBoyAppDataCommand::Booster),
         (9, FloatOutBoyAppDataCommand::PrintInfo),
         (10, FloatOutBoyAppDataCommand::GetAllData),
@@ -227,6 +226,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (12, FloatOutBoyAppDataCommand::Lock),
         (13, FloatOutBoyAppDataCommand::HandTest),
         (14, FloatOutBoyAppDataCommand::TuneTilt),
+        (15, FloatOutBoyAppDataCommand::Remote),
         (20, FloatOutBoyAppDataCommand::LightsControl),
         (22, FloatOutBoyAppDataCommand::Flywheel),
         (24, FloatOutBoyAppDataCommand::LcmPoll),
@@ -237,6 +237,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (29, FloatOutBoyAppDataCommand::LcmGetBattery),
         (31, FloatOutBoyAppDataCommand::RealtimeData),
         (32, FloatOutBoyAppDataCommand::RealtimeDataIds),
+        (33, FloatOutBoyAppDataCommand::RealtimeDataSelected),
         (35, FloatOutBoyAppDataCommand::AlertsList),
         (36, FloatOutBoyAppDataCommand::AlertsControl),
         (41, FloatOutBoyAppDataCommand::DataRecordRequest),
@@ -329,11 +330,8 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
 
     assert_eq!(header.timestamp().as_ticks(), 123_456);
     assert_eq!(header.data_mask_compat(), 0b0000_0111);
-    assert_eq!(header.extra_flags_compat(), 0b0000_1101);
-    assert_eq!(header.state_byte_compat(), 0x23);
-    assert_eq!(header.footpad_flags_compat(), 0b1110_0011);
-    assert_eq!(header.stop_setpoint_byte_compat(), 0xB6);
-    assert_eq!(header.beep_reason_compat(), 19);
+    assert_eq!(header.extra_flags_compat(), 1);
+    assert_eq!(header.state_flags_compat(), 0x23f3_b613);
 }
 
 #[test]
@@ -341,21 +339,23 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
     assert_eq!(
         FLOAT_OUT_BOY_REALTIME_DATA_ITEMS.map(FloatOutBoyRealtimeDataItem::id),
         [
-            "motor.speed",
-            "motor.erpm",
-            "motor.current",
-            "motor.dir_current",
-            "motor.filt_current",
-            "motor.duty_cycle",
-            "motor.batt_voltage",
-            "motor.batt_current",
-            "motor.mosfet_temp",
-            "motor.motor_temp",
-            "imu.pitch",
-            "imu.balance_pitch",
-            "imu.roll",
-            "footpad.adc1",
-            "footpad.adc2",
+            "control.dt",
+            "control.freq",
+            "speed",
+            "erpm",
+            "current",
+            "dir_current",
+            "filt_current",
+            "duty_cycle",
+            "batt_voltage",
+            "batt_current",
+            "mosfet_temp",
+            "motor_temp",
+            "pitch",
+            "balance_pitch",
+            "roll",
+            "adc_left",
+            "adc_right",
             "remote.input",
         ]
     );
@@ -371,22 +371,26 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "balance_current",
             "atr.accel_diff",
             "atr.speed_boost",
-            "booster.current",
+            "atr.transition_boost",
+            "booster.torque",
         ]
     );
     assert_eq!(
         FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(FloatOutBoyRealtimeDataItem::id),
         [
-            "motor.erpm",
-            "motor.dir_current",
-            "motor.duty_cycle",
-            "motor.batt_voltage",
-            "imu.pitch",
-            "imu.balance_pitch",
+            "control.dt",
+            "control.freq",
+            "erpm",
+            "dir_current",
+            "duty_cycle",
+            "batt_voltage",
+            "pitch",
+            "balance_pitch",
             "setpoint",
             "atr.setpoint",
             "torque_tilt.setpoint",
             "balance_current",
+            "atr.transition_boost",
         ]
     );
 }
@@ -445,7 +449,7 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
         footpad,
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(1.25))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(1.25)),
         motor,
     );
 
@@ -455,10 +459,7 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
     assert_f32_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
     assert_f32_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
     assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
-    assert_f32_eq!(
-        payload.booster_current().current().current().as_amps(),
-        1.25
-    );
+    assert_f32_eq!(payload.booster_torque().torque().as_newton_meters(), 1.25);
     assert_f32_eq!(
         payload
             .motor()
@@ -552,7 +553,7 @@ fn package_author_encodes_all_data_base_response_like_float_out_boy_v1_2_1() {
         FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
         footpad,
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(4.0)),
         FloatOutBoyAllDataMotorPayload::new(
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
@@ -619,7 +620,7 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
             FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
             footpad,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(4.0)),
             FloatOutBoyAllDataMotorPayload::new(
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),

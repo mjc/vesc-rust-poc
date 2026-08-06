@@ -8,7 +8,7 @@ use crate::domain::{
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
 };
@@ -42,6 +42,84 @@ fn requested_current_applies_like_float_out_boy_motor_control() {
     assert_f32_eq!(motor.commanded_current().current().as_amps(), 6.25);
     assert!(!state.apply_requested_motor_current(bindings));
     assert_eq!(motor.current_command_count(), 1);
+}
+
+#[test]
+fn unified_remote_move_drives_the_ready_motor_path_through_typed_torque() {
+    let firmware = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::ZERO),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    let imu = firmware.imu();
+    let payloads = sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    );
+    let base = payloads.base();
+    let base = FloatOutBoyAllDataBasePayload::new(
+        base.balance_current(),
+        base.attitude(),
+        base.status(),
+        FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, FloatOutBoyFootpadState::None),
+        base.setpoints(),
+        base.booster_torque(),
+        base.motor(),
+    );
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+        base,
+        payloads.mode2(),
+        payloads.mode3(),
+        payloads.mode4(),
+    ));
+    let command_time = TimestampTicks::from_ticks(30_001);
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        command_time,
+        firmware.telemetry(),
+        imu,
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::Remote.id(),
+            127,
+        ],
+    ));
+    assert_eq!(
+        state.remote_move_target_for_test(),
+        Some(Speed::from_kilometers_per_hour(5.0))
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(30_021),
+        firmware.telemetry(),
+        imu,
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    let expected_current = 6.01 / state.motor_torque_constant.newton_meters_per_amp();
+    assert!(state.apply_requested_motor_current(firmware.motor()));
+
+    // Cutoff defaults a zero configured move limit to 5 km/h for command input.
+    // At 2 ms, the PI requests 6.01 Nm, then the production path converts it
+    // with the live firmware-derived motor torque constant.
+    assert!(
+        (firmware.commanded_current().current().as_amps() - expected_current).abs() < 0.0001,
+        "actual={:?} expected={expected_current} torque_constant={} vehicle_speed={}",
+        firmware.commanded_current(),
+        state.motor_torque_constant.newton_meters_per_amp(),
+        state
+            .all_data_payloads()
+            .base()
+            .motor()
+            .vehicle_speed()
+            .speed()
+            .as_kilometers_per_hour(),
+    );
 }
 
 #[test]
@@ -145,7 +223,9 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
                 FloatOutBoyFootpadState::None,
             ),
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+            ),
             base.motor(),
         );
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(

@@ -92,8 +92,8 @@ pub use motor::{
     AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
     AverageMotorCurrent, BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, FirmwareFault,
     FirmwareFaultId, FirmwareFaultWireCode, HandbrakeCurrent, InputCurrentLimit, MotorCurrent,
-    MotorCurrentLimit, MotorSelection, MotorSelectionError, OpenLoopCurrent, PeakMotorCurrent,
-    PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
+    MotorCurrentLimit, MotorSelection, MotorSelectionError, MotorTorque, MotorTorqueLimit,
+    OpenLoopCurrent, PeakMotorCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{

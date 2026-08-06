@@ -383,14 +383,12 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
     assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
     assert!(editor.set_torque_tilt_regen_strength(PidScale::new(0.2)));
     assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(3.0)));
-    assert!(
-        editor
-            .set_torque_tilt_on_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),)
-    );
-    assert!(
-        editor
-            .set_torque_tilt_off_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),)
-    );
+    assert!(editor.set_torque_tilt_on_speed_limit(
+        vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),
+    ));
+    assert!(editor.set_torque_tilt_off_speed_limit(
+        vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),
+    ));
     let balance = config.balance();
 
     for (current, braking, expected) in [
@@ -505,8 +503,12 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     assert!(editor.set_atr_threshold_down(AngleDegrees::ZERO));
     assert!(editor.set_atr_speed_boost(PidScale::new(0.5)));
     assert!(editor.set_atr_angle_limit(AngleDegrees::from_degrees(3.0)));
-    assert!(editor.set_atr_on_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),));
-    assert!(editor.set_atr_off_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),));
+    assert!(
+        editor.set_atr_on_speed_limit(vescpkg_rs::AngularVelocity::from_degrees_per_second(100.0),)
+    );
+    assert!(
+        editor.set_atr_off_speed_limit(vescpkg_rs::AngularVelocity::from_degrees_per_second(50.0),)
+    );
     assert!(editor.set_atr_amps_accel_ratio(PidScale::new(1.0)));
     assert!(editor.set_atr_amps_decel_ratio(PidScale::new(1.0)));
     let balance = config.balance();

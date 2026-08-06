@@ -1,6 +1,7 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::FloatOutBoyDarkRideState;
-use vescpkg_rs::prelude::{AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, PidScale};
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use vescpkg_rs::prelude::{AngularVelocity, ElectricalSpeed, ImuRoll, PidScale};
 use vescpkg_rs::{Rpm, cos, sin};
 
 /// Float Out Boy pitch rate after roll/yaw mixing and darkride sign handling.
@@ -35,10 +36,10 @@ impl PitchRate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct Currents {
-    pub(super) angle_proportional: MotorCurrent,
-    pub(super) rate_damping: MotorCurrent,
-    pub(super) integral: MotorCurrent,
+pub(super) struct Torques {
+    pub(super) angle_proportional: MotorTorque,
+    pub(super) rate_damping: MotorTorque,
+    pub(super) integral: MotorTorque,
 }
 
 #[inline]
@@ -61,7 +62,7 @@ impl LoopState {
         config: LoopConfig,
         input: LoopInput,
         elapsed: vescpkg_rs::prelude::VescSeconds,
-    ) -> (Currents, Self) {
+    ) -> (Torques, Self) {
         // C map: `pid.c:37-73` computes currents from the old scales, then smooths
         // the direction-dependent scale targets for the next tick.
         let error = input.setpoint.angle() - input.balance_pitch;
@@ -70,31 +71,39 @@ impl LoopState {
             self.pid.kp_accel_scale,
             self.pid.kp_brake_scale,
         );
-        let angle_proportional = error * config.kp.scaled_by(angle_scale);
+        let angle_proportional = MotorTorqueConstant::REFLOAT_COMPAT
+            .torque_from_motor_current(error * config.kp.scaled_by(angle_scale));
 
-        let rate_damping = input.pitch_rate().rate() * -config.kp2;
+        let rate_damping = MotorTorqueConstant::REFLOAT_COMPAT
+            .torque_from_motor_current(input.pitch_rate().rate() * -config.kp2);
         let rate_scale = selected_scale(
             rate_damping.is_positive(),
             self.pid.kp2_accel_scale,
             self.pid.kp2_brake_scale,
         );
-        let rate_damping = rate_damping.scaled_by(rate_scale);
+        let rate_damping = rate_damping.scaled_by(rate_scale.value());
 
-        let integral = self.pid.integral_current
-            + (error * config.ki).scaled_by(PidScale::new(720.0 * elapsed.as_seconds()));
+        let increment = (error * config.ki).scaled_by(PidScale::new(720.0 * elapsed.as_seconds()));
+        let integral = self
+            .pid
+            .integral_torque
+            .plus(MotorTorqueConstant::REFLOAT_COMPAT.torque_from_motor_current(increment));
         let integral = if config.ki_limit.current().is_positive() {
-            config.ki_limit.clamp(integral)
+            integral.clamped_to(
+                MotorTorqueConstant::REFLOAT_COMPAT
+                    .torque_limit_from_current_limit(config.ki_limit),
+            )
         } else {
             integral
         };
-        let currents = Currents {
+        let torques = Torques {
             angle_proportional,
             rate_damping,
             integral,
         };
 
         (
-            currents,
+            torques,
             self.with_updated_pid_state(config, input.motor_erpm, integral, elapsed),
         )
     }
@@ -105,7 +114,7 @@ impl LoopState {
         self,
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
-        integral: MotorCurrent,
+        integral: MotorTorque,
         elapsed: vescpkg_rs::prelude::VescSeconds,
     ) -> Self {
         let alpha = super::ema_alpha(1.0, elapsed);
@@ -121,7 +130,7 @@ impl LoopState {
             };
         Self {
             pid: PidState {
-                integral_current: integral,
+                integral_torque: integral,
                 kp_brake_scale: self.pid.kp_brake_scale.lerp(brake_angle_target, alpha),
                 kp2_brake_scale: self.pid.kp2_brake_scale.lerp(brake_rate_target, alpha),
                 kp_accel_scale: self.pid.kp_accel_scale.lerp(accel_angle_target, alpha),

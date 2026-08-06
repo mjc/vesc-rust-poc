@@ -40,6 +40,7 @@ mod packet;
 mod realtime;
 mod realtime_encoder;
 mod ride_state;
+mod selected_realtime;
 mod state;
 
 pub use self::all_data::{
@@ -66,12 +67,17 @@ pub use self::packet::{
 };
 pub use self::realtime::{
     FLOAT_OUT_BOY_REALTIME_DATA_ITEMS, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAtrAccelerationDiff,
+    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeAtrTransitionBoost,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFlags,
+    FloatOutBoyRealtimeControlFrequency, FloatOutBoyRealtimeControlPeriod,
     FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
+    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeLiveValues,
+    FloatOutBoyRealtimeMask1, FloatOutBoyRealtimeMask2, FloatOutBoyRealtimeMotorCurrents,
+    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimePrecision,
+    FloatOutBoyRealtimeRemoteInput, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeSelectedRequest,
     FloatOutBoyRealtimeTail, realtime_value,
 };
 pub use self::realtime_encoder::{
@@ -79,6 +85,10 @@ pub use self::realtime_encoder::{
     encode_float_out_boy_realtime_data_response_with_runtime,
 };
 pub use self::ride_state::FloatOutBoyRideState;
+pub use self::selected_realtime::{
+    FLOAT_OUT_BOY_REALTIME_SELECTED_RESPONSE_CAPACITY, FloatOutBoyRealtimeSelectedResponse,
+    encode_float_out_boy_realtime_selected_response,
+};
 pub use self::state::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyMode, FloatOutBoyRunState,

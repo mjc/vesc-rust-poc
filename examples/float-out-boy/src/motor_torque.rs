@@ -1,74 +1,9 @@
-use vescpkg_rs::prelude::Current;
+use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{FocMotorFluxLinkage, MotorPoleCount};
+pub(crate) use vescpkg_rs::prelude::{MotorTorque, MotorTorqueLimit};
 
 const REFLOAT_COMPAT_NEWTON_METERS_PER_AMP: f32 = 1.5 * 15.0 * 0.027;
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub(crate) struct MotorTorque(f32);
-
-impl Default for MotorTorque {
-    fn default() -> Self {
-        Self::ZERO
-    }
-}
-
-impl MotorTorque {
-    pub(crate) const ZERO: Self = Self(0.0);
-
-    pub(crate) const fn from_newton_meters(newton_meters: f32) -> Self {
-        Self(newton_meters)
-    }
-
-    pub(crate) const fn as_newton_meters(self) -> f32 {
-        self.0
-    }
-
-    pub(crate) const fn abs(self) -> Self {
-        Self(self.0.abs())
-    }
-
-    pub(crate) const fn is_negative(self) -> bool {
-        self.0 < 0.0
-    }
-
-    pub(crate) const fn signum(self) -> f32 {
-        if self.is_negative() { -1.0 } else { 1.0 }
-    }
-}
-
-impl core::ops::Add for MotorTorque {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl core::ops::Sub for MotorTorque {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl core::ops::Mul<f32> for MotorTorque {
-    type Output = Self;
-
-    fn mul(self, rhs: f32) -> Self::Output {
-        Self(self.0 * rhs)
-    }
-}
-
-impl core::ops::Div<f32> for MotorTorque {
-    type Output = Self;
-
-    fn div(self, rhs: f32) -> Self::Output {
-        Self(self.0 / rhs)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -103,9 +38,23 @@ impl MotorTorqueConstant {
         MotorTorque::from_newton_meters(current.as_amps() * self.newton_meters_per_amp())
     }
 
-    #[cfg(test)]
     pub(crate) fn current_from_torque(self, torque: MotorTorque) -> Current {
         Current::from_amps(torque.as_newton_meters() / self.newton_meters_per_amp())
+    }
+
+    pub(crate) fn torque_from_motor_current(self, current: MotorCurrent) -> MotorTorque {
+        self.torque_from_current(current.current())
+    }
+
+    pub(crate) fn motor_current_from_torque(self, torque: MotorTorque) -> MotorCurrent {
+        MotorCurrent::new(self.current_from_torque(torque))
+    }
+
+    pub(crate) fn torque_limit_from_current_limit(
+        self,
+        limit: MotorCurrentLimit,
+    ) -> MotorTorqueLimit {
+        MotorTorqueLimit::new(self.torque_from_current(limit.current()))
     }
 }
 
@@ -173,6 +122,41 @@ mod tests {
         assert_f32_eq!(
             (torque + MotorTorque::from_newton_meters(3.0)).as_newton_meters(),
             1.0
+        );
+        assert!(MotorTorque::from_newton_meters(1.0).is_positive());
+        assert_eq!(-torque, MotorTorque::from_newton_meters(2.0));
+    }
+
+    #[test]
+    fn torque_limits_are_magnitudes_and_preserve_requested_sign() {
+        let limit = MotorTorqueLimit::new(MotorTorque::from_newton_meters(-2.0));
+
+        assert_eq!(
+            MotorTorque::from_newton_meters(3.0).clamped_to(limit),
+            MotorTorque::from_newton_meters(2.0)
+        );
+        assert_eq!(
+            MotorTorque::from_newton_meters(-3.0).clamped_to(limit),
+            MotorTorque::from_newton_meters(-2.0)
+        );
+        assert_eq!(
+            MotorTorque::from_newton_meters(1.0).clamped_to(limit),
+            MotorTorque::from_newton_meters(1.0)
+        );
+    }
+
+    #[test]
+    fn typed_motor_current_and_limit_conversions_round_trip() {
+        let constant = MotorTorqueConstant::REFLOAT_COMPAT;
+        let current = MotorCurrent::new(Current::from_amps(-12.0));
+        let torque = constant.torque_from_motor_current(current);
+        let limit = constant
+            .torque_limit_from_current_limit(MotorCurrentLimit::new(Current::from_amps(-10.0)));
+
+        assert_eq!(constant.motor_current_from_torque(torque), current);
+        assert_f32_eq!(
+            torque.clamped_to(limit).as_newton_meters(),
+            -10.0 * REFLOAT_COMPAT_NEWTON_METERS_PER_AMP
         );
     }
 }

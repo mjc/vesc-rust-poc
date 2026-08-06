@@ -36,8 +36,6 @@ vesc_protocol::wire_enum! {
     ConfigRestore = 5,
     /// Runtime startup/config change.
     TuneOther = 6,
-    /// Idle motor movement.
-    RcMove = 7,
     /// Booster settings.
     Booster = 8,
     /// Print verbose info.
@@ -52,6 +50,8 @@ vesc_protocol::wire_enum! {
     HandTest = 13,
     /// Tilt tuning command.
     TuneTilt = 14,
+    /// Unified remote input and idle movement command.
+    Remote = 15,
     /// Lights-control command.
     LightsControl = 20,
     /// Flywheel toggle command.
@@ -68,10 +68,12 @@ vesc_protocol::wire_enum! {
     ChargingState = 28,
     /// LCM battery request.
     LcmGetBattery = 29,
-    /// Realtime data path.
+    /// Internal realtime data compatibility path.
     RealtimeData = 31,
-    /// Realtime data ID list.
+    /// Internal realtime data compatibility ID list.
     RealtimeDataIds = 32,
+    /// Public mask-selected realtime data path.
+    RealtimeDataSelected = 33,
     /// Alert list request.
     AlertsList = 35,
     /// Alert control command.

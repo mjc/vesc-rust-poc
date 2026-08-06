@@ -3,13 +3,15 @@ use super::super::protocol::{
     encode_float_out_boy_get_realtime_data_response_with_remote,
     encode_float_out_boy_info_response, encode_float_out_boy_realtime_data_ids_response,
     encode_float_out_boy_realtime_data_response_with_runtime,
+    encode_float_out_boy_realtime_selected_response,
 };
 use super::FloatOutBoyPackageState;
 use super::float_out_boy_command_payload;
 use crate::domain::{
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
     FloatOutBoyAppDataCommand as Command, FloatOutBoyFatalErrorState as FatalError,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeTail,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeMotorTemperatures,
+    FloatOutBoyRealtimeSelectedRequest, FloatOutBoyRealtimeTail,
 };
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{BatteryVoltage, FirmwareFault, TimestampTicks};
@@ -106,9 +108,61 @@ impl FloatOutBoyPackageState {
             &payloads,
             header,
             tail,
-            self.remote_control.input(),
-            self.ride_modifiers.atr_accel_diff(),
-            self.ride_modifiers.atr_speed_boost(),
+            self.realtime_live_values(),
+        );
+        reply(response.as_bytes())
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    pub(super) fn reply_to_realtime_selected_packet(
+        &self,
+        telemetry: &impl MotorTelemetry,
+        now: &mut impl FnMut() -> TimestampTicks,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+        bytes: &[u8],
+    ) -> bool {
+        let Some(payload) = float_out_boy_command_payload(bytes, Command::RealtimeDataSelected)
+        else {
+            return false;
+        };
+        let Some(request) = FloatOutBoyRealtimeSelectedRequest::parse(payload) else {
+            return false;
+        };
+        let gnss = if request.mask2().selects_gnss() {
+            let Ok(snapshot) = vescpkg_rs::Gnss.snapshot() else {
+                return false;
+            };
+            Some(snapshot)
+        } else {
+            None
+        };
+        let payloads = Self::runtime_all_data_payloads(
+            self.all_data_payloads
+                .with_base_battery_voltage(BatteryVoltage::new(
+                    telemetry.input_voltage().voltage(),
+                )),
+            telemetry,
+            true,
+        );
+        let base = payloads.base();
+        let header = FloatOutBoyRealtimeDataHeader::new(
+            now(),
+            base.status().ride_state(),
+            base.footpad().state(),
+            base.status().beep_reason(),
+        )
+        .with_fatal_error(if self.alert_tracker.fatal_error() {
+            FatalError::Present
+        } else {
+            FatalError::None
+        })
+        .with_data_recorder(self.data_recorder.flags());
+        let response = encode_float_out_boy_realtime_selected_response(
+            request,
+            &payloads,
+            header,
+            self.realtime_live_values(),
+            gnss,
         );
         reply(response.as_bytes())
     }

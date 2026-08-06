@@ -30,6 +30,7 @@ fn every_refloat_command_id_round_trips_through_the_typed_model() {
         (FloatOutBoyAppDataCommand::LcmGetBattery, 29),
         (FloatOutBoyAppDataCommand::RealtimeData, 31),
         (FloatOutBoyAppDataCommand::RealtimeDataIds, 32),
+        (FloatOutBoyAppDataCommand::RealtimeDataSelected, 33),
         (FloatOutBoyAppDataCommand::AlertsList, 35),
         (FloatOutBoyAppDataCommand::AlertsControl, 36),
         (FloatOutBoyAppDataCommand::DataRecordRequest, 41),

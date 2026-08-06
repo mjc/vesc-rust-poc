@@ -233,7 +233,8 @@ pub use capabilities::{
 };
 pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
-    FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage, RingCursor,
+    FirmwareDataRecorderDescriptorError, FirmwareDataRecorderVersion, FixedRecordRing,
+    FixedRecordStorage, RingCursor,
 };
 pub use vesc_protocol::app_data as protocol_app_data;
 pub use vesc_protocol::buffer as protocol_buffer;
