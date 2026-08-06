@@ -1,4 +1,8 @@
 //! Safe CAN transport and status snapshots.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::types::{
     AdcVoltage, AmpHoursCharged, AmpHoursDischarged, BrakeCurrent, BrakeCurrentRelative,
@@ -167,41 +171,49 @@ pub struct CanStatus6 {
 
 impl CanStatus6 {
     /// Return the firmware timestamp associated with this record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
 
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return ADC channel 1.
+    #[must_use]
     pub const fn adc1(self) -> AdcVoltage {
         self.adc_1
     }
 
     /// Return ADC channel 2.
+    #[must_use]
     pub const fn adc2(self) -> AdcVoltage {
         self.adc_2
     }
 
     /// Return ADC channel 3.
+    #[must_use]
     pub const fn adc3(self) -> AdcVoltage {
         self.adc_3
     }
 
     /// Return the decoded PPM input ratio.
+    #[must_use]
     pub const fn ppm(self) -> PpmInput {
         self.ppm
     }
@@ -209,31 +221,37 @@ impl CanStatus6 {
 
 impl CanStatus5 {
     /// Return the firmware timestamp associated with this record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
 
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return the remote controller input voltage.
+    #[must_use]
     pub const fn input_voltage(self) -> InputVoltage {
         self.input_voltage
     }
 
     /// Return the remote tachometer position.
+    #[must_use]
     pub const fn tachometer(self) -> TachometerSteps {
         self.tachometer
     }
@@ -241,41 +259,49 @@ impl CanStatus5 {
 
 impl CanStatus4 {
     /// Return the firmware timestamp associated with this record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
 
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return the remote FET temperature.
+    #[must_use]
     pub const fn fet_temperature(self) -> MosfetTemperature {
         self.fet_temperature
     }
 
     /// Return the remote motor temperature.
+    #[must_use]
     pub const fn motor_temperature(self) -> MotorTemperature {
         self.motor_temperature
     }
 
     /// Return the remote input current.
+    #[must_use]
     pub const fn input_current(self) -> InputCurrent {
         self.input_current
     }
 
     /// Return the remote PID position.
+    #[must_use]
     pub const fn position(self) -> PidPosition {
         self.position
     }
@@ -283,31 +309,37 @@ impl CanStatus4 {
 
 impl CanStatus3 {
     /// Return the firmware timestamp associated with this record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
 
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return discharged watt-hours reported by the remote controller.
+    #[must_use]
     pub const fn watt_hours_discharged(self) -> WattHoursDischarged {
         self.watt_hours_discharged
     }
 
     /// Return charged watt-hours reported by the remote controller.
+    #[must_use]
     pub const fn watt_hours_charged(self) -> WattHoursCharged {
         self.watt_hours_charged
     }
@@ -315,31 +347,37 @@ impl CanStatus3 {
 
 impl CanStatus2 {
     /// Return the firmware timestamp associated with this record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
 
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return discharged amp-hours reported by the remote controller.
+    #[must_use]
     pub const fn amp_hours_discharged(self) -> AmpHoursDischarged {
         self.amp_hours_discharged
     }
 
     /// Return charged amp-hours reported by the remote controller.
+    #[must_use]
     pub const fn amp_hours_charged(self) -> AmpHoursCharged {
         self.amp_hours_charged
     }
@@ -347,36 +385,43 @@ impl CanStatus2 {
 
 impl CanStatus {
     /// Return the controller whose status was queried.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return the firmware timestamp associated with the record.
+    #[must_use]
     pub const fn received_at(self) -> TimestampTicks {
         self.received_at
     }
 
     /// Return the remote motor's electrical speed.
+    #[must_use]
     pub const fn electrical_speed(self) -> ElectricalSpeed {
         self.electrical_speed
     }
 
     /// Return the remote motor current.
+    #[must_use]
     pub const fn motor_current(self) -> MotorCurrent {
         self.motor_current
     }
 
     /// Return the remote motor duty cycle.
+    #[must_use]
     pub const fn duty_cycle(self) -> DutyCycle {
         self.duty_cycle
     }
 
     /// Return the wrapping age of this snapshot at a current firmware tick.
+    #[must_use]
     pub const fn age_at(self, now: TimestampTicks) -> SystemTicks {
         now.wrapping_duration_since(self.received_at)
     }
 
     /// Return whether this snapshot is older than the supplied tick budget.
+    #[must_use]
     pub fn is_stale(self, now: TimestampTicks, max_age: SystemTicks) -> bool {
         self.age_at(now) > max_age
     }
@@ -435,36 +480,43 @@ impl CanStatusStore {
     }
 
     /// Return the controller represented by this store.
+    #[must_use]
     pub const fn controller(self) -> CanControllerId {
         self.controller
     }
 
     /// Return the copied status message 1 snapshot.
+    #[must_use]
     pub const fn status(self) -> Option<CanStatus> {
         self.status
     }
 
     /// Return the copied status message 2 snapshot.
+    #[must_use]
     pub const fn status2(self) -> Option<CanStatus2> {
         self.status2
     }
 
     /// Return the copied status message 3 snapshot.
+    #[must_use]
     pub const fn status3(self) -> Option<CanStatus3> {
         self.status3
     }
 
     /// Return the copied status message 4 snapshot.
+    #[must_use]
     pub const fn status4(self) -> Option<CanStatus4> {
         self.status4
     }
 
     /// Return the copied status message 5 snapshot.
+    #[must_use]
     pub const fn status5(self) -> Option<CanStatus5> {
         self.status5
     }
 
     /// Return the copied status message 6 snapshot.
+    #[must_use]
     pub const fn status6(self) -> Option<CanStatus6> {
         self.status6
     }
@@ -729,6 +781,7 @@ impl CanBus {
     }
 
     /// Copy the primary status record for one remote controller.
+    #[must_use]
     pub fn status(&self, controller: CanControllerId) -> Option<CanStatus> {
         let raw = unsafe { crate::ffi::can_status_msg_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus {
@@ -741,6 +794,7 @@ impl CanBus {
     }
 
     /// Copy CAN status message 2 for one remote controller.
+    #[must_use]
     pub fn status2(&self, controller: CanControllerId) -> Option<CanStatus2> {
         let raw = unsafe { crate::ffi::can_status_msg_2_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus2 {
@@ -752,6 +806,7 @@ impl CanBus {
     }
 
     /// Copy CAN status message 3 for one remote controller.
+    #[must_use]
     pub fn status3(&self, controller: CanControllerId) -> Option<CanStatus3> {
         let raw = unsafe { crate::ffi::can_status_msg_3_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus3 {
@@ -767,6 +822,7 @@ impl CanBus {
     }
 
     /// Copy CAN status message 4 for one remote controller.
+    #[must_use]
     pub fn status4(&self, controller: CanControllerId) -> Option<CanStatus4> {
         let raw = unsafe { crate::ffi::can_status_msg_4_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus4 {
@@ -784,6 +840,7 @@ impl CanBus {
     }
 
     /// Copy CAN status message 5 for one remote controller.
+    #[must_use]
     pub fn status5(&self, controller: CanControllerId) -> Option<CanStatus5> {
         let raw = unsafe { crate::ffi::can_status_msg_5_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus5 {
@@ -797,6 +854,7 @@ impl CanBus {
     }
 
     /// Copy CAN status message 6 for one remote controller.
+    #[must_use]
     pub fn status6(&self, controller: CanControllerId) -> Option<CanStatus6> {
         let raw = unsafe { crate::ffi::can_status_msg_6_id(i32::from(controller.as_u8())) }?;
         Some(CanStatus6 {
@@ -812,6 +870,7 @@ impl CanBus {
 
 impl CanRemoteMotor<'_> {
     /// Return the scoped controller ID.
+    #[must_use]
     pub const fn controller(&self) -> CanControllerId {
         self.controller
     }
@@ -876,31 +935,37 @@ impl CanRemoteMotor<'_> {
     }
 
     /// Copy the primary remote status snapshot.
+    #[must_use]
     pub fn status(&self) -> Option<CanStatus> {
         self.bus.status(self.controller)
     }
 
     /// Copy status message 2.
+    #[must_use]
     pub fn status2(&self) -> Option<CanStatus2> {
         self.bus.status2(self.controller)
     }
 
     /// Copy status message 3.
+    #[must_use]
     pub fn status3(&self) -> Option<CanStatus3> {
         self.bus.status3(self.controller)
     }
 
     /// Copy status message 4.
+    #[must_use]
     pub fn status4(&self) -> Option<CanStatus4> {
         self.bus.status4(self.controller)
     }
 
     /// Copy status message 5.
+    #[must_use]
     pub fn status5(&self) -> Option<CanStatus5> {
         self.bus.status5(self.controller)
     }
 
     /// Copy status message 6.
+    #[must_use]
     pub fn status6(&self) -> Option<CanStatus6> {
         self.bus.status6(self.controller)
     }

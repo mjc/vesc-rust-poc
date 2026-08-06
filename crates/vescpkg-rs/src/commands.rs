@@ -1,4 +1,8 @@
 //! Owned command-packet reply callbacks.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -18,11 +22,20 @@ pub(crate) fn disable_callback_dispatch() {
 pub enum CommandError {
     /// The command processor slot is not available.
     Unavailable,
+    /// The command packet has no command byte.
+    EmptyPacket,
     /// The command packet exceeds the firmware payload limit.
     PacketTooLong,
     /// Another command reply callback already owns the firmware slot.
     Busy,
 }
+
+impl_error!(CommandError {
+    Unavailable => "command processor is unavailable",
+    EmptyPacket => "command packet is empty",
+    PacketTooLong => "command packet exceeds the firmware payload limit",
+    Busy => "command reply callback is already owned",
+});
 
 /// Safe callback behavior for one command reply.
 pub trait CommandReplyHandler {
@@ -49,6 +62,9 @@ impl Commands {
         &self,
         packet: &mut [u8],
     ) -> Result<CommandReplyLease<H>, CommandError> {
+        if packet.is_empty() {
+            return Err(CommandError::EmptyPacket);
+        }
         if packet.len() > MAX_COMMAND_PACKET {
             return Err(CommandError::PacketTooLong);
         }
@@ -58,13 +74,9 @@ impl Commands {
         {
             return Err(CommandError::Busy);
         }
-        let registered = unsafe {
-            crate::ffi::commands_process_packet(
-                packet.as_mut_ptr(),
-                packet.len() as u32,
-                reply::<H>,
-            )
-        };
+        let length = u32::try_from(packet.len()).map_err(|_| CommandError::PacketTooLong)?;
+        let registered =
+            unsafe { crate::ffi::commands_process_packet(packet.as_mut_ptr(), length, reply::<H>) };
         if !registered {
             COMMAND_REPLY_OWNED.store(false, Ordering::Release);
             return Err(CommandError::Unavailable);
@@ -100,6 +112,7 @@ unsafe extern "C" fn reply<H: CommandReplyHandler>(data: *mut u8, len: u32) {
 
 impl crate::Firmware {
     /// Return the optional command-processing capability handle.
+    #[must_use]
     pub fn commands(&self) -> Commands {
         Commands::new()
     }
@@ -135,6 +148,7 @@ mod tests {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional command-processing capability handle.
+    #[must_use]
     pub fn commands(&self) -> Commands {
         Commands::new()
     }

@@ -1,7 +1,7 @@
 //! Target-side SDK for Rust VESC packages.
 //!
 //! Link this crate into native VESC package code. It wraps `vescpkg-rs-sys` with
-//! lifecycle, LispBM extension, app-data, GPIO, and typed firmware helpers.
+//! lifecycle, `LispBM` extension, app-data, GPIO, and typed firmware helpers.
 //!
 //! Device builds stay `no_std`; package crates must opt into the `alloc`
 //! feature before installing the VESC-backed global allocator.
@@ -11,24 +11,22 @@
 #![forbid(unused_extern_crates)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::missing_safety_doc)]
-// The SDK's public wrappers intentionally mirror the pinned firmware ABI. Keep
-// the pedantic gate visible while staging these broad API/documentation lints
-// for a later, targeted cleanup instead of weakening the normal warning gate.
-#![allow(
-    clippy::borrow_as_ptr,
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::doc_markdown,
-    clippy::float_cmp,
-    clippy::inline_always,
-    clippy::missing_errors_doc,
-    clippy::must_use_candidate,
-    clippy::ptr_cast_constness,
-    clippy::return_self_not_must_use,
-    clippy::semicolon_if_nothing_returned,
-    clippy::too_many_lines,
-    reason = "the ABI-shaped SDK surface is kept stable while pedantic cleanup is staged"
+#![cfg_attr(
+    test,
+    allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::float_cmp,
+        reason = "characterization tests intentionally compare exact firmware values and cast fixed-size fixtures"
+    )
+)]
+#![cfg_attr(
+    all(not(test), not(feature = "test-support"), not(target_arch = "arm")),
+    allow(
+        dead_code,
+        clippy::unused_self,
+        reason = "host builds type-check the firmware SDK without executing its ARM-only lifecycle"
+    )
 )]
 
 #[cfg(target_arch = "arm")]
@@ -65,7 +63,25 @@ macro_rules! call_vesc_ffi {
     }};
 }
 
+macro_rules! impl_error {
+    ($error:ident { $($variant:ident => $message:literal),+ $(,)? }) => {
+        impl core::fmt::Display for $error {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(match self {
+                    $(Self::$variant => $message),+
+                })
+            }
+        }
+
+        impl core::error::Error for $error {}
+    };
+}
+
 #[cfg(all(feature = "test-support", not(test)))]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "firmware tick durations are represented as f32 seconds"
+)]
 fn tick_count_as_seconds(ticks: u32, ticks_per_second: f32) -> f32 {
     ticks as f32 / ticks_per_second
 }
@@ -84,6 +100,7 @@ mod eeprom;
 mod encoder;
 mod extension;
 mod firmware;
+mod firmware_str;
 mod gnss;
 mod lifecycle_core;
 mod logging;
@@ -105,6 +122,7 @@ mod terminal;
 mod test_ffi;
 mod uart;
 
+pub use firmware_str::FirmwareStr;
 pub use uart::UartDuplexMode;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -162,7 +180,7 @@ pub(crate) mod ffi {
         commands_process_packet, commands_unregister_reply_func, encoder_set_custom_callbacks, f_b,
         f_cons, f_float, f_i, f_i32, f_i64, f_lbm_array, f_sym, f_u32, f_u64, foc_beep,
         foc_get_audio_sample_table, foc_get_id, foc_get_iq, foc_get_vd, foc_get_vq,
-        foc_play_audio_samples, foc_play_tone, foc_set_audio_sample_table,
+        foc_play_audio_samples, foc_play_tone, foc_set_audio_sample_table, foc_set_fw_override,
         foc_set_openloop_current, foc_set_openloop_duty, foc_set_openloop_duty_phase,
         foc_set_openloop_phase, foc_stop_audio, foc_stop_audio_available, get_cfg_float,
         get_cfg_int, gnss_snapshot, imu_derotate, imu_get_accel, imu_get_accel_derotated,
@@ -271,7 +289,7 @@ pub use imu::{
     ImuReadCallbackLease, ImuReadHandler, register_imu_read_callback,
 };
 pub use init::{PackageStart, PackageStartError};
-pub use motor::{MotorOutput, MotorReleaseOutcome, MotorTelemetry};
+pub use motor::{MotorCommandError, MotorOutput, MotorReleaseOutcome, MotorTelemetry};
 pub use nvm::{Nvm, NvmCapacity, NvmError, NvmOffset};
 #[cfg(feature = "alloc")]
 pub use packet::OwnedPacketRegistration;
@@ -287,7 +305,7 @@ pub use thread::{
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
-pub use uart::{Uart, UartError, UartLease};
+pub use uart::{Uart, UartError, UartSession};
 
 /// CAN transport and status snapshot helpers for package code.
 mod can_bus;
@@ -345,7 +363,7 @@ pub mod prelude {
         FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareCapabilities,
         FirmwareClock, FirmwareEffects, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting,
         FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
-        FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
+        FirmwareStr, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
         FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
         ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
         LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError, LispList,
@@ -357,7 +375,7 @@ pub mod prelude {
         StatefulLbmExtension, StatelessFirmwareThread, StatelessThreadContext, Terminal,
         TerminalError, TerminalHandler, TerminalRegistration, ThreadContext, ThreadError,
         ThreadName, ThreadSpec, ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimeoutSnapshot,
-        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartLease,
+        TimerInstant, TypedPwmCallbackLease, Uart, UartError, UartSession,
     };
 }
 
@@ -380,6 +398,7 @@ macro_rules! firmware_section_static {
 
 #[cfg(test)]
 mod tests {
+    use crate::FirmwareStr;
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
@@ -393,6 +412,19 @@ mod tests {
         QVoltage, RemoteAge, SystemDuration, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
         TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
+
+    #[test]
+    fn firmware_str_hides_its_terminator() {
+        let value = FirmwareStr::from_str_with_nul("encoder\0").unwrap();
+
+        assert_eq!(value.as_str(), "encoder");
+    }
+
+    #[test]
+    fn firmware_str_rejects_missing_or_interior_terminators() {
+        assert!(FirmwareStr::from_str_with_nul("encoder").is_none());
+        assert!(FirmwareStr::from_str_with_nul("bad\0encoder\0").is_none());
+    }
     use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,

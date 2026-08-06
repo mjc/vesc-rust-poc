@@ -2,12 +2,12 @@
 //! Integration coverage for the exclusive UART capability.
 
 use vescpkg_rs::{
-    BaudRate, PackageRuntimeState, PackageStateStore, UartDuplexMode, UartLease,
+    BaudRate, PackageRuntimeState, PackageStateStore, UartDuplexMode, UartSession,
     test_support::FirmwareTest,
 };
 
 struct PackageState {
-    _lease: Option<UartLease>,
+    _session: Option<UartSession>,
 }
 
 static PACKAGE_STATE: PackageStateStore<PackageState> = PackageStateStore::new();
@@ -25,16 +25,16 @@ fn uart_duplex_mode_has_explicit_abi_mapping() {
 }
 
 #[test]
-fn uart_lease_forwards_checked_io_and_releases_ownership() {
+fn uart_takeover_forwards_checked_io_and_releases_sdk_ownership() {
     let firmware = FirmwareTest::new();
     let uart = firmware.uart();
     let baud = BaudRate::try_new(115_200).unwrap();
-    let lease = uart.open(baud, UartDuplexMode::FullDuplex).unwrap();
-    assert_eq!(lease.write(b"abc").unwrap(), 3);
-    assert_eq!(lease.read(), Ok(Some(b'A')));
-    assert!(uart.open(baud, UartDuplexMode::HalfDuplex).is_err());
-    drop(lease);
-    assert!(uart.open(baud, UartDuplexMode::HalfDuplex).is_ok());
+    let session = uart.take_over(baud, UartDuplexMode::FullDuplex).unwrap();
+    assert_eq!(session.write(b"abc").unwrap(), 3);
+    assert_eq!(session.read(), Ok(Some(b'A')));
+    assert!(uart.take_over(baud, UartDuplexMode::HalfDuplex).is_err());
+    drop(session);
+    assert!(uart.take_over(baud, UartDuplexMode::HalfDuplex).is_ok());
 }
 
 #[test]
@@ -44,24 +44,24 @@ fn uart_reports_absent_optional_slots() {
     let baud = BaudRate::try_new(115_200).unwrap();
 
     assert!(matches!(
-        firmware.uart().open(baud, UartDuplexMode::FullDuplex),
+        firmware.uart().take_over(baud, UartDuplexMode::FullDuplex),
         Err(vescpkg_rs::UartError::Unavailable)
     ));
 }
 
 #[test]
-fn package_stop_releases_uart_state_before_next_open() {
+fn package_stop_releases_uart_state_before_next_takeover() {
     let firmware = FirmwareTest::new();
     let baud = BaudRate::try_new(115_200).unwrap();
-    let lease = firmware
+    let session = firmware
         .uart()
-        .open(baud, UartDuplexMode::FullDuplex)
-        .expect("UART lease");
+        .take_over(baud, UartDuplexMode::FullDuplex)
+        .expect("UART session");
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
     start
         .install_runtime_state(PackageState {
-            _lease: Some(lease),
+            _session: Some(session),
         })
         .expect("package state");
     assert!(start.finish_start(true));
@@ -69,6 +69,6 @@ fn package_stop_releases_uart_state_before_next_open() {
 
     firmware
         .uart()
-        .open(baud, UartDuplexMode::HalfDuplex)
-        .expect("stop released UART lease");
+        .take_over(baud, UartDuplexMode::HalfDuplex)
+        .expect("stop released UART session");
 }

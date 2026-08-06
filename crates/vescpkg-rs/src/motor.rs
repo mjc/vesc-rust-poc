@@ -1,4 +1,8 @@
 //! Motor telemetry helpers built on firmware motor-control table slots.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 #[cfg(not(test))]
 use core::ffi::CStr;
@@ -10,11 +14,11 @@ use crate::types::{
     CurrentOffDelay, CurrentRelative, DCurrent, DVoltage, DirectionalMotorCurrent, DutyCycle,
     DutyCycleLimit, ElectricalSpeed, EnergyCounterReset, FirmwareFault, FirmwareFaultWireCode,
     HandbrakeCurrent, HandbrakeRelative, InputCurrent, InputVoltage, MosfetTemperature,
-    MotorCurrent, MotorCurrentLimit, MotorSelection, MotorStatisticDuration, MotorTemperature,
-    PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower, PeakVehicleSpeed,
-    PidPosition, PidPositionOffsetPersistence, QCurrent, QVoltage, SignedTripDistance,
-    TachometerReset, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent, TripDistance,
-    VehicleSpeed, WattHoursCharged, WattHoursDischarged,
+    MotorCurrent, MotorCurrentLimit, MotorSelection, MotorSelectionError, MotorStatisticDuration,
+    MotorTemperature, PeakMosfetTemperature, PeakMotorCurrent, PeakMotorTemperature, PeakPower,
+    PeakVehicleSpeed, PidPosition, PidPositionOffsetPersistence, QCurrent, QVoltage,
+    SignedTripDistance, TachometerReset, TachometerSteps, TemperatureLimitStart, TotalMotorCurrent,
+    TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
 use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
@@ -28,6 +32,26 @@ pub enum MotorReleaseOutcome {
     Released,
     /// The timeout elapsed before the motor output was released.
     TimedOut,
+}
+
+/// Failure returned before an invalid motor command reaches firmware.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MotorCommandError {
+    /// A floating-point command value is NaN or infinite.
+    NonFinite,
+}
+
+impl_error!(MotorCommandError {
+    NonFinite => "motor command must be finite",
+});
+
+#[cfg_attr(test, allow(dead_code))]
+fn ensure_finite(value: f32) -> Result<(), MotorCommandError> {
+    value
+        .is_finite()
+        .then_some(())
+        .ok_or(MotorCommandError::NonFinite)
 }
 
 impl MotorReleaseOutcome {
@@ -218,225 +242,6 @@ pub trait MotorTelemetryBindings {
     fn sampling_frequency(&self) -> Frequency;
 }
 
-#[cfg(not(test))]
-impl<B: MotorTelemetryBindings + ?Sized> MotorTelemetryBindings for &B {
-    fn electrical_speed(&self) -> ElectricalSpeed {
-        (**self).electrical_speed()
-    }
-
-    fn vehicle_speed(&self) -> VehicleSpeed {
-        (**self).vehicle_speed()
-    }
-
-    fn motor_current(&self) -> TotalMotorCurrent {
-        (**self).motor_current()
-    }
-
-    fn motor_current_unfiltered(&self) -> TotalMotorCurrent {
-        (**self).motor_current_unfiltered()
-    }
-
-    fn directional_motor_current(&self) -> DirectionalMotorCurrent {
-        (**self).directional_motor_current()
-    }
-
-    fn directional_motor_current_unfiltered(&self) -> DirectionalMotorCurrent {
-        (**self).directional_motor_current_unfiltered()
-    }
-
-    fn drive_current_limit(&self) -> MotorCurrentLimit {
-        (**self).drive_current_limit()
-    }
-
-    fn brake_current_limit(&self) -> MotorCurrentLimit {
-        (**self).brake_current_limit()
-    }
-
-    fn mosfet_temperature_limit_start(&self) -> TemperatureLimitStart {
-        (**self).mosfet_temperature_limit_start()
-    }
-
-    fn motor_temperature_limit_start(&self) -> TemperatureLimitStart {
-        (**self).motor_temperature_limit_start()
-    }
-
-    fn duty_cycle_limit(&self) -> DutyCycleLimit {
-        (**self).duty_cycle_limit()
-    }
-
-    fn battery_cell_count(&self) -> Option<BatteryCellCount> {
-        (**self).battery_cell_count()
-    }
-
-    fn battery_current(&self) -> InputCurrent {
-        (**self).battery_current()
-    }
-
-    fn battery_current_unfiltered(&self) -> InputCurrent {
-        (**self).battery_current_unfiltered()
-    }
-
-    fn average_power(&self) -> AveragePower {
-        (**self).average_power()
-    }
-
-    fn peak_power(&self) -> PeakPower {
-        (**self).peak_power()
-    }
-
-    fn average_speed(&self) -> AverageVehicleSpeed {
-        (**self).average_speed()
-    }
-
-    fn peak_speed(&self) -> PeakVehicleSpeed {
-        (**self).peak_speed()
-    }
-
-    fn average_motor_current(&self) -> AverageMotorCurrent {
-        (**self).average_motor_current()
-    }
-
-    fn peak_motor_current(&self) -> PeakMotorCurrent {
-        (**self).peak_motor_current()
-    }
-
-    fn average_mosfet_temperature(&self) -> AverageMosfetTemperature {
-        (**self).average_mosfet_temperature()
-    }
-
-    fn peak_mosfet_temperature(&self) -> PeakMosfetTemperature {
-        (**self).peak_mosfet_temperature()
-    }
-
-    fn average_motor_temperature(&self) -> AverageMotorTemperature {
-        (**self).average_motor_temperature()
-    }
-
-    fn peak_motor_temperature(&self) -> PeakMotorTemperature {
-        (**self).peak_motor_temperature()
-    }
-
-    fn statistics_count_time(&self) -> MotorStatisticDuration {
-        (**self).statistics_count_time()
-    }
-
-    fn duty_cycle(&self) -> DutyCycle {
-        (**self).duty_cycle()
-    }
-
-    fn d_axis_current(&self) -> Option<DCurrent> {
-        (**self).d_axis_current()
-    }
-
-    fn q_axis_current(&self) -> Option<QCurrent> {
-        (**self).q_axis_current()
-    }
-
-    fn d_axis_voltage(&self) -> Option<DVoltage> {
-        (**self).d_axis_voltage()
-    }
-
-    fn q_axis_voltage(&self) -> Option<QVoltage> {
-        (**self).q_axis_voltage()
-    }
-
-    fn trip_distance(&self) -> TripDistance {
-        (**self).trip_distance()
-    }
-
-    fn signed_trip_distance(&self) -> SignedTripDistance {
-        (**self).signed_trip_distance()
-    }
-
-    fn pid_position_setpoint(&self) -> PidPosition {
-        (**self).pid_position_setpoint()
-    }
-
-    fn pid_position(&self) -> PidPosition {
-        (**self).pid_position()
-    }
-
-    fn mosfet_temperature(&self) -> MosfetTemperature {
-        (**self).mosfet_temperature()
-    }
-
-    fn motor_temperature(&self) -> MotorTemperature {
-        (**self).motor_temperature()
-    }
-
-    fn odometer(&self) -> OdometerMeters {
-        (**self).odometer()
-    }
-
-    fn amp_hours_discharged(&self) -> AmpHoursDischarged {
-        (**self).amp_hours_discharged()
-    }
-
-    fn amp_hours_discharged_with(&self, reset: EnergyCounterReset) -> AmpHoursDischarged {
-        (**self).amp_hours_discharged_with(reset)
-    }
-
-    fn amp_hours_charged(&self) -> AmpHoursCharged {
-        (**self).amp_hours_charged()
-    }
-
-    fn amp_hours_charged_with(&self, reset: EnergyCounterReset) -> AmpHoursCharged {
-        (**self).amp_hours_charged_with(reset)
-    }
-
-    fn watt_hours_discharged(&self) -> WattHoursDischarged {
-        (**self).watt_hours_discharged()
-    }
-
-    fn watt_hours_discharged_with(&self, reset: EnergyCounterReset) -> WattHoursDischarged {
-        (**self).watt_hours_discharged_with(reset)
-    }
-
-    fn watt_hours_charged(&self) -> WattHoursCharged {
-        (**self).watt_hours_charged()
-    }
-
-    fn watt_hours_charged_with(&self, reset: EnergyCounterReset) -> WattHoursCharged {
-        (**self).watt_hours_charged_with(reset)
-    }
-
-    fn battery_level(&self) -> BatteryLevel {
-        (**self).battery_level()
-    }
-
-    fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
-        (**self).battery_level_snapshot()
-    }
-
-    fn firmware_fault(&self) -> FirmwareFault {
-        (**self).firmware_fault()
-    }
-
-    fn firmware_fault_description(&self) -> Option<&str> {
-        (**self).firmware_fault_description()
-    }
-
-    fn firmware_fault_description_for(&self, code: FirmwareFaultWireCode) -> Option<&str> {
-        (**self).firmware_fault_description_for(code)
-    }
-
-    fn input_voltage(&self) -> InputVoltage {
-        (**self).input_voltage()
-    }
-
-    fn tachometer(&self, reset: bool) -> TachometerSteps {
-        (**self).tachometer(reset)
-    }
-
-    fn absolute_tachometer(&self, reset: bool) -> AbsoluteTachometerSteps {
-        (**self).absolute_tachometer(reset)
-    }
-
-    fn sampling_frequency(&self) -> Frequency {
-        (**self).sampling_frequency()
-    }
-}
-
 /// Motor-control operations backed by firmware slots.
 #[cfg(not(test))]
 pub trait MotorControlBindings {
@@ -453,7 +258,7 @@ pub trait MotorControlBindings {
         callback: PwmCallback,
     ) -> Result<PwmCallbackLease, PwmCallbackError>;
     /// Return the firmware-selected motor-control thread.
-    fn selected_motor(&self) -> MotorSelection;
+    fn selected_motor(&self) -> Result<MotorSelection, MotorSelectionError>;
     /// Select the active firmware motor-control thread.
     fn select_motor(&self, motor: MotorSelection);
     /// Reset the firmware motor-command safety timeout.
@@ -503,7 +308,11 @@ pub trait MotorControlBindings {
     /// Reset accumulated motor statistics.
     fn reset_statistics(&self);
     /// Update the firmware PID-position offset and optionally persist it.
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool);
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        store: bool,
+    ) -> Result<(), MotorCommandError>;
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
     /// Set the relative tachometer and return its previous value.
@@ -515,99 +324,6 @@ pub trait MotorControlBindings {
 }
 
 #[cfg(not(test))]
-impl<B: MotorControlBindings + ?Sized> MotorControlBindings for &B {
-    fn dc_calibration_done(&self) -> bool {
-        (**self).dc_calibration_done()
-    }
-
-    unsafe fn register_pwm_callback(
-        &self,
-        callback: PwmCallback,
-    ) -> Result<PwmCallbackLease, PwmCallbackError> {
-        unsafe { (**self).register_pwm_callback(callback) }
-    }
-
-    fn selected_motor(&self) -> MotorSelection {
-        (**self).selected_motor()
-    }
-
-    fn select_motor(&self, motor: MotorSelection) {
-        (**self).select_motor(motor);
-    }
-
-    fn timeout_reset(&self) {
-        (**self).timeout_reset();
-    }
-
-    fn set_current_off_delay(&self, delay: CurrentOffDelay) {
-        (**self).set_current_off_delay(delay);
-    }
-
-    fn set_current(&self, current: MotorCurrent) {
-        (**self).set_current(current);
-    }
-
-    fn set_current_relative(&self, current: CurrentRelative) {
-        (**self).set_current_relative(current);
-    }
-
-    fn set_brake_current_relative(&self, current: BrakeCurrentRelative) {
-        (**self).set_brake_current_relative(current);
-    }
-
-    fn set_pid_speed(&self, speed: ElectricalSpeed) {
-        (**self).set_pid_speed(speed);
-    }
-
-    fn set_pid_position(&self, position: PidPosition) {
-        (**self).set_pid_position(position);
-    }
-
-    fn set_duty_cycle(&self, duty: DutyCycle) {
-        (**self).set_duty_cycle(duty);
-    }
-
-    fn set_duty_cycle_without_ramping(&self, duty: DutyCycle) {
-        (**self).set_duty_cycle_without_ramping(duty);
-    }
-
-    fn set_brake_current(&self, current: BrakeCurrent) {
-        (**self).set_brake_current(current);
-    }
-
-    fn set_handbrake(&self, current: HandbrakeCurrent) {
-        (**self).set_handbrake(current);
-    }
-
-    fn set_handbrake_relative(&self, current: HandbrakeRelative) {
-        (**self).set_handbrake_relative(current);
-    }
-
-    fn reset_statistics(&self) {
-        (**self).reset_statistics();
-    }
-
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
-        (**self).update_pid_position_offset(position, store);
-    }
-
-    fn set_odometer(&self, odometer: OdometerMeters) {
-        (**self).set_odometer(odometer);
-    }
-
-    fn set_tachometer(&self, steps: TachometerSteps) -> TachometerSteps {
-        (**self).set_tachometer(steps)
-    }
-
-    fn release_motor(&self) {
-        (**self).release_motor();
-    }
-
-    fn wait_for_motor_release(&self, timeout: VescSeconds) -> bool {
-        (**self).wait_for_motor_release(timeout)
-    }
-}
-
 #[cfg(not(test))]
 /// Motor telemetry binding implementation that forwards to the live firmware ABI.
 pub struct RealMotorTelemetryBindings;
@@ -872,7 +588,7 @@ impl MotorTelemetryBindings for RealMotorTelemetryBindings {
 
     fn battery_level_snapshot(&self) -> BatteryLevelSnapshot {
         let mut watt_hours_remaining = 0.0;
-        let level = unsafe { crate::ffi::mc_get_battery_level(&mut watt_hours_remaining) };
+        let level = unsafe { crate::ffi::mc_get_battery_level(&raw mut watt_hours_remaining) };
         BatteryLevelSnapshot::new(
             BatteryLevel::from_fraction(level),
             crate::WattHoursRemaining::new(Energy::from_watt_hours(watt_hours_remaining)),
@@ -941,12 +657,12 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { PwmCallbackLease::register(callback) }
     }
 
-    fn selected_motor(&self) -> MotorSelection {
-        MotorSelection::new(unsafe { crate::ffi::mc_get_motor_thread() as u8 })
+    fn selected_motor(&self) -> Result<MotorSelection, MotorSelectionError> {
+        MotorSelection::try_from(unsafe { crate::ffi::mc_get_motor_thread() })
     }
 
     fn select_motor(&self, motor: MotorSelection) {
-        unsafe { crate::ffi::mc_select_motor_thread(i32::from(motor.index())) };
+        unsafe { crate::ffi::mc_select_motor_thread(motor.index()) };
     }
 
     fn timeout_reset(&self) {
@@ -1001,8 +717,13 @@ impl MotorControlBindings for RealMotorControlBindings {
         unsafe { crate::ffi::mc_stat_reset() };
     }
 
-    fn update_pid_position_offset(&self, position: PidPosition, store: bool) {
+    fn update_pid_position_offset(
+        &self,
+        position: PidPosition,
+        store: bool,
+    ) -> Result<(), MotorCommandError> {
         unsafe { crate::ffi::mc_update_pid_pos_offset(position.angle().as_degrees(), store) };
+        Ok(())
     }
 
     fn set_odometer(&self, odometer: OdometerMeters) {
@@ -1187,25 +908,25 @@ pub trait MotorOutput: private::MotorOutput {
         callback: PwmCallback,
     ) -> Result<PwmCallbackLease, PwmCallbackError>;
     /// Return the firmware-selected motor-control thread.
-    fn selected_motor(&self) -> MotorSelection;
+    fn selected_motor(&self) -> Result<MotorSelection, MotorSelectionError>;
     /// Select the active firmware motor-control thread.
     fn select_motor(&self, motor: MotorSelection);
     /// Keep the controller's motor command watchdog alive.
     fn keep_alive(&self);
 
     /// Set the delay used when the controller turns current off.
-    fn set_current_off_delay(&self, delay: CurrentOffDelay);
+    fn set_current_off_delay(&self, delay: CurrentOffDelay) -> Result<(), MotorCommandError>;
 
     /// Apply a signed motor-current command.
-    fn set_current(&self, current: MotorCurrent);
+    fn set_current(&self, current: MotorCurrent) -> Result<(), MotorCommandError>;
     /// Apply a normalized relative motor-current command.
     fn set_current_relative(&self, current: CurrentRelative);
     /// Apply a normalized relative braking-current command.
     fn set_brake_current_relative(&self, current: BrakeCurrentRelative);
     /// Apply a firmware PID speed target.
-    fn set_pid_speed(&self, speed: ElectricalSpeed);
+    fn set_pid_speed(&self, speed: ElectricalSpeed) -> Result<(), MotorCommandError>;
     /// Apply a firmware PID position target.
-    fn set_pid_position(&self, position: PidPosition);
+    fn set_pid_position(&self, position: PidPosition) -> Result<(), MotorCommandError>;
 
     /// Apply a duty-cycle command.
     fn set_duty_cycle(&self, duty: DutyCycle);
@@ -1213,9 +934,9 @@ pub trait MotorOutput: private::MotorOutput {
     fn set_duty_cycle_without_ramping(&self, duty: DutyCycle);
 
     /// Apply a braking-current command.
-    fn set_brake_current(&self, current: BrakeCurrent);
+    fn set_brake_current(&self, current: BrakeCurrent) -> Result<(), MotorCommandError>;
     /// Apply a handbrake-current command.
-    fn set_handbrake(&self, current: HandbrakeCurrent);
+    fn set_handbrake(&self, current: HandbrakeCurrent) -> Result<(), MotorCommandError>;
     /// Apply a relative handbrake command.
     fn set_handbrake_relative(&self, current: HandbrakeRelative);
     /// Reset accumulated motor statistics.
@@ -1225,7 +946,7 @@ pub trait MotorOutput: private::MotorOutput {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    );
+    ) -> Result<(), MotorCommandError>;
     /// Set the firmware-owned odometer distance in meters.
     fn set_odometer(&self, odometer: OdometerMeters);
     /// Set the relative tachometer and return its previous value.
@@ -1821,7 +1542,7 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     }
 
     /// Return the firmware-selected motor-control thread.
-    pub fn selected_motor(&self) -> MotorSelection {
+    pub fn selected_motor(&self) -> Result<MotorSelection, MotorSelectionError> {
         self.bindings.selected_motor()
     }
 
@@ -1836,13 +1557,17 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     }
 
     /// Keep current control enabled after a current command.
-    pub fn set_current_off_delay(&self, delay: CurrentOffDelay) {
+    pub fn set_current_off_delay(&self, delay: CurrentOffDelay) -> Result<(), MotorCommandError> {
+        ensure_finite(delay.duration().as_seconds())?;
         self.bindings.set_current_off_delay(delay);
+        Ok(())
     }
 
     /// Set motor current.
-    pub fn set_current(&self, current: MotorCurrent) {
+    pub fn set_current(&self, current: MotorCurrent) -> Result<(), MotorCommandError> {
+        ensure_finite(current.current().as_amps())?;
         self.bindings.set_current(current);
+        Ok(())
     }
 
     /// Apply a normalized relative motor-current command.
@@ -1856,13 +1581,17 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     }
 
     /// Apply a firmware PID speed target.
-    pub fn set_pid_speed(&self, speed: ElectricalSpeed) {
+    pub fn set_pid_speed(&self, speed: ElectricalSpeed) -> Result<(), MotorCommandError> {
+        ensure_finite(speed.rpm().as_revolutions_per_minute())?;
         self.bindings.set_pid_speed(speed);
+        Ok(())
     }
 
     /// Apply a firmware PID position target.
-    pub fn set_pid_position(&self, position: PidPosition) {
+    pub fn set_pid_position(&self, position: PidPosition) -> Result<(), MotorCommandError> {
+        ensure_finite(position.angle().as_degrees())?;
         self.bindings.set_pid_position(position);
+        Ok(())
     }
 
     /// Set motor duty cycle.
@@ -1884,13 +1613,17 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
     /// Float Out Boy uses this for idle brake current at
     /// `third_party/float-out-boy/src/motor_control.c:115-117`; the VESC ABI slot is
     /// declared at `third_party/vesc_pkg_lib/vesc_c_if.h:441`.
-    pub fn set_brake_current(&self, current: BrakeCurrent) {
+    pub fn set_brake_current(&self, current: BrakeCurrent) -> Result<(), MotorCommandError> {
+        ensure_finite(current.current().as_amps())?;
         self.bindings.set_brake_current(current);
+        Ok(())
     }
 
     /// Set motor handbrake current.
-    pub fn set_handbrake(&self, current: HandbrakeCurrent) {
+    pub fn set_handbrake(&self, current: HandbrakeCurrent) -> Result<(), MotorCommandError> {
+        ensure_finite(current.current().as_amps())?;
         self.bindings.set_handbrake(current);
+        Ok(())
     }
 
     /// Set motor handbrake as a relative command.
@@ -1908,9 +1641,10 @@ impl<B: MotorControlBindings> MotorControlApi<B> {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    ) {
+    ) -> Result<(), MotorCommandError> {
+        ensure_finite(position.angle().as_degrees())?;
         self.bindings
-            .update_pid_position_offset(position, persistence.stores());
+            .update_pid_position_offset(position, persistence.stores())
     }
 
     /// Set the firmware-owned odometer distance in meters.
@@ -1950,7 +1684,7 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         unsafe { MotorControlApi::register_pwm_callback(self, callback) }
     }
 
-    fn selected_motor(&self) -> MotorSelection {
+    fn selected_motor(&self) -> Result<MotorSelection, MotorSelectionError> {
         MotorControlApi::selected_motor(self)
     }
 
@@ -1962,12 +1696,12 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         self.timeout_reset();
     }
 
-    fn set_current_off_delay(&self, delay: CurrentOffDelay) {
-        MotorControlApi::set_current_off_delay(self, delay);
+    fn set_current_off_delay(&self, delay: CurrentOffDelay) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_current_off_delay(self, delay)
     }
 
-    fn set_current(&self, current: MotorCurrent) {
-        MotorControlApi::set_current(self, current);
+    fn set_current(&self, current: MotorCurrent) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_current(self, current)
     }
 
     fn set_current_relative(&self, current: CurrentRelative) {
@@ -1978,12 +1712,12 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::set_brake_current_relative(self, current);
     }
 
-    fn set_pid_speed(&self, speed: ElectricalSpeed) {
-        MotorControlApi::set_pid_speed(self, speed);
+    fn set_pid_speed(&self, speed: ElectricalSpeed) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_pid_speed(self, speed)
     }
 
-    fn set_pid_position(&self, position: PidPosition) {
-        MotorControlApi::set_pid_position(self, position);
+    fn set_pid_position(&self, position: PidPosition) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_pid_position(self, position)
     }
 
     fn set_duty_cycle(&self, duty: DutyCycle) {
@@ -1994,12 +1728,12 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         MotorControlApi::set_duty_cycle_without_ramping(self, duty);
     }
 
-    fn set_brake_current(&self, current: BrakeCurrent) {
-        MotorControlApi::set_brake_current(self, current);
+    fn set_brake_current(&self, current: BrakeCurrent) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_brake_current(self, current)
     }
 
-    fn set_handbrake(&self, current: HandbrakeCurrent) {
-        MotorControlApi::set_handbrake(self, current);
+    fn set_handbrake(&self, current: HandbrakeCurrent) -> Result<(), MotorCommandError> {
+        MotorControlApi::set_handbrake(self, current)
     }
 
     fn set_handbrake_relative(&self, current: HandbrakeRelative) {
@@ -2014,8 +1748,8 @@ impl<B: MotorControlBindings> MotorOutput for MotorControlApi<B> {
         &self,
         position: PidPosition,
         persistence: PidPositionOffsetPersistence,
-    ) {
-        MotorControlApi::update_pid_position_offset(self, position, persistence);
+    ) -> Result<(), MotorCommandError> {
+        MotorControlApi::update_pid_position_offset(self, position, persistence)
     }
 
     fn set_odometer(&self, odometer: OdometerMeters) {

@@ -43,6 +43,18 @@ fn packet_codec_registers_processes_and_resets_owned_state() {
 }
 
 #[test]
+fn packet_codec_rejects_empty_payloads() {
+    let _firmware = FirmwareTest::new();
+    let mut codec = PacketCodec::<Handler>::new();
+    let mut registration = codec.register().unwrap();
+
+    assert_eq!(
+        registration.send_packet(&mut []),
+        Err(vescpkg_rs::PacketError::EmptyPacket)
+    );
+}
+
+#[test]
 fn packet_codec_registration_is_exclusive_and_released_on_drop() {
     let _firmware = FirmwareTest::new();
     let mut first = PacketCodec::<Handler>::new();

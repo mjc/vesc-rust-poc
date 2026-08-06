@@ -95,16 +95,15 @@ impl FloatOutBoyMotorControl {
     }
 
     #[inline]
-    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> bool {
-        self.requested_current.take().is_some_and(|command| {
+    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> Option<bool> {
+        self.requested_current.take().map(|command| {
             // Upstream keeps this sign unchanged: `motor_control_request_current`
             // stores it at `third_party/float-out-boy/src/motor_control.c:44-47`, then
             // `motor_control_apply` passes it to `mc_set_current` at
             // `third_party/float-out-boy/src/motor_control.c:93-99`.
             motor.keep_alive();
-            motor.set_current_off_delay(CURRENT_OFF_DELAY);
-            motor.set_current(command.requested_current());
-            true
+            motor.set_current_off_delay(CURRENT_OFF_DELAY).is_ok()
+                && motor.set_current(command.requested_current()).is_ok()
         })
     }
 
@@ -122,9 +121,11 @@ impl FloatOutBoyMotorControl {
             if !self.disabled {
                 // C map: disabled mode sets 0A once, then stops touching motor output at
                 // `third_party/float-out-boy/src/motor_control.c:53-60`.
-                motor.set_current(MotorCurrent::new(Current::from_amps(0.0)));
-                self.disabled = true;
-                return true;
+                let applied = motor
+                    .set_current(MotorCurrent::new(Current::from_amps(0.0)))
+                    .is_ok();
+                self.disabled = applied;
+                return applied;
             }
             return false;
         }
@@ -175,8 +176,8 @@ impl FloatOutBoyMotorControl {
             }));
         }
 
-        if self.apply_requested_current(motor) {
-            return true;
+        if let Some(applied) = self.apply_requested_current(motor) {
+            return applied;
         }
 
         motor.keep_alive();
@@ -192,7 +193,9 @@ impl FloatOutBoyMotorControl {
             // `timer_older(time, brake_timer, 1)` passes at
             // `third_party/float-out-boy/src/motor_control.c:101-109`; `timer_older`
             // converts seconds at `third_party/float-out-boy/src/time.h:46-51`.
-            motor.set_current(MotorCurrent::new(Current::from_amps(0.0)));
+            return motor
+                .set_current(MotorCurrent::new(Current::from_amps(0.0)))
+                .is_ok();
         } else if self.parking_brake_active && abs_erpm < Rpm::from_revolutions_per_minute(2000.0) {
             // Upstream parking brake applies duty zero below 2000 ERPM at
             // `third_party/float-out-boy/src/motor_control.c:112-114`.
@@ -200,7 +203,9 @@ impl FloatOutBoyMotorControl {
         } else {
             // Upstream idle fallback applies configured brake current at
             // `third_party/float-out-boy/src/motor_control.c:115-117`.
-            motor.set_brake_current(BrakeCurrent::new(brake_current.current()));
+            return motor
+                .set_brake_current(BrakeCurrent::new(brake_current.current()))
+                .is_ok();
         }
         true
     }
@@ -336,6 +341,27 @@ mod tests {
             MotorCurrent::new(Current::from_amps(50.0)),
         ));
         assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
+    }
+
+    #[test]
+    fn failed_requested_current_does_not_fall_through_to_idle_output() {
+        let motor = FirmwareTest::new();
+        let mut control = FloatOutBoyMotorControl::new();
+        control.request_current(MotorCurrent::new(Current::from_amps(f32::NAN)));
+
+        assert!(!control.apply(
+            motor.motor(),
+            FloatOutBoyRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            FloatOutBoyParkingBrakeMode::Never,
+            MotorCurrent::new(Current::from_amps(50.0)),
+        ));
+        assert_eq!(motor.keep_alive_count(), 1);
+        assert_eq!(motor.current_off_delay_count(), 1);
+        assert_eq!(motor.current_command_count(), 0);
+        assert_eq!(motor.duty_command_count(), 0);
+        assert_eq!(motor.brake_current_command_count(), 0);
     }
 
     #[test]

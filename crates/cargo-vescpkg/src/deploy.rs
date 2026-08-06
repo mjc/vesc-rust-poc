@@ -150,19 +150,49 @@ pub fn run_custom_config_probe(target: LoopbackTarget) -> Result<Vec<u8>, Deploy
     result
 }
 
-/// Opens BLE and reads the controller odometer and uptime.
+/// Firmware identity and setup values captured by one read-only BLE probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareValuesProbeReport {
+    firmware_version: FirmwareVersion,
+    values: FirmwareSetupValues,
+}
+
+impl FirmwareValuesProbeReport {
+    /// Return the firmware version captured during preflight.
+    #[must_use]
+    pub const fn firmware_version(self) -> FirmwareVersion {
+        self.firmware_version
+    }
+
+    /// Return the controller setup values.
+    #[must_use]
+    pub const fn values(self) -> FirmwareSetupValues {
+        self.values
+    }
+}
+
+/// Opens BLE and reads the controller firmware identity, odometer, and uptime.
 ///
 /// # Errors
 ///
 /// Returns an error when BLE, firmware preflight, transport, or decoding fails.
 pub fn run_firmware_values_probe(
     target: LoopbackTarget,
-) -> Result<FirmwareSetupValues, DeployError> {
+) -> Result<FirmwareValuesProbeReport, DeployError> {
     let transport = BtlePackageInstallTransport::new().map_err(DeployError::Transport)?;
     transport.open(target).map_err(DeployError::Transport)?;
-    let result = transport
-        .firmware_setup_values(FIRMWARE_VALUES_RESPONSE_TIMEOUT)
-        .map_err(DeployError::Transport);
+    let result = (|| {
+        let firmware_version = transport
+            .firmware_version()
+            .map_err(DeployError::Transport)?;
+        let values = transport
+            .firmware_setup_values(FIRMWARE_VALUES_RESPONSE_TIMEOUT)
+            .map_err(DeployError::Transport)?;
+        Ok(FirmwareValuesProbeReport {
+            firmware_version,
+            values,
+        })
+    })();
     transport.close();
     result
 }

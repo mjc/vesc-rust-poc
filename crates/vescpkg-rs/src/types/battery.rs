@@ -129,6 +129,7 @@ pub struct BatteryLevelSnapshot {
 
 impl BatteryLevelSnapshot {
     /// Construct a snapshot from the two values returned by firmware.
+    #[must_use]
     pub const fn new(level: BatteryLevel, watt_hours_remaining: WattHoursRemaining) -> Self {
         Self {
             level,
@@ -137,11 +138,13 @@ impl BatteryLevelSnapshot {
     }
 
     /// Return the firmware state-of-charge fraction.
+    #[must_use]
     pub const fn level(self) -> BatteryLevel {
         self.level
     }
 
     /// Return the firmware-estimated remaining energy.
+    #[must_use]
     pub const fn watt_hours_remaining(self) -> WattHoursRemaining {
         self.watt_hours_remaining
     }

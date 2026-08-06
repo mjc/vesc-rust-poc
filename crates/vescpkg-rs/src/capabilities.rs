@@ -1,4 +1,8 @@
 //! Capability-aware safe subsystem constructors.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::ffi;
 use crate::{
@@ -238,6 +242,7 @@ pub struct FirmwareSettings;
 
 impl FirmwareSettings {
     /// Read a floating-point setting from live firmware state.
+    #[must_use]
     pub fn get_float(self, setting: FirmwareFloatSetting) -> f32 {
         unsafe { ffi::get_cfg_float(setting.raw()) }
     }
@@ -260,6 +265,7 @@ impl FirmwareSettings {
     }
 
     /// Read the positive configured motor-current ceiling without erasing its domain.
+    #[must_use]
     pub fn motor_current_max(self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::MotorCurrentMax),
@@ -267,6 +273,7 @@ impl FirmwareSettings {
     }
 
     /// Read the positive configured motor-current floor magnitude.
+    #[must_use]
     pub fn motor_current_min(self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::MotorCurrentMin),
@@ -300,6 +307,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured battery/input current ceiling.
+    #[must_use]
     pub fn input_current_max(self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::InputCurrentMax),
@@ -307,6 +315,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured minimum battery/input current.
+    #[must_use]
     pub fn input_current_min(self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::InputCurrentMin),
@@ -314,6 +323,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured absolute motor-current ceiling.
+    #[must_use]
     pub fn absolute_current_max(self) -> MotorCurrentLimit {
         MotorCurrentLimit::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::AbsoluteCurrentMax),
@@ -321,6 +331,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured minimum electrical speed.
+    #[must_use]
     pub fn minimum_electrical_speed(self) -> ElectricalSpeed {
         ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
             self.get_float(FirmwareFloatSetting::MinimumElectricalSpeed),
@@ -328,6 +339,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured maximum electrical speed.
+    #[must_use]
     pub fn maximum_electrical_speed(self) -> ElectricalSpeed {
         ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
             self.get_float(FirmwareFloatSetting::MaximumElectricalSpeed),
@@ -335,6 +347,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured electrical-speed ramp-start threshold.
+    #[must_use]
     pub fn electrical_speed_ramp_start(self) -> ElectricalSpeed {
         ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
             self.get_float(FirmwareFloatSetting::ElectricalSpeedRampStart),
@@ -342,6 +355,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured maximum electrical speed used during braking.
+    #[must_use]
     pub fn maximum_electrical_speed_brake(self) -> ElectricalSpeed {
         ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
             self.get_float(FirmwareFloatSetting::MaximumElectricalSpeedBrake),
@@ -349,6 +363,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured maximum electrical speed used during brake-current control.
+    #[must_use]
     pub fn maximum_electrical_speed_brake_current(self) -> ElectricalSpeed {
         ElectricalSpeed::new(crate::Rpm::from_revolutions_per_minute(
             self.get_float(FirmwareFloatSetting::MaximumElectricalSpeedBrakeCurrent),
@@ -356,6 +371,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured firmware IMU sample rate.
+    #[must_use]
     pub fn imu_sample_rate(self) -> ImuSampleRate {
         ImuSampleRate::new(crate::SampleRate::from_hertz(
             self.get_float(FirmwareFloatSetting::ImuSampleRate),
@@ -363,21 +379,25 @@ impl FirmwareSettings {
     }
 
     /// Read the configured IMU roll mounting rotation.
+    #[must_use]
     pub fn imu_rotation_roll(self) -> AngleDegrees {
         AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationRoll))
     }
 
     /// Read the configured IMU pitch mounting rotation.
+    #[must_use]
     pub fn imu_rotation_pitch(self) -> AngleDegrees {
         AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationPitch))
     }
 
     /// Read the configured IMU yaw mounting rotation.
+    #[must_use]
     pub fn imu_rotation_yaw(self) -> AngleDegrees {
         AngleDegrees::from_degrees(self.get_float(FirmwareFloatSetting::ImuRotationYaw))
     }
 
     /// Read the configured IMU accelerometer-confidence decay ratio.
+    #[must_use]
     pub fn imu_acceleration_confidence_decay(self) -> Ratio {
         Ratio::clamped(self.get_float(FirmwareFloatSetting::ImuAccelerationConfidenceDecay))
     }
@@ -455,6 +475,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured wheel diameter.
+    #[must_use]
     pub fn wheel_diameter(self) -> WheelDiameter {
         WheelDiameter::new(crate::Distance::from_meters(
             self.get_float(FirmwareFloatSetting::WheelDiameter),
@@ -462,6 +483,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured FOC motor resistance.
+    #[must_use]
     pub fn foc_motor_resistance(self) -> FocMotorResistance {
         FocMotorResistance::new(crate::Resistance::from_ohms(
             self.get_float(FirmwareFloatSetting::FocMotorResistance),
@@ -469,6 +491,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured FOC motor inductance.
+    #[must_use]
     pub fn foc_motor_inductance(self) -> FocMotorInductance {
         FocMotorInductance::new(crate::Inductance::from_henries(
             self.get_float(FirmwareFloatSetting::FocMotorInductance),
@@ -476,6 +499,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured FOC motor flux linkage.
+    #[must_use]
     pub fn foc_motor_flux_linkage(self) -> FocMotorFluxLinkage {
         FocMotorFluxLinkage::new(crate::FluxLinkage::from_webers(
             self.get_float(FirmwareFloatSetting::FocMotorFluxLinkage),
@@ -483,11 +507,13 @@ impl FirmwareSettings {
     }
 
     /// Read the configured battery capacity.
+    #[must_use]
     pub fn battery_capacity(self) -> Charge {
         Charge::from_amp_hours(self.get_float(FirmwareFloatSetting::BatteryCapacity))
     }
 
     /// Read the configured motor no-load current.
+    #[must_use]
     pub fn motor_no_load_current(self) -> InputCurrent {
         InputCurrent::new(Current::from_amps(
             self.get_float(FirmwareFloatSetting::MotorNoLoadCurrent),
@@ -856,6 +882,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured minimum input voltage.
+    #[must_use]
     pub fn input_voltage_min(self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(
             self.get_float(FirmwareFloatSetting::MinimumInputVoltage),
@@ -863,6 +890,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured maximum input voltage.
+    #[must_use]
     pub fn input_voltage_max(self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(
             self.get_float(FirmwareFloatSetting::MaximumInputVoltage),
@@ -870,6 +898,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured battery cut-start voltage.
+    #[must_use]
     pub fn battery_cut_start_voltage(self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(
             self.get_float(FirmwareFloatSetting::BatteryCutStartVoltage),
@@ -877,6 +906,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured battery cut-end voltage.
+    #[must_use]
     pub fn battery_cut_end_voltage(self) -> InputVoltage {
         InputVoltage::new(Voltage::from_volts(
             self.get_float(FirmwareFloatSetting::BatteryCutEndVoltage),
@@ -936,6 +966,7 @@ impl FirmwareSettings {
     }
 
     /// Read the MOSFET temperature limit-start threshold.
+    #[must_use]
     pub fn mosfet_temperature_start(self) -> TemperatureLimitStart {
         TemperatureLimitStart::new(crate::Temperature::from_degrees_celsius(
             self.get_float(FirmwareFloatSetting::MosfetTemperatureStart),
@@ -943,6 +974,7 @@ impl FirmwareSettings {
     }
 
     /// Read the MOSFET temperature limit-end threshold.
+    #[must_use]
     pub fn mosfet_temperature_end(self) -> TemperatureLimitEnd {
         TemperatureLimitEnd::new(crate::Temperature::from_degrees_celsius(
             self.get_float(FirmwareFloatSetting::MosfetTemperatureEnd),
@@ -950,6 +982,7 @@ impl FirmwareSettings {
     }
 
     /// Read the motor temperature limit-start threshold.
+    #[must_use]
     pub fn motor_temperature_start(self) -> TemperatureLimitStart {
         TemperatureLimitStart::new(crate::Temperature::from_degrees_celsius(
             self.get_float(FirmwareFloatSetting::MotorTemperatureStart),
@@ -957,6 +990,7 @@ impl FirmwareSettings {
     }
 
     /// Read the motor temperature limit-end threshold.
+    #[must_use]
     pub fn motor_temperature_end(self) -> TemperatureLimitEnd {
         TemperatureLimitEnd::new(crate::Temperature::from_degrees_celsius(
             self.get_float(FirmwareFloatSetting::MotorTemperatureEnd),
@@ -1016,6 +1050,7 @@ impl FirmwareSettings {
     }
 
     /// Read the normalized acceleration/deceleration temperature adjustment.
+    #[must_use]
     pub fn temperature_acceleration_decrease(self) -> Ratio {
         Ratio::clamped(self.get_float(FirmwareFloatSetting::TemperatureAccelerationDecrease))
     }
@@ -1034,6 +1069,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured maximum duty-cycle ratio, clamping malformed firmware output.
+    #[must_use]
     pub fn duty_cycle_limit(self) -> DutyCycleLimit {
         DutyCycleLimit::new(Ratio::clamped(
             self.get_float(FirmwareFloatSetting::MaxDuty),
@@ -1041,6 +1077,7 @@ impl FirmwareSettings {
     }
 
     /// Read the configured minimum duty-cycle threshold.
+    #[must_use]
     pub fn duty_cycle_minimum(self) -> DutyCycleMinimum {
         DutyCycleMinimum::new(Ratio::clamped(
             self.get_float(FirmwareFloatSetting::MinDuty),
@@ -1074,6 +1111,7 @@ impl FirmwareSettings {
     }
 
     /// Read an integer setting from live firmware state.
+    #[must_use]
     pub fn get_int(self, setting: FirmwareIntSetting) -> i32 {
         unsafe { ffi::get_cfg_int(setting.raw()) }
     }
@@ -1246,6 +1284,7 @@ impl FirmwareSettings {
 
 impl FirmwareCapabilities {
     /// Construct capabilities from one bounded table-presence snapshot.
+    #[must_use]
     pub const fn new(presence: VescIfPresence) -> Self {
         Self {
             inner: VescIfCapabilities::new(presence),
@@ -1253,11 +1292,13 @@ impl FirmwareCapabilities {
     }
 
     /// Return the observed slot presence used by this value.
+    #[must_use]
     pub const fn presence(self) -> VescIfPresence {
         self.inner.presence()
     }
 
     /// Return the descriptive revision inferred from observed pointers.
+    #[must_use]
     pub fn revision(self) -> Stm32AbiRevision {
         self.inner.revision()
     }

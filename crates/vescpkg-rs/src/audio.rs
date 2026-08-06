@@ -1,7 +1,10 @@
 //! Checked access to the optional FOC audio subsystem.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use core::ffi::c_int;
-use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage};
@@ -24,6 +27,14 @@ pub enum FocAudioError {
     Busy,
 }
 
+impl_error!(FocAudioError {
+    Unavailable => "FOC audio capability is unavailable",
+    Rejected => "firmware rejected the FOC audio command",
+    InvalidParameter => "FOC audio parameter is invalid",
+    BufferTooLong => "FOC audio buffer exceeds the firmware ABI limit",
+    Busy => "FOC audio sample table is already owned",
+});
+
 /// Select whether stopping FOC audio also resets firmware audio state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocAudioStopMode {
@@ -35,6 +46,7 @@ pub enum FocAudioStopMode {
 
 impl FocAudioStopMode {
     /// Return the raw reset flag expected by the firmware ABI.
+    #[must_use]
     pub const fn resets(self) -> bool {
         matches!(self, Self::Reset)
     }
@@ -150,7 +162,8 @@ impl FocAudio {
         }
     }
 
-    /// Return the firmware-owned table pointer for inspection.
+    /// Return a non-null firmware-owned table pointer for inspection without
+    /// erasing the firmware's `const` contract.
     ///
     /// # Safety
     ///
@@ -158,9 +171,10 @@ impl FocAudio {
     /// long as the firmware retains the corresponding table. The caller must
     /// not dereference it after its lease is dropped or turn it into a slice
     /// without separately knowing the table length.
-    pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<NonNull<f32>> {
+    #[must_use]
+    pub unsafe fn sample_table_ptr(&self, channel: AudioChannel) -> Option<*const f32> {
         unsafe { crate::ffi::foc_get_audio_sample_table(c_int::from(channel.as_u8())) }
-            .and_then(|pointer| NonNull::new(pointer as *mut f32))
+            .filter(|pointer| !pointer.is_null())
     }
 }
 
@@ -173,6 +187,7 @@ impl Drop for FocAudioSampleTable<'_> {
 
 impl crate::Firmware {
     /// Return the optional FOC audio capability handle.
+    #[must_use]
     pub fn audio(&self) -> FocAudio {
         FocAudio::new()
     }
@@ -181,6 +196,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional FOC audio capability handle.
+    #[must_use]
     pub fn audio(&self) -> FocAudio {
         FocAudio::new()
     }

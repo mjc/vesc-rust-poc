@@ -58,13 +58,13 @@ pub unsafe fn io_set_mode(_pin: VescPin, _mode: VescPinMode) -> bool {
     true
 }
 
-static STM32_GPIO: u8 = 0;
+static mut STM32_GPIO: u8 = 0;
 
 pub unsafe fn io_get_st_pin(pin: VescPin, gpio: *mut *mut c_void, st_pin: *mut u32) -> bool {
     let (Some(gpio), Some(st_pin)) = (unsafe { gpio.as_mut() }, unsafe { st_pin.as_mut() }) else {
         return false;
     };
-    *gpio = core::ptr::addr_of!(STM32_GPIO).cast_mut().cast();
+    *gpio = core::ptr::addr_of_mut!(STM32_GPIO).cast();
     *st_pin = u32::try_from(pin.0).unwrap_or_default();
     true
 }
@@ -190,11 +190,13 @@ static HAS_FOC_ID_CURRENT: AtomicBool = AtomicBool::new(false);
 static FOC_AUDIO_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_AUDIO_STOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static FOC_AUDIO_TABLE_INSTALLED: AtomicBool = AtomicBool::new(false);
+static FOC_AUDIO_TABLE_NULL: AtomicBool = AtomicBool::new(false);
 static FOC_TONE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FOC_TONE_CHANNEL: AtomicI32 = AtomicI32::new(0);
 static FOC_TONE_FREQUENCY: AtomicU32 = AtomicU32::new(0);
 static FOC_TONE_VOLTAGE: AtomicU32 = AtomicU32::new(0);
 static FOC_OPEN_LOOP_AVAILABLE: AtomicBool = AtomicBool::new(true);
+static FOC_FW_OVERRIDE_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static UART_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static PACKET_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static COMMANDS_AVAILABLE: AtomicBool = AtomicBool::new(true);
@@ -216,6 +218,7 @@ static MOTOR_TEMPERATURE: AtomicU32 = AtomicU32::new(0);
 static ODOMETER: AtomicU64 = AtomicU64::new(0);
 static PID_POSITION_OFFSET: AtomicU32 = AtomicU32::new(0);
 static PID_POSITION_OFFSET_STORED: AtomicBool = AtomicBool::new(false);
+static PID_POSITION_OFFSET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static AMP_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
 static AMP_HOURS_CHARGED: AtomicU32 = AtomicU32::new(0);
 static WATT_HOURS_DISCHARGED: AtomicU32 = AtomicU32::new(0);
@@ -240,7 +243,8 @@ static IMU_YAW: AtomicU32 = AtomicU32::new(0);
 static IMU_GYRO: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static IMU_QUATERNION: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
 static IMU_CALIBRATION_VALID: AtomicBool = AtomicBool::new(true);
-static FLAT_BUFFER: [u8; 256] = [0; 256];
+const FLAT_BUFFER_LEN: usize = 256;
+static mut FLAT_BUFFER: [u8; FLAT_BUFFER_LEN] = [0; FLAT_BUFFER_LEN];
 static CAN_STATUS: CanStatusMsg = CanStatusMsg {
     id: 7,
     rx_time: 123,
@@ -313,7 +317,7 @@ static LBM_CONS_CDR: AtomicU32 = AtomicU32::new(0);
 static LBM_SYMBOL_ID: AtomicU32 = AtomicU32::new(0);
 static LBM_MESSAGE_FAILURE: AtomicBool = AtomicBool::new(false);
 static LBM_EVAL_PAUSED: AtomicBool = AtomicBool::new(false);
-static LBM_STRING: [u8; 5] = *b"vesc\0";
+static mut LBM_STRING: [u8; 5] = *b"vesc\0";
 const LBM_BYTE_ARRAY: u32 = 0x03;
 static CLOCK_TICKS: AtomicU32 = AtomicU32::new(0);
 static TIMER_TICKS: AtomicU32 = AtomicU32::new(0);
@@ -365,6 +369,7 @@ fn reset_temperature_settings() {
     TEMPERATURE_ACCELERATION_DECREASE.store(0.0_f32.to_bits(), Ordering::Relaxed);
 }
 
+#[allow(clippy::too_many_lines, reason = "resets the flat fake-firmware state")]
 fn reset_motor_state() {
     KEEP_ALIVE_COUNT.store(0, Ordering::Relaxed);
     CURRENT_OFF_DELAY_COUNT.store(0, Ordering::Relaxed);
@@ -444,10 +449,12 @@ fn reset_motor_state() {
     FOC_AUDIO_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_AUDIO_STOP_AVAILABLE.store(true, Ordering::Relaxed);
     FOC_AUDIO_TABLE_INSTALLED.store(false, Ordering::Relaxed);
+    FOC_AUDIO_TABLE_NULL.store(false, Ordering::Relaxed);
     FOC_TONE_COUNT.store(0, Ordering::Relaxed);
     FOC_TONE_FREQUENCY.store(0, Ordering::Relaxed);
     FOC_TONE_VOLTAGE.store(0, Ordering::Relaxed);
     FOC_OPEN_LOOP_AVAILABLE.store(true, Ordering::Relaxed);
+    FOC_FW_OVERRIDE_AVAILABLE.store(true, Ordering::Relaxed);
     UART_AVAILABLE.store(true, Ordering::Relaxed);
     PACKET_AVAILABLE.store(true, Ordering::Relaxed);
     COMMANDS_AVAILABLE.store(true, Ordering::Relaxed);
@@ -469,6 +476,7 @@ fn reset_motor_state() {
     ODOMETER.store(0, Ordering::Relaxed);
     PID_POSITION_OFFSET.store(0.0_f32.to_bits(), Ordering::Relaxed);
     PID_POSITION_OFFSET_STORED.store(false, Ordering::Relaxed);
+    PID_POSITION_OFFSET_COUNT.store(0, Ordering::Relaxed);
     AMP_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     AMP_HOURS_CHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
     WATT_HOURS_DISCHARGED.store(0.0_f32.to_bits(), Ordering::Relaxed);
@@ -739,7 +747,7 @@ pub unsafe fn lbm_dec_as_float(value: LbmValue) -> f32 {
 }
 
 pub unsafe fn lbm_dec_str(_value: LbmValue) -> *mut c_char {
-    LBM_STRING.as_ptr().cast_mut().cast()
+    core::ptr::addr_of_mut!(LBM_STRING).cast::<u8>().cast()
 }
 
 pub unsafe fn lbm_enc_i(value: i32) -> LbmValue {
@@ -837,11 +845,12 @@ pub unsafe fn lbm_unblock_ctx_unboxed(_context: u32, _value: LbmValue) -> Option
 
 pub unsafe fn lbm_start_flatten(value: *mut LbmFlatValue, buffer_size: usize) -> Option<bool> {
     let value = unsafe { value.as_mut()? };
-    if buffer_size > FLAT_BUFFER.len() {
+    if buffer_size > FLAT_BUFFER_LEN {
         return Some(false);
     }
-    value.buf = core::ptr::addr_of!(FLAT_BUFFER).cast::<u8>().cast_mut();
-    value.buf_size = buffer_size as u32;
+    let buffer_size = u32::try_from(buffer_size).ok()?;
+    value.buf = core::ptr::addr_of_mut!(FLAT_BUFFER).cast::<u8>();
+    value.buf_size = buffer_size;
     value.buf_pos = 0;
     Some(true)
 }
@@ -1035,7 +1044,7 @@ pub unsafe fn vesc_sem_reset(_semaphore: *mut c_void) {
 pub unsafe fn vesc_free(pointer: *mut c_void) {
     if core::ptr::eq(
         pointer.cast_const(),
-        core::ptr::addr_of!(FLAT_BUFFER).cast::<c_void>(),
+        core::ptr::addr_of_mut!(FLAT_BUFFER).cast::<c_void>(),
     ) {
         return;
     }
@@ -1354,8 +1363,16 @@ pub(crate) fn set_foc_audio_stop_available(available: bool) {
     FOC_AUDIO_STOP_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
+pub(crate) fn set_foc_audio_table_null(is_null: bool) {
+    FOC_AUDIO_TABLE_NULL.store(is_null, Ordering::Relaxed);
+}
+
 pub(crate) fn set_foc_open_loop_available(available: bool) {
     FOC_OPEN_LOOP_AVAILABLE.store(available, Ordering::Relaxed);
+}
+
+pub(crate) fn set_foc_fw_override_available(available: bool) {
+    FOC_FW_OVERRIDE_AVAILABLE.store(available, Ordering::Relaxed);
 }
 
 pub(crate) fn set_uart_available(available: bool) {
@@ -1504,6 +1521,10 @@ pub(crate) fn pid_position_offset() -> f32 {
 
 pub(crate) fn pid_position_offset_stored() -> bool {
     PID_POSITION_OFFSET_STORED.load(Ordering::Relaxed)
+}
+
+pub(crate) fn pid_position_offset_command_count() -> usize {
+    PID_POSITION_OFFSET_COUNT.load(Ordering::Relaxed)
 }
 
 pub unsafe fn timeout_reset() {
@@ -1892,6 +1913,10 @@ pub unsafe fn foc_set_openloop_duty_phase(_duty: f32, _phase: f32) -> bool {
     FOC_OPEN_LOOP_AVAILABLE.load(Ordering::Relaxed)
 }
 
+pub unsafe fn foc_set_fw_override(_current: f32) -> bool {
+    FOC_FW_OVERRIDE_AVAILABLE.load(Ordering::Relaxed)
+}
+
 pub unsafe fn foc_beep(_frequency: f32, _duration: f32, _voltage: f32) -> Option<bool> {
     FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed).then_some(true)
 }
@@ -1938,7 +1963,13 @@ pub unsafe fn foc_set_audio_sample_table(
 pub unsafe fn foc_get_audio_sample_table(_channel: c_int) -> Option<*const f32> {
     (FOC_AUDIO_AVAILABLE.load(Ordering::Relaxed)
         && FOC_AUDIO_TABLE_INSTALLED.load(Ordering::Relaxed))
-    .then_some(AUDIO_SAMPLE_TABLE.as_ptr())
+    .then(|| {
+        if FOC_AUDIO_TABLE_NULL.load(Ordering::Relaxed) {
+            core::ptr::null()
+        } else {
+            AUDIO_SAMPLE_TABLE.as_ptr()
+        }
+    })
 }
 
 pub unsafe fn foc_play_audio_samples(
@@ -2067,6 +2098,7 @@ pub unsafe fn mc_get_pid_pos_now() -> f32 {
 }
 
 pub unsafe fn mc_update_pid_pos_offset(angle_now: f32, store: bool) {
+    PID_POSITION_OFFSET_COUNT.fetch_add(1, Ordering::Relaxed);
     PID_POSITION_OFFSET.store(angle_now.to_bits(), Ordering::Relaxed);
     PID_POSITION_OFFSET_STORED.store(store, Ordering::Relaxed);
 }

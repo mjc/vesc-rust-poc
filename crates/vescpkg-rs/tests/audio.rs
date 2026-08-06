@@ -83,6 +83,18 @@ fn firmware_audio_rejects_invalid_values_before_ffi() {
 }
 
 #[test]
+fn firmware_audio_maps_a_null_table_pointer_to_none() {
+    let firmware = FirmwareTest::new();
+    let audio = firmware.audio();
+    let channel = AudioChannel::try_new(0).unwrap();
+    let samples = [0.1, 0.2];
+    let _table = audio.set_sample_table(channel, &samples).unwrap();
+    firmware.set_audio_table_null(true);
+
+    assert!(unsafe { audio.sample_table_ptr(channel) }.is_none());
+}
+
+#[test]
 fn firmware_audio_reports_absent_optional_slots() {
     let firmware = FirmwareTest::new();
     firmware.set_audio_available(false);

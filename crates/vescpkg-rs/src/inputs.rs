@@ -1,4 +1,8 @@
 //! Typed controller input and output-safety capabilities.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
 use crate::types::{JoystickX, JoystickY, PpmAge, PpmInput, RemoteAge, TimeoutDuration};
 use crate::{SignedRatio, VescSeconds};
@@ -45,31 +49,37 @@ pub struct RemoteInputSnapshot {
 
 impl RemoteInputSnapshot {
     /// Return the joystick X ratio.
+    #[must_use]
     pub const fn joystick_x(self) -> JoystickX {
         self.joystick_x
     }
 
     /// Return the joystick Y ratio.
+    #[must_use]
     pub const fn joystick_y(self) -> JoystickY {
         self.joystick_y
     }
 
     /// Return whether Bluetooth input is connected.
+    #[must_use]
     pub const fn bluetooth_connected(self) -> bool {
         self.bluetooth_connected
     }
 
     /// Return the Bluetooth Z-button state.
+    #[must_use]
     pub const fn bluetooth_z(self) -> bool {
         self.bluetooth_z
     }
 
     /// Return whether reverse is selected.
+    #[must_use]
     pub const fn reverse(self) -> bool {
         self.reverse
     }
 
     /// Return the age of this remote sample.
+    #[must_use]
     pub const fn age(self) -> RemoteAge {
         self.age
     }
@@ -91,11 +101,13 @@ pub struct TimeoutSnapshot {
 
 impl TimeoutSnapshot {
     /// Return whether the firmware timeout is active.
+    #[must_use]
     pub const fn has_timed_out(self) -> bool {
         self.timed_out
     }
 
     /// Return the elapsed time since the last timeout refresh.
+    #[must_use]
     pub const fn since_update(self) -> TimeoutDuration {
         self.since_update
     }
@@ -103,11 +115,13 @@ impl TimeoutSnapshot {
 
 impl PpmSnapshot {
     /// Return the decoded PPM ratio.
+    #[must_use]
     pub const fn value(self) -> PpmInput {
         self.value
     }
 
     /// Return the age of the latest PPM sample.
+    #[must_use]
     pub const fn age(self) -> PpmAge {
         self.age
     }

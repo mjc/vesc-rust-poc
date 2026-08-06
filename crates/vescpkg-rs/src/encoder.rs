@@ -1,6 +1,10 @@
 //! Exclusive package-owned custom encoder callbacks.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
-use core::ffi::{CStr, c_char};
+use core::ffi::c_char;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -24,14 +28,19 @@ pub enum EncoderError {
     Busy,
 }
 
+impl_error!(EncoderError {
+    Unavailable => "encoder callback slot is unavailable",
+    Busy => "encoder callback slot is already owned",
+});
+
 /// Safe callback behavior for one custom encoder provider.
 pub trait EncoderHandler {
     /// Return the current encoder position in degrees.
     fn read_degrees() -> AngleDegrees;
     /// Return whether the encoder currently reports a fault.
     fn has_fault() -> bool;
-    /// Return a static NUL-terminated encoder description.
-    fn info() -> &'static CStr;
+    /// Return a static encoder description backed by firmware-compatible storage.
+    fn info() -> crate::FirmwareStr<'static>;
 }
 
 /// Optional custom encoder capability handle.
@@ -115,6 +124,7 @@ unsafe extern "C" fn disabled_info() -> *mut c_char {
 
 impl crate::Firmware {
     /// Return the optional custom encoder capability handle.
+    #[must_use]
     pub fn encoder(&self) -> Encoder {
         Encoder::new()
     }
@@ -123,6 +133,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional custom encoder capability handle.
+    #[must_use]
     pub fn encoder(&self) -> Encoder {
         Encoder::new()
     }
@@ -146,8 +157,8 @@ mod tests {
             false
         }
 
-        fn info() -> &'static CStr {
-            c"test-encoder"
+        fn info() -> crate::FirmwareStr<'static> {
+            crate::firmware_str!("test-encoder")
         }
     }
 

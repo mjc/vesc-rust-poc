@@ -607,7 +607,6 @@ typedef struct {
 	float (*get_ppm_age)(void); // Get time since a pulse was decoded in seconds
 	bool (*app_is_output_disabled)(void); // True if apps should disable their output.
 
-	// Interfaces added in firmware 6.2:
 	// NVM
 	bool (*read_nvm)(uint8_t *v, unsigned int len, unsigned int address);
 	bool (*write_nvm)(uint8_t *v, unsigned int len, unsigned int address);
@@ -670,6 +669,9 @@ typedef struct {
 	void (*thread_set_priority)(int priority);
 	// Disable shutdown (for hw with momentary button / auto shutdown support)
 	void (*shutdown_disable)(bool disable);
+
+	// Functions below were added in firmware 7.00
+	void (*foc_set_fw_override)(float current);
 } vesc_c_if;
 
 typedef struct {

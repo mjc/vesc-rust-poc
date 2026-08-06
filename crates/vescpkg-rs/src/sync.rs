@@ -102,6 +102,7 @@ impl FirmwareSemaphore {
     }
 
     /// Wait for at most `timeout` system ticks and report the outcome.
+    #[must_use]
     pub fn wait_timeout(&self, timeout: SystemTicks) -> SemaphoreWaitOutcome {
         semaphore_wait_outcome(call_vesc_ffi!(vesc_sem_wait_to(
             self.handle.as_ptr(),
@@ -110,6 +111,7 @@ impl FirmwareSemaphore {
     }
 
     /// Wait for a typed system-clock duration and report the outcome.
+    #[must_use]
     pub fn wait_timeout_duration(&self, timeout: SystemDuration) -> SemaphoreWaitOutcome {
         self.wait_timeout(timeout.duration())
     }

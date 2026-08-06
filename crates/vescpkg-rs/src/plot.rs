@@ -1,6 +1,10 @@
 //! Checked firmware plotting helpers.
+#![allow(
+    clippy::missing_errors_doc,
+    reason = "error variants document failures"
+)]
 
-use core::ffi::CStr;
+use crate::FirmwareStr;
 
 /// Failure returned by plotting operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +16,11 @@ pub enum PlotError {
     InvalidValue,
 }
 
+impl_error!(PlotError {
+    Unavailable => "firmware plotting is unavailable",
+    InvalidValue => "plot value or graph index is invalid",
+});
+
 /// Optional firmware plotting capability.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Plot;
@@ -21,15 +30,15 @@ impl Plot {
         Self
     }
 
-    /// Initialize a named plot and channel using NUL-terminated strings.
-    pub fn init(&self, title: &CStr, channel: &CStr) -> Result<(), PlotError> {
+    /// Initialize a named plot and channel.
+    pub fn init(&self, title: FirmwareStr<'_>, channel: FirmwareStr<'_>) -> Result<(), PlotError> {
         unsafe { crate::ffi::plot_init(title.as_ptr(), channel.as_ptr()) }
             .then_some(())
             .ok_or(PlotError::Unavailable)
     }
 
-    /// Add a named graph using a NUL-terminated string.
-    pub fn add_graph(&self, name: &CStr) -> Result<(), PlotError> {
+    /// Add a named graph.
+    pub fn add_graph(&self, name: FirmwareStr<'_>) -> Result<(), PlotError> {
         unsafe { crate::ffi::plot_add_graph(name.as_ptr()) }
             .then_some(())
             .ok_or(PlotError::Unavailable)
@@ -58,6 +67,7 @@ impl Plot {
 
 impl crate::Firmware {
     /// Return the optional firmware plotting capability.
+    #[must_use]
     pub fn plot(&self) -> Plot {
         Plot::new()
     }
@@ -66,6 +76,7 @@ impl crate::Firmware {
 #[cfg(all(feature = "test-support", not(test)))]
 impl crate::test_support::FirmwareTest {
     /// Return the optional firmware plotting capability.
+    #[must_use]
     pub fn plot(&self) -> Plot {
         Plot::new()
     }

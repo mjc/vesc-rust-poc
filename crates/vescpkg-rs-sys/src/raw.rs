@@ -584,6 +584,8 @@ mod slots {
     optional_fn_slot!(system_time_ticks as unsafe extern "C" fn() -> u32);
     // Appended in firmware 6.06; callers treat absence as an unsupported hint.
     optional_fn_slot!(thread_set_priority as unsafe extern "C" fn(c_int));
+    // Appended in firmware 7.00; callers treat absence as unsupported.
+    optional_fn_slot!(foc_set_fw_override as unsafe extern "C" fn(f32));
     fn_slot!(io_set_mode as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_write as unsafe extern "C" fn(c_int, c_int) -> bool);
     fn_slot!(io_read as unsafe extern "C" fn(c_int) -> bool);
@@ -1905,6 +1907,13 @@ pub unsafe fn foc_set_openloop_duty(duty: f32, rpm: f32) -> bool {
 pub unsafe fn foc_set_openloop_duty_phase(duty: f32, phase: f32) -> bool {
     unsafe { slots::foc_set_openloop_duty_phase() }
         .map(|func| unsafe { func(duty, phase) })
+        .is_some()
+}
+
+/// Set the firmware 7.00 field-weakening current override when the slot is present.
+pub unsafe fn foc_set_fw_override(current: f32) -> bool {
+    unsafe { slots::foc_set_fw_override() }
+        .map(|func| unsafe { func(current) })
         .is_some()
 }
 

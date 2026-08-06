@@ -93,7 +93,7 @@ fn raw_vesc_if_table_covers_the_current_vesc_firmware_header() {
     );
     assert_eq!(
         table_size,
-        core::mem::offset_of!(crate::raw::VescIf, shutdown_disable) + pointer_size
+        core::mem::offset_of!(crate::raw::VescIf, foc_set_fw_override) + pointer_size
     );
 }
 
@@ -279,24 +279,21 @@ fn can_baud_representation_preserves_pinned_enum_values() {
 #[test]
 fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(crate::c_vesc_if::FIELD_COUNT, VescIfAbi::FIELD_COUNT);
-    assert_eq!(VescIfAbi::FIELD_COUNT, 253);
-    assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 248);
+    assert_eq!(VescIfAbi::FIELD_COUNT, 254);
+    assert_eq!(VescIfAbi::CALLABLE_SLOT_COUNT, 249);
     assert_eq!(VescIfAbi::ALL_SLOTS.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(VescIfAbi::ALL_ENTRIES.len(), VescIfAbi::FIELD_COUNT);
     assert_eq!(
         VescIfAbi::SOURCE_REPOSITORY,
-        "https://github.com/lukash/vesc_pkg_lib"
+        "https://github.com/vedderb/bldc"
     );
     assert_eq!(
         VescIfAbi::SOURCE_COMMIT,
-        "e8bdc8296b90a266713da3762868f0d18ec027fe"
+        "2a8de79a5f573521c4af0f3d98b1c1699d2e5382"
     );
-    assert_eq!(
-        VescIfAbi::SOURCE_HEADER,
-        "third_party/vesc_pkg_lib/vesc_c_if.h"
-    );
+    assert_eq!(VescIfAbi::SOURCE_HEADER, "lispBM/c_libs/vesc_c_if.h");
     assert_eq!(VescIfAbi::ALL_SLOTS[0].name(), "lbm_add_extension");
-    assert_eq!(VescIfAbi::ALL_SLOTS[252].name(), "shutdown_disable");
+    assert_eq!(VescIfAbi::ALL_SLOTS[253].name(), "foc_set_fw_override");
     assert_eq!(
         VescIfAbi::ALL_SLOTS[0].minimum_revision(),
         Stm32AbiRevision::Base
@@ -308,6 +305,10 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
     assert_eq!(
         VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_605_SLOT_COUNT].minimum_revision(),
         Stm32AbiRevision::Firmware606
+    );
+    assert_eq!(
+        VescIfAbi::ALL_SLOTS[VescIfAbi::FIRMWARE_606_SLOT_COUNT].minimum_revision(),
+        Stm32AbiRevision::Firmware700
     );
     assert!(
         VescIfAbi::ALL_SLOTS
@@ -353,6 +354,22 @@ fn vesc_if_manifest_matches_generated_header_descriptors() {
             .count(),
         VescIfAbi::CALLABLE_SLOT_COUNT
     );
+}
+
+#[test]
+fn firmware_700_symbol_name_parameters_match_the_release_header() {
+    for name in ["lbm_add_symbol_const", "lbm_get_symbol_by_name"] {
+        let signature = VescIfAbi::ALL_ENTRIES
+            .iter()
+            .find(|entry| entry.c_decl() == name)
+            .expect("firmware 7.00 symbol slot")
+            .signature();
+
+        assert!(
+            signature.contains("* mut :: core :: ffi :: c_char"),
+            "{name} must retain the mutable character pointer from release_7_00: {signature}"
+        );
+    }
 }
 
 #[test]
