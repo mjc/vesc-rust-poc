@@ -400,7 +400,6 @@ fn refresh_footpad_warning(
 struct FlywheelReadiness {
     run_state: FloatOutBoyRunState,
     balance_pitch: FloatOutBoyRealtimeBalancePitch,
-    balance_pitch_abs: AngleDegrees,
     ready_stop: bool,
 }
 
@@ -437,7 +436,6 @@ fn refresh_flywheel_readiness(
     FlywheelReadiness {
         run_state,
         balance_pitch,
-        balance_pitch_abs: balance_pitch.angle_degrees().abs(),
         ready_stop,
     }
 }
@@ -969,7 +967,7 @@ fn evaluate_transition_phase(
         pitch: attitude.pitch,
         pitch_abs: attitude.pitch_abs,
         roll_abs: attitude.roll_abs,
-        balance_pitch_abs: readiness.balance_pitch_abs,
+        balance_pitch_abs: readiness.balance_pitch.angle_degrees().abs(),
         remote_setpoint_abs: base.setpoints().remote().angle().abs(),
         motor_erpm,
         darkride_active,
