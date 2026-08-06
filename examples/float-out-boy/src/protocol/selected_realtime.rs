@@ -73,36 +73,24 @@ fn append_mask1(
     if mask.selects(MASK1_STATE_FLAGS) {
         packet.push_u32(header.state_flags_compat());
     }
-    for (bit, item) in (6..14)
+    for (_, item) in (6..14)
         .map(|shift| 1_u32.wrapping_shl(shift))
         .zip(FLOAT_OUT_BOY_REALTIME_DATA_ITEMS[2..10].iter().copied())
+        .filter(|(bit, _)| mask.selects(*bit))
     {
-        push_selected(
-            packet,
-            mask.selects(bit),
-            precision,
-            realtime_value(payloads, item, live),
-        );
+        precision.push(packet, realtime_value(payloads, item, live));
     }
-    push_selected(
-        packet,
-        mask.selects(MASK1_BATTERY_SOC),
-        precision,
-        payloads.battery_level().as_fraction(),
-    );
+    if mask.selects(MASK1_BATTERY_SOC) {
+        precision.push(packet, payloads.battery_level().as_fraction());
+    }
     let after_soc = FLOAT_OUT_BOY_REALTIME_DATA_ITEMS[10..]
         .iter()
         .chain(FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS[..7].iter())
         .copied()
         .chain([FloatOutBoyRealtimeDataItem::ControlFrequency]);
     let bits = (15..31).map(|shift| 1_u32.wrapping_shl(shift));
-    for (bit, item) in bits.zip(after_soc) {
-        push_selected(
-            packet,
-            mask.selects(bit),
-            precision,
-            realtime_value(payloads, item, live),
-        );
+    for (_, item) in bits.zip(after_soc).filter(|(bit, _)| mask.selects(*bit)) {
+        precision.push(packet, realtime_value(payloads, item, live));
     }
 }
 
@@ -119,19 +107,22 @@ fn append_mask2(
         ));
     }
     let bits = (1..9).map(|shift| 1_u32.wrapping_shl(shift));
-    for (bit, value) in bits.zip([
-        payloads.distance_abs().distance().as_meters(),
-        payloads.charging_voltage().voltage().as_volts(),
-        payloads.charging_current().current().as_amps(),
-        payloads.discharged_charge().charge().as_amp_hours(),
-        payloads.charged_charge().charge().as_amp_hours(),
-        payloads.discharged_energy().energy().as_watt_hours(),
-        payloads.charged_energy().energy().as_watt_hours(),
-        payloads
-            .foc_id_current()
-            .map_or(0.0, |current| current.current().as_amps()),
-    ]) {
-        push_selected(packet, mask.selects(bit), precision, value);
+    for (_, value) in bits
+        .zip([
+            payloads.distance_abs().distance().as_meters(),
+            payloads.charging_voltage().voltage().as_volts(),
+            payloads.charging_current().current().as_amps(),
+            payloads.discharged_charge().charge().as_amp_hours(),
+            payloads.charged_charge().charge().as_amp_hours(),
+            payloads.discharged_energy().energy().as_watt_hours(),
+            payloads.charged_energy().energy().as_watt_hours(),
+            payloads
+                .foc_id_current()
+                .map_or(0.0, |current| current.current().as_amps()),
+        ])
+        .filter(|(bit, _)| mask.selects(*bit))
+    {
+        precision.push(packet, value);
     }
     let Some(gnss) = gnss else { return };
     if mask.selects(MASK2_GNSS_LAT) {
@@ -141,29 +132,17 @@ fn append_mask2(
         packet.extend(&gnss.longitude().longitude().as_degrees().to_be_bytes());
     }
     let bits = (11..14).map(|shift| 1_u32.wrapping_shl(shift));
-    for (bit, value) in bits.zip([
-        gnss.altitude().altitude().as_meters(),
-        gnss.speed().speed().as_kilometers_per_hour(),
-        gnss.hdop().as_unitless(),
-    ]) {
-        push_selected(packet, mask.selects(bit), precision, value);
+    for (_, value) in bits
+        .zip([
+            gnss.altitude().altitude().as_meters(),
+            gnss.speed().speed().as_kilometers_per_hour(),
+            gnss.hdop().as_unitless(),
+        ])
+        .filter(|(bit, _)| mask.selects(*bit))
+    {
+        precision.push(packet, value);
     }
     if mask.selects(MASK2_GNSS_LAST_UPDATE) {
         packet.push_u32(gnss.last_update().as_ticks());
-    }
-}
-
-fn push_selected(
-    packet: &mut FloatOutBoyRealtimeSelectedResponse,
-    selected: bool,
-    precision: FloatOutBoyRealtimePrecision,
-    value: f32,
-) {
-    if !selected {
-        return;
-    }
-    match precision {
-        FloatOutBoyRealtimePrecision::Float16 => packet.push_float16_auto(value),
-        FloatOutBoyRealtimePrecision::Float32 => packet.push_float32_auto(value),
     }
 }

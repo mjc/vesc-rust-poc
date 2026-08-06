@@ -422,7 +422,7 @@ fn refloat_1_2_1_config_signature_resets_to_cutoff_defaults() {
         FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage
     );
     assert_eq!(state.serialized_config, FloatOutBoyConfigImage::defaults());
-    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(FloatOutBoyPackageState::configured_loop_time_us(), 2_000);
     assert_eq!(
         &state.serialized_config.as_bytes()[..4],
         &[0x19, 0x1a, 0x6c, 0x1b]

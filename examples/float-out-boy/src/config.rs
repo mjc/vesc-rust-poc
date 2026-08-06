@@ -65,6 +65,8 @@ vescpkg_rs::firmware_section_static!(
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x19, 0x1a, 0x6c, 0x1b];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
 pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE: SampleRate = SampleRate::from_hertz(500.0);
+#[cfg(test)]
+pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_LOOP_TIME_US: u32 = 2_000;
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[184] != 0;
 
@@ -606,28 +608,21 @@ vescpkg_rs::generated_custom_config_view! {
         CELL_LOW_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_low_voltage -> Voltage, offset: 272, scale: 1000.0;
         CELL_HIGH_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_high_voltage -> Voltage, offset: 274, scale: 1000.0;
         CELL_BALANCE_VOLTAGE_FIELD: CustomConfigScaledVoltageField => cell_balance_voltage -> Voltage, offset: 276, scale: 1000.0;
+        CELL_HIGH_TEMPERATURE_FIELD: CustomConfigWireByteField => cell_high_temperature -> FloatOutBoyBmsTemperature, offset: 278, map: |value: WireByte| FloatOutBoyBmsTemperature::from_config_byte(value.as_u8());
+        CELL_LOW_TEMPERATURE_FIELD: CustomConfigWireByteField => cell_low_temperature -> FloatOutBoyBmsTemperature, offset: 279, map: |value: WireByte| FloatOutBoyBmsTemperature::from_config_byte(value.as_u8());
+        BMS_HIGH_TEMPERATURE_FIELD: CustomConfigWireByteField => bms_high_temperature -> FloatOutBoyBmsTemperature, offset: 280, map: |value: WireByte| FloatOutBoyBmsTemperature::from_config_byte(value.as_u8());
     }
 }
 
 impl FloatOutBoyBmsConfig<'_> {
-    const CELL_HIGH_TEMPERATURE_OFFSET: usize = 278;
-    const CELL_LOW_TEMPERATURE_OFFSET: usize = 279;
-    const BMS_HIGH_TEMPERATURE_OFFSET: usize = 280;
-
     pub(crate) fn thresholds(self) -> FloatOutBoyBmsThresholds {
         FloatOutBoyBmsThresholds::new(
             self.cell_low_voltage(),
             self.cell_high_voltage(),
             self.cell_balance_voltage(),
-            FloatOutBoyBmsTemperature::from_config_byte(
-                self.0.as_bytes()[Self::CELL_LOW_TEMPERATURE_OFFSET],
-            ),
-            FloatOutBoyBmsTemperature::from_config_byte(
-                self.0.as_bytes()[Self::CELL_HIGH_TEMPERATURE_OFFSET],
-            ),
-            FloatOutBoyBmsTemperature::from_config_byte(
-                self.0.as_bytes()[Self::BMS_HIGH_TEMPERATURE_OFFSET],
-            ),
+            self.cell_low_temperature(),
+            self.cell_high_temperature(),
+            self.bms_high_temperature(),
         )
     }
 }
@@ -720,14 +715,10 @@ vescpkg_rs::generated_custom_config_view! {
 }
 
 impl FloatOutBoyStartupConfig<'_> {
+    #[cfg(test)]
     pub(crate) fn sample_rate(self) -> SampleRate {
         let _ = self;
         FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE
-    }
-
-    pub(crate) fn loop_time_us(self) -> u32 {
-        let _ = self;
-        2_000
     }
 }
 
