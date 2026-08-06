@@ -24,6 +24,25 @@ fn test_command(bytes: &[u8]) -> Option<(Command, &[u8])> {
 }
 
 impl FloatOutBoyPackageState {
+    fn realtime_header(
+        &self,
+        payloads: &FloatOutBoyAllDataPayloads,
+        timestamp: TimestampTicks,
+    ) -> FloatOutBoyRealtimeDataHeader {
+        FloatOutBoyRealtimeDataHeader::new(
+            timestamp,
+            payloads.ride_state(),
+            payloads.footpad().state(),
+            payloads.beep_reason(),
+        )
+        .with_fatal_error(if self.alert_tracker.fatal_error() {
+            FatalError::Present
+        } else {
+            FatalError::None
+        })
+        .with_data_recorder(self.data_recorder.0.available_flags())
+    }
+
     pub(super) fn reply_to_metadata_command(
         &self,
         reply: &mut impl FnMut(&[u8]) -> bool,
@@ -94,19 +113,7 @@ impl FloatOutBoyPackageState {
             ));
         // Float Out Boy's main loop updates `d->time.now` before app-data reads it
         // in `cmd_realtime_data` at `third_party/float-out-boy/src/main.c:1931`.
-        let fatal = if self.alert_tracker.fatal_error() {
-            FatalError::Present
-        } else {
-            FatalError::None
-        };
-        let header = FloatOutBoyRealtimeDataHeader::new(
-            now(),
-            payloads.ride_state(),
-            payloads.footpad().state(),
-            payloads.beep_reason(),
-        )
-        .with_fatal_error(fatal)
-        .with_data_recorder(self.data_recorder.0.available_flags());
+        let header = self.realtime_header(&payloads, now());
         let tail = FloatOutBoyRealtimeTail::new(
             self.alert_tracker.firmware_fault_active(),
             self.alert_tracker.firmware_fault_code(),
@@ -151,18 +158,7 @@ impl FloatOutBoyPackageState {
             telemetry,
             true,
         );
-        let header = FloatOutBoyRealtimeDataHeader::new(
-            now(),
-            payloads.ride_state(),
-            payloads.footpad().state(),
-            payloads.beep_reason(),
-        )
-        .with_fatal_error(if self.alert_tracker.fatal_error() {
-            FatalError::Present
-        } else {
-            FatalError::None
-        })
-        .with_data_recorder(self.data_recorder.0.available_flags());
+        let header = self.realtime_header(&payloads, now());
         let response = encode_float_out_boy_realtime_selected_response(
             request,
             &payloads,
@@ -184,7 +180,7 @@ impl FloatOutBoyPackageState {
         // C map: `on_command_received` only calls `cmd_send_all_data` for
         // three-byte COMMAND_GET_ALLDATA packets at `third_party/float-out-boy/src/main.c:2212-2218`.
         let request = (command == Command::GetAllData)
-            .then(|| FloatOutBoyAllDataRequest::parse_payload(payload))
+            .then_some(FloatOutBoyAllDataRequest::parse_payload(payload))
             .flatten();
         match (request, telemetry.firmware_fault()) {
             (None, _) | (Some(_), FirmwareFault::Unknown) => false,

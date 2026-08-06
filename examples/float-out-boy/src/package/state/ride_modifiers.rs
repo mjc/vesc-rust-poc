@@ -145,7 +145,12 @@ fn turn_target(
     erpm: Rpm,
 ) -> AngleDegrees {
     let abs_erpm = erpm.abs().as_revolutions_per_minute();
-    let mut target = if config.turn_tilt_strength().value() == 0.0
+    let target = if abs_erpm
+        < config
+            .turn_tilt_start_erpm()
+            .rpm()
+            .as_revolutions_per_minute()
+        || config.turn_tilt_strength().value() == 0.0
         || state.yaw.aggregate().abs() < config.turn_tilt_start_angle()
         || state.yaw.rate().abs() < TURN_TILT_YAW_RATE_THRESHOLD
     {
@@ -175,18 +180,8 @@ fn turn_target(
         target.clamp(
             -config.turn_tilt_angle_limit().as_degrees(),
             config.turn_tilt_angle_limit().as_degrees(),
-        )
+        ) * erpm.signum()
     };
-    if abs_erpm
-        < config
-            .turn_tilt_start_erpm()
-            .rpm()
-            .as_revolutions_per_minute()
-    {
-        target = 0.0;
-    } else {
-        target *= erpm.signum();
-    }
     AngleDegrees::from_degrees(target)
 }
 
@@ -323,7 +318,7 @@ impl RideModifierState {
         self.update_nose(config, input.motor_erpm, elapsed);
         self.update_turn(balance, motor, elapsed);
         self.update_torque(balance, input.filtered_torque, motor, elapsed);
-        self.update_atr(balance, input, motor, elapsed);
+        self.update_atr(balance, input, motor, elapsed, frequency);
         self.update_brake(balance, input, motor, elapsed);
     }
 
@@ -387,10 +382,8 @@ impl RideModifierState {
         input: RideModifierInput,
         motor: ModifierMotorState,
         elapsed: VescSeconds,
+        update_rate: SampleRate,
     ) {
-        let Some(update_rate) = smooth_setpoint_frequency(elapsed) else {
-            return;
-        };
         let ratio = if motor.braking {
             config.atr_amps_decel_ratio()
         } else {
