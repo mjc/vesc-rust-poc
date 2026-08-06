@@ -101,9 +101,13 @@ impl FloatOutBoyMotorControl {
             // stores it at `third_party/float-out-boy/src/motor_control.c:44-47`, then
             // `motor_control_apply` passes it to `mc_set_current` at
             // `third_party/float-out-boy/src/motor_control.c:93-99`.
+            let current = command.requested_current();
+            if !current.is_finite() {
+                return false;
+            }
             motor.keep_alive();
             motor.set_current_off_delay(CURRENT_OFF_DELAY).is_ok()
-                && motor.set_current(command.requested_current()).is_ok()
+                && motor.set_current(current).is_ok()
         })
     }
 
@@ -344,9 +348,19 @@ mod tests {
     }
 
     #[test]
-    fn failed_requested_current_does_not_fall_through_to_idle_output() {
+    fn failed_requested_current_does_not_refresh_motor_watchdog() {
         let motor = FirmwareTest::new();
         let mut control = FloatOutBoyMotorControl::new();
+        control.request_current(MotorCurrent::new(Current::from_amps(5.0)));
+
+        assert!(control.apply(
+            motor.motor(),
+            FloatOutBoyRunState::Running,
+            Rpm::ZERO,
+            TimestampTicks::from_ticks(0),
+            FloatOutBoyParkingBrakeMode::Never,
+            MotorCurrent::new(Current::from_amps(50.0)),
+        ));
         control.request_current(MotorCurrent::new(Current::from_amps(f32::NAN)));
 
         assert!(!control.apply(
@@ -359,7 +373,8 @@ mod tests {
         ));
         assert_eq!(motor.keep_alive_count(), 1);
         assert_eq!(motor.current_off_delay_count(), 1);
-        assert_eq!(motor.current_command_count(), 0);
+        assert_eq!(motor.current_command_count(), 1);
+        assert_f32_eq!(motor.commanded_current().current().as_amps(), 5.0);
         assert_eq!(motor.duty_command_count(), 0);
         assert_eq!(motor.brake_current_command_count(), 0);
     }
