@@ -525,7 +525,9 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     assert!(editor.set_atr_amps_decel_ratio(PidScale::new(1.0)));
     let balance = config.balance();
     let mut state = RideModifierState::default();
-    configure_modifiers(&mut state, &config, VescSeconds::from_seconds(0.01));
+    let elapsed = VescSeconds::from_seconds(0.01);
+    let update_rate = SampleRate::from_hertz(100.0);
+    configure_modifiers(&mut state, &config, elapsed);
     let accelerating = RideModifierInput {
         motor_erpm: Rpm::from_revolutions_per_minute(4_000.0),
         filtered_torque: compat_torque(30.0),
@@ -538,7 +540,8 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             balance,
             accelerating,
             ModifierMotorState::from_input(accelerating),
-            VescSeconds::from_seconds(0.01),
+            elapsed,
+            update_rate,
         );
     }
     let accelerating_setpoint = state.atr.angle.value();
@@ -556,7 +559,8 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             balance,
             braking,
             ModifierMotorState::from_input(braking),
-            VescSeconds::from_seconds(0.01),
+            elapsed,
+            update_rate,
         );
     }
     assert!(state.atr.angle.value().is_negative());
@@ -574,7 +578,8 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
             balance,
             recovery,
             ModifierMotorState::from_input(recovery),
-            VescSeconds::from_seconds(0.01),
+            elapsed,
+            update_rate,
         );
     }
     assert!(state.atr.angle.value() > before_recovery);

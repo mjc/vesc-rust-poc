@@ -1,5 +1,9 @@
 //! Allocation-free observed sample-rate tracking.
 
+// TODO(vescpkg-rs): Move Refloat's "running or first update" adoption gate and
+// restart settling behavior into policy before presenting this tracker as
+// package-neutral.
+
 use crate::{Frequency, Ratio, SampleRate, TimestampTicks, VescSeconds};
 
 /// Policy controlling when an observed sample rate becomes the new filter rate.

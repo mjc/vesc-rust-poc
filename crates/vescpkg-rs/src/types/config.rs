@@ -43,6 +43,15 @@ impl WireByte {
         constructor(f32::from(self.0) * scale + offset)
     }
 
+    /// Use a semantic default for zero, or scale this nonzero protocol byte.
+    pub fn scaled_or<T>(self, default: T, scale: f32, constructor: fn(f32) -> T) -> T {
+        if self.0 == 0 {
+            default
+        } else {
+            self.scaled(scale, 0.0, constructor)
+        }
+    }
+
     /// Apply a rational wire scale in protocol operation order.
     ///
     /// A zero or non-finite denominator produces the constructor's zero value
@@ -1704,6 +1713,20 @@ mod tests {
         assert_eq!(
             byte.scaled_ratio(1.0, 2.0, -1.0, crate::AngleDegrees::from_degrees),
             crate::AngleDegrees::from_degrees(20.0)
+        );
+    }
+
+    #[test]
+    fn wire_byte_uses_default_only_for_zero_before_scaling() {
+        let default = crate::AngleDegrees::from_degrees(2.0);
+
+        assert_eq!(
+            super::WireByte::new(0).scaled_or(default, 0.1, crate::AngleDegrees::from_degrees),
+            default,
+        );
+        assert_eq!(
+            super::WireByte::new(30).scaled_or(default, 0.1, crate::AngleDegrees::from_degrees),
+            crate::AngleDegrees::from_degrees(3.0),
         );
     }
 

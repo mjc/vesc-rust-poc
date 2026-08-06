@@ -20,13 +20,11 @@ use crate::motor_torque::{MotorTorqueConstant, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit,
-    InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
-    TemperatureLimitStart, TimestampTicks,
+    AngleDegrees, AngleRadians, BatteryVoltage, Current, MosfetTemperature, MotorCurrent,
+    MotorTemperature, Ratio, Rpm, TimestampTicks,
 };
 use vescpkg_rs::{
-    DirectionalCurrentLimits, Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry,
-    WrappingTimer,
+    Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry, WrappingTimer,
 };
 
 mod alert_tracker;
@@ -40,6 +38,8 @@ mod config_storage;
 mod data_recorder;
 #[cfg(test)]
 mod data_recorder_tests;
+#[cfg(test)]
+mod default_tests;
 mod flywheel;
 mod footpad_runtime;
 mod frequency_tracker;
@@ -130,11 +130,6 @@ struct BeeperRuntimeFlags {
     duty_warning_active: bool,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct RideRuntimeFlags {
-    traction_control: bool,
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct LedRuntimeOverrides {
     enabled: Option<bool>,
@@ -164,18 +159,37 @@ impl Default for KonamiRuntime {
     }
 }
 
-/// Float Out Boy package state.
-#[pin_init::pin_init]
-#[derive(Debug, Default)]
-#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
-pub struct FloatOutBoyPackageState {
+macro_rules! float_out_boy_package_state {
+    ($( $(#[$attribute:meta])* $field:ident: $field_type:ty $(=> $initializer:expr)?, )+) => {
+        /// Float Out Boy package state.
+        #[pin_init::pin_init]
+        #[derive(Debug)]
+        #[cfg_attr(test, derive(Default, Clone, Copy, PartialEq))]
+        pub struct FloatOutBoyPackageState {
+            $( $(#[$attribute])* $field: $field_type, )+
+        }
+
+        impl FloatOutBoyPackageState {
+            pub(crate) fn default_in_place(
+            ) -> impl pin_init::Init<Self, core::convert::Infallible> {
+                pin_init::init_pin!(FloatOutBoyPackageState {
+                    $( $field: float_out_boy_package_state!(@init $($initializer)?), )+
+                })
+            }
+        }
+    };
+    (@init $initializer:expr) => { $initializer };
+    (@init) => { Default::default() };
+}
+
+float_out_boy_package_state! {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     config_load_outcome: FloatOutBoyConfigLoadOutcome,
     deferred_config_persistence: DeferredConfigPersistence,
     startup_configured: bool,
     firmware_imu_migration: FirmwareImuMigration,
-    data_recorder: DataRecorderState,
+    data_recorder: DataRecorderState => data_recorder::default_data_recorder(),
     alert_tracker: AlertTrackerState,
     lcm: LcmState,
     led_runtime_overrides: LedRuntimeOverrides,
@@ -185,7 +199,7 @@ pub struct FloatOutBoyPackageState {
     beeper_flags: BeeperRuntimeFlags,
     bms: bms_runtime::BmsRuntimeState,
     flywheel: FloatOutBoyFlywheelRuntime,
-    ride_flags: RideRuntimeFlags,
+    traction_control: bool,
     motor_control: FloatOutBoyMotorControl,
     balance_filter: BalanceFilter,
     balance_loop: LoopState,
@@ -193,9 +207,9 @@ pub struct FloatOutBoyPackageState {
     reverse_stop: ReverseStop,
     motor_distance_meters: f32,
     #[pin]
-    motor_kinematics: MotorKinematicsTracker,
+    motor_kinematics: MotorKinematicsTracker => MotorKinematicsTracker::default_in_place(),
     motor_current_filter: vescpkg_rs::BiquadLowPass,
-    motor_torque_constant: Option<MotorTorqueConstant>,
+    motor_config: MotorConfigSnapshot,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
@@ -214,15 +228,8 @@ pub struct FloatOutBoyPackageState {
     upside_down_fault_ticks: WrappingTimer,
     upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
-    duty_max_with_margin: DutyCycleLimit,
-    motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
-    battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
-    mosfet_temperature_limit_start: TemperatureLimitStart,
-    motor_temperature_limit_start: TemperatureLimitStart,
-    battery_cell_count: Option<BatteryCellCount>,
-    motor_config_initialized: bool,
     aux_odometer: OdometerMeters,
     aux_backup_failures: u32,
     aux_motor_config_refresh_ticks: WrappingTimer,
@@ -233,77 +240,9 @@ pub struct FloatOutBoyPackageState {
 }
 
 impl FloatOutBoyPackageState {
-    #[expect(
-        clippy::default_trait_access,
-        reason = "the in-place initializer infers every field type without duplicating the state declaration"
-    )]
-    pub(crate) fn default_in_place() -> impl pin_init::Init<Self, core::convert::Infallible> {
-        pin_init::init_pin!(FloatOutBoyPackageState {
-            all_data_payloads: Default::default(),
-            serialized_config: Default::default(),
-            config_load_outcome: Default::default(),
-            deferred_config_persistence: Default::default(),
-            startup_configured: Default::default(),
-            firmware_imu_migration: Default::default(),
-            data_recorder: Default::default(),
-            alert_tracker: Default::default(),
-            lcm: Default::default(),
-            led_runtime_overrides: Default::default(),
-            konami: Default::default(),
-            haptic_feedback: Default::default(),
-            beeper: Default::default(),
-            beeper_flags: Default::default(),
-            bms: Default::default(),
-            flywheel: Default::default(),
-            ride_flags: Default::default(),
-            motor_control: Default::default(),
-            balance_filter: Default::default(),
-            balance_loop: Default::default(),
-            frequency_trackers: Default::default(),
-            reverse_stop: Default::default(),
-            motor_distance_meters: Default::default(),
-            motor_kinematics: MotorKinematicsTracker::default_in_place(),
-            motor_current_filter: Default::default(),
-            motor_torque_constant: Default::default(),
-            remote_control: Default::default(),
-            runtime_board_setpoint: Default::default(),
-            ride_modifiers: Default::default(),
-            charging_ticks: Default::default(),
-            engage_ticks: Default::default(),
-            disengage_ticks: Default::default(),
-            idle_ticks: Default::default(),
-            nag_ticks: Default::default(),
-            idle_voltage: Default::default(),
-            fault_switch_ticks: Default::default(),
-            fault_switch_half_ticks: Default::default(),
-            fault_angle_pitch_ticks: Default::default(),
-            fault_angle_roll_ticks: Default::default(),
-            high_voltage_ticks: Default::default(),
-            wheelslip_ticks: Default::default(),
-            upside_down_fault_ticks: Default::default(),
-            upside_down_flags: Default::default(),
-            motor_duty_raw: Default::default(),
-            duty_max_with_margin: Default::default(),
-            motor_current_limits: Default::default(),
-            battery_current_limits: Default::default(),
-            mosfet_temperature: Default::default(),
-            motor_temperature: Default::default(),
-            mosfet_temperature_limit_start: Default::default(),
-            motor_temperature_limit_start: Default::default(),
-            battery_cell_count: Default::default(),
-            motor_config_initialized: Default::default(),
-            aux_odometer: Default::default(),
-            aux_backup_failures: Default::default(),
-            aux_motor_config_refresh_ticks: Default::default(),
-            internal_leds: Default::default(),
-            internal_led_refresh_pending: Default::default(),
-            internal_led_confirmation_pending: Default::default(),
-            firmware_version: Default::default(),
-        })
-    }
-
     fn motor_torque_constant(&self) -> MotorTorqueConstant {
-        self.motor_torque_constant
+        self.motor_config
+            .motor_torque_constant
             .unwrap_or(REFLOAT_COMPAT_TORQUE_CONSTANT)
     }
 
@@ -322,6 +261,7 @@ impl FloatOutBoyPackageState {
 
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
+    #[cfg(test)]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::default();
         state.all_data_payloads = all_data_payloads;
@@ -479,12 +419,12 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(crate) const fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
+    pub(crate) fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
         self.bms.sample()
     }
 
     #[cfg(test)]
-    pub(crate) const fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
+    pub(crate) fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
         self.bms.faults()
     }
 
@@ -544,7 +484,7 @@ impl FloatOutBoyPackageState {
         // the serialized config as source of truth until full `Data` parity.
         self.motor_control.apply(
             motor,
-            run_state,
+            run_state.into(),
             self.motor_kinematics.0.smoothed_abs_erpm(),
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
@@ -596,10 +536,10 @@ impl FloatOutBoyPackageState {
                     gyro_yaw: angular_rate.yaw(),
                     motor_erpm: payloads.electrical_speed(),
                     motor_current: payloads.motor_current(),
-                    motor_current_limits: self.motor_current_limits,
+                    motor_current_limits: self.motor_config.motor_current_limits,
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
-                    traction_control: self.ride_flags.traction_control,
+                    traction_control: self.traction_control,
                     motor_torque_constant: self.motor_torque_constant(),
                 },
                 sample.period().duration(),
@@ -631,7 +571,7 @@ impl FloatOutBoyPackageState {
         now: TimestampTicks,
     ) {
         self.frequency_trackers.main = frequency_tracker::FrequencyTracker::new(
-            self.serialized_config.startup().sample_rate(),
+            crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
             now,
             frequency_tracker::TRACKING_POLICY,
         );
@@ -761,12 +701,9 @@ impl FloatOutBoyPackageState {
         enabled: Option<bool>,
         headlights_enabled: Option<bool>,
     ) {
-        if let Some(enabled) = enabled {
-            self.led_runtime_overrides.enabled = Some(enabled);
-        }
-        if let Some(headlights_enabled) = headlights_enabled {
-            self.led_runtime_overrides.headlights_enabled = Some(headlights_enabled);
-        }
+        self.led_runtime_overrides.enabled = enabled.or(self.led_runtime_overrides.enabled);
+        self.led_runtime_overrides.headlights_enabled =
+            headlights_enabled.or(self.led_runtime_overrides.headlights_enabled);
         config_runtime::refresh_led_effects(self);
     }
 
@@ -938,14 +875,17 @@ impl FloatOutBoyPackageState {
         let config = self.serialized_config;
         let payloads = self.all_data_payloads;
         let ride_state = payloads.ride_state();
+        let motor_config = self.motor_config;
         let filtered_current = payloads.filtered_motor_current().current().current();
-        let motor_limit = self
+        let motor_limit = motor_config
             .motor_current_limits
             .for_current(payloads.motor_current().current());
         let motor_saturation =
             vescpkg_rs::current_limit_saturation(filtered_current, motor_limit.current());
         let battery_current = payloads.battery_current().current();
-        let battery_limit = self.battery_current_limits.for_current(battery_current);
+        let battery_limit = motor_config
+            .battery_current_limits
+            .for_current(battery_current);
         let battery_saturation =
             vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current());
         let duty_solid_threshold = Ratio::clamped(
@@ -1185,7 +1125,7 @@ impl FloatOutBoyPackageState {
     ) {
         #[cfg(test)]
         {
-            if !self.motor_config_initialized {
+            if !self.motor_config.initialized {
                 self.refresh_motor_config_runtime_state(telemetry);
             }
         }
@@ -1194,10 +1134,6 @@ impl FloatOutBoyPackageState {
 
     pub(crate) fn refresh_motor_config_runtime_state(&mut self, telemetry: &impl MotorTelemetry) {
         motor_runtime::refresh_config(self, telemetry);
-        #[cfg(test)]
-        {
-            self.motor_config_initialized = true;
-        }
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

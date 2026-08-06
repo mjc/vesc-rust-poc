@@ -1,6 +1,5 @@
 use super::{
-    FirmwareVersion, FloatOutBoyLoaderExtension, package_extension_descriptors,
-    record_float_out_boy_firmware_version,
+    FirmwareVersion, package_extension_descriptors, record_float_out_boy_firmware_version,
 };
 use crate::package::FloatOutBoyPackageState;
 use crate::package::test_support::{lock_float_out_boy_runtime_state, sample_all_data_payloads};
@@ -9,15 +8,10 @@ use vescpkg_rs::test_support::{LoaderInfo, TestExtensionRegistry};
 #[test]
 fn extension_table_lists_official_float_out_boy_loader_extensions() {
     let mut descriptors = package_extension_descriptors().into_iter();
-    let names = FloatOutBoyLoaderExtension::ALL.map(FloatOutBoyLoaderExtension::name);
-
-    assert_eq!(
-        names,
-        [
-            super::FloatOutBoyLoaderExtension::SetFwVersion.name(),
-            super::FloatOutBoyLoaderExtension::Bms.name(),
-        ]
-    );
+    let names = [
+        vescpkg_rs::extension_name!("ext-set-fw-version"),
+        vescpkg_rs::extension_name!("ext-bms"),
+    ];
     assert_eq!(descriptors.len(), names.len());
     assert_eq!(
         descriptors
@@ -40,7 +34,10 @@ fn package_lifecycle_registers_official_float_out_boy_loader_extensions() {
     let registry = TestExtensionRegistry::accepting();
     let mut info = LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
-    let names = FloatOutBoyLoaderExtension::ALL.map(FloatOutBoyLoaderExtension::name);
+    let names = [
+        vescpkg_rs::extension_name!("ext-set-fw-version"),
+        vescpkg_rs::extension_name!("ext-bms"),
+    ];
 
     assert_eq!(
         start.install_runtime_state(FloatOutBoyPackageState::new(sample_all_data_payloads())),
@@ -57,10 +54,7 @@ fn package_lifecycle_registers_official_float_out_boy_loader_extensions() {
         assert_eq!(registry.last_registered_name(), Some(name.as_str()));
     }
 
-    assert_eq!(
-        registry.registration_count(),
-        FloatOutBoyLoaderExtension::ALL.len()
-    );
+    assert_eq!(registry.registration_count(), names.len());
     assert!(start.finish_start(true));
     assert!(vescpkg_rs::test_support::stop_package(&mut info));
 }

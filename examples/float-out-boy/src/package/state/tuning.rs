@@ -15,16 +15,12 @@ fn tune_angle_from(value: WireByte, base: AngleDegrees) -> AngleDegrees {
 }
 
 fn tune_variable_tilt_maximum(value: u8) -> AngleDegrees {
-    if value > 100 {
-        WireByte::new(value.saturating_sub(100)).scaled_ratio(
-            -1.0,
-            10.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )
+    let (value, scale) = if value > 100 {
+        (value.saturating_sub(100), -1.0)
     } else {
-        WireByte::new(value).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees)
-    }
+        (value, 1.0)
+    };
+    WireByte::new(value).scaled_ratio(scale, 10.0, 0.0, AngleDegrees::from_degrees)
 }
 
 fn tune_booster_current(value: WireByte) -> MotorCurrent {
@@ -127,9 +123,10 @@ fn edit_primary_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: 
     let (_, transition_boost) = WireByte::nibbles(*atr_boost);
     let (accel_ratio, decel_ratio) = WireByte::nibbles(*atr_ratios);
     let (brake_strength, brake_lingering) = WireByte::nibbles(*brake_tilt);
-    let speed_boost_numerator = match atr_speed_sign.as_u8() {
-        0 => 5.0,
-        _ => -5.0,
+    let speed_boost_numerator = if atr_speed_sign.as_u8() == 0 {
+        5.0
+    } else {
+        -5.0
     };
 
     let updated = write_fields!(config;
@@ -194,29 +191,22 @@ fn edit_extended_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload:
     let (roll_gain, turn_start_angle) = WireByte::nibbles(*orientation);
     let (atr_on, atr_off) = WireByte::nibbles(*atr_speeds);
 
-    let mut updated = true;
-    if roll_gain.as_u8() > 0 {
-        updated &= config.set(
+    let mut updated = roll_gain.as_u8() == 0
+        || config.set(
             H::MAHONY_KP_ROLL_FIELD,
             roll_gain.divided(10.0, 1.0, vescpkg_rs::MahonyRollGain::new),
         );
-    }
-    if turn_start_angle.as_u8() > 0 {
-        updated &= config.set(
+    updated &= turn_start_angle.as_u8() == 0
+        || config.set(
             B::TURN_TILT_START_ANGLE_FIELD,
             turn_start_angle.scaled(1.0, 0.0, AngleDegrees::from_degrees),
         );
-    }
-    if atr_on.as_u8() > 0 && atr_off.as_u8() > 0 {
-        updated &= config.set(
-            B::ATR_FILTER_ON_SPEED_LIMIT_FIELD,
-            atr_on.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
+    updated &= atr_on.as_u8() == 0
+        || atr_off.as_u8() == 0
+        || write_fields!(config;
+                B::ATR_FILTER_ON_SPEED_LIMIT_FIELD => atr_on.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
+                B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD => atr_off.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
         );
-        updated &= config.set(
-            B::ATR_FILTER_OFF_SPEED_LIMIT_FIELD,
-            atr_off.scaled(2.0, 0.0, AngularVelocity::from_degrees_per_second),
-        );
-    }
     updated
 }
 
@@ -250,8 +240,8 @@ fn edit_tilt_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> b
             C::DUTY_PUSHBACK_ANGLE_FIELD => WireByte::new(*duty_angle).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees),
             C::DUTY_PUSHBACK_SPEED_FIELD => WireByte::new(*duty_speed).scaled_ratio(1.0, 10.0, 0.0, AngularVelocity::from_degrees_per_second),
     );
-    if *return_speed != 0 {
-        updated &= config.set(
+    updated &= *return_speed == 0
+        || config.set(
             C::TILTBACK_RETURN_SPEED_FIELD,
             WireByte::new(*return_speed).scaled_ratio(
                 1.0,
@@ -260,7 +250,6 @@ fn edit_tilt_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> b
                 AngularVelocity::from_degrees_per_second,
             ),
         );
-    }
     if let Some(speed_pushback) = optional.first() {
         updated &= config.set(
             C::SPEED_PUSHBACK_THRESHOLD_FIELD,
@@ -313,8 +302,8 @@ fn edit_other_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> 
                 C::TILTBACK_VARIABLE_MAX_FIELD => tune_variable_tilt_maximum(*variable_max),
                 C::TILTBACK_VARIABLE_ERPM_FIELD => WireByte::new(*variable_erpm).scaled(100.0, 0.0, electrical_speed),
         );
-        if *nose_speed != 0 {
-            updated &= config.set(
+        updated &= *nose_speed == 0
+            || config.set(
                 C::NOSE_ANGLING_SPEED_FIELD,
                 WireByte::new(*nose_speed).scaled_ratio(
                     1.0,
@@ -323,7 +312,6 @@ fn edit_other_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> 
                     AngularVelocity::from_degrees_per_second,
                 ),
             );
-        }
     }
 
     if updated && let [input, _input_speed, ..] = optional_input {

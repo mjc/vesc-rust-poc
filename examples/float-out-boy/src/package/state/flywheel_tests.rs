@@ -253,6 +253,28 @@ fn flywheel_uses_unserialized_command_values_like_float_out_boy_runtime() {
 }
 
 #[test]
+fn flywheel_zero_override_bytes_use_typed_runtime_defaults() {
+    let mut state = FloatOutBoyPackageState::new(ready_at(
+        AngleDegrees::from_degrees(80.0),
+        AngleDegrees::ZERO,
+    ));
+
+    assert!(state.handle_flywheel_packet(&flywheel_packet(&[0x81, 0, 0, 0, 0, 1])));
+
+    let balance = state.runtime_balance_loop_config();
+    assert_eq!(balance.kp, AngleCurrentGain::new(8.0));
+    assert_eq!(balance.kp2, RateCurrentGain::new(0.3));
+    assert_eq!(
+        state.runtime_duty_pushback_angle(),
+        AngleDegrees::from_degrees(2.0),
+    );
+    assert_eq!(
+        state.runtime_duty_pushback_threshold(),
+        Ratio::from_ratio_const(0.1),
+    );
+}
+
+#[test]
 fn flywheel_start_rejects_first_calibration_below_seventy_degrees() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(ready_at(

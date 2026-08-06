@@ -377,7 +377,7 @@ fn refloat_1_2_1_config_signature_resets_to_cutoff_defaults() {
         FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage
     );
     assert_eq!(state.serialized_config, FloatOutBoyConfigImage::defaults());
-    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(FloatOutBoyPackageState::configured_loop_time_us(), 2_000);
     assert_eq!(
         &state.serialized_config.as_bytes()[..4],
         &[0x19, 0x1a, 0x6c, 0x1b]
@@ -1235,13 +1235,13 @@ fn parking_brake_mode_field_decodes_known_and_rejects_unknown_values() {
         editable_config_from_bytes(&bytes)
             .motor_control()
             .parking_brake_mode(),
-        crate::config::FloatOutBoyParkingBrakeMode::Idle
+        crate::config::FloatOutBoyParkingBrakeMode::IDLE
     );
 
     bytes[118] = 0xff;
     assert_eq!(
-        crate::config::FloatOutBoyParkingBrakeMode::from(0xff),
-        crate::config::FloatOutBoyParkingBrakeMode::Unknown(0xff)
+        u8::from(crate::config::FloatOutBoyParkingBrakeMode::from(0xff)),
+        0xff
     );
     assert!(FloatOutBoyConfigImage::from_serialized(&bytes).is_none());
 }

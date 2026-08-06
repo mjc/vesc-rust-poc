@@ -1,5 +1,9 @@
 use crate::{AngleDegrees, AngularVelocity, Rpm, SampleRate, VescSeconds};
 
+// TODO(vescpkg-rs): Split the generic filtered-slew state from Refloat's
+// forward/reverse on-speed/off-speed policy before another package adopts this
+// API.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Travel direction used to select directional setpoint slew limits.
 pub enum SmoothSetpointDirection {
