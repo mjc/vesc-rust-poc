@@ -2,7 +2,7 @@
 
 use core::ptr::NonNull;
 
-use crate::SampleRate;
+use crate::{SampleRate, TimestampTicks};
 
 const DATA_RECORDER_MAGIC_BASE: u32 = 0xcafe_1000;
 const DATA_RECORDER_REQUIRED_MAJOR: u8 = 1;
@@ -331,6 +331,182 @@ impl<S: FixedRecordStorage, const RECORD_SIZE: usize> DecimatedRecordRing<S, REC
     #[must_use]
     pub fn get(&self, index: usize) -> Option<[u8; RECORD_SIZE]> {
         self.records.get(index)
+    }
+}
+
+bitflags::bitflags! {
+    /// Standard VESC package data-recorder state flags.
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub struct DataRecorderFlags: u8 {
+        /// Data recording is active.
+        const RECORDING = 1 << 0;
+        /// Recording starts automatically when the package engages.
+        const AUTOSTART = 1 << 1;
+        /// Recording stops automatically when the package disengages.
+        const AUTOSTOP = 1 << 2;
+    }
+}
+
+/// Reply action selected by the standard VESC package recorder request protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataRecorderReply {
+    /// The request is malformed, unknown, or unavailable and needs no reply.
+    None,
+    /// Return the current recorder status.
+    Status,
+    /// Stop recording and return the package-specific field header.
+    Header,
+    /// Return recorded data beginning at the given logical sample offset.
+    Data(u32),
+}
+
+/// Fixed-storage state for the standard VESC package data-recorder protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataRecorder<S, const RECORD_SIZE: usize> {
+    flags: DataRecorderFlags,
+    records: DecimatedRecordRing<S, RECORD_SIZE>,
+    last_timestamp: TimestampTicks,
+}
+
+impl<S: FixedRecordStorage, const RECORD_SIZE: usize> DataRecorder<S, RECORD_SIZE> {
+    /// Build an empty recorder with the standard autostart and autostop policy.
+    pub const fn new(storage: S, sample_rate_hz: u16) -> Self {
+        Self {
+            flags: DataRecorderFlags::AUTOSTART.union(DataRecorderFlags::AUTOSTOP),
+            records: DecimatedRecordRing::new(storage, sample_rate_hz),
+            last_timestamp: TimestampTicks::from_ticks(0),
+        }
+    }
+
+    /// Replace storage, stop recording, and derive decimation for a target duration.
+    pub fn initialize(&mut self, storage: S, target_seconds: u16) {
+        self.records.replace_storage(storage);
+        self.stop();
+        self.records.recalculate_decimation(target_seconds);
+    }
+
+    /// Replace storage, clear prior records, and stop recording.
+    pub fn replace_storage(&mut self, storage: S) {
+        self.records.replace_storage(storage);
+        self.stop();
+    }
+
+    /// Return whether at least one complete record fits in storage.
+    #[must_use]
+    pub fn has_capability(&self) -> bool {
+        self.records.capacity() > 0
+    }
+
+    /// Return the configured recorder state flags.
+    #[must_use]
+    pub const fn flags(&self) -> DataRecorderFlags {
+        self.flags
+    }
+
+    /// Return live flags only when recorder storage is available.
+    #[must_use]
+    pub fn available_flags(&self) -> DataRecorderFlags {
+        if self.has_capability() {
+            self.flags
+        } else {
+            DataRecorderFlags::empty()
+        }
+    }
+
+    /// Start or stop recording when the corresponding automatic policy is enabled.
+    pub fn trigger(&mut self, engage: bool) {
+        if self.flags.contains(DataRecorderFlags::AUTOSTART) && engage {
+            self.start();
+        } else if self.flags.contains(DataRecorderFlags::AUTOSTOP) && !engage {
+            self.stop();
+        }
+    }
+
+    /// Clear prior samples and start recording when storage is available.
+    pub fn start(&mut self) {
+        self.records.reset();
+        self.last_timestamp = TimestampTicks::from_ticks(0);
+        self.flags
+            .set(DataRecorderFlags::RECORDING, self.has_capability());
+    }
+
+    /// Stop recording without clearing samples.
+    pub fn stop(&mut self) {
+        self.flags.remove(DataRecorderFlags::RECORDING);
+    }
+
+    /// Record one sample when active and due, making its leading timestamp monotonic.
+    #[must_use]
+    pub fn sample(&mut self, mut sample: [u8; RECORD_SIZE]) -> bool {
+        if !self.flags.contains(DataRecorderFlags::RECORDING) {
+            return false;
+        }
+        let Some(timestamp_bytes) = sample.get(..4).and_then(|bytes| bytes.try_into().ok()) else {
+            return false;
+        };
+        if !self.records.sample_due() {
+            return false;
+        }
+        let timestamp = u32::from_be_bytes(timestamp_bytes);
+        let timestamp = if timestamp <= self.last_timestamp.as_ticks() {
+            self.last_timestamp.as_ticks().wrapping_add(1)
+        } else {
+            timestamp
+        };
+        self.last_timestamp = TimestampTicks::from_ticks(timestamp);
+        let Some(target) = sample.get_mut(..4) else {
+            return false;
+        };
+        target.copy_from_slice(&timestamp.to_be_bytes());
+        self.records.push(&sample)
+    }
+
+    /// Apply one standard recorder request and return the package-specific reply action.
+    pub fn handle_request(&mut self, payload: &[u8]) -> DataRecorderReply {
+        let control = matches!(payload, [1, _, ..]);
+        if !self.has_capability() && !control {
+            return DataRecorderReply::None;
+        }
+        match payload {
+            [1, 1, value, ..] => {
+                if *value > 0 {
+                    self.start();
+                } else {
+                    self.stop();
+                }
+                DataRecorderReply::Status
+            }
+            [1, 2, value, ..] => {
+                self.flags.set(DataRecorderFlags::AUTOSTART, *value > 0);
+                DataRecorderReply::Status
+            }
+            [1, 3, value, ..] => {
+                self.flags.set(DataRecorderFlags::AUTOSTOP, *value > 0);
+                DataRecorderReply::Status
+            }
+            [1, 4, value, ..] => {
+                self.records.set_decimation(*value);
+                DataRecorderReply::Status
+            }
+            [1, 0, ..] | [1, _, _, ..] => DataRecorderReply::Status,
+            [2, 1, ..] => {
+                self.stop();
+                DataRecorderReply::Header
+            }
+            [2, 2, a, b, c, d, ..] => DataRecorderReply::Data(u32::from_be_bytes([*a, *b, *c, *d])),
+            _ => DataRecorderReply::None,
+        }
+    }
+
+    /// Borrow the fixed-record ring and its sample-rate bookkeeping.
+    #[must_use]
+    pub const fn records(&self) -> &DecimatedRecordRing<S, RECORD_SIZE> {
+        &self.records
+    }
+
+    /// Mutably borrow the fixed-record ring and its sample-rate bookkeeping.
+    pub const fn records_mut(&mut self) -> &mut DecimatedRecordRing<S, RECORD_SIZE> {
+        &mut self.records
     }
 }
 
@@ -704,5 +880,37 @@ mod tests {
         records.configure_sample_rate(SampleRate::from_hertz(24.0), None);
         assert_eq!(records.decimation(), 20);
         assert_eq!(records.recording_duration_centiseconds(), 100);
+    }
+
+    #[test]
+    fn package_data_recorder_preserves_the_shared_vesc_request_state_machine() {
+        let mut recorder = DataRecorder::<[u8; 12], 4>::new([0; 12], 100);
+
+        assert_eq!(
+            recorder.flags(),
+            DataRecorderFlags::AUTOSTART | DataRecorderFlags::AUTOSTOP
+        );
+        assert_eq!(
+            recorder.handle_request(&[1, 2, 0]),
+            DataRecorderReply::Status
+        );
+        assert_eq!(recorder.flags(), DataRecorderFlags::AUTOSTOP);
+        assert_eq!(
+            recorder.handle_request(&[1, 1, 1]),
+            DataRecorderReply::Status
+        );
+        assert!(recorder.flags().contains(DataRecorderFlags::RECORDING));
+
+        assert!(recorder.sample([0, 0, 0, 0]));
+        assert!(recorder.sample([0, 0, 0, 0]));
+        assert_eq!(recorder.records().get(0), Some([0, 0, 0, 1]));
+        assert_eq!(recorder.records().get(1), Some([0, 0, 0, 2]));
+        assert_eq!(recorder.handle_request(&[2, 1]), DataRecorderReply::Header);
+        assert!(!recorder.flags().contains(DataRecorderFlags::RECORDING));
+        assert_eq!(
+            recorder.handle_request(&[2, 2, 0, 0, 0, 1]),
+            DataRecorderReply::Data(1)
+        );
+        assert_eq!(recorder.handle_request(&[2, 2, 0]), DataRecorderReply::None);
     }
 }

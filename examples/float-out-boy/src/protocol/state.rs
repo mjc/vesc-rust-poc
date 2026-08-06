@@ -197,29 +197,8 @@ vesc_protocol::wire_enum! {
     }
 }
 
-bitflags::bitflags! {
-    /// Float Out Boy data-recorder status flags sent in realtime data.
-    ///
-    /// C map: upstream packs fatal/data-recorder bits into realtime `extra_flags`
-    /// at `third_party/float-out-boy/src/main.c:1927-1930`.
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-    pub struct FloatOutBoyDataRecorderFlags: u8 {
-        /// Data recording is active.
-        const RECORDING = 1 << 0;
-        /// Recording starts automatically when the board engages.
-        const AUTOSTART = 1 << 1;
-        /// Recording stops automatically when the board disengages.
-        const AUTOSTOP = 1 << 2;
-    }
-}
-
-impl FloatOutBoyDataRecorderFlags {
-    /// Pack cutoff recorder activity in the realtime extra-flags byte.
-    #[must_use]
-    pub const fn realtime_extra_flags_compat(self) -> u8 {
-        if self.contains(Self::RECORDING) { 1 } else { 0 }
-    }
-}
+/// Float Out Boy name for the standard VESC package recorder status bits.
+pub use vescpkg_rs::DataRecorderFlags as FloatOutBoyDataRecorderFlags;
 
 /// Float Out Boy fatal-error state for realtime-data extra flags.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
