@@ -30,7 +30,7 @@ impl FloatOutBoyPackageState {
             // `third_party/float-out-boy/src/main.c:2070-2139`.
             let response = encode_float_out_boy_info_response(
                 payload,
-                self.serialized_config.hardware_led_mode_id(),
+                self.serialized_config.hardware_led_mode().id(),
                 internal_leds_operational,
                 self.data_recorder.has_capability(),
             );

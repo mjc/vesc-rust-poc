@@ -13,6 +13,12 @@ bounded_unit!(
 );
 
 impl Ratio {
+    /// Empty ratio.
+    pub const ZERO: Self = Self(Self::MIN);
+
+    /// Full ratio.
+    pub const FULL: Self = Self(Self::MAX);
+
     /// Return the remaining fraction to one.
     #[must_use]
     pub const fn complement(self) -> Self {
@@ -37,6 +43,20 @@ impl Ratio {
         Self::clamped(self.0 + (target.0 - self.0) * progress)
     }
 
+    /// Move toward `target` by at most the bounded ratio `step`.
+    #[must_use]
+    pub fn slew_toward(self, target: impl Into<Self>, step: Self) -> Self {
+        let target = target.into();
+        let difference = (target.0 - self.0).abs();
+        if difference < step.0 {
+            target
+        } else if target.0 > self.0 {
+            Self(self.0 + step.0)
+        } else {
+            Self(self.0 - step.0)
+        }
+    }
+
     /// Return whether this ratio is zero.
     #[must_use]
     pub const fn is_zero(self) -> bool {
@@ -47,6 +67,12 @@ impl Ratio {
     #[must_use]
     pub const fn is_full(self) -> bool {
         self.0 >= Self::MAX
+    }
+}
+
+impl From<bool> for Ratio {
+    fn from(value: bool) -> Self {
+        if value { Self::FULL } else { Self::ZERO }
     }
 }
 

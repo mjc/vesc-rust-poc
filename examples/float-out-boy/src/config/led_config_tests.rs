@@ -69,7 +69,8 @@ fn decodes_hardware_mode_from_cutoff_byte_232() {
     let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
     let (hardware, _) = image.led_configs().expect("valid LED fields");
 
-    assert_eq!(image.hardware_led_mode_id(), FloatOutBoyLedMode::Both.id());
+    let mode: FloatOutBoyLedMode = image.hardware_led_mode();
+    assert_eq!(mode, FloatOutBoyLedMode::Both);
     assert_eq!(hardware.mode(), FloatOutBoyLedMode::Both);
     assert_eq!(hardware.pin(), FloatOutBoyLedPin::C9);
     assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::NoPullup);

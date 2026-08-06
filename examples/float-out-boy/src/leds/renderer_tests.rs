@@ -649,8 +649,7 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         })
     };
     let overlay = super::FloatOutBoyLedOverlay {
-        strip_brightness: Ratio::from_ratio_const(1.0),
-        on_off_fade: Ratio::from_ratio_const(1.0),
+        brightness: Ratio::from_ratio_const(1.0),
         blend: Ratio::from_ratio_const(1.0),
     };
 
@@ -738,8 +737,7 @@ fn current_saturation_progress_pixels_match_refloat() {
             .unwrap_or_default()
     };
     let overlay = super::FloatOutBoyLedOverlay {
-        strip_brightness: Ratio::from_ratio_const(1.0),
-        on_off_fade: Ratio::from_ratio_const(1.0),
+        brightness: Ratio::from_ratio_const(1.0),
         blend: Ratio::from_ratio_const(1.0),
     };
 
@@ -778,11 +776,7 @@ fn disabled_and_confirmation_pixels_match_refloat() {
     };
 
     let mut disabled = super::FloatOutBoyLedStripFrame::new(config);
-    disabled.render_disabled(
-        Ratio::from_ratio_const(1.0),
-        Ratio::from_ratio_const(1.0),
-        1.0,
-    );
+    disabled.render_disabled(Ratio::from_ratio_const(1.0), 1.0);
     assert_eq!(
         channels(&disabled),
         [
@@ -795,11 +789,7 @@ fn disabled_and_confirmation_pixels_match_refloat() {
     );
 
     let mut confirmation = super::FloatOutBoyLedStripFrame::new(config);
-    confirmation.render_confirmation(
-        Ratio::from_ratio_const(1.0),
-        Ratio::from_ratio_const(1.0),
-        0.5,
-    );
+    confirmation.render_confirmation(Ratio::from_ratio_const(1.0), 0.5);
     assert_eq!(
         channels(&confirmation),
         [
@@ -1492,7 +1482,7 @@ fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
         (
             renderer.animation_start,
             renderer.status_dynamics.idle_time,
-            renderer.status_dynamics.idle_blend,
+            renderer.status_dynamics.idle_blend.as_ratio(),
         ),
         (100.25, 100.25, 0.0)
     );
