@@ -59,23 +59,7 @@ fn log_float_out_boy_command_header_error(
         }
         FloatOutBoyCommandHeaderError::InvalidPackageId(package_id) => {
             log.write_bytes(b"Invalid Package ID: ");
-            let digit = |value| {
-                b"0123456789"
-                    .get(usize::from(value))
-                    .copied()
-                    .unwrap_or(b'0')
-            };
-            let digits = [
-                digit(package_id / 100),
-                digit(package_id / 10 % 10),
-                digit(package_id % 10),
-            ];
-            let first = match package_id {
-                0..=9 => 2,
-                10..=99 => 1,
-                _ => 0,
-            };
-            log.write_bytes(digits.get(first..).unwrap_or_default());
+            log.write_u8_decimal(package_id);
         }
     }
     let _ = log.flush(effects);

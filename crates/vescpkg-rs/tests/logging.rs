@@ -37,3 +37,20 @@ fn logging_rejects_c_strings_with_embedded_nuls() {
         Err(LogError::InteriorNul)
     );
 }
+
+#[test]
+fn logging_writes_every_u8_as_allocation_free_decimal() {
+    for (value, expected) in [
+        (0, b"0".as_slice()),
+        (9, b"9".as_slice()),
+        (10, b"10".as_slice()),
+        (99, b"99".as_slice()),
+        (100, b"100".as_slice()),
+        (255, b"255".as_slice()),
+    ] {
+        let mut log = FirmwareLog::<4>::new();
+        log.write_u8_decimal(value);
+        assert_eq!(log.as_bytes(), expected);
+        assert!(!log.is_truncated());
+    }
+}
