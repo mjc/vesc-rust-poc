@@ -221,20 +221,14 @@ fn firmware_fault_code(fault: FirmwareFault) -> u8 {
 }
 
 impl FloatOutBoyPackageState {
-    pub(super) fn handle_lcm_packet(
+    pub(super) fn handle_lcm_command(
         &mut self,
         telemetry: &impl MotorTelemetry,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
         use FloatOutBoyAppDataCommand as Command;
-
-        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
-            bytes,
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-        ) else {
-            return false;
-        };
 
         match command {
             Command::LcmPoll => {
@@ -270,6 +264,22 @@ impl FloatOutBoyPackageState {
             }
             _ => false,
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn handle_lcm_packet(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+        bytes: &[u8],
+    ) -> bool {
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        self.handle_lcm_command(telemetry, reply, command, payload)
     }
 
     #[cfg(test)]

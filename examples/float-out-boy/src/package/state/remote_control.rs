@@ -1,4 +1,6 @@
-use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRealtimeRemoteInput};
+use crate::domain::FloatOutBoyRealtimeRemoteInput;
+#[cfg(test)]
+use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use crate::package::state::smooth_setpoint::{
     SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
@@ -130,21 +132,13 @@ impl RemoteControlState {
         self.move_idle_epoch = None;
     }
 
-    pub(super) fn handle_packet(
+    pub(super) fn handle_command(
         &mut self,
         now: TimestampTicks,
         disengage_epoch: TimestampTicks,
         maximum_move_speed: Speed,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        let [package_id, command, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
-            || *command != FloatOutBoyAppDataCommand::Remote.id()
-        {
-            return false;
-        }
         let Some(byte) = payload.first() else {
             return false;
         };
@@ -164,6 +158,24 @@ impl RemoteControlState {
         }
         self.command_epoch = Some(RemoteCommandEpoch(now));
         true
+    }
+
+    #[cfg(test)]
+    pub(super) fn handle_packet(
+        &mut self,
+        now: TimestampTicks,
+        disengage_epoch: TimestampTicks,
+        maximum_move_speed: Speed,
+        bytes: &[u8],
+    ) -> bool {
+        vescpkg_rs::protocol_app_data::parse_app_data_command::<FloatOutBoyAppDataCommand>(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        )
+        .filter(|(command, _)| *command == FloatOutBoyAppDataCommand::Remote)
+        .is_some_and(|(_, payload)| {
+            self.handle_command(now, disengage_epoch, maximum_move_speed, payload)
+        })
     }
 
     #[cfg(any(test, target_arch = "arm"))]
