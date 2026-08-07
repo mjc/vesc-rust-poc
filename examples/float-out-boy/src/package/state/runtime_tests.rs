@@ -766,6 +766,65 @@ fn active_reverse_stop_faults_follow_source_priority() {
 }
 
 #[test]
+fn reverse_stop_timer_epoch_resets_at_slow_pitch() {
+    let (_, telemetry, mut state) = running_reverse_stop_fixture(
+        Rpm::ZERO,
+        AngleDegrees::ZERO,
+        Rpm::from_revolutions_per_minute(-1.0),
+    );
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(5.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_001),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running,
+    );
+    assert_eq!(state.reverse_ticks, TimestampTicks::from_ticks(20_001));
+
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(6.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_002),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running,
+    );
+}
+
+#[test]
 fn running_reverse_stop_uses_pitch_typed_timer_boundaries_like_float_out_boy() {
     let cases = [
         (

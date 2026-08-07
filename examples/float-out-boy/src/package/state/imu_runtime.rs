@@ -583,26 +583,23 @@ impl ActiveReverseStopFaultInput {
     #[must_use]
     pub(super) fn stop_event(self) -> Option<FloatOutBoyStopEvent> {
         let limits = ReverseStopLimits::FLOAT_OUT_BOY;
-        match (self.footpad.is_pressed(), self.darkride) {
-            (false, _) => Some(FloatOutBoyStopEvent::ReverseStopNoFootpads),
-            (true, FloatOutBoyDarkRideState::Upright) if self.pitch > limits.pitch => {
-                Some(FloatOutBoyStopEvent::ReverseStopPitch)
-            }
-            (true, FloatOutBoyDarkRideState::Upright)
-                if self.pitch > limits.timer_fast_pitch
-                    && self.elapsed > SystemTicks::from_ticks(10_000)
-                    || self.pitch > limits.timer_slow_pitch
-                        && self.elapsed > SystemTicks::from_ticks(20_000) =>
-            {
-                Some(FloatOutBoyStopEvent::ReverseStopTimer)
-            }
-            (true, FloatOutBoyDarkRideState::Upright)
-                if self.total_erpm.abs() > limits.total_erpm =>
-            {
-                Some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
-            }
-            _ => None,
+        if !self.footpad.is_pressed() {
+            return Some(FloatOutBoyStopEvent::ReverseStopNoFootpads);
         }
+        if matches!(self.darkride, FloatOutBoyDarkRideState::Active) {
+            return None;
+        }
+        if self.pitch > limits.pitch {
+            return Some(FloatOutBoyStopEvent::ReverseStopPitch);
+        }
+        if (self.pitch > limits.timer_fast_pitch && self.elapsed > SystemTicks::from_ticks(10_000))
+            || (self.pitch > limits.timer_slow_pitch
+                && self.elapsed > SystemTicks::from_ticks(20_000))
+        {
+            return Some(FloatOutBoyStopEvent::ReverseStopTimer);
+        }
+        (self.total_erpm.abs() > limits.total_erpm)
+            .then_some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
     }
 }
 
@@ -901,7 +898,6 @@ fn apply_transition_activity(
     if !activity.normal.switches.half {
         state.fault_switch_half_ticks = system_time_ticks;
     }
-    let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
     if !matches!(
         (
             activity.input.run_state,
@@ -911,7 +907,7 @@ fn apply_transition_activity(
             FloatOutBoyRunState::Running,
             FloatOutBoySetpointAdjustment::ReverseStop
         )
-    ) || activity.input.pitch_abs < reverse_stop.timer_slow_pitch
+    ) || activity.input.pitch_abs < ReverseStopLimits::TIMER_ANGLE_THRESHOLD
     {
         state.reverse_ticks = system_time_ticks;
     }
