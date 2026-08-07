@@ -49,33 +49,18 @@ impl FloatOutBoyInternalLedDriver {
         setup: impl FnOnce(FloatOutBoyLedPin, FloatOutBoyLedPinConfig, &mut [u16]) -> bool,
         rollback: impl FnOnce(FloatOutBoyLedPin),
     ) -> bool {
-        let Some(pulse_count) = self.required_pulse_count() else {
+        let hardware = self.hardware;
+        let Some(pulses) = self.prepare_setup_pulses() else {
+            self.reset();
             return false;
         };
-        if !self.prepare_pulses(pulse_count) {
+        let pulse_count = pulses.len();
+        if !setup(hardware.pin(), hardware.pin_config(), pulses) {
+            rollback(hardware.pin());
+            self.reset();
             return false;
         }
         self.pulse_count = pulse_count;
-        let hardware = self.hardware;
-        let Some(pulses) = self.pulses_mut(pulse_count) else {
-            self.pulse_count = 0;
-            self.release_pulses();
-            return false;
-        };
-        let Some((reset, data)) = pulses.split_last_mut() else {
-            self.pulse_count = 0;
-            self.release_pulses();
-            return false;
-        };
-        data.fill(WS2812_ZERO);
-        *reset = WS2812_RESET;
-        if !setup(hardware.pin(), hardware.pin_config(), pulses) {
-            rollback(self.hardware.pin());
-            self.pulse_count = 0;
-            self.release_pulses();
-            self.state = DriverState::Uninitialized;
-            return false;
-        }
         self.state = DriverState::Operational;
         true
     }
@@ -115,10 +100,26 @@ impl FloatOutBoyInternalLedDriver {
         if !teardown(self.hardware.pin()) {
             return false;
         }
+        self.reset();
+        true
+    }
+
+    fn prepare_setup_pulses(&mut self) -> Option<&mut [u16]> {
+        let pulse_count = self.required_pulse_count()?;
+        self.prepare_pulses(pulse_count).then_some(())?;
+        let pulses = self.pulses_mut(pulse_count)?;
+        {
+            let (reset, data) = pulses.split_last_mut()?;
+            data.fill(WS2812_ZERO);
+            *reset = WS2812_RESET;
+        }
+        Some(pulses)
+    }
+
+    fn reset(&mut self) {
         self.state = DriverState::Uninitialized;
         self.pulse_count = 0;
         self.release_pulses();
-        true
     }
 
     fn required_pulse_count(&self) -> Option<usize> {
