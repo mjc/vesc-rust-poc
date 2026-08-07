@@ -1,5 +1,6 @@
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyTractionControlState,
 };
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, Current, ElectricalSpeed, ImuRoll,
@@ -49,7 +50,7 @@ pub(crate) struct LoopInput {
     pub(crate) motor_current_min: MotorCurrentLimit,
     pub(crate) mode: FloatOutBoyMode,
     pub(crate) darkride: FloatOutBoyDarkRideState,
-    pub(crate) traction_control: bool,
+    pub(crate) traction_control: FloatOutBoyTractionControlState,
 }
 
 /// Mutable PID state for one Float Out Boy balance-current step.

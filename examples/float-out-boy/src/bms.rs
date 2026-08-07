@@ -173,6 +173,20 @@ impl FloatOutBoyBmsFault {
 pub(crate) struct FloatOutBoyBmsFaults(u8);
 
 #[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum FloatOutBoyBmsIntegration {
+    Disabled,
+    Enabled(FloatOutBoyBmsThresholds),
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FloatOutBoyBmsConnectionMonitoring {
+    Deferred,
+    Armed,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
 impl FloatOutBoyBmsFaults {
     pub(crate) const NONE: Self = Self(0);
 
@@ -184,17 +198,22 @@ impl FloatOutBoyBmsFaults {
         self.0 & fault.bit() != 0
     }
 
+    #[must_use]
     pub(crate) fn evaluate(
-        enabled: bool,
+        integration: FloatOutBoyBmsIntegration,
         sample: FloatOutBoyBmsSample,
-        thresholds: FloatOutBoyBmsThresholds,
-        startup_timeout_elapsed: bool,
+        connection_monitoring: FloatOutBoyBmsConnectionMonitoring,
     ) -> Self {
-        if !enabled {
+        let FloatOutBoyBmsIntegration::Enabled(thresholds) = integration else {
             return Self::NONE;
-        }
+        };
 
-        if sample.message_age > VescSeconds::from_seconds(5.0) && startup_timeout_elapsed {
+        if sample.message_age > VescSeconds::from_seconds(5.0)
+            && matches!(
+                connection_monitoring,
+                FloatOutBoyBmsConnectionMonitoring::Armed
+            )
+        {
             return Self::from_fault(FloatOutBoyBmsFault::Connection);
         }
 

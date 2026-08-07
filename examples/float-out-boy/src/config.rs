@@ -4,7 +4,7 @@
 
 use crate::balance::LoopConfig;
 #[cfg(any(test, target_arch = "arm"))]
-use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
+use crate::bms::{FloatOutBoyBmsIntegration, FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
@@ -645,7 +645,7 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         let strip =
             FloatOutBoyLedStripConfig::new(self.enum_value()?, self.byte()?, self.enum_value()?);
         if self.boolean()? {
-            Some(strip.with_reverse(true))
+            Some(strip.reversed())
         } else {
             Some(strip)
         }
@@ -918,6 +918,15 @@ impl FloatOutBoyBmsConfig<'_> {
 
     pub(crate) fn enabled(self) -> bool {
         self.0.flag(Self::ENABLED_FIELD)
+    }
+
+    #[must_use]
+    pub(crate) fn integration(self) -> FloatOutBoyBmsIntegration {
+        if self.enabled() {
+            FloatOutBoyBmsIntegration::Enabled(self.thresholds())
+        } else {
+            FloatOutBoyBmsIntegration::Disabled
+        }
     }
 
     pub(crate) fn thresholds(self) -> FloatOutBoyBmsThresholds {

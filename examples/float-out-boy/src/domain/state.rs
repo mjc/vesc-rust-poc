@@ -166,6 +166,16 @@ pub enum FloatOutBoyWheelSlipState {
     Detected,
 }
 
+/// Whether traction control is currently suppressing motor current.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FloatOutBoyTractionControlState {
+    /// Current smoothing remains active.
+    #[default]
+    Inactive,
+    /// Motor current is suppressed while recovering traction.
+    Active,
+}
+
 /// Float Out Boy darkride/upside-down state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyDarkRideState {

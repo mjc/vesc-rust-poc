@@ -56,7 +56,7 @@ fn base_input() -> LoopInput {
         motor_current_min: motor_current_limit(Current::from_amps(100.0)),
         mode: FloatOutBoyMode::Normal,
         darkride: FloatOutBoyDarkRideState::Upright,
-        traction_control: false,
+        traction_control: FloatOutBoyTractionControlState::Inactive,
     }
 }
 
@@ -473,7 +473,7 @@ fn balance_loop_unit_darkride_and_traction_control_match_float_out_boy_main_loop
     let traction_output = advance_loop(
         config,
         LoopInput {
-            traction_control: true,
+            traction_control: FloatOutBoyTractionControlState::Active,
             ..base_input
         },
         state,

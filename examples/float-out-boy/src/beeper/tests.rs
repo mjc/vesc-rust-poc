@@ -119,9 +119,9 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
 
-    beeper.off(false);
+    beeper.off();
     assert_eq!(beeper.take_level(), None);
-    beeper.on(true);
+    beeper.force_on();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
 
     let changes: Vec<_> = (1..=240)
@@ -136,9 +136,9 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
         ]
     );
 
-    beeper.on(false);
+    beeper.on();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
-    beeper.off(false);
+    beeper.off();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
 }
 
@@ -146,16 +146,16 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
 fn disabled_beeper_rejects_on_but_still_allows_forced_off_like_float_out_boy() {
     let mut beeper = FloatOutBoyBeeper::new(false);
 
-    beeper.on(true);
+    beeper.force_on();
     assert_eq!(beeper.take_level(), None);
-    beeper.off(true);
+    beeper.force_off();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
 }
 
 #[test]
 fn disabling_an_active_beeper_avoids_refloats_stuck_high_bug() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.on(true);
+    beeper.force_on();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
 
     beeper.set_enabled(false);

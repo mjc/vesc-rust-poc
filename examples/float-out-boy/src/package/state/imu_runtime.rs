@@ -14,9 +14,10 @@ use super::{
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
-    FloatOutBoyTransitionEffect, FloatOutBoyWheelSlipState, Imu, LoopInput, MotorCurrent,
-    RideModifierInput, Rpm, TimestampTicks, float_out_boy_state_transition,
-    float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds,
+    FloatOutBoyTractionControlState, FloatOutBoyTransitionEffect, FloatOutBoyWheelSlipState, Imu,
+    LoopInput, MotorCurrent, RideModifierInput, Rpm, TimestampTicks,
+    float_out_boy_state_transition, float_out_boy_ticks_elapsed,
+    float_out_boy_ticks_elapsed_seconds,
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
@@ -201,7 +202,7 @@ fn runtime_values(
     state.reverse_total_erpm = Rpm::ZERO;
     state.motor_kinematics.reset_acceleration();
     state.motor_current_filter.reset_runtime();
-    state.ride_flags.traction_control = false;
+    state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
     state.remote_control.reset_runtime_vars();
     state.ride_modifiers.reset();
     state.runtime_board_setpoint = balance_pitch;
@@ -1609,7 +1610,7 @@ fn refresh_wheelslip_control(
     if phase.control.decision.detects_traction_loss() {
         state.wheelslip_ticks = system_time_ticks;
         if phase.control.darkride_active {
-            state.ride_flags.traction_control = true;
+            state.ride_flags.traction_control = FloatOutBoyTractionControlState::Active;
         }
         return true;
     }
@@ -1623,7 +1624,7 @@ fn refresh_wheelslip_control(
         return false;
     }
     if phase.motor_acceleration.abs() < limits.acceleration_clear {
-        state.ride_flags.traction_control = false;
+        state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
     }
     if above_duty_limit {
         state.wheelslip_ticks = system_time_ticks;
@@ -1633,7 +1634,7 @@ fn refresh_wheelslip_control(
         limits.clear_delay,
     ) && state.motor_duty_raw < limits.raw_duty_clear
     {
-        state.ride_flags.traction_control = false;
+        state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
         control.ride_state = control
             .ride_state
             .with_wheelslip(FloatOutBoyWheelSlipState::None);

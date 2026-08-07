@@ -1,6 +1,7 @@
 use super::{
-    ExtBms, FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample,
-    FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds,
+    ExtBms, FloatOutBoyBmsConnectionMonitoring, FloatOutBoyBmsFault, FloatOutBoyBmsFaults,
+    FloatOutBoyBmsIntegration, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
+    FloatOutBoyBmsThresholds,
 };
 use crate::config::{FLOAT_OUT_BOY_DEFAULT_CONFIG, FloatOutBoyConfigImage};
 use crate::package::test_support::sample_all_data_payloads;
@@ -63,6 +64,11 @@ fn decoded_integer_sample() -> FloatOutBoyBmsSample {
     )
 }
 
+#[must_use]
+fn enabled_bms() -> FloatOutBoyBmsIntegration {
+    FloatOutBoyBmsIntegration::Enabled(thresholds())
+}
+
 #[test]
 fn default_bms_thresholds_decode_like_float_out_boy_generated_config() {
     let config = FloatOutBoyConfigImage::defaults();
@@ -97,7 +103,11 @@ fn bms_thresholds_decode_exact_generated_offsets_and_signed_temperatures() {
 
 #[test]
 fn disabled_bms_clears_every_fault_like_float_out_boy_bms_update() {
-    let faults = FloatOutBoyBmsFaults::evaluate(false, sample(), thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        FloatOutBoyBmsIntegration::Disabled,
+        sample(),
+        FloatOutBoyBmsConnectionMonitoring::Armed,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
 }
@@ -113,7 +123,11 @@ fn stale_bms_after_startup_timeout_reports_connection_only() {
         VescSeconds::from_seconds(6.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        stale,
+        FloatOutBoyBmsConnectionMonitoring::Armed,
+    );
 
     assert_eq!(
         faults,
@@ -132,7 +146,11 @@ fn stale_bms_during_startup_grace_does_not_report_connection() {
         VescSeconds::from_seconds(6.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, stale, thresholds(), false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        stale,
+        FloatOutBoyBmsConnectionMonitoring::Deferred,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
 }
@@ -148,7 +166,11 @@ fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
         VescSeconds::from_seconds(5.0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, at_timeout, thresholds(), true);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        at_timeout,
+        FloatOutBoyBmsConnectionMonitoring::Armed,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
 }
@@ -164,7 +186,11 @@ fn bms_threshold_crossings_set_every_float_out_boy_fault() {
         VescSeconds::ZERO,
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds(), false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        sample,
+        FloatOutBoyBmsConnectionMonitoring::Deferred,
+    );
 
     for fault in [
         FloatOutBoyBmsFault::BmsOverTemperature,
@@ -198,7 +224,11 @@ fn equal_or_disabled_bms_thresholds_do_not_fault() {
         FloatOutBoyBmsTemperature::from_degrees_celsius(0),
     );
 
-    let faults = FloatOutBoyBmsFaults::evaluate(true, sample, thresholds, false);
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        FloatOutBoyBmsIntegration::Enabled(thresholds),
+        sample,
+        FloatOutBoyBmsConnectionMonitoring::Deferred,
+    );
 
     assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
 }

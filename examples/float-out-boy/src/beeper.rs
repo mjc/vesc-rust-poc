@@ -127,16 +127,28 @@ impl FloatOutBoyBeeper {
         self.enabled = enabled;
     }
 
-    pub(crate) fn on(&mut self, force: bool) {
-        if self.enabled && (force || self.transitions.is_empty()) {
+    #[cfg(test)]
+    pub(crate) fn on(&mut self) {
+        if self.enabled && self.transitions.is_empty() {
             self.pending_level = Some(FloatOutBoyBeeperLevel::High);
         }
     }
 
-    pub(crate) fn off(&mut self, force: bool) {
-        if force || self.transitions.is_empty() {
+    pub(crate) fn force_on(&mut self) {
+        if self.enabled {
+            self.pending_level = Some(FloatOutBoyBeeperLevel::High);
+        }
+    }
+
+    pub(crate) fn off(&mut self) {
+        if self.transitions.is_empty() {
             self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_off(&mut self) {
+        self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
     }
 
     #[cfg(any(test, target_arch = "arm"))]

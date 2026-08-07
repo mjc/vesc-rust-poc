@@ -13,7 +13,8 @@ use crate::domain::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
-    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyTractionControlState,
+    FloatOutBoyWheelSlipState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
@@ -1786,14 +1787,17 @@ fn running_wheelslip_refreshes_timer_and_zeros_target_above_max_duty_like_float_
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.ride_flags.traction_control = true;
+    state.ride_flags.traction_control = FloatOutBoyTractionControlState::Active;
     state.wheelslip_ticks = TimestampTicks::from_ticks(1);
     let now = TimestampTicks::from_ticks(5_000);
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
     assert_eq!(state.wheelslip_ticks, now);
-    assert!(!state.ride_flags.traction_control);
+    assert_eq!(
+        state.ride_flags.traction_control,
+        FloatOutBoyTractionControlState::Inactive
+    );
     assert_eq!(
         state
             .all_data_payloads()

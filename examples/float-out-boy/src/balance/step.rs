@@ -12,6 +12,7 @@ use super::{
 #[cfg(test)]
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyTractionControlState,
 };
 
 #[cfg(test)]

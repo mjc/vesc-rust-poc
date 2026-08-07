@@ -1,7 +1,7 @@
 use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
-use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
+use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
 use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
@@ -108,14 +108,15 @@ impl RequestedCurrent {
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
-        traction_control: bool,
+        traction_control: FloatOutBoyTractionControlState,
     ) -> MotorCurrent {
-        if traction_control {
-            Self::zero()
-        } else {
-            // C map: `third_party/float-out-boy/src/main.c:949-954` filters RUNNING
-            // output current with 20% of the new request.
-            previous * 0.8 + self.0 * 0.2
+        match traction_control {
+            FloatOutBoyTractionControlState::Active => Self::zero(),
+            FloatOutBoyTractionControlState::Inactive => {
+                // C map: `third_party/float-out-boy/src/main.c:949-954` filters RUNNING
+                // output current with 20% of the new request.
+                previous * 0.8 + self.0 * 0.2
+            }
         }
     }
 }
