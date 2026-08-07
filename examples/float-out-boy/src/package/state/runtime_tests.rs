@@ -1,5 +1,6 @@
 use super::{
-    FloatOutBoyPackageState, imu_runtime::ActiveReverseStopFaultInput,
+    FloatOutBoyPackageState,
+    imu_runtime::{ActiveReverseStopFaultInput, TimedFault},
     transition::FloatOutBoyStopEvent,
 };
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
@@ -762,6 +763,23 @@ fn active_reverse_stop_faults_follow_source_priority() {
 
     for (input, expected) in cases {
         assert_eq!(input.stop_event(), expected);
+    }
+}
+
+#[test]
+fn timed_fault_classification_keeps_pending_and_stop_states_distinct() {
+    let stop = FloatOutBoyStopEvent::Pitch;
+    let cases = [
+        (false, None, TimedFault::Clear),
+        (false, Some(stop), TimedFault::Clear),
+        (true, None, TimedFault::Pending),
+        (true, Some(stop), TimedFault::Stop(stop)),
+    ];
+
+    for (pending, candidate, expected) in cases {
+        let classified = TimedFault::classify(pending, candidate);
+        assert_eq!(classified, expected);
+        assert_eq!(classified.stop(), expected.stop());
     }
 }
 

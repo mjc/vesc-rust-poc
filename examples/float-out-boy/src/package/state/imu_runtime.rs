@@ -9,14 +9,14 @@ use super::{
     AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
     FloatOutBoyBeeperCount, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyPackageState,
-    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyEngagementDecision, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyPackageState, FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
     FloatOutBoyWheelSlipState, Imu, LoopInput, MotorCurrent, RideModifierInput, Rpm,
-    TimestampTicks, float_out_boy_first_stop_event, float_out_boy_state_transition,
-    float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds,
+    TimestampTicks, float_out_boy_state_transition, float_out_boy_ticks_elapsed,
+    float_out_boy_ticks_elapsed_seconds,
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
@@ -454,14 +454,41 @@ struct FaultInputs {
     ready_flywheel_stop: bool,
 }
 
-struct SwitchFaultActivity {
-    full: bool,
-    half: bool,
+struct FaultContext<'a> {
+    state: &'a FloatOutBoyPackageState,
+    base: &'a FloatOutBoyAllDataBasePayload,
+    now: TimestampTicks,
+    input: &'a FaultInputs,
 }
 
-struct AngleFaultActivity {
-    roll: bool,
-    pitch: bool,
+/// A timed check either refreshes its epoch, holds it, or requests a stop.
+///
+/// This preserves the C loop's distinction between a pending condition and a
+/// triggered fault without coupling timer updates to positional booleans.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TimedFault {
+    Clear,
+    Pending,
+    Stop(FloatOutBoyStopEvent),
+}
+
+impl TimedFault {
+    #[must_use]
+    pub(super) const fn classify(pending: bool, stop: Option<FloatOutBoyStopEvent>) -> Self {
+        match (pending, stop) {
+            (false, _) => Self::Clear,
+            (true, Some(event)) => Self::Stop(event),
+            (true, None) => Self::Pending,
+        }
+    }
+
+    #[must_use]
+    pub(super) const fn stop(self) -> Option<FloatOutBoyStopEvent> {
+        match self {
+            Self::Stop(event) => Some(event),
+            Self::Clear | Self::Pending => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -473,8 +500,7 @@ enum EngagementPermission {
 struct NormalFaultEvaluation {
     before_darkride: Option<FloatOutBoyStopEvent>,
     after_darkride: Option<FloatOutBoyStopEvent>,
-    switches: SwitchFaultActivity,
-    angles: AngleFaultActivity,
+    switch_angle: SwitchAngleFaultEvaluation,
     can_engage: EngagementPermission,
     flywheel_footpad_pressed: bool,
 }
@@ -482,94 +508,94 @@ struct NormalFaultEvaluation {
 struct SwitchAngleFaultEvaluation {
     before_darkride: Option<FloatOutBoyStopEvent>,
     after_darkride: Option<FloatOutBoyStopEvent>,
-    switches: SwitchFaultActivity,
-    angles: AngleFaultActivity,
+    full_switch: TimedFault,
+    half_switch: TimedFault,
+    roll: TimedFault,
+    pitch: TimedFault,
 }
 
+#[must_use]
 fn evaluate_switch_angle_faults(
-    state: &FloatOutBoyPackageState,
-    base: &FloatOutBoyAllDataBasePayload,
-    system_time_ticks: TimestampTicks,
-    input: &FaultInputs,
+    context: &FaultContext<'_>,
     can_engage: EngagementPermission,
 ) -> SwitchAngleFaultEvaluation {
-    let faults = state.serialized_config.faults();
-    let footpad = base.footpad().state();
+    let faults = context.state.serialized_config.faults();
+    let input = context.input;
+    let footpad = context.base.footpad().state();
     let running = matches!(input.run_state, FloatOutBoyRunState::Running);
     let flywheel = matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel);
     let half_erpm = faults.adc_half_erpm().rpm();
     let full_pending = !input.darkride_active && running && !footpad.is_pressed() && !flywheel;
-    let switch_faults_disabled = faults.moving_faults_disabled()
+    let full_disabled = faults.moving_faults_disabled()
         && input.motor_erpm > half_erpm * 2.0
         && input.roll_abs < MovingFaultLimits::FLOAT_OUT_BOY.roll;
-    let full_fault = full_pending
-        && !switch_faults_disabled
-        && (float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_switch_ticks,
-            faults.switch_full_delay(),
-        ) || input.motor_erpm.abs() < half_erpm * 6.0
-            && float_out_boy_ticks_elapsed_seconds(
-                system_time_ticks,
-                state.fault_switch_ticks,
-                faults.switch_half_delay(),
-            ));
-    let half_pending = !input.darkride_active
-        && running
-        && !faults.dual_switch()
-        && !matches!(can_engage, EngagementPermission::Allowed)
-        && input.motor_erpm.abs() < half_erpm;
-    let half_fault = half_pending
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_switch_half_ticks,
-            faults.switch_half_delay(),
-        );
-    let roll_pending = !input.darkride_active && running && input.roll_abs > faults.roll_angle();
-    let roll_fault = roll_pending
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_angle_roll_ticks,
-            faults.roll_delay(),
-        );
-    let pitch_pending = running
-        && input.pitch_abs > faults.pitch_angle()
-        && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle();
-    let pitch_fault = pitch_pending
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_angle_pitch_ticks,
-            faults.pitch_delay(),
-        );
-    let quickstop = QuickStopLimits::FLOAT_OUT_BOY;
-    let quickstop_fault = running
+    let full_switch = TimedFault::classify(
+        full_pending,
+        (!full_disabled
+            && (float_out_boy_ticks_elapsed_seconds(
+                context.now,
+                context.state.fault_switch_ticks,
+                faults.switch_full_delay(),
+            ) || input.motor_erpm.abs() < half_erpm * 6.0
+                && float_out_boy_ticks_elapsed_seconds(
+                    context.now,
+                    context.state.fault_switch_ticks,
+                    faults.switch_half_delay(),
+                )))
+        .then_some(FloatOutBoyStopEvent::FullSwitch),
+    );
+    let quick_stop = (running
         && !footpad.is_pressed()
         && !flywheel
         && faults.quickstop_enabled()
-        && input.motor_erpm.abs() < quickstop.stopped_erpm
-        && input.pitch_abs > quickstop.pitch
+        && input.motor_erpm.abs() < QuickStopLimits::FLOAT_OUT_BOY.stopped_erpm
+        && input.pitch_abs > QuickStopLimits::FLOAT_OUT_BOY.pitch
         && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle()
-        && (input.pitch >= AngleRadians::ZERO) == (input.motor_erpm >= Rpm::ZERO);
-    let before_darkride = float_out_boy_first_stop_event(&[
-        (FloatOutBoyStopEvent::FullSwitch, full_fault),
-        (FloatOutBoyStopEvent::QuickStop, quickstop_fault),
-        (FloatOutBoyStopEvent::HalfSwitch, half_fault),
-    ]);
-    let after_darkride = float_out_boy_first_stop_event(&[
-        (FloatOutBoyStopEvent::Roll, roll_fault),
-        (FloatOutBoyStopEvent::Pitch, pitch_fault),
-    ]);
+        && (input.pitch >= AngleRadians::ZERO) == (input.motor_erpm >= Rpm::ZERO))
+        .then_some(FloatOutBoyStopEvent::QuickStop);
+    let half_pending = !input.darkride_active
+        && running
+        && !faults.dual_switch()
+        && matches!(can_engage, EngagementPermission::Blocked)
+        && input.motor_erpm.abs() < half_erpm;
+    let half_switch = TimedFault::classify(
+        half_pending,
+        float_out_boy_ticks_elapsed_seconds(
+            context.now,
+            context.state.fault_switch_half_ticks,
+            faults.switch_half_delay(),
+        )
+        .then_some(FloatOutBoyStopEvent::HalfSwitch),
+    );
+    let roll_pending = !input.darkride_active && running && input.roll_abs > faults.roll_angle();
+    let roll = TimedFault::classify(
+        roll_pending,
+        float_out_boy_ticks_elapsed_seconds(
+            context.now,
+            context.state.fault_angle_roll_ticks,
+            faults.roll_delay(),
+        )
+        .then_some(FloatOutBoyStopEvent::Roll),
+    );
+    let pitch_pending = running
+        && input.pitch_abs > faults.pitch_angle()
+        && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle();
+    let pitch = TimedFault::classify(
+        pitch_pending,
+        float_out_boy_ticks_elapsed_seconds(
+            context.now,
+            context.state.fault_angle_pitch_ticks,
+            faults.pitch_delay(),
+        )
+        .then_some(FloatOutBoyStopEvent::Pitch),
+    );
     SwitchAngleFaultEvaluation {
-        before_darkride,
-        after_darkride,
-        switches: SwitchFaultActivity {
-            full: full_pending,
-            half: half_pending,
-        },
-        angles: AngleFaultActivity {
-            roll: roll_pending,
-            pitch: pitch_pending,
-        },
+        before_darkride: full_switch.stop().or(quick_stop).or(half_switch.stop()),
+        after_darkride: roll.stop().or(pitch.stop()),
+        full_switch,
+        half_switch,
+        roll,
+        pitch,
     }
 }
 
@@ -609,12 +635,11 @@ impl ActiveReverseStopFaultInput {
     }
 }
 
-fn evaluate_normal_faults(
-    state: &FloatOutBoyPackageState,
-    base: &FloatOutBoyAllDataBasePayload,
-    system_time_ticks: TimestampTicks,
-    input: &FaultInputs,
-) -> NormalFaultEvaluation {
+#[must_use]
+fn evaluate_normal_faults(context: &FaultContext<'_>) -> NormalFaultEvaluation {
+    let state = context.state;
+    let base = context.base;
+    let input = context.input;
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
     let footpad = base.footpad().state();
@@ -630,7 +655,7 @@ fn evaluate_normal_faults(
         footpad,
         darkride: input.ride_state.darkride(),
         pitch: input.pitch_abs,
-        elapsed: system_time_ticks.wrapping_duration_since(state.reverse_ticks),
+        elapsed: context.now.wrapping_duration_since(state.reverse_ticks),
         total_erpm: state.reverse_total_erpm,
     })
     .and_then(ActiveReverseStopFaultInput::stop_event);
@@ -640,8 +665,8 @@ fn evaluate_normal_faults(
     );
     let dual_switch = faults.dual_switch();
     let simple_start = startup.simplestart_enabled()
-        && (float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 2)
-            || !float_out_boy_ticks_elapsed(system_time_ticks, state.engage_ticks, 1));
+        && (float_out_boy_ticks_elapsed(context.now, state.disengage_ticks, 2)
+            || !float_out_boy_ticks_elapsed(context.now, state.engage_ticks, 1));
     let can_engage = match (
         input.ride_state.charging(),
         matches!(footpad, FloatOutBoyFootpadState::Both)
@@ -651,8 +676,7 @@ fn evaluate_normal_faults(
         (FloatOutBoyChargingState::NotCharging, true) => EngagementPermission::Allowed,
         _ => EngagementPermission::Blocked,
     };
-    let switch_angle =
-        evaluate_switch_angle_faults(state, base, system_time_ticks, input, can_engage);
+    let switch_angle = evaluate_switch_angle_faults(context, can_engage);
     let darkride = DarkrideLimits::FLOAT_OUT_BOY;
     let darkride_roll = !input.darkride_active
         && running
@@ -672,8 +696,7 @@ fn evaluate_normal_faults(
         after_darkride: switch_angle
             .after_darkride
             .or(darkride_roll.then_some(FloatOutBoyStopEvent::DarkrideRoll)),
-        switches: switch_angle.switches,
-        angles: switch_angle.angles,
+        switch_angle,
         can_engage,
         flywheel_footpad_pressed: flywheel_footpad,
     }
@@ -681,77 +704,78 @@ fn evaluate_normal_faults(
 
 struct DarkrideFaultEvaluation {
     stop: Option<FloatOutBoyStopEvent>,
-    high_erpm_pending: bool,
-    low_erpm_pending: bool,
+    high_erpm: TimedFault,
+    low_erpm: TimedFault,
 }
 
+#[must_use]
 fn evaluate_darkride_faults(
-    state: &FloatOutBoyPackageState,
-    system_time_ticks: TimestampTicks,
-    input: &FaultInputs,
+    context: &FaultContext<'_>,
     can_engage: EngagementPermission,
 ) -> DarkrideFaultEvaluation {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
+    let input = context.input;
     let high_pending = input.darkride_active && input.motor_erpm > limits.timed_high_erpm;
     // Active darkride shortens the wheelslip runaway stop from 100 ms to
     // 30 ms after the one-second post-flip grace (`src/main.c:361-366`).
-    let wheelslip_fault = high_pending
-        && matches!(
-            input.ride_state.wheelslip(),
-            FloatOutBoyWheelSlipState::Detected
-        )
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.upside_down_fault_ticks,
-            VescSeconds::from_seconds(1.0),
-        )
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_switch_ticks,
-            VescSeconds::from_seconds(0.03),
-        );
-    let high_fault = high_pending
-        && (float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_switch_ticks,
+    let wheelslip_fault = matches!(
+        input.ride_state.wheelslip(),
+        FloatOutBoyWheelSlipState::Detected
+    ) && float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.upside_down_fault_ticks,
+        VescSeconds::from_seconds(1.0),
+    ) && float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.fault_switch_ticks,
+        VescSeconds::from_seconds(0.03),
+    );
+    let high_erpm = TimedFault::classify(
+        high_pending,
+        (float_out_boy_ticks_elapsed_seconds(
+            context.now,
+            context.state.fault_switch_ticks,
             limits.timed_high_delay,
         ) || input.motor_erpm > limits.high_erpm
-            || wheelslip_fault);
+            || wheelslip_fault)
+            .then_some(FloatOutBoyStopEvent::DarkrideHighErpm),
+    );
     let low_pending = input.darkride_active
         && input.motor_erpm <= limits.timed_high_erpm
         && input.motor_erpm > limits.low_erpm;
-    let low_fault = low_pending
-        && float_out_boy_ticks_elapsed_seconds(
-            system_time_ticks,
-            state.fault_angle_roll_ticks,
+    let low_erpm = TimedFault::classify(
+        low_pending,
+        float_out_boy_ticks_elapsed_seconds(
+            context.now,
+            context.state.fault_angle_roll_ticks,
             limits.low_delay,
-        );
+        )
+        .then_some(FloatOutBoyStopEvent::DarkrideLowErpm),
+    );
+    let engagement_stop = (context.input.darkride_active
+        && matches!(can_engage, EngagementPermission::Allowed))
+    .then_some(FloatOutBoyStopEvent::DarkrideCanEngage);
     DarkrideFaultEvaluation {
-        stop: high_fault
-            .then_some(FloatOutBoyStopEvent::DarkrideHighErpm)
-            .or_else(|| low_fault.then_some(FloatOutBoyStopEvent::DarkrideLowErpm))
-            .or_else(|| {
-                (input.darkride_active && matches!(can_engage, EngagementPermission::Allowed))
-                    .then_some(FloatOutBoyStopEvent::DarkrideCanEngage)
-            }),
-        high_erpm_pending: high_pending,
-        low_erpm_pending: low_pending,
+        stop: high_erpm.stop().or(low_erpm.stop()).or(engagement_stop),
+        high_erpm,
+        low_erpm,
     }
 }
 
 struct EngagementEvaluation {
-    engage: EngagementPermission,
+    decision: FloatOutBoyEngagementDecision,
     centering_step: AngleDegrees,
 }
 
 const DIRTY_LANDING_PITCH_MARGIN_DEGREES: u8 = 10;
 
+#[must_use]
 fn evaluate_engagement(
-    state: &FloatOutBoyPackageState,
-    system_time_ticks: TimestampTicks,
-    input: &FaultInputs,
+    context: &FaultContext<'_>,
     can_engage: EngagementPermission,
 ) -> EngagementEvaluation {
+    let state = context.state;
+    let input = context.input;
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
     let push_start = PushStartLimits::FLOAT_OUT_BOY;
@@ -759,7 +783,7 @@ fn evaluate_engagement(
         input.ride_state.stop_condition(),
         FloatOutBoyStopCondition::SwitchFull
     ) && startup.dirty_landings_enabled()
-        && !float_out_boy_ticks_elapsed(system_time_ticks, state.fault_angle_pitch_ticks, 1);
+        && !float_out_boy_ticks_elapsed(context.now, state.fault_angle_pitch_ticks, 1);
     let pitch_tolerance = startup.pitch_tolerance()
         + AngleDegrees::from_degrees(f32::from(
             u8::from(dirty_landing_margin).saturating_mul(DIRTY_LANDING_PITCH_MARGIN_DEGREES),
@@ -780,12 +804,11 @@ fn evaluate_engagement(
         && {
             // READY darkride either ignores roll during its initial grace or
             // requires upside-down roll within startup tolerance.
-            let within_grace =
-                !float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 1)
-                    && !matches!(
-                        input.ride_state.stop_condition(),
-                        FloatOutBoyStopCondition::ReverseStop
-                    );
+            let within_grace = !float_out_boy_ticks_elapsed(context.now, state.disengage_ticks, 1)
+                && !matches!(
+                    input.ride_state.stop_condition(),
+                    FloatOutBoyStopCondition::ReverseStop
+                );
             let upside_down =
                 (input.roll_abs - AngleDegrees::from_degrees(180.0)).abs() < roll_tolerance;
             within_grace || upside_down
@@ -799,10 +822,10 @@ fn evaluate_engagement(
         && input.roll_abs < push_start.angle
         && !(faults.reversestop_enabled() && input.motor_erpm.is_negative());
     EngagementEvaluation {
-        engage: if ready_engage || ready_darkride || ready_push_start {
-            EngagementPermission::Allowed
+        decision: if ready_engage || ready_darkride || ready_push_start {
+            FloatOutBoyEngagementDecision::Engage
         } else {
-            EngagementPermission::Blocked
+            FloatOutBoyEngagementDecision::Preserve
         },
         centering_step: startup.centering_step(),
     }
@@ -818,13 +841,19 @@ fn first_transition_stop(
         .or(normal.after_darkride)
 }
 
-fn transition_control_conditions(
-    state: &FloatOutBoyPackageState,
-    base: &FloatOutBoyAllDataBasePayload,
-    input: &FaultInputs,
-    engagement: &EngagementEvaluation,
+struct ControlEvaluation {
+    conditions: ControlConditions,
+    motor_acceleration: Rpm,
+}
+
+#[must_use]
+fn evaluate_control_conditions(
+    context: &FaultContext<'_>,
+    engagement: FloatOutBoyEngagementDecision,
     stop_event: Option<FloatOutBoyStopEvent>,
-) -> (ControlConditions, Rpm) {
+) -> ControlEvaluation {
+    let state = context.state;
+    let input = context.input;
     let reverse_stop_entry_pending = !matches!(
         input.ride_state.setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
@@ -833,7 +862,7 @@ fn transition_control_conditions(
         && !input.darkride_active;
     let motor_acceleration = state.motor_kinematics.average();
     let traction_loss_detected = stop_event.is_none()
-        && !matches!(engagement.engage, EngagementPermission::Allowed)
+        && !matches!(engagement, FloatOutBoyEngagementDecision::Engage)
         && !matches!(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
@@ -843,16 +872,16 @@ fn transition_control_conditions(
         && !matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel)
         && motor_acceleration.abs() > TractionLossLimits::FLOAT_OUT_BOY.acceleration_detect
         && motor_acceleration.is_negative() == input.motor_erpm.is_negative()
-        && base.motor().duty_cycle().ratio() > TractionLossLimits::FLOAT_OUT_BOY.duty
+        && context.base.motor().duty_cycle().ratio() > TractionLossLimits::FLOAT_OUT_BOY.duty
         && input.motor_erpm.abs() > TractionLossLimits::FLOAT_OUT_BOY.erpm;
-    (
-        ControlConditions {
+    ControlEvaluation {
+        conditions: ControlConditions {
             reverse_stop_entry_pending,
             traction_loss_detected,
             darkride_active: input.darkride_active,
         },
         motor_acceleration,
-    )
+    }
 }
 
 struct TransitionActivity<'a> {
@@ -873,7 +902,7 @@ fn apply_transition_activity(
         previous: activity.input.ride_state,
         run_state: activity.input.run_state,
         ready_flywheel_stop: activity.input.ready_flywheel_stop,
-        state_engage: matches!(activity.engagement.engage, EngagementPermission::Allowed),
+        engagement: activity.engagement.decision,
         traction_loss_detected: activity.control.traction_loss_detected,
         stop_event: activity.stop_event,
     });
@@ -900,10 +929,12 @@ fn apply_transition_activity(
             state.upside_down_fault_ticks = system_time_ticks;
         }
     }
-    if !activity.darkride.high_erpm_pending && !activity.normal.switches.full {
+    if matches!(activity.darkride.high_erpm, TimedFault::Clear)
+        && matches!(activity.normal.switch_angle.full_switch, TimedFault::Clear)
+    {
         state.fault_switch_ticks = system_time_ticks;
     }
-    if !activity.normal.switches.half {
+    if matches!(activity.normal.switch_angle.half_switch, TimedFault::Clear) {
         state.fault_switch_half_ticks = system_time_ticks;
     }
     if !matches!(
@@ -919,10 +950,12 @@ fn apply_transition_activity(
     {
         state.reverse_ticks = system_time_ticks;
     }
-    if !activity.darkride.low_erpm_pending && !activity.normal.angles.roll {
+    if matches!(activity.darkride.low_erpm, TimedFault::Clear)
+        && matches!(activity.normal.switch_angle.roll, TimedFault::Clear)
+    {
         state.fault_angle_roll_ticks = system_time_ticks;
     }
-    if !activity.normal.angles.pitch {
+    if matches!(activity.normal.switch_angle.pitch, TimedFault::Clear) {
         state.fault_angle_pitch_ticks = system_time_ticks;
     }
     transition
@@ -977,14 +1010,17 @@ fn evaluate_transition_phase(
         startup_became_ready: start.startup_became_ready,
         ready_flywheel_stop: readiness.ready_stop,
     };
-    let normal = evaluate_normal_faults(state, base, system_time_ticks, &fault_inputs);
-    let darkride =
-        evaluate_darkride_faults(state, system_time_ticks, &fault_inputs, normal.can_engage);
-    let engagement =
-        evaluate_engagement(state, system_time_ticks, &fault_inputs, normal.can_engage);
+    let context = FaultContext {
+        state,
+        base,
+        now: system_time_ticks,
+        input: &fault_inputs,
+    };
+    let normal = evaluate_normal_faults(&context);
+    let darkride = evaluate_darkride_faults(&context, normal.can_engage);
+    let engagement = evaluate_engagement(&context, normal.can_engage);
     let stop_event = first_transition_stop(&normal, &darkride);
-    let (control, motor_acceleration) =
-        transition_control_conditions(state, base, &fault_inputs, &engagement, stop_event);
+    let control = evaluate_control_conditions(&context, engagement.decision, stop_event);
     let outcome = apply_transition_activity(
         state,
         system_time_ticks,
@@ -992,7 +1028,7 @@ fn evaluate_transition_phase(
             input: &fault_inputs,
             normal: &normal,
             darkride: &darkride,
-            control: &control,
+            control: &control.conditions,
             engagement: &engagement,
             stop_event,
         },
@@ -1005,7 +1041,7 @@ fn evaluate_transition_phase(
         beeper_alert: attitude.beeper_alert,
         events: TransitionEvents {
             startup_became_ready: start.startup_became_ready,
-            state_engage: matches!(engagement.engage, EngagementPermission::Allowed),
+            state_engage: matches!(engagement.decision, FloatOutBoyEngagementDecision::Engage),
             state_stop_fault: outcome.state_stopped,
         },
         #[cfg(any(test, target_arch = "arm"))]
@@ -1015,8 +1051,8 @@ fn evaluate_transition_phase(
         imu_pitch: attitude.imu_pitch,
         imu_roll: attitude.imu_roll,
         motor_erpm,
-        control,
-        motor_acceleration,
+        control: control.conditions,
+        motor_acceleration: control.motor_acceleration,
         startup_centering_step: engagement.centering_step,
     }
 }

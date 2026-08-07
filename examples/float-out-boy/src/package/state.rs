@@ -92,7 +92,7 @@ use motor_kinematics::MotorKinematicsTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
-    FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent, float_out_boy_first_stop_event,
+    FloatOutBoyEngagementDecision, FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent,
     float_out_boy_state_transition,
 };
 
