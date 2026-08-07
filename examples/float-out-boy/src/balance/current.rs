@@ -22,9 +22,8 @@ impl BalanceCurrentEmaAlpha {
         // C map: Refloat main at caff10a configures this 25 Hz filter in
         // `src/main.c:168-175` and uses the bounded second-order approximation of
         // `1 - e^-omega` from `src/filters/ema.c:24-30`.
-        let omega = (2.0 * core::f32::consts::PI * BALANCE_CURRENT_FILTER_CUTOFF.as_hertz()
-            / sample_rate.as_hertz())
-        .min(0.5);
+        let omega =
+            (core::f32::consts::TAU * (BALANCE_CURRENT_FILTER_CUTOFF / sample_rate)).min(0.5);
         Self(Ratio::clamped(omega - 0.5 * omega * omega))
     }
 

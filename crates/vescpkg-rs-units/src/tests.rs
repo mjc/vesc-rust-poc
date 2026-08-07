@@ -56,6 +56,14 @@ fn scalar_units_round_trip_through_named_accessors() {
 }
 
 #[test]
+fn frequency_normalizes_against_a_sample_rate_without_erasing_units_first() {
+    let cutoff = Frequency::from_hertz(25.0);
+    let sample_rate = SampleRate::from_hertz(1_000.0);
+
+    assert_f32_eq!(cutoff / sample_rate, 0.025);
+}
+
+#[test]
 fn battery_cell_count_rejects_zero_and_preserves_positive_counts() {
     assert_eq!(
         BatteryCellCount::try_new(0)
