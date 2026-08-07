@@ -4,9 +4,22 @@ use crate::config::{FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
 use crate::domain::*;
 use vescpkg_rs::prelude::*;
 
-pub(crate) fn refloat_main_balance_current_alpha(sample_rate: SampleRate) -> f32 {
-    let omega = (2.0 * core::f32::consts::PI * 25.0 / sample_rate.as_hertz()).min(0.5);
-    omega - 0.5 * omega * omega
+pub(crate) fn assert_motor_current_near(actual: MotorCurrent, expected: MotorCurrent) {
+    assert!(
+        (actual - expected).abs().current().as_amps() < 0.0001,
+        "actual={actual:?}, expected={expected:?}",
+    );
+}
+
+pub(crate) fn refloat_main_filtered_balance_current(
+    previous: MotorCurrent,
+    requested: MotorCurrent,
+    sample_rate: SampleRate,
+) -> MotorCurrent {
+    const CUTOFF: Frequency = Frequency::from_hertz(25.0);
+    let omega = (2.0 * core::f32::consts::PI * CUTOFF.as_hertz() / sample_rate.as_hertz()).min(0.5);
+    let alpha = Ratio::clamped(omega - 0.5 * omega * omega);
+    previous + (requested - previous) * alpha.as_ratio()
 }
 
 static FLOAT_OUT_BOY_RUNTIME_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

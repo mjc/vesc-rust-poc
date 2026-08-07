@@ -1,5 +1,5 @@
 use super::super::test_support::{
-    FloatOutBoyConfigTestBytes, refloat_main_balance_current_alpha,
+    FloatOutBoyConfigTestBytes, assert_motor_current_near, refloat_main_filtered_balance_current,
     sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
@@ -156,8 +156,11 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
             assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)));
         });
         assert!(state.store_serialized_config(&config));
-        let alpha =
-            refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+        let expected_current = refloat_main_filtered_balance_current(
+            MotorCurrent::new(Current::ZERO),
+            MotorCurrent::new(Current::from_amps(limited_current)),
+            state.serialized_config.startup().sample_rate(),
+        );
 
         assert!(tick_float_out_boy_state_and_handle_packet(
             &mut state,
@@ -174,11 +177,6 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
         // Upstream `motor_data_update` caches `l_current_max` and
         // `fabsf(l_current_min)` at `third_party/float-out-boy/src/motor_data.c:90-91`; RUNNING uses
         // max while accelerating and min while braking at `third_party/float-out-boy/src/main.c:932-942`.
-        assert!(
-            (telemetry.commanded_current().current().as_amps() - limited_current * alpha).abs()
-                < 0.0001,
-            "{motor_current}: {:?}",
-            telemetry.commanded_current()
-        );
+        assert_motor_current_near(telemetry.commanded_current(), expected_current);
     }
 }

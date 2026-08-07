@@ -2,7 +2,7 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, SampleRate};
+use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -13,7 +13,7 @@ const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-struct BalanceCurrentEmaAlpha(f32);
+struct BalanceCurrentEmaAlpha(Ratio);
 
 impl BalanceCurrentEmaAlpha {
     #[must_use]
@@ -25,13 +25,13 @@ impl BalanceCurrentEmaAlpha {
         let omega = (2.0 * core::f32::consts::PI * BALANCE_CURRENT_FILTER_CUTOFF.as_hertz()
             / sample_rate.as_hertz())
         .min(0.5);
-        Self(omega - 0.5 * omega * omega)
+        Self(Ratio::clamped(omega - 0.5 * omega * omega))
     }
 
     #[must_use]
     #[inline]
     fn update(self, previous: MotorCurrent, target: MotorCurrent) -> MotorCurrent {
-        previous + (target - previous) * self.0
+        previous + (target - previous) * self.0.as_ratio()
     }
 }
 

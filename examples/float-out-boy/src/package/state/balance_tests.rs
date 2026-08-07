@@ -1,7 +1,7 @@
 use super::super::test_support::{
-    balance_filter_with_pitch, edit_config, imu_angular_rate, imu_pitch_rate, imu_roll_rate,
-    imu_yaw_rate, refloat_main_balance_current_alpha, sample_all_data_payloads_with_ride_state,
-    tick_float_out_boy_state_and_handle_packet,
+    assert_motor_current_near, balance_filter_with_pitch, edit_config, imu_angular_rate,
+    imu_pitch_rate, imu_roll_rate, imu_yaw_rate, refloat_main_filtered_balance_current,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
 use crate::domain::{
@@ -65,7 +65,11 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         assert!(config.set_booster_angle(AngleDegrees::from_degrees(100.0)));
         assert!(config.set_booster_current(MotorCurrent::new(Current::ZERO)));
     });
-    let alpha = refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+    let expected_current = refloat_main_filtered_balance_current(
+        MotorCurrent::new(Current::ZERO),
+        MotorCurrent::new(Current::from_amps(-50.0)),
+        state.serialized_config.startup().sample_rate(),
+    );
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(5.0)));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -83,7 +87,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
     // C refreshes `imu.balance_pitch` from `balance_filter_get_pitch` at
     // `third_party/float-out-boy/src/imu.c:35-41` before `pid_update` computes
     // `setpoint - imu->balance_pitch` at `third_party/float-out-boy/src/pid.c:40`.
-    assert!((telemetry.commanded_current().current().as_amps() + 50.0 * alpha).abs() < 0.0001);
+    assert_motor_current_near(telemetry.commanded_current(), expected_current);
     assert!(
         (state
             .all_data_payloads()
@@ -145,7 +149,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         assert!(config.set_kp2(RateCurrentGain::new(0.0)));
         assert!(config.set_ki(IntegralCurrentGain::new(0.1)));
     });
-    let alpha = refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+    let sample_rate = state.serialized_config.startup().sample_rate();
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
         lifecycle,
@@ -158,20 +162,22 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     ));
     assert!(state.apply_requested_motor_current(bindings));
     let first_base = state.all_data_payloads().base();
-    let first_error = first_base.setpoints().board().angle().as_degrees()
-        - first_base
-            .attitude()
-            .balance_pitch()
-            .angle_degrees()
-            .as_degrees();
+    let first_error = (first_base.setpoints().board().angle()
+        - first_base.attitude().balance_pitch().angle_degrees())
+    .as_degrees();
     let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
     assert!(
         (first_integral - first_error * 0.1).abs() < 0.0001,
         "{first_integral} != {}",
         first_error * 0.1
     );
-    let first_current = telemetry.commanded_current().current().as_amps();
-    assert!((first_current - first_integral * alpha).abs() < 0.0001);
+    let first_current = telemetry.commanded_current();
+    let expected_first_current = refloat_main_filtered_balance_current(
+        MotorCurrent::new(Current::ZERO),
+        MotorCurrent::new(Current::from_amps(first_integral)),
+        sample_rate,
+    );
+    assert_motor_current_near(first_current, expected_first_current);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -189,20 +195,21 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     // and clamps it at `third_party/float-out-boy/src/pid.c:40-46`; RUNNING adds P + I before
     // smoothing balance current at `third_party/float-out-boy/src/main.c:932-954`.
     let second_base = state.all_data_payloads().base();
-    let second_error = second_base.setpoints().board().angle().as_degrees()
-        - second_base
-            .attitude()
-            .balance_pitch()
-            .angle_degrees()
-            .as_degrees();
+    let second_error = (second_base.setpoints().board().angle()
+        - second_base.attitude().balance_pitch().angle_degrees())
+    .as_degrees();
     let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
     let expected_integral = first_integral + second_error * 0.1;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,
         "{second_integral} != {expected_integral}"
     );
-    let expected_current = first_current + alpha * (second_integral - first_current);
-    assert!((telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.0001);
+    let expected_current = refloat_main_filtered_balance_current(
+        first_current,
+        MotorCurrent::new(Current::from_amps(second_integral)),
+        sample_rate,
+    );
+    assert_motor_current_near(telemetry.commanded_current(), expected_current);
 }
 
 #[test]
@@ -248,7 +255,11 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     edit_config(&mut state, |config| {
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(0.0)));
     });
-    let alpha = refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+    let expected_current = refloat_main_filtered_balance_current(
+        MotorCurrent::new(Current::ZERO),
+        MotorCurrent::new(Current::from_amps(30.0)),
+        state.serialized_config.startup().sample_rate(),
+    );
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -265,7 +276,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     // Float Out Boy default `ki_limit` is 30A (`settings.xml:1679-1707`);
     // `pid_update` clamps the I term at `third_party/float-out-boy/src/pid.c:40-46` before RUNNING
     // smooths it into `balance_current` at `third_party/float-out-boy/src/main.c:932-954`.
-    assert!((telemetry.commanded_current().current().as_amps() - 30.0 * alpha).abs() < 0.0001);
+    assert_motor_current_near(telemetry.commanded_current(), expected_current);
 }
 
 #[test]
@@ -319,8 +330,11 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
             payloads.mode3(),
             payloads.mode4(),
         ));
-        let alpha =
-            refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+        let expected_current = refloat_main_filtered_balance_current(
+            MotorCurrent::new(Current::ZERO),
+            MotorCurrent::new(Current::from_amps(current_limit)),
+            state.serialized_config.startup().sample_rate(),
+        );
 
         assert!(tick_float_out_boy_state_and_handle_packet(
             &mut state,
@@ -337,12 +351,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
         // Upstream RUNNING clamps `new_current` to 7A for HANDTEST and
         // 40A for FLYWHEEL at `third_party/float-out-boy/src/main.c:932-942`, then smooths it into
         // `balance_current` at `third_party/float-out-boy/src/main.c:949-954`.
-        assert!(
-            (telemetry.commanded_current().current().as_amps() - current_limit * alpha).abs()
-                < 0.0001,
-            "{mode:?}: {:?}",
-            telemetry.commanded_current()
-        );
+        assert_motor_current_near(telemetry.commanded_current(), expected_current);
     }
 }
 
@@ -510,8 +519,13 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
     let current_limit = state.motor_current_max.current().as_amps();
     let new_current = (setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
         .clamp(-current_limit, current_limit);
-    let alpha = refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
-    new_current * alpha
+    refloat_main_filtered_balance_current(
+        MotorCurrent::new(Current::ZERO),
+        MotorCurrent::new(Current::from_amps(new_current)),
+        state.serialized_config.startup().sample_rate(),
+    )
+    .current()
+    .as_amps()
 }
 
 #[test]

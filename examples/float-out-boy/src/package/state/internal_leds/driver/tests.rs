@@ -309,3 +309,25 @@ fn paint_quiesces_before_mutating_pulses_and_faults_still_teardown() {
     }));
     assert_eq!(teardowns, 1);
 }
+
+#[test]
+fn failed_restart_faults_driver_and_blocks_further_paints_until_destroy() {
+    let strip = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::First,
+        1,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let hardware =
+        FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal).with_front_strip(strip);
+    let renderer = FloatOutBoyLedRenderer::new(hardware, enabled_config(), 0.0);
+    let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
+    assert!(driver.setup(|_, _, _| true, |_| {}));
+
+    assert!(!driver.paint(&renderer, |_| true, |_, _| false));
+    assert!(!driver.paint(
+        &renderer,
+        |_| panic!("faulted driver quiesced hardware again"),
+        |_, _| panic!("faulted driver restarted DMA again"),
+    ));
+    assert!(driver.destroy(|_| true));
+}

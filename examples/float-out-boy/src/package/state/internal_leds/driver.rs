@@ -90,18 +90,16 @@ impl FloatOutBoyInternalLedDriver {
         quiesce: impl FnOnce(FloatOutBoyLedPin) -> bool,
         restart: impl FnOnce(FloatOutBoyLedPin, &[u16]) -> bool,
     ) -> bool {
-        if !self.is_operational() {
-            return false;
-        }
-        if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
-            self.state = DriverState::Faulted;
-            return false;
-        }
-        let Some(pulses) = self.pulse_slice(self.pulse_count) else {
-            self.state = DriverState::Faulted;
+        let DriverState::Operational = self.state else {
             return false;
         };
-        self.state = if restart(self.hardware.pin(), pulses) {
+        let pin = self.hardware.pin();
+        self.state = if quiesce(pin)
+            && self.encode(renderer)
+            && self
+                .pulse_slice(self.pulse_count)
+                .is_some_and(|pulses| restart(pin, pulses))
+        {
             DriverState::Operational
         } else {
             DriverState::Faulted
@@ -110,9 +108,9 @@ impl FloatOutBoyInternalLedDriver {
     }
 
     pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin) -> bool) -> bool {
-        if matches!(self.state, DriverState::Uninitialized) {
+        let (DriverState::Operational | DriverState::Faulted) = self.state else {
             return true;
-        }
+        };
         self.state = DriverState::Faulted;
         if !teardown(self.hardware.pin()) {
             return false;
