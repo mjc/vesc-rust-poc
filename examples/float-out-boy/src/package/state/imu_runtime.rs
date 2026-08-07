@@ -825,12 +825,11 @@ fn transition_control_conditions(
     engagement: &EngagementEvaluation,
     stop_event: Option<FloatOutBoyStopEvent>,
 ) -> (ControlConditions, Rpm) {
-    let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
     let reverse_stop_entry_pending = !matches!(
         input.ride_state.setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
     ) && state.serialized_config.faults().reversestop_enabled()
-        && input.motor_erpm < -reverse_stop.entry_erpm
+        && input.motor_erpm < -ReverseStopLimits::FLOAT_OUT_BOY.entry_erpm
         && !input.darkride_active;
     let motor_acceleration = state.motor_kinematics.average();
     let traction_loss_detected = stop_event.is_none()
