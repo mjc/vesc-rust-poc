@@ -862,6 +862,14 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
+    pub(crate) fn set_moving_faults_disabled(&mut self, disabled: bool) -> bool {
+        self.set_flag(
+            FloatOutBoyFaultConfig::MOVING_FAULT_DISABLED_FIELD,
+            disabled,
+        )
+    }
+
+    #[cfg(test)]
     generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
 
     #[cfg(test)]

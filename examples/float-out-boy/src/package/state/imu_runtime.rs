@@ -507,95 +507,103 @@ impl TimedFault {
 }
 
 #[must_use]
-fn classify_full_switch_fault(context: &FaultContext<'_>) -> TimedFault {
+fn full_switch_fault_active(context: &FaultContext<'_>) -> bool {
+    let input = context.input;
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && !input.darkride_active()
+        && !context.base.footpad().state().is_pressed()
+        && !matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel)
+}
+
+#[must_use]
+fn full_switch_stop_suppressed(context: &FaultContext<'_>) -> bool {
     let faults = context.state.serialized_config.faults();
     let input = context.input;
-    let footpad = context.base.footpad().state();
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
-        return TimedFault::Clear;
-    }
-    if input.darkride_active() {
-        return TimedFault::Clear;
-    }
-    if footpad.is_pressed() {
-        return TimedFault::Clear;
-    }
-    if matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel) {
-        return TimedFault::Clear;
-    }
-
     let half_erpm = faults.adc_half_erpm().rpm();
-    if faults.moving_faults_disabled() {
-        let moving_fast_enough = input.motor_erpm > half_erpm * 2.0;
-        if moving_fast_enough {
-            let within_roll_limit = input.roll_abs < MovingFaultLimits::FLOAT_OUT_BOY.roll;
-            if within_roll_limit {
-                return TimedFault::Pending;
-            }
-        }
-    }
+    faults.moving_faults_disabled()
+        && input.motor_erpm > half_erpm * 2.0
+        && input.roll_abs < MovingFaultLimits::FLOAT_OUT_BOY.roll
+}
 
-    let full_delay_elapsed = float_out_boy_ticks_elapsed_seconds(
+#[must_use]
+fn full_switch_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    let faults = context.state.serialized_config.faults();
+    if float_out_boy_ticks_elapsed_seconds(
         context.now,
         context.state.fault_switch_ticks,
         faults.switch_full_delay(),
-    );
-    let below_slow_speed = input.motor_erpm.abs() < half_erpm * 6.0;
-    let slow_half_delay_elapsed = if below_slow_speed {
-        float_out_boy_ticks_elapsed_seconds(
+    ) {
+        return true;
+    }
+    let half_erpm = faults.adc_half_erpm().rpm();
+    context.input.motor_erpm.abs() < half_erpm * 6.0
+        && float_out_boy_ticks_elapsed_seconds(
             context.now,
             context.state.fault_switch_ticks,
             faults.switch_half_delay(),
         )
+}
+
+#[must_use]
+fn classify_full_switch_fault(context: &FaultContext<'_>) -> TimedFault {
+    if !full_switch_fault_active(context) {
+        return TimedFault::Clear;
+    }
+    if full_switch_stop_suppressed(context) {
+        return TimedFault::Pending;
+    }
+    if full_switch_timeout_elapsed(context) {
+        TimedFault::Stop(FloatOutBoyStopEvent::FullSwitch)
     } else {
-        false
-    };
-    if full_delay_elapsed {
-        return TimedFault::Stop(FloatOutBoyStopEvent::FullSwitch);
+        TimedFault::Pending
     }
-    if slow_half_delay_elapsed {
-        return TimedFault::Stop(FloatOutBoyStopEvent::FullSwitch);
-    }
-    TimedFault::Pending
+}
+
+#[must_use]
+fn quick_stop_active(context: &FaultContext<'_>) -> bool {
+    let input = context.input;
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && !context.base.footpad().state().is_pressed()
+        && !matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel)
+        && context.state.serialized_config.faults().quickstop_enabled()
+}
+
+#[must_use]
+fn quick_stop_thresholds_met(context: &FaultContext<'_>) -> bool {
+    let input = context.input;
+    let limits = QuickStopLimits::FLOAT_OUT_BOY;
+    input.motor_erpm.abs() < limits.stopped_erpm
+        && input.pitch_abs > limits.pitch
+        && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle()
+        && (input.pitch >= AngleRadians::ZERO) == (input.motor_erpm >= Rpm::ZERO)
 }
 
 #[must_use]
 fn classify_quick_stop(context: &FaultContext<'_>) -> Option<FloatOutBoyStopEvent> {
+    if !quick_stop_active(context) {
+        return None;
+    }
+    quick_stop_thresholds_met(context).then_some(FloatOutBoyStopEvent::QuickStop)
+}
+
+#[must_use]
+fn half_switch_fault_active(context: &FaultContext<'_>, can_engage: EngagementPermission) -> bool {
     let faults = context.state.serialized_config.faults();
     let input = context.input;
-    let limits = QuickStopLimits::FLOAT_OUT_BOY;
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
-        return None;
-    }
-    if context.base.footpad().state().is_pressed() {
-        return None;
-    }
-    if matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel) {
-        return None;
-    }
-    if !faults.quickstop_enabled() {
-        return None;
-    }
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && !input.darkride_active()
+        && !faults.dual_switch()
+        && matches!(can_engage, EngagementPermission::Blocked)
+        && input.motor_erpm.abs() < faults.adc_half_erpm().rpm()
+}
 
-    let below_stop_speed = input.motor_erpm.abs() < limits.stopped_erpm;
-    if !below_stop_speed {
-        return None;
-    }
-    let beyond_stop_pitch = input.pitch_abs > limits.pitch;
-    if !beyond_stop_pitch {
-        return None;
-    }
-    let remote_setpoint_clear =
-        input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle();
-    if !remote_setpoint_clear {
-        return None;
-    }
-    let pitch_matches_direction =
-        (input.pitch >= AngleRadians::ZERO) == (input.motor_erpm >= Rpm::ZERO);
-    if !pitch_matches_direction {
-        return None;
-    }
-    Some(FloatOutBoyStopEvent::QuickStop)
+#[must_use]
+fn half_switch_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.fault_switch_half_ticks,
+        context.state.serialized_config.faults().switch_half_delay(),
+    )
 }
 
 #[must_use]
@@ -603,30 +611,10 @@ fn classify_half_switch_fault(
     context: &FaultContext<'_>,
     can_engage: EngagementPermission,
 ) -> TimedFault {
-    let faults = context.state.serialized_config.faults();
-    let input = context.input;
-    let below_half_speed = input.motor_erpm.abs() < faults.adc_half_erpm().rpm();
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
+    if !half_switch_fault_active(context, can_engage) {
         return TimedFault::Clear;
     }
-    if input.darkride_active() {
-        return TimedFault::Clear;
-    }
-    if faults.dual_switch() {
-        return TimedFault::Clear;
-    }
-    if matches!(can_engage, EngagementPermission::Allowed) {
-        return TimedFault::Clear;
-    }
-    if !below_half_speed {
-        return TimedFault::Clear;
-    }
-
-    if float_out_boy_ticks_elapsed_seconds(
-        context.now,
-        context.state.fault_switch_half_ticks,
-        faults.switch_half_delay(),
-    ) {
+    if half_switch_timeout_elapsed(context) {
         TimedFault::Stop(FloatOutBoyStopEvent::HalfSwitch)
     } else {
         TimedFault::Pending
@@ -634,25 +622,29 @@ fn classify_half_switch_fault(
 }
 
 #[must_use]
-fn classify_roll_fault(context: &FaultContext<'_>) -> TimedFault {
+fn roll_fault_active(context: &FaultContext<'_>) -> bool {
     let faults = context.state.serialized_config.faults();
     let input = context.input;
-    let beyond_roll_limit = input.roll_abs > faults.roll_angle();
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
-        return TimedFault::Clear;
-    }
-    if input.darkride_active() {
-        return TimedFault::Clear;
-    }
-    if !beyond_roll_limit {
-        return TimedFault::Clear;
-    }
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && !input.darkride_active()
+        && input.roll_abs > faults.roll_angle()
+}
 
-    if float_out_boy_ticks_elapsed_seconds(
+#[must_use]
+fn roll_fault_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    float_out_boy_ticks_elapsed_seconds(
         context.now,
         context.state.fault_angle_roll_ticks,
-        faults.roll_delay(),
-    ) {
+        context.state.serialized_config.faults().roll_delay(),
+    )
+}
+
+#[must_use]
+fn classify_roll_fault(context: &FaultContext<'_>) -> TimedFault {
+    if !roll_fault_active(context) {
+        return TimedFault::Clear;
+    }
+    if roll_fault_timeout_elapsed(context) {
         TimedFault::Stop(FloatOutBoyStopEvent::Roll)
     } else {
         TimedFault::Pending
@@ -660,27 +652,29 @@ fn classify_roll_fault(context: &FaultContext<'_>) -> TimedFault {
 }
 
 #[must_use]
-fn classify_pitch_fault(context: &FaultContext<'_>) -> TimedFault {
+fn pitch_fault_active(context: &FaultContext<'_>) -> bool {
     let faults = context.state.serialized_config.faults();
     let input = context.input;
-    let beyond_pitch_limit = input.pitch_abs > faults.pitch_angle();
-    let remote_setpoint_clear =
-        input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle();
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
-        return TimedFault::Clear;
-    }
-    if !beyond_pitch_limit {
-        return TimedFault::Clear;
-    }
-    if !remote_setpoint_clear {
-        return TimedFault::Clear;
-    }
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && input.pitch_abs > faults.pitch_angle()
+        && input.remote_setpoint_abs < RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle()
+}
 
-    if float_out_boy_ticks_elapsed_seconds(
+#[must_use]
+fn pitch_fault_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    float_out_boy_ticks_elapsed_seconds(
         context.now,
         context.state.fault_angle_pitch_ticks,
-        faults.pitch_delay(),
-    ) {
+        context.state.serialized_config.faults().pitch_delay(),
+    )
+}
+
+#[must_use]
+fn classify_pitch_fault(context: &FaultContext<'_>) -> TimedFault {
+    if !pitch_fault_active(context) {
+        return TimedFault::Clear;
+    }
+    if pitch_fault_timeout_elapsed(context) {
         TimedFault::Stop(FloatOutBoyStopEvent::Pitch)
     } else {
         TimedFault::Pending
@@ -835,35 +829,29 @@ fn classify_flywheel_footpad(context: &FaultContext<'_>) -> Option<FloatOutBoySt
 }
 
 #[must_use]
-fn classify_darkride_roll(context: &FaultContext<'_>) -> Option<FloatOutBoyStopEvent> {
+fn darkride_roll_fault_active(context: &FaultContext<'_>) -> bool {
     let input = context.input;
-    let faults = context.state.serialized_config.faults();
-    if !matches!(input.run_state, FloatOutBoyRunState::Running) {
-        return None;
-    }
-    if input.darkride_active() {
-        return None;
-    }
-    if !matches!(
-        input.ride_state.darkride(),
-        FloatOutBoyDarkRideState::Upright
-    ) {
-        return None;
-    }
-    if !faults.darkride_enabled() {
-        return None;
-    }
+    matches!(input.run_state, FloatOutBoyRunState::Running)
+        && !input.darkride_active()
+        && matches!(
+            input.ride_state.darkride(),
+            FloatOutBoyDarkRideState::Upright
+        )
+        && context.state.serialized_config.faults().darkride_enabled()
+}
 
+#[must_use]
+fn darkride_roll_in_stop_window(context: &FaultContext<'_>) -> bool {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
-    let above_lower_limit = input.roll_abs > limits.roll_lower;
-    if !above_lower_limit {
+    context.input.roll_abs > limits.roll_lower && context.input.roll_abs < limits.roll_upper
+}
+
+#[must_use]
+fn classify_darkride_roll(context: &FaultContext<'_>) -> Option<FloatOutBoyStopEvent> {
+    if !darkride_roll_fault_active(context) {
         return None;
     }
-    let below_upper_limit = input.roll_abs < limits.roll_upper;
-    if !below_upper_limit {
-        return None;
-    }
-    Some(FloatOutBoyStopEvent::DarkrideRoll)
+    darkride_roll_in_stop_window(context).then_some(FloatOutBoyStopEvent::DarkrideRoll)
 }
 
 #[must_use]
@@ -916,79 +904,88 @@ struct DarkrideFaultEvaluation {
 }
 
 #[must_use]
-fn classify_darkride_high_erpm_fault(context: &FaultContext<'_>) -> TimedFault {
+fn darkride_high_erpm_fault_active(context: &FaultContext<'_>) -> bool {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
     let input = context.input;
-    if !input.darkride_active() {
-        return TimedFault::Clear;
-    }
-    let above_timed_threshold = input.motor_erpm > limits.timed_high_erpm;
-    if !above_timed_threshold {
-        return TimedFault::Clear;
-    }
+    input.darkride_active() && input.motor_erpm > limits.timed_high_erpm
+}
 
-    let timed_out = float_out_boy_ticks_elapsed_seconds(
+#[must_use]
+fn darkride_wheelslip_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    if !matches!(
+        context.input.ride_state.wheelslip(),
+        FloatOutBoyWheelSlipState::Detected
+    ) {
+        return false;
+    }
+    if !float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.upside_down_fault_ticks,
+        VescSeconds::from_seconds(1.0),
+    ) {
+        return false;
+    }
+    float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.fault_switch_ticks,
+        VescSeconds::from_seconds(0.03),
+    )
+}
+
+#[must_use]
+fn darkride_high_erpm_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    let limits = DarkrideLimits::FLOAT_OUT_BOY;
+    if float_out_boy_ticks_elapsed_seconds(
         context.now,
         context.state.fault_switch_ticks,
         limits.timed_high_delay,
-    );
-    let immediately_excessive = input.motor_erpm > limits.high_erpm;
+    ) {
+        return true;
+    }
+    if context.input.motor_erpm > limits.high_erpm {
+        return true;
+    }
     // Active darkride shortens the wheelslip runaway stop from 100 ms to
     // 30 ms after the one-second post-flip grace (`src/main.c:361-366`).
-    let wheelslip_timed_out = if matches!(
-        input.ride_state.wheelslip(),
-        FloatOutBoyWheelSlipState::Detected
-    ) {
-        let flip_grace_elapsed = float_out_boy_ticks_elapsed_seconds(
-            context.now,
-            context.state.upside_down_fault_ticks,
-            VescSeconds::from_seconds(1.0),
-        );
-        if flip_grace_elapsed {
-            float_out_boy_ticks_elapsed_seconds(
-                context.now,
-                context.state.fault_switch_ticks,
-                VescSeconds::from_seconds(0.03),
-            )
-        } else {
-            false
-        }
+    darkride_wheelslip_timeout_elapsed(context)
+}
+
+#[must_use]
+fn classify_darkride_high_erpm_fault(context: &FaultContext<'_>) -> TimedFault {
+    if !darkride_high_erpm_fault_active(context) {
+        return TimedFault::Clear;
+    }
+    if darkride_high_erpm_timeout_elapsed(context) {
+        TimedFault::Stop(FloatOutBoyStopEvent::DarkrideHighErpm)
     } else {
-        false
-    };
-    if timed_out {
-        return TimedFault::Stop(FloatOutBoyStopEvent::DarkrideHighErpm);
+        TimedFault::Pending
     }
-    if immediately_excessive {
-        return TimedFault::Stop(FloatOutBoyStopEvent::DarkrideHighErpm);
-    }
-    if wheelslip_timed_out {
-        return TimedFault::Stop(FloatOutBoyStopEvent::DarkrideHighErpm);
-    }
-    TimedFault::Pending
+}
+
+#[must_use]
+fn darkride_low_erpm_fault_active(context: &FaultContext<'_>) -> bool {
+    let limits = DarkrideLimits::FLOAT_OUT_BOY;
+    let input = context.input;
+    input.darkride_active()
+        && input.motor_erpm <= limits.timed_high_erpm
+        && input.motor_erpm > limits.low_erpm
+}
+
+#[must_use]
+fn darkride_low_erpm_timeout_elapsed(context: &FaultContext<'_>) -> bool {
+    float_out_boy_ticks_elapsed_seconds(
+        context.now,
+        context.state.fault_angle_roll_ticks,
+        DarkrideLimits::FLOAT_OUT_BOY.low_delay,
+    )
 }
 
 #[must_use]
 fn classify_darkride_low_erpm_fault(context: &FaultContext<'_>) -> TimedFault {
-    let limits = DarkrideLimits::FLOAT_OUT_BOY;
-    let input = context.input;
-    if !input.darkride_active() {
+    if !darkride_low_erpm_fault_active(context) {
         return TimedFault::Clear;
     }
-    let at_or_below_high_threshold = input.motor_erpm <= limits.timed_high_erpm;
-    if !at_or_below_high_threshold {
-        return TimedFault::Clear;
-    }
-    let above_low_threshold = input.motor_erpm > limits.low_erpm;
-    if !above_low_threshold {
-        return TimedFault::Clear;
-    }
-
-    if float_out_boy_ticks_elapsed_seconds(
-        context.now,
-        context.state.fault_angle_roll_ticks,
-        limits.low_delay,
-    ) {
+    if darkride_low_erpm_timeout_elapsed(context) {
         TimedFault::Stop(FloatOutBoyStopEvent::DarkrideLowErpm)
     } else {
         TimedFault::Pending
