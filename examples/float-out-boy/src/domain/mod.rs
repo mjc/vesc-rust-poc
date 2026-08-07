@@ -51,6 +51,7 @@ pub use self::ride_state::FloatOutBoyRideState;
 pub use self::state::{
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
     FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyMode, FloatOutBoyRunState,
-    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyTractionControlState,
+    FloatOutBoyWheelSlipState,
 };
 pub use crate::footpad::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};

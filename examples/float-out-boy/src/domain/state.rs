@@ -166,6 +166,16 @@ pub enum FloatOutBoyWheelSlipState {
     Detected,
 }
 
+/// How darkride traction recovery affects the requested motor current.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FloatOutBoyTractionControlState {
+    /// Apply the normal balance-current EMA.
+    #[default]
+    FilteringCurrent,
+    /// Reset requested current to zero while recovering from darkride wheel slip.
+    Freewheeling,
+}
+
 /// Float Out Boy darkride/upside-down state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyDarkRideState {

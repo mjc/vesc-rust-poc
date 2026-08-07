@@ -16,6 +16,15 @@ scalar_unit!(VescSeconds, from_seconds, as_seconds, "VESC float seconds");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 
+impl core::ops::Div<SampleRate> for Frequency {
+    type Output = f32;
+
+    /// Return this frequency as a dimensionless fraction of the sample rate.
+    fn div(self, sample_rate: SampleRate) -> Self::Output {
+        self.as_hertz() / sample_rate.as_hertz()
+    }
+}
+
 impl TimestampTicks {
     /// Return the unsigned wrapping duration since an earlier VESC timestamp.
     #[must_use]
