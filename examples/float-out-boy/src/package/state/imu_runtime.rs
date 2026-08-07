@@ -202,7 +202,7 @@ fn runtime_values(
     state.reverse_total_erpm = Rpm::ZERO;
     state.motor_kinematics.reset_acceleration();
     state.motor_current_filter.reset_runtime();
-    state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
+    state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
     state.remote_control.reset_runtime_vars();
     state.ride_modifiers.reset();
     state.runtime_board_setpoint = balance_pitch;
@@ -1609,8 +1609,11 @@ fn refresh_wheelslip_control(
     let limits = TractionLossLimits::FLOAT_OUT_BOY;
     if phase.control.decision.detects_traction_loss() {
         state.wheelslip_ticks = system_time_ticks;
+        // C map: Refloat main at caff10a freewheels for traction loss only while
+        // darkriding; upright wheel slip keeps filtering balance current
+        // (`src/main.c:479-491`).
         if phase.control.darkride_active {
-            state.ride_flags.traction_control = FloatOutBoyTractionControlState::Active;
+            state.ride_flags.traction_control = FloatOutBoyTractionControlState::Freewheeling;
         }
         return true;
     }
@@ -1624,7 +1627,9 @@ fn refresh_wheelslip_control(
         return false;
     }
     if phase.motor_acceleration.abs() < limits.acceleration_clear {
-        state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
+        // Current filtering resumes before the wheelslip state clears once
+        // acceleration shows that traction recovery worked (`src/main.c:492-496`).
+        state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
     }
     if above_duty_limit {
         state.wheelslip_ticks = system_time_ticks;
@@ -1634,7 +1639,7 @@ fn refresh_wheelslip_control(
         limits.clear_delay,
     ) && state.motor_duty_raw < limits.raw_duty_clear
     {
-        state.ride_flags.traction_control = FloatOutBoyTractionControlState::Inactive;
+        state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
         control.ride_state = control
             .ride_state
             .with_wheelslip(FloatOutBoyWheelSlipState::None);

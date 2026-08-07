@@ -347,7 +347,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
 }
 
 #[test]
-fn app_data_running_wheelslip_without_traction_control_smooths_current_like_float_out_boy_loop() {
+fn app_data_running_upright_wheelslip_keeps_filtering_current_like_refloat_main() {
     let lifecycle = TimestampTicks::from_ticks(0);
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
@@ -403,9 +403,9 @@ fn app_data_running_wheelslip_without_traction_control_smooths_current_like_floa
     ));
     assert!(state.apply_requested_motor_current(bindings));
 
-    // Upstream RUNNING only sets `balance_current = 0` when
-    // `traction_control` is set at `third_party/float-out-boy/src/main.c:949-954`; wheelslip alone
-    // remains a UI/state flag and the current path still smooths.
+    // Refloat main at caff10a freewheels only for darkride traction loss
+    // (`src/main.c:479-491`, `src/main.c:723-728`). Upright wheelslip remains a
+    // UI/control state while the balance-current EMA keeps running.
     assert_f32_ne!(telemetry.commanded_current().current().as_amps(), 0.0);
     assert_f32_ne!(
         state

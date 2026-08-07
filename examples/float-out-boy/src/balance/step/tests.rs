@@ -56,7 +56,7 @@ fn base_input() -> LoopInput {
         motor_current_min: motor_current_limit(Current::from_amps(100.0)),
         mode: FloatOutBoyMode::Normal,
         darkride: FloatOutBoyDarkRideState::Upright,
-        traction_control: FloatOutBoyTractionControlState::Inactive,
+        traction_control: FloatOutBoyTractionControlState::FilteringCurrent,
     }
 }
 
@@ -482,7 +482,7 @@ fn balance_loop_unit_pitch_rate_mixes_axes_and_darkride_like_float_out_boy_imu()
 }
 
 #[test]
-fn balance_loop_unit_darkride_and_traction_control_match_float_out_boy_main_loop() {
+fn balance_loop_unit_darkride_inverts_current_and_traction_recovery_freewheels() {
     let config = LoopConfig {
         kp: AngleCurrentGain::new(1.0),
         ..base_config()
@@ -498,24 +498,23 @@ fn balance_loop_unit_darkride_and_traction_control_match_float_out_boy_main_loop
     };
 
     let darkride_output = advance_loop(config, base_input, state);
-    let traction_output = advance_loop(
+    let freewheel_output = advance_loop(
         config,
         LoopInput {
-            traction_control: FloatOutBoyTractionControlState::Active,
+            traction_control: FloatOutBoyTractionControlState::Freewheeling,
             ..base_input
         },
         state,
     );
 
-    // Upstream RUNNING flips darkride current at
-    // `third_party/float-out-boy/src/main.c:944-946`; traction control freewheels
-    // at `third_party/float-out-boy/src/main.c:949-954`.
+    // Refloat main at caff10a flips darkride current at `src/main.c:719-721`;
+    // its darkride traction recovery resets the current EMA at `src/main.c:723-728`.
     assert_current(
         darkride_output.state.balance_current,
         motor_current(Current::from_amps(2.5)),
     );
     assert_current(
-        traction_output.state.balance_current,
+        freewheel_output.state.balance_current,
         motor_current(Current::from_amps(0.0)),
     );
 }

@@ -166,14 +166,14 @@ pub enum FloatOutBoyWheelSlipState {
     Detected,
 }
 
-/// Whether traction control is currently suppressing motor current.
+/// How darkride traction recovery affects the requested motor current.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyTractionControlState {
-    /// Current smoothing remains active.
+    /// Apply the normal balance-current EMA.
     #[default]
-    Inactive,
-    /// Motor current is suppressed while recovering traction.
-    Active,
+    FilteringCurrent,
+    /// Reset requested current to zero while recovering from darkride wheel slip.
+    Freewheeling,
 }
 
 /// Float Out Boy darkride/upside-down state.
