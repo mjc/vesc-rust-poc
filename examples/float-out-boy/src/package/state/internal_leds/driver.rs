@@ -12,6 +12,13 @@ const MAX_STRIP_PIXELS: usize = 30;
 #[cfg(not(target_arch = "arm"))]
 const MAX_PULSES: usize = MAX_STRIP_PIXELS * 3 * 32 + 1;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DriverState {
+    Uninitialized,
+    Operational,
+    Faulted,
+}
+
 #[derive(Debug, PartialEq)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
 pub(super) struct FloatOutBoyInternalLedDriver {
@@ -21,8 +28,7 @@ pub(super) struct FloatOutBoyInternalLedDriver {
     #[cfg(target_arch = "arm")]
     pulses: Option<vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer>,
     pulse_count: usize,
-    initialized: bool,
-    operational: bool,
+    state: DriverState,
 }
 
 impl FloatOutBoyInternalLedDriver {
@@ -34,8 +40,7 @@ impl FloatOutBoyInternalLedDriver {
             #[cfg(target_arch = "arm")]
             pulses: None,
             pulse_count: 0,
-            initialized: false,
-            operational: false,
+            state: DriverState::Uninitialized,
         }
     }
 
@@ -64,18 +69,19 @@ impl FloatOutBoyInternalLedDriver {
         };
         data.fill(WS2812_ZERO);
         *reset = WS2812_RESET;
-        self.operational = setup(hardware.pin(), hardware.pin_config(), pulses);
-        self.initialized = self.operational;
-        if !self.operational {
+        if !setup(hardware.pin(), hardware.pin_config(), pulses) {
             rollback(self.hardware.pin());
             self.pulse_count = 0;
             self.release_pulses();
+            self.state = DriverState::Uninitialized;
+            return false;
         }
-        self.operational
+        self.state = DriverState::Operational;
+        true
     }
 
     pub(super) const fn is_operational(&self) -> bool {
-        self.operational
+        matches!(self.state, DriverState::Operational)
     }
 
     pub(super) fn paint(
@@ -84,30 +90,34 @@ impl FloatOutBoyInternalLedDriver {
         quiesce: impl FnOnce(FloatOutBoyLedPin) -> bool,
         restart: impl FnOnce(FloatOutBoyLedPin, &[u16]) -> bool,
     ) -> bool {
-        if !self.operational {
+        if !self.is_operational() {
             return false;
         }
         if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
-            self.operational = false;
+            self.state = DriverState::Faulted;
             return false;
         }
         let Some(pulses) = self.pulse_slice(self.pulse_count) else {
-            self.operational = false;
+            self.state = DriverState::Faulted;
             return false;
         };
-        self.operational = restart(self.hardware.pin(), pulses);
-        self.operational
+        self.state = if restart(self.hardware.pin(), pulses) {
+            DriverState::Operational
+        } else {
+            DriverState::Faulted
+        };
+        self.is_operational()
     }
 
     pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin) -> bool) -> bool {
-        if !self.initialized {
+        if matches!(self.state, DriverState::Uninitialized) {
             return true;
         }
-        self.operational = false;
+        self.state = DriverState::Faulted;
         if !teardown(self.hardware.pin()) {
             return false;
         }
-        self.initialized = false;
+        self.state = DriverState::Uninitialized;
         self.pulse_count = 0;
         self.release_pulses();
         true
