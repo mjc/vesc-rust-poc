@@ -516,7 +516,7 @@ fn full_switch_fault_active(context: &FaultContext<'_>) -> bool {
 }
 
 #[must_use]
-fn full_switch_stop_suppressed(context: &FaultContext<'_>) -> bool {
+fn full_switch_stop_delay_held(context: &FaultContext<'_>) -> bool {
     let faults = context.state.serialized_config.faults();
     let input = context.input;
     let half_erpm = faults.adc_half_erpm().rpm();
@@ -549,7 +549,7 @@ fn classify_full_switch_fault(context: &FaultContext<'_>) -> TimedFault {
     if !full_switch_fault_active(context) {
         return TimedFault::Clear;
     }
-    if full_switch_stop_suppressed(context) {
+    if full_switch_stop_delay_held(context) {
         return TimedFault::Pending;
     }
     if full_switch_timeout_elapsed(context) {
@@ -829,7 +829,7 @@ fn classify_flywheel_footpad(context: &FaultContext<'_>) -> Option<FloatOutBoySt
 }
 
 #[must_use]
-fn darkride_roll_fault_active(context: &FaultContext<'_>) -> bool {
+fn darkride_roll_active(context: &FaultContext<'_>) -> bool {
     let input = context.input;
     matches!(input.run_state, FloatOutBoyRunState::Running)
         && !input.darkride_active()
@@ -841,17 +841,17 @@ fn darkride_roll_fault_active(context: &FaultContext<'_>) -> bool {
 }
 
 #[must_use]
-fn darkride_roll_in_stop_window(context: &FaultContext<'_>) -> bool {
+fn darkride_roll_thresholds_met(context: &FaultContext<'_>) -> bool {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
     context.input.roll_abs > limits.roll_lower && context.input.roll_abs < limits.roll_upper
 }
 
 #[must_use]
 fn classify_darkride_roll(context: &FaultContext<'_>) -> Option<FloatOutBoyStopEvent> {
-    if !darkride_roll_fault_active(context) {
+    if !darkride_roll_active(context) {
         return None;
     }
-    darkride_roll_in_stop_window(context).then_some(FloatOutBoyStopEvent::DarkrideRoll)
+    darkride_roll_thresholds_met(context).then_some(FloatOutBoyStopEvent::DarkrideRoll)
 }
 
 #[must_use]
