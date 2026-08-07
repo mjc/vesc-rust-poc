@@ -85,55 +85,51 @@ pub(crate) struct FloatOutBoyStateTransitionInput {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyStateTransitionOutput {
     pub(crate) ride_state: FloatOutBoyRideState,
-    pub(crate) state_stopped: bool,
-    pub(crate) state_engaged: bool,
+    pub(crate) effect: FloatOutBoyTransitionEffect,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FloatOutBoyStateTransitionAction {
+pub(crate) enum FloatOutBoyTransitionEffect {
     Stop(FloatOutBoyStopEvent),
     Engage,
     Preserve,
 }
 
-impl FloatOutBoyStateTransitionAction {
+impl FloatOutBoyTransitionEffect {
+    #[must_use]
+    pub(crate) const fn engaged(self) -> bool {
+        matches!(self, Self::Engage)
+    }
+
+    #[must_use]
+    pub(crate) const fn stopped(self) -> bool {
+        matches!(self, Self::Stop(_))
+    }
+
     #[inline]
     fn apply(self, input: FloatOutBoyStateTransitionInput) -> FloatOutBoyStateTransitionOutput {
         let previous = input.previous;
         // C map: `state_stop` writes READY/stop condition and clears wheelslip at
         // `third_party/float-out-boy/src/state.c:29-33`; `state_engage` writes RUNNING,
         // SAT_CENTERING, and STOP_NONE at `third_party/float-out-boy/src/state.c:36-39`.
-        let (
-            run_state,
-            setpoint_adjustment,
-            stop_condition,
-            wheelslip,
-            state_stopped,
-            state_engaged,
-        ) = match self {
+        let (run_state, setpoint_adjustment, stop_condition, wheelslip) = match self {
             Self::Stop(event) => (
                 FloatOutBoyRunState::Ready,
                 previous.setpoint_adjustment(),
                 event.stop_condition(),
                 FloatOutBoyWheelSlipState::None,
-                true,
-                false,
             ),
             Self::Engage => (
                 FloatOutBoyRunState::Running,
                 FloatOutBoySetpointAdjustment::Centering,
                 FloatOutBoyStopCondition::None,
                 Self::rolling_wheelslip(previous, input.traction_loss_detected),
-                false,
-                true,
             ),
             Self::Preserve => (
                 input.run_state,
                 Self::rolling_setpoint_adjustment(previous, input.traction_loss_detected),
                 previous.stop_condition(),
                 Self::rolling_wheelslip(previous, input.traction_loss_detected),
-                false,
-                false,
             ),
         };
 
@@ -147,8 +143,7 @@ impl FloatOutBoyStateTransitionAction {
             .with_charging(previous.charging())
             .with_wheelslip(wheelslip)
             .with_darkride(previous.darkride()),
-            state_stopped,
-            state_engaged,
+            effect: self,
         }
     }
 
@@ -208,11 +203,9 @@ pub(crate) fn float_out_boy_state_transition(
     // C map: upstream evaluates stop checks before READY engage at
     // `third_party/float-out-boy/src/main.c:357-509,957-1067`.
     match (input.stop_event, input.engagement) {
-        (Some(event), _) => FloatOutBoyStateTransitionAction::Stop(event),
-        (None, FloatOutBoyEngagementDecision::Engage) => FloatOutBoyStateTransitionAction::Engage,
-        (None, FloatOutBoyEngagementDecision::Preserve) => {
-            FloatOutBoyStateTransitionAction::Preserve
-        }
+        (Some(event), _) => FloatOutBoyTransitionEffect::Stop(event),
+        (None, FloatOutBoyEngagementDecision::Engage) => FloatOutBoyTransitionEffect::Engage,
+        (None, FloatOutBoyEngagementDecision::Preserve) => FloatOutBoyTransitionEffect::Preserve,
     }
     .apply(input)
 }
@@ -282,8 +275,10 @@ mod tests {
             output.ride_state.wheelslip(),
             FloatOutBoyWheelSlipState::None
         );
-        assert!(output.state_stopped);
-        assert!(!output.state_engaged);
+        assert_eq!(
+            output.effect,
+            FloatOutBoyTransitionEffect::Stop(FloatOutBoyStopEvent::QuickStop)
+        );
     }
 
     #[test]
@@ -311,8 +306,7 @@ mod tests {
             output.ride_state.stop_condition(),
             FloatOutBoyStopCondition::None
         );
-        assert!(!output.state_stopped);
-        assert!(output.state_engaged);
+        assert_eq!(output.effect, FloatOutBoyTransitionEffect::Engage);
     }
 
     #[test]
@@ -358,7 +352,7 @@ mod tests {
             output.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::None,
         );
-        assert!(!output.state_stopped);
+        assert_eq!(output.effect, FloatOutBoyTransitionEffect::Preserve);
     }
 
     #[test]

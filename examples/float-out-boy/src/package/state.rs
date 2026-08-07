@@ -93,7 +93,7 @@ use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 use transition::{
     FloatOutBoyEngagementDecision, FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent,
-    float_out_boy_state_transition,
+    FloatOutBoyTransitionEffect, float_out_boy_state_transition,
 };
 
 // C map: `aux_thd` stores backup data after more than 200 m while not running
