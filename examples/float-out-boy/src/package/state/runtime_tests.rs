@@ -767,6 +767,8 @@ fn active_reverse_stop_faults_follow_source_priority() {
 
 #[test]
 fn reverse_stop_timer_epoch_resets_at_slow_pitch() {
+    // Regression for CodeRabbit's stale-epoch finding: Refloat main also
+    // refreshes only below its threshold, leaving equality uncovered.
     let (_, telemetry, mut state) = running_reverse_stop_fixture(
         Rpm::ZERO,
         AngleDegrees::ZERO,

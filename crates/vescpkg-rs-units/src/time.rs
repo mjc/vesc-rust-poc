@@ -41,6 +41,21 @@ impl SampleRate {
     }
 }
 
+impl VescSeconds {
+    /// Convert firmware seconds to the corresponding whole system ticks.
+    #[must_use]
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Rust's float cast provides the documented saturating whole-tick conversion"
+    )]
+    pub fn to_system_ticks_saturating(self) -> SystemTicks {
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).unwrap_or(u16::MAX);
+        SystemTicks::from_ticks((self.as_seconds() * f32::from(tick_rate)) as u32)
+    }
+}
+
 // A firmware tick counter has 32 integer bits, while `f32` stores 24 significant
 // bits. Converting a large counter therefore rounds away some low-order ticks.
 // That is intentional here: VESC exposes this boundary as floating-point

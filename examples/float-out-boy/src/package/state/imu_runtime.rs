@@ -758,16 +758,10 @@ impl ActiveReverseStopFaultInput {
         if self.pitch > limits.pitch {
             return Some(FloatOutBoyStopEvent::ReverseStopPitch);
         }
-        let fast_timer_expired = if self.pitch > limits.timer_fast_pitch {
-            self.elapsed > SystemTicks::from_ticks(10_000)
-        } else {
-            false
-        };
-        let slow_timer_expired = if self.pitch > limits.timer_slow_pitch {
-            self.elapsed > SystemTicks::from_ticks(20_000)
-        } else {
-            false
-        };
+        let fast_timer_expired = self.pitch > limits.timer_fast_pitch
+            && self.elapsed > VescSeconds::from_seconds(1.0).to_system_ticks_saturating();
+        let slow_timer_expired = self.pitch > limits.timer_slow_pitch
+            && self.elapsed > VescSeconds::from_seconds(2.0).to_system_ticks_saturating();
         if fast_timer_expired {
             return Some(FloatOutBoyStopEvent::ReverseStopTimer);
         }
@@ -1380,8 +1374,9 @@ fn apply_transition_activity(
         (
             FloatOutBoyRunState::Running,
             FloatOutBoySetpointAdjustment::ReverseStop
-        )
-    ) || activity.input.pitch_abs < ReverseStopLimits::TIMER_ANGLE_THRESHOLD
+        ) // CodeRabbit found the same stale-epoch gap in Refloat main, whose
+          // `reverse_stop.c` refreshes only below `TIMER_ANGLE_THRESHOLD`.
+    ) || activity.input.pitch_abs <= ReverseStopLimits::TIMER_ANGLE_THRESHOLD
     {
         state.reverse_ticks = system_time_ticks;
     }
