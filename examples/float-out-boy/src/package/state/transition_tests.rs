@@ -288,6 +288,11 @@ fn moving_full_switch_suppression_holds_epoch_until_stopping_is_allowed() {
     let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
     edit_config(&mut state, |config| {
         assert!(config.set_moving_faults_disabled(true));
+        assert!(config.set_fault_adc_half_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(200.0),
+        )));
+        assert!(config.set_switch_half_delay(VescSeconds::from_seconds(0.25)));
+        assert!(config.set_switch_full_delay(VescSeconds::from_seconds(0.25)));
     });
     assert!(state.serialized_config.faults().moving_faults_disabled());
     let fault_epoch = state.fault_switch_ticks;

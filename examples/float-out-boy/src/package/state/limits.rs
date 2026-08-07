@@ -62,9 +62,6 @@ impl ReverseStopLimits {
         rate: ReverseStopRate::FLOAT_OUT_BOY,
     };
 
-    // Refloat's `TARGET_STOP_ANGLE / 2`; refresh the timer below this boundary.
-    pub(super) const TIMER_ANGLE_THRESHOLD: AngleDegrees = AngleDegrees::from_degrees(8.5);
-
     #[must_use]
     pub(super) fn carryover_total_erpm(self, interpolated_target: AngleDegrees) -> Rpm {
         // C map: preserve an error-pushback target when entering reverse-stop
@@ -197,11 +194,6 @@ mod tests {
             reverse_stop.timer_slow_pitch,
             AngleDegrees::from_degrees(5.0)
         );
-        assert_eq!(
-            ReverseStopLimits::TIMER_ANGLE_THRESHOLD,
-            AngleDegrees::from_degrees(8.5)
-        );
-
         assert_eq!(
             RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle(),
             AngleDegrees::from_degrees(30.0)

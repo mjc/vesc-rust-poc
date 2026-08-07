@@ -1366,6 +1366,8 @@ fn apply_transition_activity(
     if matches!(activity.normal.switch_angle.half_switch, TimedFault::Clear) {
         state.fault_switch_half_ticks = system_time_ticks;
     }
+    // The legacy C map refreshed below 5 degrees while its timer started above
+    // 5 degrees. Include equality so it cannot retain an inactive timer epoch.
     if !matches!(
         (
             activity.input.run_state,
@@ -1374,9 +1376,8 @@ fn apply_transition_activity(
         (
             FloatOutBoyRunState::Running,
             FloatOutBoySetpointAdjustment::ReverseStop
-        ) // CodeRabbit found the same stale-epoch gap in Refloat main, whose
-          // `reverse_stop.c` refreshes only below `TIMER_ANGLE_THRESHOLD`.
-    ) || activity.input.pitch_abs <= ReverseStopLimits::TIMER_ANGLE_THRESHOLD
+        )
+    ) || reverse_stop_timer_inactive(activity.input.pitch_abs)
     {
         state.reverse_ticks = system_time_ticks;
     }
@@ -1389,6 +1390,11 @@ fn apply_transition_activity(
         state.fault_angle_pitch_ticks = system_time_ticks;
     }
     transition
+}
+
+#[must_use]
+pub(super) fn reverse_stop_timer_inactive(pitch_abs: AngleDegrees) -> bool {
+    pitch_abs <= ReverseStopLimits::FLOAT_OUT_BOY.timer_slow_pitch
 }
 
 fn evaluate_transition_phase(

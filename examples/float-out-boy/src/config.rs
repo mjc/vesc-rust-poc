@@ -870,6 +870,13 @@ impl FloatOutBoyConfigEditor<'_> {
     }
 
     #[cfg(test)]
+    generated_config_setters! {
+        set_fault_adc_half_erpm(speed: ElectricalSpeed) => FloatOutBoyFaultConfig::ADC_HALF_ERPM_FIELD;
+        set_switch_half_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_HALF_FIELD;
+        set_switch_full_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_FULL_FIELD;
+    }
+
+    #[cfg(test)]
     generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
 
     #[cfg(test)]

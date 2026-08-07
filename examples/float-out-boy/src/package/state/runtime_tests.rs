@@ -1,5 +1,6 @@
 use super::{
-    FloatOutBoyPackageState, imu_runtime::ActiveReverseStopFaultInput,
+    FloatOutBoyPackageState,
+    imu_runtime::{ActiveReverseStopFaultInput, reverse_stop_timer_inactive},
     transition::FloatOutBoyStopEvent,
 };
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
@@ -766,9 +767,16 @@ fn active_reverse_stop_faults_follow_source_priority() {
 }
 
 #[test]
+fn reverse_stop_timer_is_inactive_at_slow_pitch_limit() {
+    // CodeRabbit correctly found that legacy C leaves exactly 5 degrees in a
+    // gap: neither the strict >5 timer nor the strict <5 refresh is active.
+    assert!(reverse_stop_timer_inactive(AngleDegrees::from_degrees(5.0)));
+}
+
+#[test]
 fn reverse_stop_timer_epoch_resets_at_slow_pitch() {
-    // Regression for CodeRabbit's stale-epoch finding: Refloat main also
-    // refreshes only below its threshold, leaving equality uncovered.
+    // Regression for CodeRabbit's legacy-C finding: exactly 5 degrees does not
+    // start either strict timer, so it must refresh before pitch rises to 6.
     let (_, telemetry, mut state) = running_reverse_stop_fixture(
         Rpm::ZERO,
         AngleDegrees::ZERO,
