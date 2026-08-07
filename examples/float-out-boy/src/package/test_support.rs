@@ -4,6 +4,11 @@ use crate::config::{FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
 use crate::domain::*;
 use vescpkg_rs::prelude::*;
 
+pub(crate) fn refloat_main_balance_current_alpha(sample_rate: SampleRate) -> f32 {
+    let omega = (2.0 * core::f32::consts::PI * 25.0 / sample_rate.as_hertz()).min(0.5);
+    omega - 0.5 * omega * omega
+}
+
 static FLOAT_OUT_BOY_RUNTIME_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub(crate) struct FloatOutBoyRuntimeStateLock {

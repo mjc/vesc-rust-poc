@@ -2,13 +2,25 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
+use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, SampleRate};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
 const HANDTEST_CURRENT_LIMIT_AMPS: f32 = 7.0;
 const FLYWHEEL_CURRENT_LIMIT_AMPS: f32 = 40.0;
 const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
+const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
+
+#[inline]
+fn balance_current_filter_alpha(sample_rate: SampleRate) -> f32 {
+    // C map: Refloat main at caff10a configures this 25 Hz filter in
+    // `src/main.c:168-175` and uses the bounded second-order approximation of
+    // `1 - e^-omega` from `src/filters/ema.c:24-30`.
+    let omega = (2.0 * core::f32::consts::PI * BALANCE_CURRENT_FILTER_CUTOFF.as_hertz()
+        / sample_rate.as_hertz())
+    .min(0.5);
+    omega - 0.5 * omega * omega
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -108,14 +120,16 @@ impl RequestedCurrent {
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
+        sample_rate: SampleRate,
         traction_control: FloatOutBoyTractionControlState,
     ) -> MotorCurrent {
         match traction_control {
             FloatOutBoyTractionControlState::Active => Self::zero(),
             FloatOutBoyTractionControlState::Inactive => {
-                // C map: `third_party/float-out-boy/src/main.c:949-954` filters RUNNING
-                // output current with 20% of the new request.
-                previous * 0.8 + self.0 * 0.2
+                // C map: Refloat main at caff10a updates the EMA as
+                // `previous += alpha * (target - previous)` in
+                // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
+                previous + (self.0 - previous) * balance_current_filter_alpha(sample_rate)
             }
         }
     }

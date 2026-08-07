@@ -50,7 +50,7 @@ impl LoopState {
             .requested_with_pitch_based(pitch_based)
             .clamped_to(input.current_limit())
             .adjusted_for_darkride(input.darkride)
-            .filtered_from(state.balance_current, input.traction_control);
+            .filtered_from(state.balance_current, config.hertz, input.traction_control);
         let state = state.with_balance_current(balance_current);
 
         LoopOutput {

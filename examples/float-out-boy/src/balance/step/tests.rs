@@ -70,7 +70,12 @@ fn base_state() -> LoopState {
 }
 
 fn assert_current(actual: MotorCurrent, expected: MotorCurrent) {
-    assert!((actual.current().as_amps() - expected.current().as_amps()).abs() < 0.0001);
+    let actual = actual.current().as_amps();
+    let expected = expected.current().as_amps();
+    assert!(
+        (actual - expected).abs() < 0.0001,
+        "actual current {actual} A differs from expected {expected} A"
+    );
 }
 
 fn assert_scale(actual: PidScale, expected: PidScale) {
@@ -188,13 +193,13 @@ fn balance_loop_unit_limits_normal_current_like_float_out_boy_main_loop() {
             motor_current(Current::from_amps(1.0)),
             setpoint(AngleDegrees::from_degrees(10.0)),
             motor_current(Current::from_amps(3.0)),
-            motor_current(Current::from_amps(0.6)),
+            motor_current(Current::from_amps(1.125)),
         ),
         (
             motor_current(Current::from_amps(-1.0)),
             setpoint(AngleDegrees::from_degrees(-10.0)),
             motor_current(Current::from_amps(2.0)),
-            motor_current(Current::from_amps(-0.4)),
+            motor_current(Current::from_amps(-0.75)),
         ),
     ];
 
@@ -241,7 +246,7 @@ fn balance_loop_unit_treats_motor_current_min_as_magnitude_like_float_out_boy_ma
     // though VESC stores braking current as a negative config value.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(-0.4)),
+        motor_current(Current::from_amps(-0.75)),
     );
 }
 
@@ -282,7 +287,7 @@ fn balance_loop_unit_positive_pitch_rate_commands_negative_damping_current() {
     // current at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(-4.0)),
+        motor_current(Current::from_amps(-7.5)),
     );
 }
 
@@ -305,7 +310,30 @@ fn balance_loop_unit_negative_pitch_rate_commands_positive_damping_current() {
     // current at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         output.requested_current,
-        motor_current(Current::from_amps(4.0)),
+        motor_current(Current::from_amps(7.5)),
+    );
+}
+
+#[test]
+fn balance_current_filter_uses_refloat_main_cutoff_at_the_loop_frequency() {
+    let output = advance_loop(
+        LoopConfig {
+            kp: AngleCurrentGain::new(1.0),
+            hertz: SampleRate::from_hertz(1_000.0),
+            ..base_config()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(10.0)),
+            ..base_input()
+        },
+        base_state(),
+    );
+
+    // Refloat main configures a 25 Hz EMA. At a 1000 Hz update rate its
+    // second-order alpha approximation is 0.14474264.
+    assert_current(
+        output.requested_current,
+        motor_current(Current::from_amps(1.447_426_4)),
     );
 }
 
@@ -484,7 +512,7 @@ fn balance_loop_unit_darkride_and_traction_control_match_float_out_boy_main_loop
     // at `third_party/float-out-boy/src/main.c:949-954`.
     assert_current(
         darkride_output.state.balance_current,
-        motor_current(Current::from_amps(6.0)),
+        motor_current(Current::from_amps(2.5)),
     );
     assert_current(
         traction_output.state.balance_current,

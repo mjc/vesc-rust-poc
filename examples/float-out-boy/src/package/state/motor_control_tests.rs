@@ -1,6 +1,6 @@
 use super::super::test_support::{
-    FloatOutBoyConfigTestBytes, sample_all_data_payloads_with_ride_state,
-    tick_float_out_boy_state_and_handle_packet,
+    FloatOutBoyConfigTestBytes, refloat_main_balance_current_alpha,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use super::FloatOutBoyPackageState;
 use crate::domain::{
@@ -85,7 +85,7 @@ fn idle_motor_control_uses_smoothed_erpm_for_one_sample_spike_like_refloat() {
 #[test]
 fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
     let lifecycle = TimestampTicks::from_ticks(0);
-    for (motor_current, expected_current) in [(1.0_f32, 0.6_f32), (-1.0_f32, -0.4_f32)] {
+    for (motor_current, limited_current) in [(1.0_f32, 3.0_f32), (-1.0_f32, -2.0_f32)] {
         let telemetry = FirmwareTest::new()
             .with_runtime_motor(
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(0.0)),
@@ -156,6 +156,8 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
             assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.0)));
         });
         assert!(state.store_serialized_config(&config));
+        let alpha =
+            refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
 
         assert!(tick_float_out_boy_state_and_handle_packet(
             &mut state,
@@ -173,7 +175,8 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
         // `fabsf(l_current_min)` at `third_party/float-out-boy/src/motor_data.c:90-91`; RUNNING uses
         // max while accelerating and min while braking at `third_party/float-out-boy/src/main.c:932-942`.
         assert!(
-            (telemetry.commanded_current().current().as_amps() - expected_current).abs() < 0.0001,
+            (telemetry.commanded_current().current().as_amps() - limited_current * alpha).abs()
+                < 0.0001,
             "{motor_current}: {:?}",
             telemetry.commanded_current()
         );

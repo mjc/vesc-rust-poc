@@ -6,7 +6,8 @@ use crate::domain::{
 };
 use crate::package::test_support::{
     imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
-    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
+    refloat_main_balance_current_alpha, sample_all_data_payloads_with_ride_state,
+    tick_float_out_boy_state_and_handle_packet,
 };
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngleRadians, AngularVelocity, Current, DutyCycle,
@@ -979,12 +980,12 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let base = state.all_data_payloads().base();
     let error = base.setpoints().board().angle().as_degrees()
         - base.attitude().balance_pitch().angle_degrees().as_degrees();
-    let expected = error * 8.0 * 0.2;
+    let alpha = refloat_main_balance_current_alpha(state.serialized_config.startup().sample_rate());
+    let expected = error * 8.0 * alpha;
     let actual = firmware.commanded_current().current().as_amps();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.
-    // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 0.2 output
-    // smoothing from rest, the final motor command follows the signed
-    // setpoint error exactly.
+    // With Kp=8 A/° and zero rate/I/booster terms, Refloat's 25 Hz EMA
+    // smooths the signed setpoint error from rest.
     assert!(expected < 0.0, "error={error}");
     assert!(base.booster_current().current().is_zero());
     assert!(
