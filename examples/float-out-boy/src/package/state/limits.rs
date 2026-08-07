@@ -194,7 +194,6 @@ mod tests {
             reverse_stop.timer_slow_pitch,
             AngleDegrees::from_degrees(5.0)
         );
-
         assert_eq!(
             RemoteSetpointFaultLimit::FLOAT_OUT_BOY.angle(),
             AngleDegrees::from_degrees(30.0)

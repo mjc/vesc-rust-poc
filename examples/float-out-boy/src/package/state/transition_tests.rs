@@ -213,6 +213,135 @@ fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays(
 }
 
 #[test]
+fn running_quick_stop_requires_armed_pitch_speed_and_direction() {
+    let cases = [
+        (
+            AngleRadians::from_degrees(15.0),
+            Rpm::ZERO,
+            FloatOutBoyRunState::Ready,
+            FloatOutBoyStopCondition::QuickStop,
+        ),
+        (
+            AngleRadians::from_degrees(14.0),
+            Rpm::ZERO,
+            FloatOutBoyRunState::Running,
+            FloatOutBoyStopCondition::None,
+        ),
+        (
+            AngleRadians::from_degrees(15.0),
+            Rpm::from_revolutions_per_minute(200.0),
+            FloatOutBoyRunState::Running,
+            FloatOutBoyStopCondition::None,
+        ),
+        (
+            AngleRadians::from_degrees(-15.0),
+            Rpm::from_revolutions_per_minute(1.0),
+            FloatOutBoyRunState::Running,
+            FloatOutBoyStopCondition::None,
+        ),
+    ];
+
+    for (pitch, motor_erpm, expected_run_state, expected_stop) in cases {
+        let telemetry = FirmwareTest::new().with_runtime_motor(
+            ElectricalSpeed::new(motor_erpm),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        );
+        telemetry.set_imu_ready(true);
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::ZERO),
+            ImuPitch::new(pitch),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
+        assert!(state.serialized_config.faults().quickstop_enabled());
+
+        assert!(tick_float_out_boy_state_and_handle_packet(
+            &mut state,
+            TimestampTicks::from_ticks(0),
+            telemetry.telemetry(),
+            telemetry.imu(),
+            &[
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.run_state(), expected_run_state);
+        assert_eq!(ride_state.stop_condition(), expected_stop);
+    }
+}
+
+#[test]
+fn moving_full_switch_suppression_holds_epoch_until_stopping_is_allowed() {
+    let firmware = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    firmware.set_imu_ready(true);
+    let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
+    edit_config(&mut state, |config| {
+        assert!(config.set_moving_faults_disabled(true));
+        assert!(config.set_fault_adc_half_erpm(ElectricalSpeed::new(
+            Rpm::from_revolutions_per_minute(200.0),
+        )));
+        assert!(config.set_switch_half_delay(VescSeconds::from_seconds(0.25)));
+        assert!(config.set_switch_full_delay(VescSeconds::from_seconds(0.25)));
+    });
+    assert!(state.serialized_config.faults().moving_faults_disabled());
+    let fault_epoch = state.fault_switch_ticks;
+    let packet = [
+        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
+    ];
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_000),
+        firmware.telemetry(),
+        firmware.imu(),
+        &packet,
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running
+    );
+    assert_eq!(state.fault_switch_ticks, fault_epoch);
+
+    let firmware = firmware.with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(300.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_001),
+        firmware.telemetry(),
+        firmware.imu(),
+        &packet,
+    ));
+    let ride_state = state.all_data_payloads().base().status().ride_state();
+    assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
+    assert_eq!(
+        ride_state.stop_condition(),
+        FloatOutBoyStopCondition::SwitchFull
+    );
+}
+
+#[test]
 fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);

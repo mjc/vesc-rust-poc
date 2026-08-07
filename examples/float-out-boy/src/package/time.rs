@@ -30,9 +30,9 @@ pub(super) fn float_out_boy_ticks_elapsed_seconds(
 ) -> bool {
     // C map: `timer_older` casts seconds times `SYSTEM_TICK_RATE_HZ` to the
     // integer tick type before strict comparison at `third_party/float-out-boy/src/time.h:46-48`.
-    let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).unwrap_or(u16::MAX);
-    now.wrapping_duration_since(then).as_ticks()
-        > crate::wire::saturating_trunc_f32_to_u32(seconds.as_seconds() * f32::from(tick_rate))
+    seconds
+        .to_system_ticks_saturating()
+        .is_some_and(|timeout| now.wrapping_duration_since(then) > timeout)
 }
 
 #[cfg(test)]

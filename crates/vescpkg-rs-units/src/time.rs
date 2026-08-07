@@ -41,6 +41,30 @@ impl SampleRate {
     }
 }
 
+impl VescSeconds {
+    /// Convert finite firmware seconds to the corresponding whole system ticks.
+    ///
+    /// Returns `None` for NaN and infinities. Finite values saturate to the
+    /// system tick range using Rust's float-to-integer conversion semantics.
+    #[must_use]
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Rust's float cast provides the documented saturating whole-tick conversion"
+    )]
+    pub fn to_system_ticks_saturating(self) -> Option<SystemTicks> {
+        let seconds = self.as_seconds();
+        if !seconds.is_finite() {
+            return None;
+        }
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).unwrap_or(u16::MAX);
+        Some(SystemTicks::from_ticks(
+            (seconds * f32::from(tick_rate)) as u32,
+        ))
+    }
+}
+
 // A firmware tick counter has 32 integer bits, while `f32` stores 24 significant
 // bits. Converting a large counter therefore rounds away some low-order ticks.
 // That is intentional here: VESC exposes this boundary as floating-point

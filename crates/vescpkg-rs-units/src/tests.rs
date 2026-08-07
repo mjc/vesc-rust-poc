@@ -384,6 +384,31 @@ fn timestamp_ticks_convert_to_vesc_seconds() {
 }
 
 #[test]
+fn vesc_seconds_convert_to_saturating_system_ticks() {
+    assert_eq!(
+        VescSeconds::from_seconds(2.0)
+            .to_system_ticks_saturating()
+            .expect("finite seconds")
+            .as_ticks(),
+        20_000
+    );
+    assert_eq!(
+        VescSeconds::from_seconds(-1.0)
+            .to_system_ticks_saturating()
+            .expect("finite seconds")
+            .as_ticks(),
+        0
+    );
+    for non_finite in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(
+            VescSeconds::from_seconds(non_finite)
+                .to_system_ticks_saturating()
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn timestamp_delta_preserves_vesc_unsigned_wraparound() {
     let then = TimestampTicks::from_ticks(u32::MAX - 4);
     let now = TimestampTicks::from_ticks(5);

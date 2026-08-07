@@ -1,14 +1,19 @@
-use super::FloatOutBoyPackageState;
+use super::{
+    FloatOutBoyPackageState,
+    imu_runtime::{ActiveReverseStopFaultInput, reverse_stop_timer_inactive},
+    transition::FloatOutBoyStopEvent,
+};
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
 use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
-    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyFootpadSample,
-    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
-    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyWheelSlipState,
+    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
+    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
+    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
+    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState, FloatOutBoyRunState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
@@ -697,6 +702,212 @@ fn running_reverse_stop_fixture(
     state.reverse_total_erpm = reverse_total_erpm;
 
     (now, telemetry, state)
+}
+
+#[test]
+fn active_reverse_stop_faults_follow_source_priority() {
+    let nominal = ActiveReverseStopFaultInput {
+        footpad: FloatOutBoyFootpadState::Both,
+        darkride: FloatOutBoyDarkRideState::Upright,
+        pitch: AngleDegrees::ZERO,
+        elapsed: SystemTicks::from_ticks(0),
+        total_erpm: Rpm::ZERO,
+    };
+    let cases = [
+        (
+            ActiveReverseStopFaultInput {
+                footpad: FloatOutBoyFootpadState::None,
+                darkride: FloatOutBoyDarkRideState::Active,
+                pitch: AngleDegrees::from_degrees(19.0),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopNoFootpads),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                darkride: FloatOutBoyDarkRideState::Active,
+                pitch: AngleDegrees::from_degrees(19.0),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            None,
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                pitch: AngleDegrees::from_degrees(19.0),
+                elapsed: SystemTicks::from_ticks(20_001),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopPitch),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                pitch: AngleDegrees::from_degrees(11.0),
+                elapsed: SystemTicks::from_ticks(10_001),
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopTimer),
+        ),
+        (
+            ActiveReverseStopFaultInput {
+                total_erpm: Rpm::from_revolutions_per_minute(200_001.0),
+                ..nominal
+            },
+            Some(FloatOutBoyStopEvent::ReverseStopTotalErpm),
+        ),
+        (nominal, None),
+    ];
+
+    for (input, expected) in cases {
+        assert_eq!(input.stop_event(), expected);
+    }
+}
+
+#[test]
+fn reverse_stop_timer_is_inactive_at_slow_pitch_limit() {
+    // CodeRabbit correctly found that legacy C leaves exactly 5 degrees in a
+    // gap: neither the strict >5 timer nor the strict <5 refresh is active.
+    assert!(reverse_stop_timer_inactive(AngleDegrees::from_degrees(5.0)));
+}
+
+#[test]
+fn reverse_stop_timer_epoch_resets_at_slow_pitch() {
+    // Regression for CodeRabbit's legacy-C finding: exactly 5 degrees does not
+    // start either strict timer, so it must refresh before pitch rises to 6.
+    let (_, telemetry, mut state) = running_reverse_stop_fixture(
+        Rpm::ZERO,
+        AngleDegrees::ZERO,
+        Rpm::from_revolutions_per_minute(-1.0),
+    );
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(5.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_001),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running,
+    );
+    assert_eq!(state.reverse_ticks, TimestampTicks::from_ticks(20_001));
+
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::ZERO),
+        ImuPitch::new(AngleRadians::from_degrees(6.0)),
+        ImuYaw::new(AngleRadians::ZERO),
+    );
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        TimestampTicks::from_ticks(20_002),
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running,
+    );
+}
+
+#[test]
+fn running_reverse_stop_uses_pitch_typed_timer_boundaries_like_float_out_boy() {
+    let cases = [
+        (
+            AngleDegrees::from_degrees(11.0),
+            TimestampTicks::from_ticks(10_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(11.0),
+            TimestampTicks::from_ticks(10_001),
+            FloatOutBoyRunState::Ready,
+        ),
+        (
+            AngleDegrees::from_degrees(6.0),
+            TimestampTicks::from_ticks(20_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(6.0),
+            TimestampTicks::from_ticks(20_001),
+            FloatOutBoyRunState::Ready,
+        ),
+        (
+            // CodeRabbit requested this exact fast-threshold/slow-timer case;
+            // the C map keeps the comparison strict, so 10 degrees uses the
+            // two-second timer until the 20,001-tick sample, matching
+            // `third_party/float-out-boy/src/main.c:538-552`.
+            AngleDegrees::from_degrees(10.0),
+            TimestampTicks::from_ticks(20_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(10.0),
+            TimestampTicks::from_ticks(20_001),
+            FloatOutBoyRunState::Ready,
+        ),
+    ];
+
+    for (pitch, now, expected_run_state) in cases {
+        let (reverse_started, telemetry, mut state) = running_reverse_stop_fixture(
+            Rpm::ZERO,
+            AngleDegrees::ZERO,
+            Rpm::from_revolutions_per_minute(-1.0),
+        );
+        telemetry.set_imu_attitude(
+            ImuRoll::new(AngleRadians::ZERO),
+            ImuPitch::new(AngleRadians::from(pitch)),
+            ImuYaw::new(AngleRadians::ZERO),
+        );
+        state.reverse_ticks = reverse_started;
+
+        assert!(tick_float_out_boy_state_and_handle_packet(
+            &mut state,
+            now,
+            telemetry.telemetry(),
+            telemetry.imu(),
+            &[
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                FloatOutBoyAppDataCommand::RealtimeData.id(),
+            ],
+        ));
+
+        let ride_state = state.all_data_payloads().base().status().ride_state();
+        assert_eq!(ride_state.run_state(), expected_run_state);
+        assert_eq!(
+            ride_state.stop_condition(),
+            if matches!(expected_run_state, FloatOutBoyRunState::Ready) {
+                FloatOutBoyStopCondition::ReverseStop
+            } else {
+                FloatOutBoyStopCondition::None
+            },
+        );
+    }
 }
 
 #[test]
