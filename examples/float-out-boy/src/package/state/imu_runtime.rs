@@ -759,9 +759,13 @@ impl ActiveReverseStopFaultInput {
             return Some(FloatOutBoyStopEvent::ReverseStopPitch);
         }
         let fast_timer_expired = self.pitch > limits.timer_fast_pitch
-            && self.elapsed > VescSeconds::from_seconds(1.0).to_system_ticks_saturating();
+            && VescSeconds::from_seconds(1.0)
+                .to_system_ticks_saturating()
+                .is_some_and(|timeout| self.elapsed > timeout);
         let slow_timer_expired = self.pitch > limits.timer_slow_pitch
-            && self.elapsed > VescSeconds::from_seconds(2.0).to_system_ticks_saturating();
+            && VescSeconds::from_seconds(2.0)
+                .to_system_ticks_saturating()
+                .is_some_and(|timeout| self.elapsed > timeout);
         if fast_timer_expired {
             return Some(FloatOutBoyStopEvent::ReverseStopTimer);
         }

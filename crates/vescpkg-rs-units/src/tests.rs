@@ -388,27 +388,24 @@ fn vesc_seconds_convert_to_saturating_system_ticks() {
     assert_eq!(
         VescSeconds::from_seconds(2.0)
             .to_system_ticks_saturating()
+            .expect("finite seconds")
             .as_ticks(),
         20_000
     );
     assert_eq!(
         VescSeconds::from_seconds(-1.0)
             .to_system_ticks_saturating()
+            .expect("finite seconds")
             .as_ticks(),
         0
     );
-    assert_eq!(
-        VescSeconds::from_seconds(f32::NAN)
-            .to_system_ticks_saturating()
-            .as_ticks(),
-        0
-    );
-    assert_eq!(
-        VescSeconds::from_seconds(f32::INFINITY)
-            .to_system_ticks_saturating()
-            .as_ticks(),
-        u32::MAX
-    );
+    for non_finite in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(
+            VescSeconds::from_seconds(non_finite)
+                .to_system_ticks_saturating()
+                .is_none()
+        );
+    }
 }
 
 #[test]
