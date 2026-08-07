@@ -847,6 +847,20 @@ fn running_reverse_stop_uses_pitch_typed_timer_boundaries_like_float_out_boy() {
             TimestampTicks::from_ticks(20_001),
             FloatOutBoyRunState::Ready,
         ),
+        (
+            // CodeRabbit requested this exact fast-threshold/slow-timer case;
+            // the C map keeps the comparison strict, so 10 degrees uses the
+            // two-second timer until the 20,001-tick sample, matching
+            // `third_party/float-out-boy/src/main.c:538-552`.
+            AngleDegrees::from_degrees(10.0),
+            TimestampTicks::from_ticks(20_000),
+            FloatOutBoyRunState::Running,
+        ),
+        (
+            AngleDegrees::from_degrees(10.0),
+            TimestampTicks::from_ticks(20_001),
+            FloatOutBoyRunState::Ready,
+        ),
     ];
 
     for (pitch, now, expected_run_state) in cases {

@@ -465,14 +465,17 @@ struct AngleFaultActivity {
 }
 
 #[derive(Clone, Copy)]
-struct EngagementAllowed(bool);
+enum EngagementPermission {
+    Allowed,
+    Blocked,
+}
 
 struct NormalFaultEvaluation {
     before_darkride: Option<FloatOutBoyStopEvent>,
     after_darkride: Option<FloatOutBoyStopEvent>,
     switches: SwitchFaultActivity,
     angles: AngleFaultActivity,
-    can_engage: EngagementAllowed,
+    can_engage: EngagementPermission,
     flywheel_footpad_pressed: bool,
 }
 
@@ -488,7 +491,7 @@ fn evaluate_switch_angle_faults(
     base: &FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    EngagementAllowed(can_engage): EngagementAllowed,
+    can_engage: EngagementPermission,
 ) -> SwitchAngleFaultEvaluation {
     let faults = state.serialized_config.faults();
     let footpad = base.footpad().state();
@@ -514,7 +517,7 @@ fn evaluate_switch_angle_faults(
     let half_pending = !input.darkride_active
         && running
         && !faults.dual_switch()
-        && !can_engage
+        && !matches!(can_engage, EngagementPermission::Allowed)
         && input.motor_erpm.abs() < half_erpm;
     let half_fault = half_pending
         && float_out_boy_ticks_elapsed_seconds(
@@ -570,7 +573,6 @@ fn evaluate_switch_angle_faults(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ActiveReverseStopFaultInput {
     pub(super) footpad: FloatOutBoyFootpadState,
     pub(super) darkride: FloatOutBoyDarkRideState,
@@ -589,17 +591,21 @@ impl ActiveReverseStopFaultInput {
         if matches!(self.darkride, FloatOutBoyDarkRideState::Active) {
             return None;
         }
-        if self.pitch > limits.pitch {
-            return Some(FloatOutBoyStopEvent::ReverseStopPitch);
-        }
-        if (self.pitch > limits.timer_fast_pitch && self.elapsed > SystemTicks::from_ticks(10_000))
+        // CodeRabbit suggested an inclusive 5-degree slow-timer boundary;
+        // the C map (`third_party/float-out-boy/src/main.c:538-552`) is
+        // strict (`pitch > 10`/`pitch > 5`) here, while Refloat refreshes
+        // below `TARGET_STOP_ANGLE / 2` (8.5 degrees) separately.
+        let timer_expired = (self.pitch > limits.timer_fast_pitch
+            && self.elapsed > SystemTicks::from_ticks(10_000))
             || (self.pitch > limits.timer_slow_pitch
-                && self.elapsed > SystemTicks::from_ticks(20_000))
-        {
-            return Some(FloatOutBoyStopEvent::ReverseStopTimer);
-        }
-        (self.total_erpm.abs() > limits.total_erpm)
-            .then_some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
+                && self.elapsed > SystemTicks::from_ticks(20_000));
+        (self.pitch > limits.pitch)
+            .then_some(FloatOutBoyStopEvent::ReverseStopPitch)
+            .or_else(|| timer_expired.then_some(FloatOutBoyStopEvent::ReverseStopTimer))
+            .or_else(|| {
+                (self.total_erpm.abs() > limits.total_erpm)
+                    .then_some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
+            })
     }
 }
 
@@ -636,14 +642,15 @@ fn evaluate_normal_faults(
     let simple_start = startup.simplestart_enabled()
         && (float_out_boy_ticks_elapsed(system_time_ticks, state.disengage_ticks, 2)
             || !float_out_boy_ticks_elapsed(system_time_ticks, state.engage_ticks, 1));
-    let can_engage = EngagementAllowed(
-        matches!(
-            input.ride_state.charging(),
-            FloatOutBoyChargingState::NotCharging
-        ) && (matches!(footpad, FloatOutBoyFootpadState::Both)
+    let can_engage = match (
+        input.ride_state.charging(),
+        matches!(footpad, FloatOutBoyFootpadState::Both)
             || single_footpad && (dual_switch || simple_start)
-            || flywheel),
-    );
+            || flywheel,
+    ) {
+        (FloatOutBoyChargingState::NotCharging, true) => EngagementPermission::Allowed,
+        _ => EngagementPermission::Blocked,
+    };
     let switch_angle =
         evaluate_switch_angle_faults(state, base, system_time_ticks, input, can_engage);
     let darkride = DarkrideLimits::FLOAT_OUT_BOY;
@@ -682,7 +689,7 @@ fn evaluate_darkride_faults(
     state: &FloatOutBoyPackageState,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    EngagementAllowed(can_engage): EngagementAllowed,
+    can_engage: EngagementPermission,
 ) -> DarkrideFaultEvaluation {
     let limits = DarkrideLimits::FLOAT_OUT_BOY;
     let high_pending = input.darkride_active && input.motor_erpm > limits.timed_high_erpm;
@@ -720,21 +727,20 @@ fn evaluate_darkride_faults(
             limits.low_delay,
         );
     DarkrideFaultEvaluation {
-        stop: float_out_boy_first_stop_event(&[
-            (FloatOutBoyStopEvent::DarkrideHighErpm, high_fault),
-            (FloatOutBoyStopEvent::DarkrideLowErpm, low_fault),
-            (
-                FloatOutBoyStopEvent::DarkrideCanEngage,
-                input.darkride_active && can_engage,
-            ),
-        ]),
+        stop: high_fault
+            .then_some(FloatOutBoyStopEvent::DarkrideHighErpm)
+            .or_else(|| low_fault.then_some(FloatOutBoyStopEvent::DarkrideLowErpm))
+            .or_else(|| {
+                (input.darkride_active && matches!(can_engage, EngagementPermission::Allowed))
+                    .then_some(FloatOutBoyStopEvent::DarkrideCanEngage)
+            }),
         high_erpm_pending: high_pending,
         low_erpm_pending: low_pending,
     }
 }
 
 struct EngagementEvaluation {
-    engage: bool,
+    engage: EngagementPermission,
     centering_step: AngleDegrees,
 }
 
@@ -744,7 +750,7 @@ fn evaluate_engagement(
     state: &FloatOutBoyPackageState,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
-    EngagementAllowed(can_engage): EngagementAllowed,
+    can_engage: EngagementPermission,
 ) -> EngagementEvaluation {
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
@@ -762,7 +768,7 @@ fn evaluate_engagement(
     let ready_engage = !input.startup_became_ready
         && matches!(input.run_state, FloatOutBoyRunState::Ready)
         && !input.ready_flywheel_stop
-        && can_engage
+        && matches!(can_engage, EngagementPermission::Allowed)
         && input.balance_pitch_abs < pitch_tolerance
         && input.roll_abs < roll_tolerance;
     let ready_darkride = !input.startup_became_ready
@@ -788,12 +794,16 @@ fn evaluate_engagement(
         && matches!(input.run_state, FloatOutBoyRunState::Ready)
         && startup.pushstart_enabled()
         && input.motor_erpm.abs() > push_start.erpm_min
-        && can_engage
+        && matches!(can_engage, EngagementPermission::Allowed)
         && input.balance_pitch_abs < push_start.angle
         && input.roll_abs < push_start.angle
         && !(faults.reversestop_enabled() && input.motor_erpm.is_negative());
     EngagementEvaluation {
-        engage: ready_engage || ready_darkride || ready_push_start,
+        engage: if ready_engage || ready_darkride || ready_push_start {
+            EngagementPermission::Allowed
+        } else {
+            EngagementPermission::Blocked
+        },
         centering_step: startup.centering_step(),
     }
 }
@@ -816,7 +826,6 @@ fn transition_control_conditions(
     stop_event: Option<FloatOutBoyStopEvent>,
 ) -> (ControlConditions, Rpm) {
     let reverse_stop = ReverseStopLimits::FLOAT_OUT_BOY;
-    let traction_loss = TractionLossLimits::FLOAT_OUT_BOY;
     let reverse_stop_entry_pending = !matches!(
         input.ride_state.setpoint_adjustment(),
         FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
@@ -825,7 +834,7 @@ fn transition_control_conditions(
         && !input.darkride_active;
     let motor_acceleration = state.motor_kinematics.average();
     let traction_loss_detected = stop_event.is_none()
-        && !engagement.engage
+        && !matches!(engagement.engage, EngagementPermission::Allowed)
         && !matches!(
             input.ride_state.setpoint_adjustment(),
             FloatOutBoySetpointAdjustment::Centering | FloatOutBoySetpointAdjustment::ReverseStop
@@ -833,10 +842,10 @@ fn transition_control_conditions(
         && !reverse_stop_entry_pending
         && matches!(input.run_state, FloatOutBoyRunState::Running)
         && !matches!(input.ride_state.mode(), FloatOutBoyMode::Flywheel)
-        && motor_acceleration.abs() > traction_loss.acceleration_detect
+        && motor_acceleration.abs() > TractionLossLimits::FLOAT_OUT_BOY.acceleration_detect
         && motor_acceleration.is_negative() == input.motor_erpm.is_negative()
-        && base.motor().duty_cycle().ratio() > traction_loss.duty
-        && input.motor_erpm.abs() > traction_loss.erpm;
+        && base.motor().duty_cycle().ratio() > TractionLossLimits::FLOAT_OUT_BOY.duty
+        && input.motor_erpm.abs() > TractionLossLimits::FLOAT_OUT_BOY.erpm;
     (
         ControlConditions {
             reverse_stop_entry_pending,
@@ -865,7 +874,7 @@ fn apply_transition_activity(
         previous: activity.input.ride_state,
         run_state: activity.input.run_state,
         ready_flywheel_stop: activity.input.ready_flywheel_stop,
-        state_engage: activity.engagement.engage,
+        state_engage: matches!(activity.engagement.engage, EngagementPermission::Allowed),
         traction_loss_detected: activity.control.traction_loss_detected,
         stop_event: activity.stop_event,
     });
@@ -927,7 +936,6 @@ fn evaluate_transition_phase(
     system_time_ticks: TimestampTicks,
     start: &RefreshStart,
 ) -> TransitionPhase {
-    let mut beep_reason = start.beep_reason;
     let attitude = transition_attitude(
         state,
         imu,
@@ -940,13 +948,13 @@ fn evaluate_transition_phase(
     );
     let ride_state = attitude.ride_state;
     let motor_erpm = base.motor().electrical_speed().rpm();
-    beep_reason = refresh_footpad_warning(
+    let beep_reason = refresh_footpad_warning(
         state,
         base,
         ride_state,
         start.run_state,
         motor_erpm,
-        beep_reason,
+        start.beep_reason,
     );
     let readiness =
         refresh_flywheel_readiness(state, base, ride_state, start.run_state, attitude.pitch);
@@ -998,7 +1006,7 @@ fn evaluate_transition_phase(
         beeper_alert: attitude.beeper_alert,
         events: TransitionEvents {
             startup_became_ready: start.startup_became_ready,
-            state_engage: engagement.engage,
+            state_engage: matches!(engagement.engage, EngagementPermission::Allowed),
             state_stop_fault: outcome.state_stopped,
         },
         #[cfg(any(test, target_arch = "arm"))]
