@@ -13,25 +13,62 @@ use core::time::Duration;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
+fn state_in(run_state: FloatOutBoyRunState) -> FloatOutBoyPackageState {
+    FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        run_state,
+        FloatOutBoyMode::Normal,
+    ))
+}
+
+fn tick_with_footpad_voltage(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    voltage: Voltage,
+    now: TimestampTicks,
+) -> super::FloatOutBoyMainThreadTick {
+    let voltage = AdcVoltage::new(voltage);
+    super::tick_float_out_boy_main_thread_with(
+        state,
+        firmware.telemetry(),
+        firmware.imu(),
+        firmware.motor(),
+        voltage,
+        voltage,
+        now,
+    )
+}
+
+fn first_beeper_level_tick(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    mut ticks: core::ops::RangeInclusive<u32>,
+    voltage: Voltage,
+    expected: DigitalOutputLevel,
+) -> Option<u32> {
+    ticks.find(|tick| {
+        tick_with_footpad_voltage(state, firmware, voltage, TimestampTicks::from_ticks(*tick))
+            .beeper_level()
+            == Some(expected)
+    })
+}
+
 #[test]
 fn float_out_boy_runtime_threads_reserve_their_measured_rust_working_areas() {
     // The persisted-config call chain measured 1976 bytes before ChibiOS's
     // thread metadata, saved contexts, and interrupt reserve. The aux LED
     // reconfiguration chain measures 1948 bytes.
-    assert_eq!(
-        super::FloatOutBoyRuntimeThread::Main
-            .working_area_size()
-            .expect("valid main working area")
-            .usable_stack_bytes(),
-        2_656,
-    );
-    assert_eq!(
-        super::FloatOutBoyRuntimeThread::Aux
-            .working_area_size()
-            .expect("valid aux working area")
-            .usable_stack_bytes(),
-        2_656,
-    );
+    for thread in [
+        super::FloatOutBoyRuntimeThread::Main,
+        super::FloatOutBoyRuntimeThread::Aux,
+    ] {
+        assert_eq!(
+            thread
+                .working_area_size()
+                .expect("valid working area")
+                .usable_stack_bytes(),
+            2_656,
+        );
+    }
 }
 
 #[test]
@@ -158,13 +195,10 @@ fn float_out_boy_main_thread_tick_drives_duty_haptic_through_typed_motor_audio()
         payloads.mode4(),
     ));
 
-    super::tick_float_out_boy_main_thread_with(
+    tick_with_footpad_voltage(
         &mut state,
-        firmware.telemetry(),
-        firmware.imu(),
-        firmware.motor(),
-        AdcVoltage::new(Voltage::from_volts(2.5)),
-        AdcVoltage::new(Voltage::from_volts(2.5)),
+        &firmware,
+        Voltage::from_volts(2.5),
         TimestampTicks::from_ticks(0),
     );
 
@@ -182,7 +216,6 @@ fn float_out_boy_main_thread_tick_drives_duty_haptic_through_typed_motor_audio()
 fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_loop() {
     let telemetry = FirmwareTest::new();
     let imu = telemetry.imu();
-    let motor = telemetry.motor();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = default_float_out_boy_config_bytes();
     config[242] = 1;
@@ -192,13 +225,10 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     let mut changes = std::vec::Vec::new();
 
     for tick in 1..=160 {
-        let result = super::tick_float_out_boy_main_thread_with(
+        let result = tick_with_footpad_voltage(
             &mut state,
-            telemetry.telemetry(),
-            imu,
-            motor,
-            AdcVoltage::new(Voltage::ZERO),
-            AdcVoltage::new(Voltage::ZERO),
+            &telemetry,
+            Voltage::ZERO,
             TimestampTicks::from_ticks(0),
         );
         if let Some(level) = result.beeper_level() {
@@ -219,21 +249,16 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
 #[test]
 fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
     let telemetry = FirmwareTest::new();
-    let imu = telemetry.imu();
-    let motor = telemetry.motor();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = default_float_out_boy_config_bytes();
     config[242] = 1;
     assert!(state.store_serialized_config(&config));
     state.force_beeper_on();
 
-    super::tick_float_out_boy_main_thread_with(
+    tick_with_footpad_voltage(
         &mut state,
-        telemetry.telemetry(),
-        imu,
-        motor,
-        AdcVoltage::new(Voltage::ZERO),
-        AdcVoltage::new(Voltage::ZERO),
+        &telemetry,
+        Voltage::ZERO,
         TimestampTicks::from_ticks(0),
     );
 
@@ -286,10 +311,7 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
     firmware.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Running,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
     config[242] = 1;
     assert!(state.store_serialized_config(&config));
@@ -297,13 +319,10 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
         let _ = state.tick_beeper();
     }
 
-    let warning = super::tick_float_out_boy_main_thread_with(
+    let warning = tick_with_footpad_voltage(
         &mut state,
-        firmware.telemetry(),
-        firmware.imu(),
-        firmware.motor(),
-        AdcVoltage::new(Voltage::ZERO),
-        AdcVoltage::new(Voltage::ZERO),
+        &firmware,
+        Voltage::ZERO,
         TimestampTicks::from_ticks(1),
     );
     assert_eq!(warning.beeper_level(), Some(DigitalOutputLevel::High));
@@ -312,13 +331,10 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
         FloatOutBoyBeepReason::Sensors
     );
 
-    let restored = super::tick_float_out_boy_main_thread_with(
+    let restored = tick_with_footpad_voltage(
         &mut state,
-        firmware.telemetry(),
-        firmware.imu(),
-        firmware.motor(),
-        AdcVoltage::new(Voltage::from_volts(3.0)),
-        AdcVoltage::new(Voltage::from_volts(3.0)),
+        &firmware,
+        Voltage::from_volts(3.0),
         TimestampTicks::from_ticks(2),
     );
     assert_eq!(restored.beeper_level(), Some(DigitalOutputLevel::Low));
@@ -337,10 +353,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
         .with_input_voltage(InputVoltage::new(Voltage::from_volts(72.0)))
         .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     firmware.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Running,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
     config[50] = 1;
     config[242] = 1;
@@ -349,19 +362,13 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
         let _ = state.tick_beeper();
     }
 
-    let warning_tick = (1..=400).find(|tick| {
-        super::tick_float_out_boy_main_thread_with(
-            &mut state,
-            firmware.telemetry(),
-            firmware.imu(),
-            firmware.motor(),
-            AdcVoltage::new(Voltage::from_volts(3.0)),
-            AdcVoltage::new(Voltage::from_volts(3.0)),
-            TimestampTicks::from_ticks(*tick),
-        )
-        .beeper_level()
-            == Some(DigitalOutputLevel::High)
-    });
+    let warning_tick = first_beeper_level_tick(
+        &mut state,
+        &firmware,
+        1..=400,
+        Voltage::from_volts(3.0),
+        DigitalOutputLevel::High,
+    );
 
     let status = state.all_data_payloads().base().status();
     assert_eq!(
@@ -390,19 +397,13 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
         InputCurrent::new(Current::ZERO),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
     );
-    let release_tick = (401..=800).find(|tick| {
-        super::tick_float_out_boy_main_thread_with(
-            &mut state,
-            firmware.telemetry(),
-            firmware.imu(),
-            firmware.motor(),
-            AdcVoltage::new(Voltage::from_volts(3.0)),
-            AdcVoltage::new(Voltage::from_volts(3.0)),
-            TimestampTicks::from_ticks(*tick),
-        )
-        .beeper_level()
-            == Some(DigitalOutputLevel::Low)
-    });
+    let release_tick = first_beeper_level_tick(
+        &mut state,
+        &firmware,
+        401..=800,
+        Voltage::from_volts(3.0),
+        DigitalOutputLevel::Low,
+    );
     assert!(release_tick.is_some());
 }
 
@@ -454,10 +455,7 @@ fn float_out_boy_aux_thread_lowers_priority_and_sleeps_like_float_out_boy_aux_lo
 #[test]
 fn startup_seeds_aux_backup_threshold_from_required_firmware_odometer() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Ready);
 
     super::initialize_float_out_boy_runtime_state(
         &mut state,
@@ -472,20 +470,19 @@ fn startup_seeds_aux_backup_threshold_from_required_firmware_odometer() {
 
 #[test]
 fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
-    let mut ready = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
-    ready.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    assert!(!ready.aux_backup_due(OdometerMeters::from_meters(1_200)));
-    assert!(ready.aux_backup_due(OdometerMeters::from_meters(1_201)));
-
-    let mut running = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Running,
-        FloatOutBoyMode::Normal,
-    ));
-    running.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    assert!(!running.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    for (run_state, distance, expected) in [
+        (FloatOutBoyRunState::Ready, 1_200, false),
+        (FloatOutBoyRunState::Ready, 1_201, true),
+        (FloatOutBoyRunState::Running, 1_201, false),
+    ] {
+        let mut state = state_in(run_state);
+        state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+        assert_eq!(
+            state.aux_backup_due(OdometerMeters::from_meters(distance)),
+            expected,
+            "run_state={run_state:?}, distance={distance}"
+        );
+    }
 }
 
 #[test]
@@ -506,10 +503,7 @@ fn aux_tick_stores_after_strict_distance_threshold() {
         MotorCurrentLimit::new(Current::from_amps(42.0)),
         MotorCurrentLimit::new(Current::from_amps(17.0)),
     );
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Ready);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
     let mut stores = 0;
 
@@ -533,10 +527,7 @@ fn aux_tick_stores_after_strict_distance_threshold() {
 #[test]
 fn aux_tick_renders_and_paints_one_internal_led_frame() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Ready);
     let bar = crate::leds::FloatOutBoyLedBarConfig::new(
         Ratio::from_ratio_const(1.0),
         crate::leds::FloatOutBoyLedColor::Blue,
@@ -613,10 +604,7 @@ fn aux_tick_does_not_touch_backup_before_threshold() {
 #[test]
 fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
+    let mut state = state_in(FloatOutBoyRunState::Ready);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
 
     let result = tick_float_out_boy_aux_thread_with(
