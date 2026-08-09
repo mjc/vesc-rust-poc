@@ -598,10 +598,10 @@ impl FloatOutBoyLedStripConfig {
         }
     }
 
-    /// Return this config with reverse ordering enabled or disabled.
+    /// Return this config with reverse ordering enabled.
     #[must_use]
-    pub const fn with_reverse(mut self, reverse: bool) -> Self {
-        self.reverse = reverse;
+    pub const fn reversed(mut self) -> Self {
+        self.reverse = true;
         self
     }
 
@@ -2396,7 +2396,7 @@ mod renderer_tests {
             3,
             FloatOutBoyLedColorOrder::Grb,
         )
-        .with_reverse(true);
+        .reversed();
         let mut frame = super::FloatOutBoyLedStripFrame::new(config);
         let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
         let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);

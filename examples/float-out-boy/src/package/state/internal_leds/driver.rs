@@ -12,6 +12,13 @@ const MAX_STRIP_PIXELS: usize = 30;
 #[cfg(not(target_arch = "arm"))]
 const MAX_PULSES: usize = MAX_STRIP_PIXELS * 3 * 32 + 1;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DriverState {
+    Uninitialized,
+    Operational,
+    Faulted,
+}
+
 #[derive(Debug, PartialEq)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy))]
 pub(super) struct FloatOutBoyInternalLedDriver {
@@ -21,8 +28,7 @@ pub(super) struct FloatOutBoyInternalLedDriver {
     #[cfg(target_arch = "arm")]
     pulses: Option<vescpkg_rs::stm32::float_out_boy_ws2812::PulseBuffer>,
     pulse_count: usize,
-    initialized: bool,
-    operational: bool,
+    state: DriverState,
 }
 
 impl FloatOutBoyInternalLedDriver {
@@ -34,8 +40,7 @@ impl FloatOutBoyInternalLedDriver {
             #[cfg(target_arch = "arm")]
             pulses: None,
             pulse_count: 0,
-            initialized: false,
-            operational: false,
+            state: DriverState::Uninitialized,
         }
     }
 
@@ -44,38 +49,24 @@ impl FloatOutBoyInternalLedDriver {
         setup: impl FnOnce(FloatOutBoyLedPin, FloatOutBoyLedPinConfig, &mut [u16]) -> bool,
         rollback: impl FnOnce(FloatOutBoyLedPin),
     ) -> bool {
-        let Some(pulse_count) = self.required_pulse_count() else {
+        let hardware = self.hardware;
+        let Some(pulses) = self.prepare_setup_pulses() else {
+            self.reset();
             return false;
         };
-        if !self.prepare_pulses(pulse_count) {
+        let pulse_count = pulses.len();
+        if !setup(hardware.pin(), hardware.pin_config(), pulses) {
+            rollback(hardware.pin());
+            self.reset();
             return false;
         }
         self.pulse_count = pulse_count;
-        let hardware = self.hardware;
-        let Some(pulses) = self.pulses_mut(pulse_count) else {
-            self.pulse_count = 0;
-            self.release_pulses();
-            return false;
-        };
-        let Some((reset, data)) = pulses.split_last_mut() else {
-            self.pulse_count = 0;
-            self.release_pulses();
-            return false;
-        };
-        data.fill(WS2812_ZERO);
-        *reset = WS2812_RESET;
-        self.operational = setup(hardware.pin(), hardware.pin_config(), pulses);
-        self.initialized = self.operational;
-        if !self.operational {
-            rollback(self.hardware.pin());
-            self.pulse_count = 0;
-            self.release_pulses();
-        }
-        self.operational
+        self.state = DriverState::Operational;
+        true
     }
 
     pub(super) const fn is_operational(&self) -> bool {
-        self.operational
+        matches!(self.state, DriverState::Operational)
     }
 
     pub(super) fn paint(
@@ -84,33 +75,51 @@ impl FloatOutBoyInternalLedDriver {
         quiesce: impl FnOnce(FloatOutBoyLedPin) -> bool,
         restart: impl FnOnce(FloatOutBoyLedPin, &[u16]) -> bool,
     ) -> bool {
-        if !self.operational {
-            return false;
-        }
-        if !quiesce(self.hardware.pin()) || !self.encode(renderer) {
-            self.operational = false;
-            return false;
-        }
-        let Some(pulses) = self.pulse_slice(self.pulse_count) else {
-            self.operational = false;
+        let DriverState::Operational = self.state else {
             return false;
         };
-        self.operational = restart(self.hardware.pin(), pulses);
-        self.operational
+        let pin = self.hardware.pin();
+        self.state = if quiesce(pin)
+            && self.encode(renderer)
+            && self
+                .pulse_slice(self.pulse_count)
+                .is_some_and(|pulses| restart(pin, pulses))
+        {
+            DriverState::Operational
+        } else {
+            DriverState::Faulted
+        };
+        self.is_operational()
     }
 
     pub(super) fn destroy(&mut self, teardown: impl FnOnce(FloatOutBoyLedPin) -> bool) -> bool {
-        if !self.initialized {
+        let (DriverState::Operational | DriverState::Faulted) = self.state else {
             return true;
-        }
-        self.operational = false;
+        };
+        self.state = DriverState::Faulted;
         if !teardown(self.hardware.pin()) {
             return false;
         }
-        self.initialized = false;
+        self.reset();
+        true
+    }
+
+    fn prepare_setup_pulses(&mut self) -> Option<&mut [u16]> {
+        let pulse_count = self.required_pulse_count()?;
+        self.prepare_pulses(pulse_count).then_some(())?;
+        let pulses = self.pulses_mut(pulse_count)?;
+        {
+            let (reset, data) = pulses.split_last_mut()?;
+            data.fill(WS2812_ZERO);
+            *reset = WS2812_RESET;
+        }
+        Some(pulses)
+    }
+
+    fn reset(&mut self) {
+        self.state = DriverState::Uninitialized;
         self.pulse_count = 0;
         self.release_pulses();
-        true
     }
 
     fn required_pulse_count(&self) -> Option<usize> {
@@ -256,316 +265,4 @@ const fn bits_per_pixel(order: FloatOutBoyLedColorOrder) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
-    use core::cell::Cell;
-
-    use crate::{
-        FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState,
-        lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
-        leds::{
-            FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
-            FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedFrameUpdate,
-            FloatOutBoyLedPin, FloatOutBoyLedPinConfig, FloatOutBoyLedRenderer,
-            FloatOutBoyLedStatusUpdate, FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
-            FloatOutBoyLedUpdate, FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
-            FloatOutBoyStatusBarIdleTimeout,
-        },
-    };
-    use vescpkg_rs::Ratio;
-
-    use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO, encode_byte};
-
-    fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
-        FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            color,
-            FloatOutBoyLedColor::Black,
-            FloatOutBoyLedAnimationMode::Solid,
-            FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    }
-
-    fn enabled_config() -> FloatOutBoyLedsConfig {
-        let black = solid_bar(FloatOutBoyLedColor::Black);
-        FloatOutBoyLedsConfig::new(
-            black,
-            black,
-            solid_bar(FloatOutBoyLedColor::Red),
-            black,
-            FloatOutBoyStatusBarConfig::new(
-                FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
-                Ratio::from_ratio_const(0.5),
-                Ratio::from_ratio_const(0.2),
-                Ratio::from_ratio_const(0.2),
-                Ratio::from_ratio_const(0.5),
-            ),
-            black,
-        )
-        .enabled()
-    }
-
-    #[test]
-    fn setup_builds_source_sized_zero_pulse_buffer() {
-        let strip = FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            2,
-            FloatOutBoyLedColorOrder::Grbw,
-        );
-        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_pin(FloatOutBoyLedPin::C9)
-            .with_pin_config(FloatOutBoyLedPinConfig::NoPullup)
-            .with_front_strip(strip)
-            .with_status_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ))
-            .with_rear_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ));
-        let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-        let mut setup = None;
-
-        assert!(driver.setup(
-            |pin, pin_config, pulses| {
-                setup = Some((pin, pin_config, pulses.len()));
-                true
-            },
-            |_| panic!("successful setup rolled back"),
-        ));
-
-        assert_eq!(
-            setup,
-            Some((FloatOutBoyLedPin::C9, FloatOutBoyLedPinConfig::NoPullup, 65,))
-        );
-        assert_eq!(driver.pulses()[..64], [WS2812_ZERO; 64]);
-        assert_eq!(driver.pulses()[64], WS2812_RESET);
-        assert!(driver.is_operational());
-    }
-
-    #[test]
-    fn every_byte_maps_to_exact_ws2812_pulses() {
-        let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
-
-        for byte in 0_u8..=u8::MAX {
-            let mut pulses = [WS2812_RESET; 8];
-            let mut index = 0;
-            assert!(encode_byte(&mut pulses, &mut index, byte));
-            assert_eq!(index, 8);
-            assert_eq!(
-                pulses,
-                masks.map(|mask| {
-                    if byte & mask == 0 {
-                        WS2812_ZERO
-                    } else {
-                        WS2812_ONE
-                    }
-                }),
-                "wrong pulses for byte {byte:#04x}"
-            );
-        }
-
-        let mut short = [WS2812_RESET; 7];
-        let mut index = 0;
-        assert!(!encode_byte(&mut short, &mut index, u8::MAX));
-        assert_eq!(index, short.len());
-        assert_eq!(short, [WS2812_ONE; 7]);
-    }
-
-    #[test]
-    fn setup_rejects_zero_and_out_of_range_strip_counts_without_touching_hardware() {
-        let zero = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_status_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ))
-            .with_front_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ))
-            .with_rear_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ));
-        let too_many = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_status_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::First,
-                31,
-                FloatOutBoyLedColorOrder::Grb,
-            ));
-
-        for hardware in [zero, too_many] {
-            let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-            assert!(!driver.setup(
-                |_, _, _| panic!("invalid layout reached hardware"),
-                |_| panic!("hardware teardown ran without setup"),
-            ));
-            assert!(!driver.is_operational());
-        }
-    }
-
-    #[test]
-    fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
-        let strip = FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            1,
-            FloatOutBoyLedColorOrder::Grb,
-        );
-        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_front_strip(strip)
-            .with_status_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ))
-            .with_rear_strip(FloatOutBoyLedStripConfig::new(
-                FloatOutBoyLedStripOrder::None,
-                0,
-                FloatOutBoyLedColorOrder::Grb,
-            ));
-        let config = enabled_config();
-        let mut renderer = FloatOutBoyLedRenderer::new(hardware, config, 0.0);
-        let frame = FloatOutBoyLedFrameUpdate::new(
-            FloatOutBoyLedUpdate {
-                run_state: FloatOutBoyRunState::Ready,
-                mode: FloatOutBoyMode::Normal,
-                darkride: false,
-                footpad: FloatOutBoyFootpadState::None,
-                pitch_degrees: 0.0,
-                distance: 0.0,
-            },
-            FloatOutBoyLedStatusUpdate {
-                battery_level: 1.0,
-                duty_cycle: 0.0,
-                moving: false,
-            },
-        );
-        for _ in 0..10 {
-            renderer.update(config, frame, 0.0);
-        }
-        let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-        assert!(driver.setup(|_, _, _| true, |_| panic!("successful setup rolled back")));
-        let mut restarted = 0;
-
-        assert!(driver.paint(
-            &renderer,
-            |_| true,
-            |_, pulses| {
-                restarted += 1;
-                assert_eq!(pulses[..8], [WS2812_ZERO; 8]);
-                assert_eq!(pulses[8..16], [WS2812_ONE; 8]);
-                assert_eq!(pulses[16..24], [WS2812_ZERO; 8]);
-                assert_eq!(pulses[24], WS2812_RESET);
-                true
-            }
-        ));
-
-        assert_eq!(restarted, 1);
-    }
-
-    #[test]
-    fn failed_setup_and_successful_destroy_teardown_exactly_once() {
-        let strip = FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            1,
-            FloatOutBoyLedColorOrder::Grb,
-        );
-        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_front_strip(strip);
-        let mut failed = FloatOutBoyInternalLedDriver::new(hardware);
-        let mut failed_teardowns = 0;
-
-        assert!(!failed.setup(|_, _, _| false, |_| failed_teardowns += 1,));
-        assert!(failed.destroy(|_| {
-            failed_teardowns += 1;
-            true
-        }));
-        assert_eq!(failed_teardowns, 1);
-
-        let mut active = FloatOutBoyInternalLedDriver::new(hardware);
-        assert!(active.setup(|_, _, _| true, |_| {}));
-        let mut active_teardowns = 0;
-        assert!(active.destroy(|_| {
-            active_teardowns += 1;
-            true
-        }));
-        assert!(active.destroy(|_| {
-            active_teardowns += 1;
-            true
-        }));
-        assert_eq!(active_teardowns, 1);
-        assert!(!active.is_operational());
-    }
-
-    #[test]
-    fn failed_destroy_retains_dma_storage_and_can_retry() {
-        let strip = FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            1,
-            FloatOutBoyLedColorOrder::Grb,
-        );
-        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_front_strip(strip);
-        let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-        assert!(driver.setup(|_, _, _| true, |_| {}));
-        let pulse_count = driver.pulses().len();
-        let mut teardowns = 0;
-
-        assert!(!driver.destroy(|_| {
-            teardowns += 1;
-            false
-        }));
-        assert!(!driver.is_operational());
-        assert!(pulse_count > 0);
-        assert_eq!(driver.pulses().len(), pulse_count);
-        assert!(driver.destroy(|_| {
-            teardowns += 1;
-            true
-        }));
-        assert_eq!(teardowns, 2);
-        assert!(driver.pulses().is_empty());
-    }
-
-    #[test]
-    fn paint_quiesces_before_mutating_pulses_and_faults_still_teardown() {
-        let strip = FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            1,
-            FloatOutBoyLedColorOrder::Grb,
-        );
-        let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-            .with_front_strip(strip);
-        let config = enabled_config();
-        let renderer = FloatOutBoyLedRenderer::new(hardware, config, 0.0);
-        let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-        assert!(driver.setup(|_, _, _| true, |_| {}));
-        let quiesced = Cell::new(false);
-
-        assert!(!driver.paint(
-            &renderer,
-            |_| {
-                quiesced.set(true);
-                false
-            },
-            |_, _| panic!("failed quiesce restarted DMA")
-        ));
-        assert!(quiesced.get());
-        assert!(!driver.is_operational());
-
-        let mut teardowns = 0;
-        assert!(driver.destroy(|_| {
-            teardowns += 1;
-            true
-        }));
-        assert!(driver.destroy(|_| {
-            teardowns += 1;
-            true
-        }));
-        assert_eq!(teardowns, 1);
-    }
-}
+mod tests;

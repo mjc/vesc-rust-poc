@@ -15,7 +15,7 @@ use crate::domain::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
-    FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
+    FloatOutBoyStopCondition, FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
@@ -137,7 +137,7 @@ struct BeeperRuntimeFlags {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct RideRuntimeFlags {
-    traction_control: bool,
+    traction_control: FloatOutBoyTractionControlState,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -445,11 +445,11 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn force_beeper_on(&mut self) {
-        self.beeper.on(true);
+        self.beeper.force_on();
     }
 
     pub(crate) fn release_beeper(&mut self) {
-        self.beeper.off(false);
+        self.beeper.off();
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -485,8 +485,7 @@ impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_bms_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         let bms = self.serialized_config.bms();
-        self.bms
-            .refresh(bms.enabled(), bms.thresholds(), system_time_ticks);
+        self.bms.refresh(bms.integration(), system_time_ticks);
     }
 
     #[cfg(test)]

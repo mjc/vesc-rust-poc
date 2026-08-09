@@ -1,14 +1,38 @@
 use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
-use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode};
-use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SampleRate};
+use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
+use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
 const HANDTEST_CURRENT_LIMIT_AMPS: f32 = 7.0;
 const FLYWHEEL_CURRENT_LIMIT_AMPS: f32 = 40.0;
 const SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND: f32 = 100.0;
+const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct BalanceCurrentEmaAlpha(Ratio);
+
+impl BalanceCurrentEmaAlpha {
+    #[must_use]
+    #[inline]
+    fn from_sample_rate(sample_rate: SampleRate) -> Self {
+        // C map: Refloat main at caff10a configures this 25 Hz filter in
+        // `src/main.c:168-175` and uses the bounded second-order approximation of
+        // `1 - e^-omega` from `src/filters/ema.c:24-30`.
+        let omega =
+            (core::f32::consts::TAU * (BALANCE_CURRENT_FILTER_CUTOFF / sample_rate)).min(0.5);
+        Self(Ratio::clamped(omega - 0.5 * omega * omega))
+    }
+
+    #[must_use]
+    #[inline]
+    fn update(self, previous: MotorCurrent, target: MotorCurrent) -> MotorCurrent {
+        previous + (target - previous) * self.0.as_ratio()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -81,13 +105,6 @@ pub(super) struct RequestedCurrent(pub(super) MotorCurrent);
 
 impl RequestedCurrent {
     #[inline]
-    fn zero() -> MotorCurrent {
-        // C map: traction-control filter zeroes the request in
-        // `third_party/float-out-boy/src/main.c:949-954`.
-        MotorCurrent::new(Current::ZERO)
-    }
-
-    #[inline]
     pub(super) fn clamped_to(self, limit: MotorCurrentLimit) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:941-942` clamps the requested
         // balance current to the selected magnitude while preserving sign.
@@ -108,14 +125,19 @@ impl RequestedCurrent {
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
-        traction_control: bool,
+        sample_rate: SampleRate,
+        traction_control: FloatOutBoyTractionControlState,
     ) -> MotorCurrent {
-        if traction_control {
-            Self::zero()
-        } else {
-            // C map: `third_party/float-out-boy/src/main.c:949-954` filters RUNNING
-            // output current with 20% of the new request.
-            previous * 0.8 + self.0 * 0.2
+        match traction_control {
+            // C map: Refloat main at caff10a resets the EMA to zero while its
+            // darkride traction recovery is freewheeling (`src/main.c:723-728`).
+            FloatOutBoyTractionControlState::Freewheeling => MotorCurrent::new(Current::ZERO),
+            FloatOutBoyTractionControlState::FilteringCurrent => {
+                // C map: Refloat main at caff10a updates the EMA as
+                // `previous += alpha * (target - previous)` in
+                // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
+                BalanceCurrentEmaAlpha::from_sample_rate(sample_rate).update(previous, self.0)
+            }
         }
     }
 }

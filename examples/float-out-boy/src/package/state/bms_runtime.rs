@@ -1,6 +1,7 @@
 use super::super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
 use crate::bms::{
-    FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds,
+    FloatOutBoyBmsConnectionMonitoring, FloatOutBoyBmsFault, FloatOutBoyBmsFaults,
+    FloatOutBoyBmsIntegration, FloatOutBoyBmsSample,
 };
 use vescpkg_rs::{TimestampTicks, VescSeconds};
 
@@ -38,22 +39,21 @@ impl BmsRuntimeState {
 
     pub(super) fn refresh(
         &mut self,
-        enabled: bool,
-        thresholds: FloatOutBoyBmsThresholds,
+        integration: FloatOutBoyBmsIntegration,
         system_time_ticks: TimestampTicks,
     ) {
         let start_ticks = *self.start_ticks.get_or_insert(system_time_ticks);
-        let startup_timeout_elapsed = float_out_boy_ticks_elapsed_seconds(
+        let connection_monitoring = if float_out_boy_ticks_elapsed_seconds(
             system_time_ticks,
             start_ticks,
             VescSeconds::from_seconds(5.0),
-        );
-        self.faults = FloatOutBoyBmsFaults::evaluate(
-            enabled,
-            self.sample,
-            thresholds,
-            startup_timeout_elapsed,
-        );
+        ) {
+            FloatOutBoyBmsConnectionMonitoring::Armed
+        } else {
+            FloatOutBoyBmsConnectionMonitoring::Deferred
+        };
+        self.faults =
+            FloatOutBoyBmsFaults::evaluate(integration, self.sample, connection_monitoring);
     }
 
     pub(super) fn take_ready_alert_fault(
