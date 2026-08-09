@@ -886,7 +886,7 @@ fn package_author_reads_led_wiring_config_without_raw_numbers() {
         24,
         FloatOutBoyLedColorOrder::Grbw,
     )
-    .reversed();
+    .with_reverse(true);
 
     assert_eq!(FloatOutBoyLedPin::B6.id(), 0);
     assert_eq!(FloatOutBoyLedPin::B7.id(), 1);
