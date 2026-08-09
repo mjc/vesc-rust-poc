@@ -342,6 +342,24 @@ impl FloatOutBoyStatusBarIdleTimeout {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FloatOutBoyLedPower {
+    Off,
+    On,
+}
+
+impl FloatOutBoyLedPower {
+    #[must_use]
+    pub(crate) const fn is_on(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    #[must_use]
+    pub(crate) const fn from_enabled(enabled: bool) -> Self {
+        if enabled { Self::On } else { Self::Off }
+    }
+}
+
 /// Float Out Boy status-bar configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyStatusBarConfig {
@@ -405,8 +423,8 @@ struct FloatOutBoyLiftedLedsConfig {
 /// Float Out Boy LEDs configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyLedsConfig {
-    on: bool,
-    headlights_on: bool,
+    power: FloatOutBoyLedPower,
+    headlights_power: FloatOutBoyLedPower,
     headlights_transition: FloatOutBoyLedTransition,
     direction_transition: FloatOutBoyLedTransition,
     lifted: FloatOutBoyLiftedLedsConfig,
@@ -420,28 +438,36 @@ pub struct FloatOutBoyLedsConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FloatOutBoyLedRuntimeStatus {
-    enabled: bool,
-    headlights_enabled: bool,
+    power: FloatOutBoyLedPower,
+    headlights_power: FloatOutBoyLedPower,
 }
 
 impl FloatOutBoyLedRuntimeStatus {
     #[must_use]
-    pub(crate) const fn new(enabled: bool, headlights_enabled: bool) -> Self {
+    pub(crate) const fn new(
+        power: FloatOutBoyLedPower,
+        headlights_power: FloatOutBoyLedPower,
+    ) -> Self {
         Self {
-            enabled,
-            headlights_enabled,
+            power,
+            headlights_power,
         }
     }
 
-    const_field_getters! {
-        pub(crate) fn enabled -> bool = enabled;
-        pub(crate) fn headlights_enabled -> bool = headlights_enabled;
+    #[must_use]
+    pub(crate) const fn is_enabled(self) -> bool {
+        self.power.is_on()
+    }
+
+    #[must_use]
+    pub(crate) const fn are_headlights_on(self) -> bool {
+        self.headlights_power.is_on()
     }
 
     #[must_use]
     pub(crate) const fn apply(self, mut config: FloatOutBoyLedsConfig) -> FloatOutBoyLedsConfig {
-        config.on = self.enabled;
-        config.headlights_on = self.headlights_enabled;
+        config.power = self.power;
+        config.headlights_power = self.headlights_power;
         config
     }
 }
@@ -458,8 +484,8 @@ impl FloatOutBoyLedsConfig {
         status_idle: FloatOutBoyLedBarConfig,
     ) -> Self {
         Self {
-            on: false,
-            headlights_on: false,
+            power: FloatOutBoyLedPower::Off,
+            headlights_power: FloatOutBoyLedPower::Off,
             headlights_transition: FloatOutBoyLedTransition::Fade,
             direction_transition: FloatOutBoyLedTransition::Fade,
             lifted: FloatOutBoyLiftedLedsConfig {
@@ -478,14 +504,14 @@ impl FloatOutBoyLedsConfig {
     /// Return this config with LEDs enabled.
     #[must_use]
     pub const fn enabled(mut self) -> Self {
-        self.on = true;
+        self.power = FloatOutBoyLedPower::On;
         self
     }
 
     /// Return this config with headlights enabled.
     #[must_use]
     pub const fn with_headlights_on(mut self) -> Self {
-        self.headlights_on = true;
+        self.headlights_power = FloatOutBoyLedPower::On;
         self
     }
 
@@ -520,11 +546,19 @@ impl FloatOutBoyLedsConfig {
         self
     }
 
+    /// Return whether LEDs are enabled.
+    #[must_use]
+    pub const fn is_enabled(self) -> bool {
+        self.power.is_on()
+    }
+
+    /// Return whether headlights are on.
+    #[must_use]
+    pub const fn are_headlights_on(self) -> bool {
+        self.headlights_power.is_on()
+    }
+
     const_field_getters! {
-        /// Return whether LEDs are enabled.
-        pub fn is_enabled -> bool = on;
-        /// Return whether headlights are on.
-        pub fn are_headlights_on -> bool = headlights_on;
         /// Return the headlights transition.
         pub fn headlights_transition -> FloatOutBoyLedTransition = headlights_transition;
         /// Return the direction transition.
@@ -1178,11 +1212,6 @@ impl FloatOutBoyLedRenderer {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn confirmation_start_for_test(self) -> f32 {
-        self.confirmation_start
-    }
-
     fn compose_status(
         &mut self,
         config: FloatOutBoyLedsConfig,
@@ -1380,18 +1409,6 @@ impl FloatOutBoyLedStripFrame {
             config,
             pixels: [FloatOutBoyLedPixel { channels: [0; 4] }; MAX_LED_STRIP_PIXELS],
         }
-    }
-
-    /// Set one logical renderer pixel when it is inside the configured strip.
-    pub fn set_logical_pixel(&mut self, index: usize, pixel: FloatOutBoyLedPixel) -> bool {
-        if index >= usize::from(self.config.count()) {
-            return false;
-        }
-        let Some(target) = self.pixels.get_mut(index) else {
-            return false;
-        };
-        *target = pixel;
-        true
     }
 
     /// Return one pixel in physical strip order.
@@ -2126,6 +2143,10 @@ fn refloat_hue_to_pixel(hue: u8) -> FloatOutBoyLedPixel {
         ],
     }
 }
+
+#[cfg(test)]
+#[path = "leds/tests/api.rs"]
+mod test_api;
 
 #[cfg(test)]
 mod renderer_tests;

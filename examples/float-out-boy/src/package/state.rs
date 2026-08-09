@@ -138,8 +138,8 @@ struct RideRuntimeFlags {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct LedRuntimeOverrides {
-    enabled: Option<bool>,
-    headlights_enabled: Option<bool>,
+    power: Option<crate::leds::FloatOutBoyLedPower>,
+    headlights_power: Option<crate::leds::FloatOutBoyLedPower>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -618,14 +618,15 @@ impl FloatOutBoyPackageState {
     }
 
     fn led_runtime_status(&self) -> crate::leds::FloatOutBoyLedRuntimeStatus {
-        crate::leds::FloatOutBoyLedRuntimeStatus::new(
-            self.led_runtime_overrides
-                .enabled
-                .unwrap_or_else(|| self.serialized_config.leds_enabled()),
-            self.led_runtime_overrides
-                .headlights_enabled
-                .unwrap_or_else(|| self.serialized_config.headlights_enabled()),
-        )
+        let power = self.led_runtime_overrides.power.unwrap_or(
+            crate::leds::FloatOutBoyLedPower::from_enabled(self.serialized_config.leds_enabled()),
+        );
+        let headlights_power = self.led_runtime_overrides.headlights_power.unwrap_or(
+            crate::leds::FloatOutBoyLedPower::from_enabled(
+                self.serialized_config.headlights_enabled(),
+            ),
+        );
+        crate::leds::FloatOutBoyLedRuntimeStatus::new(power, headlights_power)
     }
 
     fn effective_led_config(
@@ -636,23 +637,14 @@ impl FloatOutBoyPackageState {
     )> {
         self.serialized_config
             .led_configs()
-            .map(|(hardware, config)| {
-                let status = self.led_runtime_status();
-                (hardware, status.apply(config))
-            })
+            .map(|(hardware, config)| (hardware, self.led_runtime_status().apply(config)))
     }
 
-    fn set_led_runtime_overrides(
-        &mut self,
-        enabled: Option<bool>,
-        headlights_enabled: Option<bool>,
-    ) {
-        if let Some(enabled) = enabled {
-            self.led_runtime_overrides.enabled = Some(enabled);
-        }
-        if let Some(headlights_enabled) = headlights_enabled {
-            self.led_runtime_overrides.headlights_enabled = Some(headlights_enabled);
-        }
+    fn apply_led_runtime_overrides(&mut self, overrides: LedRuntimeOverrides) {
+        self.led_runtime_overrides.power = overrides.power.or(self.led_runtime_overrides.power);
+        self.led_runtime_overrides.headlights_power = overrides
+            .headlights_power
+            .or(self.led_runtime_overrides.headlights_power);
         config_runtime::refresh_led_effects(self);
     }
 
@@ -774,17 +766,23 @@ impl FloatOutBoyPackageState {
             return restore_flywheel_config;
         }
         let status = self.led_runtime_status();
-        if !status.headlights_enabled()
+        if !status.are_headlights_on()
             && self.headlights_on_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_overrides(None, Some(true));
+            self.apply_led_runtime_overrides(LedRuntimeOverrides {
+                headlights_power: Some(crate::leds::FloatOutBoyLedPower::On),
+                ..LedRuntimeOverrides::default()
+            });
         }
-        if status.headlights_enabled()
+        if status.are_headlights_on()
             && self.headlights_off_konami.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.set_led_runtime_overrides(None, Some(false));
+            self.apply_led_runtime_overrides(LedRuntimeOverrides {
+                headlights_power: Some(crate::leds::FloatOutBoyLedPower::Off),
+                ..LedRuntimeOverrides::default()
+            });
         }
         restore_flywheel_config
     }

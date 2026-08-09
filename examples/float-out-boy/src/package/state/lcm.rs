@@ -12,7 +12,7 @@
     reason = "LCM wire encoding uses fixed-width protocol offsets"
 )]
 
-use super::FloatOutBoyPackageState;
+use super::{FloatOutBoyPackageState, LedRuntimeOverrides};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
@@ -48,6 +48,12 @@ fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] 
         (front, config.status().brightness_headlights_off())
     };
     [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0) as u8)
+}
+
+fn led_power_override(mask: u8, value: u8, bit: u8) -> Option<crate::leds::FloatOutBoyLedPower> {
+    (mask & bit != 0).then_some(crate::leds::FloatOutBoyLedPower::from_enabled(
+        value & bit != 0,
+    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -289,17 +295,17 @@ impl FloatOutBoyPackageState {
             Command::LightsControl => {
                 if let [_, _, _, mask, value, ..] = payload {
                     if *mask != 0 {
-                        self.set_led_runtime_overrides(
-                            (mask & 1 != 0).then_some(value & 1 != 0),
-                            (mask & 2 != 0).then_some(value & 2 != 0),
-                        );
+                        self.apply_led_runtime_overrides(LedRuntimeOverrides {
+                            power: led_power_override(*mask, *value, 1),
+                            headlights_power: led_power_override(*mask, *value, 2),
+                        });
                     }
                 }
                 let status = self.led_runtime_status();
                 reply(&[
                     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
                     FloatOutBoyAppDataCommand::LightsControl.id(),
-                    u8::from(status.enabled()) | (u8::from(status.headlights_enabled()) << 1),
+                    u8::from(status.is_enabled()) | (u8::from(status.are_headlights_on()) << 1),
                 ])
             }
             _ => false,

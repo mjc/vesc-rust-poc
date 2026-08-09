@@ -1251,7 +1251,7 @@ fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
     let config = white_led_config(super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0))
         .with_headlights_on();
     let mut off = config;
-    off.on = false;
+    off.power = super::FloatOutBoyLedPower::Off;
     let running = super::FloatOutBoyLedUpdate {
         run_state: crate::FloatOutBoyRunState::Running,
         mode: crate::FloatOutBoyMode::Normal,
