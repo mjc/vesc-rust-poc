@@ -4,6 +4,10 @@ use super::limits::{
     DarkrideLimits, MovingFaultLimits, PushStartLimits, QuickStopLimits, RemoteSetpointFaultLimit,
     ReverseStopLimits, TractionLossLimits,
 };
+use super::transition::{
+    FloatOutBoyEngagementDecision, FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent,
+    float_out_boy_state_transition,
+};
 use super::{
     AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataAttitude,
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataStatus, FloatOutBoyBeeperAlert,
@@ -12,14 +16,15 @@ use super::{
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
-    FloatOutBoyStateTransitionInput, FloatOutBoyStopCondition, FloatOutBoyStopEvent,
-    FloatOutBoyWheelSlipState, Imu, LoopInput, MotorCurrent, RideModifierInput, Rpm,
-    TimestampTicks, float_out_boy_first_stop_event, float_out_boy_state_transition,
-    float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds,
+    FloatOutBoyStopCondition, FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState, Imu,
+    LoopInput, MotorCurrent, RideModifierInput, Rpm, TimestampTicks, float_out_boy_ticks_elapsed,
+    float_out_boy_ticks_elapsed_seconds,
 };
 #[cfg(any(test, target_arch = "arm"))]
 use crate::bms::FloatOutBoyBmsFault;
 use crate::domain::{FloatOutBoyAllDataMotorPayload, FloatOutBoyBeepReason, FloatOutBoyRideState};
+#[cfg(test)]
+use vescpkg_rs::prelude::SystemTicks;
 use vescpkg_rs::prelude::{
     AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
 };
@@ -430,6 +435,51 @@ fn evaluate_darkride_faults(
 
 const DIRTY_LANDING_PITCH_MARGIN_DEGREES: u8 = 10;
 
+#[cfg(test)]
+pub(super) struct ActiveReverseStopFaultInput {
+    pub(super) footpad: FloatOutBoyFootpadState,
+    pub(super) darkride: FloatOutBoyDarkRideState,
+    pub(super) pitch: AngleDegrees,
+    pub(super) elapsed: SystemTicks,
+    pub(super) total_erpm: Rpm,
+}
+
+#[cfg(test)]
+impl ActiveReverseStopFaultInput {
+    #[must_use]
+    pub(super) fn stop_event(self) -> Option<FloatOutBoyStopEvent> {
+        let limits = ReverseStopLimits::FLOAT_OUT_BOY;
+        if !self.footpad.is_pressed() {
+            return Some(FloatOutBoyStopEvent::ReverseStopNoFootpads);
+        }
+        if matches!(self.darkride, FloatOutBoyDarkRideState::Active) {
+            return None;
+        }
+        if self.pitch > limits.pitch {
+            return Some(FloatOutBoyStopEvent::ReverseStopPitch);
+        }
+        let fast_timer_expired = self.pitch > limits.timer_fast_pitch
+            && VescSeconds::from_seconds(1.0)
+                .to_system_ticks_saturating()
+                .is_some_and(|timeout| self.elapsed > timeout);
+        let slow_timer_expired = self.pitch > limits.timer_slow_pitch
+            && VescSeconds::from_seconds(2.0)
+                .to_system_ticks_saturating()
+                .is_some_and(|timeout| self.elapsed > timeout);
+        if fast_timer_expired || slow_timer_expired {
+            return Some(FloatOutBoyStopEvent::ReverseStopTimer);
+        }
+        (self.total_erpm.abs() > limits.total_erpm)
+            .then_some(FloatOutBoyStopEvent::ReverseStopTotalErpm)
+    }
+}
+
+#[must_use]
+#[cfg(test)]
+pub(super) fn reverse_stop_timer_inactive(pitch_abs: AngleDegrees) -> bool {
+    pitch_abs <= ReverseStopLimits::FLOAT_OUT_BOY.timer_slow_pitch
+}
+
 fn first_transition_stop(
     normal: &NormalFaultEvaluation,
     darkride: &DarkrideFaultEvaluation,
@@ -448,7 +498,7 @@ fn first_transition_stop(
         darkride_roll,
     ] = normal.conditions;
     let [darkride_high, darkride_low, darkride_can_engage] = darkride.conditions;
-    float_out_boy_first_stop_event(&[
+    [
         (FloatOutBoyStopEvent::FlywheelFootpad, flywheel_footpad),
         (
             FloatOutBoyStopEvent::ReverseStopNoFootpads,
@@ -466,7 +516,9 @@ fn first_transition_stop(
         (FloatOutBoyStopEvent::Roll, roll),
         (FloatOutBoyStopEvent::Pitch, pitch),
         (FloatOutBoyStopEvent::DarkrideRoll, darkride_roll),
-    ])
+    ]
+    .into_iter()
+    .find_map(|(event, active)| active.then_some(event))
 }
 
 #[expect(
@@ -668,11 +720,15 @@ fn evaluate_transition_phase(
         previous: ride_state,
         run_state,
         ready_flywheel_stop,
-        state_engage,
+        engagement: if state_engage {
+            FloatOutBoyEngagementDecision::Engage
+        } else {
+            FloatOutBoyEngagementDecision::Preserve
+        },
         traction_loss_detected,
         stop_event,
     });
-    if transition.state_stopped {
+    if transition.effect.stopped() {
         state.play_motor_click();
         state.disengage_ticks = system_time_ticks;
         state.trigger_data_recorder(false);
@@ -680,12 +736,12 @@ fn evaluate_transition_phase(
             state.fault_angle_pitch_ticks = system_time_ticks;
         }
         state.flywheel.latch_abort(normal.flywheel_footpad_pressed);
-    } else if transition.state_engaged {
+    } else if transition.effect.engaged() {
         state.play_motor_click();
         state.engage_ticks = system_time_ticks;
         state.trigger_data_recorder(true);
     }
-    if matches!(run_state, FloatOutBoyRunState::Running) && !transition.state_stopped {
+    if matches!(run_state, FloatOutBoyRunState::Running) && !transition.effect.stopped() {
         state.upside_down_flags.enabled = true;
         if darkride_active && !state.upside_down_flags.started {
             state.upside_down_flags.started = true;
@@ -724,7 +780,7 @@ fn evaluate_transition_phase(
         events: TransitionEvents {
             startup_became_ready,
             state_engage,
-            state_stop_fault: transition.state_stopped,
+            state_stop_fault: transition.effect.stopped(),
         },
         #[cfg(any(test, target_arch = "arm"))]
         ready_flywheel_stop,
@@ -1048,7 +1104,7 @@ fn advance_running_control(
     let wheelslip_branch = if phase.control.traction_loss_detected {
         state.wheelslip_ticks = system_time_ticks;
         if phase.control.darkride_active {
-            state.ride_flags.traction_control = true;
+            state.ride_flags.traction_control = FloatOutBoyTractionControlState::Freewheeling;
         }
         true
     } else if matches!(
@@ -1060,7 +1116,7 @@ fn advance_running_control(
     ) {
         let limits = TractionLossLimits::FLOAT_OUT_BOY;
         if phase.motor_acceleration.abs() < limits.acceleration_clear {
-            state.ride_flags.traction_control = false;
+            state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
         }
         if above_duty_limit {
             state.wheelslip_ticks = system_time_ticks;
@@ -1070,7 +1126,7 @@ fn advance_running_control(
             limits.clear_delay,
         ) && state.motor_duty_raw < limits.raw_duty_clear
         {
-            state.ride_flags.traction_control = false;
+            state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
             control.ride_state = control
                 .ride_state
                 .with_wheelslip(FloatOutBoyWheelSlipState::None);
@@ -1236,7 +1292,7 @@ pub(super) fn refresh(
         state.reverse_total_erpm = Rpm::ZERO;
         state.motor_kinematics.reset_acceleration();
         state.motor_current_filter.reset_runtime();
-        state.ride_flags.traction_control = false;
+        state.ride_flags.traction_control = FloatOutBoyTractionControlState::FilteringCurrent;
         state.remote_control.reset_runtime_vars();
         state.ride_modifiers.reset();
         let balance_pitch = phase.balance_pitch.angle_degrees();

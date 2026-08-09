@@ -91,10 +91,6 @@ use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
 use remote_control::RemoteControlState;
 use ride_modifiers::{RideModifierInput, RideModifierState};
-use transition::{
-    FloatOutBoyEngagementDecision, FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent,
-    FloatOutBoyTransitionEffect, float_out_boy_state_transition,
-};
 
 // C map: `aux_thd` stores backup data after more than 200 m while not running
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
