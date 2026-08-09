@@ -598,10 +598,10 @@ impl FloatOutBoyLedStripConfig {
         }
     }
 
-    /// Return this config with reverse ordering enabled or disabled.
+    /// Return this config with reverse ordering enabled.
     #[must_use]
-    pub const fn with_reverse(mut self, reverse: bool) -> Self {
-        self.reverse = reverse;
+    pub const fn reversed(mut self) -> Self {
+        self.reverse = true;
         self
     }
 

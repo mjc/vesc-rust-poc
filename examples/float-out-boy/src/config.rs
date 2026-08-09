@@ -645,7 +645,7 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         let strip =
             FloatOutBoyLedStripConfig::new(self.enum_value()?, self.byte()?, self.enum_value()?);
         if self.boolean()? {
-            Some(strip.with_reverse(true))
+            Some(strip.reversed())
         } else {
             Some(strip)
         }

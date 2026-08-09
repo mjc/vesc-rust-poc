@@ -1,16 +1,70 @@
 use super::{FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPixel};
 use vescpkg_rs::prelude::Ratio;
 
-fn white_led_config(idle_timeout_seconds: u16) -> super::FloatOutBoyLedsConfig {
-    let bar = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(1.0),
-        FloatOutBoyLedColor::WhiteRgb,
+#[must_use]
+fn solid_bar(primary: FloatOutBoyLedColor) -> super::FloatOutBoyLedBarConfig {
+    full_brightness_bar(
+        primary,
         FloatOutBoyLedColor::Black,
         super::FloatOutBoyLedAnimationMode::Solid,
+    )
+}
+
+#[must_use]
+fn solid_bar_with_brightness(
+    brightness: Ratio,
+    primary: FloatOutBoyLedColor,
+) -> super::FloatOutBoyLedBarConfig {
+    led_bar(
+        brightness,
+        primary,
+        FloatOutBoyLedColor::Black,
+        super::FloatOutBoyLedAnimationMode::Solid,
+    )
+}
+
+#[must_use]
+fn led_bar(
+    brightness: Ratio,
+    primary: FloatOutBoyLedColor,
+    secondary: FloatOutBoyLedColor,
+    mode: super::FloatOutBoyLedAnimationMode,
+) -> super::FloatOutBoyLedBarConfig {
+    super::FloatOutBoyLedBarConfig::new(
+        brightness,
+        primary,
+        secondary,
+        mode,
         super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-    );
+    )
+}
+
+#[must_use]
+fn full_brightness_bar(
+    primary: FloatOutBoyLedColor,
+    secondary: FloatOutBoyLedColor,
+    mode: super::FloatOutBoyLedAnimationMode,
+) -> super::FloatOutBoyLedBarConfig {
+    led_bar(Ratio::from_ratio_const(1.0), primary, secondary, mode)
+}
+
+#[must_use]
+fn strip_channels<const N: usize>(frame: &super::FloatOutBoyLedStripFrame) -> [[u8; 4]; N] {
+    core::array::from_fn(|index| {
+        frame
+            .physical_pixel(index)
+            .map(super::FloatOutBoyLedPixel::channels)
+            .unwrap_or_default()
+    })
+}
+
+#[must_use]
+fn white_led_config(
+    idle_timeout: super::FloatOutBoyStatusBarIdleTimeout,
+) -> super::FloatOutBoyLedsConfig {
+    let bar = solid_bar(FloatOutBoyLedColor::WhiteRgb);
     let status = super::FloatOutBoyStatusBarConfig::new(
-        super::FloatOutBoyStatusBarIdleTimeout::from_seconds(idle_timeout_seconds),
+        idle_timeout,
         Ratio::from_ratio_const(0.9),
         Ratio::from_ratio_const(0.1),
         Ratio::from_ratio_const(1.0),
@@ -19,6 +73,7 @@ fn white_led_config(idle_timeout_seconds: u16) -> super::FloatOutBoyLedsConfig {
     super::FloatOutBoyLedsConfig::new(bar, bar, bar, bar, status, bar).enabled()
 }
 
+#[must_use]
 fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedFrameUpdate {
     super::FloatOutBoyLedFrameUpdate::new(
         ride,
@@ -226,6 +281,34 @@ fn physical_channels_match_refloat_gamma_for_every_input() {
 
 #[test]
 fn pixel_blend_matches_refloat_channel_math_for_every_byte_pair() {
+    for (first, second, blend, expected) in [
+        (
+            [0, 64, 255, 200],
+            [255, 192, 0, 100],
+            0.25,
+            [63, 96, 191, 175],
+        ),
+        (
+            [0, 64, 255, 200],
+            [255, 192, 0, 100],
+            0.5,
+            [127, 128, 127, 150],
+        ),
+        ([5, 10, 15, 20], [25, 30, 35, 40], f32::NAN, [0; 4]),
+        ([5, 10, 15, 20], [25, 30, 35, 40], -1.0, [5, 10, 15, 20]),
+        ([5, 10, 15, 20], [25, 30, 35, 40], 2.0, [25, 30, 35, 40]),
+    ] {
+        assert_eq!(
+            FloatOutBoyLedPixel::blend(
+                FloatOutBoyLedPixel { channels: first },
+                FloatOutBoyLedPixel { channels: second },
+                blend,
+            )
+            .channels(),
+            expected,
+        );
+    }
+
     for first in 0_u8..=u8::MAX {
         for second in 0_u8..=u8::MAX {
             for blend in [f32::NAN, -1.0, 0.0, 0.1, 0.5, 0.999, 1.0, 2.0] {
@@ -265,7 +348,7 @@ fn strip_frame_maps_logical_pixels_to_checked_physical_order() {
         3,
         FloatOutBoyLedColorOrder::Grb,
     )
-    .with_reverse(true);
+    .reversed();
     let mut frame = super::FloatOutBoyLedStripFrame::new(config);
     let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
     let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
@@ -293,13 +376,7 @@ fn solid_bar_applies_brightness_on_off_fade_and_blend_like_refloat() {
     let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
     assert!(frame.set_logical_pixel(0, blue));
     assert!(frame.set_logical_pixel(1, blue));
-    let bar = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(0.5),
-        FloatOutBoyLedColor::Red,
-        FloatOutBoyLedColor::Black,
-        super::FloatOutBoyLedAnimationMode::Solid,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-    );
+    let bar = solid_bar_with_brightness(Ratio::from_ratio_const(0.5), FloatOutBoyLedColor::Red);
 
     frame.render_target(
         FloatOutBoyLedPixel::from_named(bar.primary_color()),
@@ -321,19 +398,15 @@ fn fade_and_strobe_match_refloat_time_boundaries() {
         1,
         FloatOutBoyLedColorOrder::Grb,
     );
-    let fade = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(1.0),
+    let fade = full_brightness_bar(
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Fade,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
     );
-    let strobe = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(1.0),
+    let strobe = full_brightness_bar(
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Strobe,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
     );
 
     let mut frame = super::FloatOutBoyLedStripFrame::new(config);
@@ -379,12 +452,10 @@ fn felony_preserves_odd_center_blackout_across_all_three_phases() {
         5,
         FloatOutBoyLedColorOrder::Grb,
     );
-    let bar = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(1.0),
+    let bar = full_brightness_bar(
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Felony,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
     );
     let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
     let blue = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Blue);
@@ -421,19 +492,14 @@ fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
         4,
         FloatOutBoyLedColorOrder::Grb,
     );
-    let bar = |mode| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            FloatOutBoyLedColor::Black,
-            FloatOutBoyLedColor::Black,
-            mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let mut frame = super::FloatOutBoyLedStripFrame::new(config);
 
     frame.render_bar(
-        bar(super::FloatOutBoyLedAnimationMode::RainbowCycle),
+        full_brightness_bar(
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::RainbowCycle,
+        ),
         Ratio::from_ratio_const(1.0),
         0.9,
     );
@@ -445,7 +511,11 @@ fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
     );
 
     frame.render_bar(
-        bar(super::FloatOutBoyLedAnimationMode::RainbowFade),
+        full_brightness_bar(
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::RainbowFade,
+        ),
         Ratio::from_ratio_const(1.0),
         0.25,
     );
@@ -457,7 +527,11 @@ fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
     );
 
     frame.render_bar(
-        bar(super::FloatOutBoyLedAnimationMode::RainbowRoll),
+        full_brightness_bar(
+            FloatOutBoyLedColor::Black,
+            FloatOutBoyLedColor::Black,
+            super::FloatOutBoyLedAnimationMode::RainbowRoll,
+        ),
         Ratio::from_ratio_const(1.0),
         0.0,
     );
@@ -482,15 +556,6 @@ fn rainbow_modes_match_refloat_hue_steps_and_strip_offsets() {
 
 #[test]
 fn pulse_and_knight_rider_match_refloat_spatial_frames() {
-    let bar = |mode| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            FloatOutBoyLedColor::Red,
-            FloatOutBoyLedColor::Blue,
-            mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = |count| {
         super::FloatOutBoyLedStripConfig::new(
             super::FloatOutBoyLedStripOrder::First,
@@ -501,7 +566,11 @@ fn pulse_and_knight_rider_match_refloat_spatial_frames() {
 
     let mut pulse = super::FloatOutBoyLedStripFrame::new(config(5));
     pulse.render_bar(
-        bar(super::FloatOutBoyLedAnimationMode::Pulse),
+        full_brightness_bar(
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::Pulse,
+        ),
         Ratio::from_ratio_const(1.0),
         0.5,
     );
@@ -522,7 +591,11 @@ fn pulse_and_knight_rider_match_refloat_spatial_frames() {
 
     let mut knight_rider = super::FloatOutBoyLedStripFrame::new(config(6));
     knight_rider.render_bar(
-        bar(super::FloatOutBoyLedAnimationMode::KnightRider),
+        full_brightness_bar(
+            FloatOutBoyLedColor::Red,
+            FloatOutBoyLedColor::Blue,
+            super::FloatOutBoyLedAnimationMode::KnightRider,
+        ),
         Ratio::from_ratio_const(1.0),
         1.5,
     );
@@ -545,23 +618,14 @@ fn pulse_and_knight_rider_match_refloat_spatial_frames() {
 
 #[test]
 fn all_transition_modes_match_refloat_frames() {
-    let bar = |brightness, primary, secondary, mode| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(brightness),
-            primary,
-            secondary,
-            mode,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
-    let from = bar(
-        0.5,
+    let from = led_bar(
+        Ratio::from_ratio_const(0.5),
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Blue,
         super::FloatOutBoyLedAnimationMode::Solid,
     );
-    let to = bar(
-        1.0,
+    let to = led_bar(
+        Ratio::from_ratio_const(1.0),
         FloatOutBoyLedColor::Green,
         FloatOutBoyLedColor::Yellow,
         super::FloatOutBoyLedAnimationMode::Fade,
@@ -640,14 +704,6 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         5,
         FloatOutBoyLedColorOrder::Grb,
     );
-    let channels = |frame: &super::FloatOutBoyLedStripFrame| {
-        core::array::from_fn(|index| {
-            frame
-                .physical_pixel(index)
-                .map(super::FloatOutBoyLedPixel::channels)
-                .unwrap_or_default()
-        })
-    };
     let overlay = super::FloatOutBoyLedOverlay {
         strip_brightness: Ratio::from_ratio_const(1.0),
         on_off_fade: Ratio::from_ratio_const(1.0),
@@ -662,7 +718,7 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         overlay,
     );
     assert_eq!(
-        channels(&footpads),
+        strip_channels(&footpads),
         [
             [0, 0xc0, 0xff, 0],
             [0, 0xc0, 0xff, 0],
@@ -681,7 +737,7 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         overlay,
     );
     assert_eq!(
-        channels(&battery),
+        strip_channels(&battery),
         [
             [0x90, 0x90, 0x90, 0],
             [0x90, 0x90, 0x90, 0],
@@ -700,7 +756,7 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         overlay,
     );
     assert_eq!(
-        channels(&duty_reversed),
+        strip_channels(&duty_reversed),
         [
             [0, 0, 0, 0],
             [0xff, 0x38, 0x28, 0],
@@ -718,15 +774,6 @@ fn disabled_and_confirmation_pixels_match_refloat() {
         5,
         FloatOutBoyLedColorOrder::Grb,
     );
-    let channels = |frame: &super::FloatOutBoyLedStripFrame| {
-        core::array::from_fn(|index| {
-            frame
-                .physical_pixel(index)
-                .map(super::FloatOutBoyLedPixel::channels)
-                .unwrap_or_default()
-        })
-    };
-
     let mut disabled = super::FloatOutBoyLedStripFrame::new(config);
     disabled.render_disabled(
         Ratio::from_ratio_const(1.0),
@@ -734,7 +781,7 @@ fn disabled_and_confirmation_pixels_match_refloat() {
         1.0,
     );
     assert_eq!(
-        channels(&disabled),
+        strip_channels(&disabled),
         [
             [0x1d, 0, 0, 0],
             [0x3f, 0, 0, 0],
@@ -751,7 +798,7 @@ fn disabled_and_confirmation_pixels_match_refloat() {
         0.5,
     );
     assert_eq!(
-        channels(&confirmation),
+        strip_channels(&confirmation),
         [
             [0, 0, 0, 0],
             [0x4e, 0x1f, 0x7d, 0],
@@ -764,20 +811,11 @@ fn disabled_and_confirmation_pixels_match_refloat() {
 
 #[test]
 fn front_rear_bar_selection_matches_refloat_direction_roles() {
-    let bar = |color| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            color,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = super::FloatOutBoyLedsConfig::new(
-        bar(FloatOutBoyLedColor::WhiteRgb),
-        bar(FloatOutBoyLedColor::Red),
-        bar(FloatOutBoyLedColor::Blue),
-        bar(FloatOutBoyLedColor::Green),
+        solid_bar(FloatOutBoyLedColor::WhiteRgb),
+        solid_bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::Blue),
+        solid_bar(FloatOutBoyLedColor::Green),
         super::FloatOutBoyStatusBarConfig::new(
             super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
             Ratio::from_ratio_const(0.9),
@@ -785,7 +823,7 @@ fn front_rear_bar_selection_matches_refloat_direction_roles() {
             Ratio::from_ratio_const(1.0),
             Ratio::from_ratio_const(1.0),
         ),
-        bar(FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::Black),
     );
 
     for (headlights_on, direction_forward, expected) in [
@@ -820,25 +858,12 @@ fn front_rear_bar_selection_matches_refloat_direction_roles() {
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one fixture covers settled, reversed, and cancelled transition traces"
-)]
 fn front_rear_renderer_composes_headlight_and_direction_transitions() {
-    let bar = |color| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            color,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = super::FloatOutBoyLedsConfig::new(
-        bar(FloatOutBoyLedColor::WhiteRgb),
-        bar(FloatOutBoyLedColor::Red),
-        bar(FloatOutBoyLedColor::Blue),
-        bar(FloatOutBoyLedColor::Green),
+        solid_bar(FloatOutBoyLedColor::WhiteRgb),
+        solid_bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::Blue),
+        solid_bar(FloatOutBoyLedColor::Green),
         super::FloatOutBoyStatusBarConfig::new(
             super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
             Ratio::from_ratio_const(0.9),
@@ -846,7 +871,7 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
             Ratio::from_ratio_const(1.0),
             Ratio::from_ratio_const(1.0),
         ),
-        bar(FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::Black),
     )
     .enabled()
     .with_headlights_on();
@@ -939,25 +964,12 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one sequential trace proves the coupled status fade, duty blend, and confirmation layers"
-)]
 fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
-    let bar = |color| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            color,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = super::FloatOutBoyLedsConfig::new(
-        bar(FloatOutBoyLedColor::WhiteRgb),
-        bar(FloatOutBoyLedColor::Red),
-        bar(FloatOutBoyLedColor::Black),
-        bar(FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::WhiteRgb),
+        solid_bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::Black),
         super::FloatOutBoyStatusBarConfig::new(
             super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
             Ratio::from_ratio_const(0.2),
@@ -965,7 +977,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
             Ratio::from_ratio_const(1.0),
             Ratio::from_ratio_const(1.0),
         ),
-        bar(FloatOutBoyLedColor::Blue),
+        solid_bar(FloatOutBoyLedColor::Blue),
     )
     .enabled();
     let strip = super::FloatOutBoyLedStripConfig::new(
@@ -993,16 +1005,6 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
             },
         )
     };
-    let channels = |renderer: &super::FloatOutBoyLedRenderer| {
-        core::array::from_fn(|index| {
-            renderer
-                .status()
-                .physical_pixel(index)
-                .map(super::FloatOutBoyLedPixel::channels)
-                .unwrap_or_default()
-        })
-    };
-
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
     for tick in 1..=10 {
         renderer.update(
@@ -1012,7 +1014,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
         );
     }
     assert_eq!(
-        channels(&renderer),
+        strip_channels(renderer.status()),
         [
             [0x90, 0x90, 0x90, 0],
             [0x90, 0x90, 0x90, 0],
@@ -1030,7 +1032,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
         );
     }
     assert_eq!(
-        channels(&renderer),
+        strip_channels(renderer.status()),
         [
             [0xff, 0xb0, 0x30, 0],
             [0xff, 0xb0, 0x30, 0],
@@ -1047,7 +1049,7 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
         17.0 / 30.0 + 0.4,
     );
     assert_eq!(
-        channels(&renderer),
+        strip_channels(renderer.status()),
         [
             [0, 0, 0, 0],
             [0x4e, 0x1f, 0x7d, 0],
@@ -1060,20 +1062,11 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
 
 #[test]
 fn composed_status_idle_and_sensor_fade_follow_source_order() {
-    let bar = |brightness, color| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(brightness),
-            color,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = super::FloatOutBoyLedsConfig::new(
-        bar(1.0, FloatOutBoyLedColor::WhiteRgb),
-        bar(1.0, FloatOutBoyLedColor::Red),
-        bar(1.0, FloatOutBoyLedColor::Black),
-        bar(1.0, FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::WhiteRgb),
+        solid_bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::Black),
+        solid_bar(FloatOutBoyLedColor::Black),
         super::FloatOutBoyStatusBarConfig::new(
             super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1),
             Ratio::from_ratio_const(0.9),
@@ -1081,7 +1074,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             Ratio::from_ratio_const(1.0),
             Ratio::from_ratio_const(1.0),
         ),
-        bar(0.5, FloatOutBoyLedColor::Blue),
+        solid_bar_with_brightness(Ratio::from_ratio_const(0.5), FloatOutBoyLedColor::Blue),
     )
     .enabled();
     let strip = super::FloatOutBoyLedStripConfig::new(
@@ -1107,17 +1100,10 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             moving: false,
         },
     );
-    let pixel = |renderer: &super::FloatOutBoyLedRenderer| {
-        renderer
-            .status()
-            .physical_pixel(0)
-            .map(super::FloatOutBoyLedPixel::channels)
-            .unwrap_or_default()
-    };
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
 
     renderer.update(config, frame, 1.0);
-    assert_eq!(pixel(&renderer), [1, 1, 1, 0]);
+    assert_eq!(strip_channels::<1>(renderer.status())[0], [1, 1, 1, 0]);
 
     for tick in 1..=40 {
         renderer.update(
@@ -1126,7 +1112,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
-    assert_eq!(pixel(&renderer), [0, 0, 0x80, 0]);
+    assert_eq!(strip_channels::<1>(renderer.status())[0], [0, 0, 0x80, 0]);
 
     let with_footpad = |footpad| super::FloatOutBoyLedFrameUpdate {
         ride: super::FloatOutBoyLedUpdate {
@@ -1142,28 +1128,25 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
             1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
-    assert_eq!(pixel(&renderer), [0, 0x3a, 0x4d, 0]);
+    assert_eq!(
+        strip_channels::<1>(renderer.status())[0],
+        [0, 0x3a, 0x4d, 0]
+    );
 
     renderer.update(config, frame, 1.0 + 44.0 / 30.0);
-    assert_eq!(pixel(&renderer), [0x1c, 0x3b, 0x45, 0]);
+    assert_eq!(
+        strip_channels::<1>(renderer.status())[0],
+        [0x1c, 0x3b, 0x45, 0]
+    );
 }
 
 #[test]
 fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
-    let bar = |color| {
-        super::FloatOutBoyLedBarConfig::new(
-            Ratio::from_ratio_const(1.0),
-            color,
-            FloatOutBoyLedColor::Black,
-            super::FloatOutBoyLedAnimationMode::Solid,
-            super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-        )
-    };
     let config = super::FloatOutBoyLedsConfig::new(
-        bar(FloatOutBoyLedColor::WhiteRgb),
-        bar(FloatOutBoyLedColor::Red),
-        bar(FloatOutBoyLedColor::Blue),
-        bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::WhiteRgb),
+        solid_bar(FloatOutBoyLedColor::Red),
+        solid_bar(FloatOutBoyLedColor::Blue),
+        solid_bar(FloatOutBoyLedColor::Red),
         super::FloatOutBoyStatusBarConfig::new(
             super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
             Ratio::from_ratio_const(0.9),
@@ -1171,7 +1154,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             Ratio::from_ratio_const(1.0),
             Ratio::from_ratio_const(1.0),
         ),
-        bar(FloatOutBoyLedColor::Green),
+        solid_bar(FloatOutBoyLedColor::Green),
     )
     .enabled()
     .lights_off_when_lifted()
@@ -1202,12 +1185,6 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             },
         )
     };
-    let pixel = |strip: &super::FloatOutBoyLedStripFrame| {
-        strip
-            .physical_pixel(0)
-            .map(super::FloatOutBoyLedPixel::channels)
-            .unwrap_or_default()
-    };
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
 
     for tick in 1..=10 {
@@ -1217,12 +1194,18 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
-    assert_eq!(pixel(renderer.front()), [0x90, 0x90, 0x90, 0]);
-    assert_eq!(pixel(renderer.rear()), [0, 0, 0, 0]);
+    assert_eq!(
+        strip_channels::<1>(renderer.front())[0],
+        [0x90, 0x90, 0x90, 0]
+    );
+    assert_eq!(strip_channels::<1>(renderer.rear())[0], [0, 0, 0, 0]);
 
     let idle_boundary = 1.0 / 30.0 + 3.0;
     renderer.update(config, frame(61.0), idle_boundary);
-    assert_eq!(pixel(renderer.front()), [0x90, 0x90, 0x90, 0]);
+    assert_eq!(
+        strip_channels::<1>(renderer.front())[0],
+        [0x90, 0x90, 0x90, 0]
+    );
     for tick in 1..=10 {
         renderer.update(
             config,
@@ -1230,7 +1213,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             idle_boundary + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
-    assert_eq!(pixel(renderer.front()), [0, 0, 0, 0]);
+    assert_eq!(strip_channels::<1>(renderer.front())[0], [0, 0, 0, 0]);
 
     for tick in 11..=20 {
         renderer.update(
@@ -1239,13 +1222,14 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             idle_boundary + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
-    assert_eq!(pixel(renderer.front()), [0, 0, 0xff, 0]);
-    assert_eq!(pixel(renderer.rear()), [0xff, 0, 0, 0]);
+    assert_eq!(strip_channels::<1>(renderer.front())[0], [0, 0, 0xff, 0]);
+    assert_eq!(strip_channels::<1>(renderer.rear())[0], [0xff, 0, 0, 0]);
 }
 
 #[test]
 fn headlight_transition_uses_elapsed_time_like_refloat() {
-    let config = white_led_config(0).with_headlights_on();
+    let config = white_led_config(super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0))
+        .with_headlights_on();
     let running = super::FloatOutBoyLedUpdate {
         run_state: crate::FloatOutBoyRunState::Running,
         mode: crate::FloatOutBoyMode::Normal,
@@ -1264,7 +1248,8 @@ fn headlight_transition_uses_elapsed_time_like_refloat() {
 
 #[test]
 fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
-    let config = white_led_config(0).with_headlights_on();
+    let config = white_led_config(super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0))
+        .with_headlights_on();
     let mut off = config;
     off.on = false;
     let running = super::FloatOutBoyLedUpdate {
@@ -1293,7 +1278,8 @@ fn fully_faded_leds_freeze_hidden_transitions_like_refloat() {
 
 #[test]
 fn disabled_front_stays_dark_while_lifted_like_refloat() {
-    let config = white_led_config(0).lights_off_when_lifted();
+    let config = white_led_config(super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0))
+        .lights_off_when_lifted();
     let strip = super::FloatOutBoyLedStripConfig::new(
         super::FloatOutBoyLedStripOrder::First,
         1,
@@ -1342,7 +1328,7 @@ fn disabled_front_stays_dark_while_lifted_like_refloat() {
 
 #[test]
 fn first_ready_resets_animation_and_idle_epochs_like_refloat() {
-    let config = white_led_config(1);
+    let config = white_led_config(super::FloatOutBoyStatusBarIdleTimeout::from_seconds(1));
     let hardware =
         crate::lcm::FloatOutBoyHardwareLedsConfig::new(crate::lcm::FloatOutBoyLedMode::Internal);
     let frame = |run_state| {
@@ -1394,13 +1380,7 @@ fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
             )
         }};
     }
-    let bar = super::FloatOutBoyLedBarConfig::new(
-        Ratio::from_ratio_const(1.0),
-        FloatOutBoyLedColor::WhiteRgb,
-        FloatOutBoyLedColor::Black,
-        super::FloatOutBoyLedAnimationMode::Solid,
-        super::FloatOutBoyLedAnimationSpeed::from_units(1.0),
-    );
+    let bar = solid_bar(FloatOutBoyLedColor::WhiteRgb);
     let status = super::FloatOutBoyStatusBarConfig::new(
         super::FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
         Ratio::from_ratio_const(0.9),
@@ -1522,6 +1502,8 @@ fn led_dynamics_match_refloat_rate_hysteresis_and_mode_gates() {
             0.0,
         );
     }
+    // Refloat advances the split by 2.0 / 30.0 after the first update starts it at -1.0;
+    // the next 31 updates therefore pass +1.0 and clamp there.
     assert_eq!(dynamics.headlights(), (1.0, true, false));
 
     update!(

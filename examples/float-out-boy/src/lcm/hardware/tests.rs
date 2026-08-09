@@ -73,7 +73,7 @@ fn float_out_boy_hardware_leds_default_and_overrides_match_upstream_shape() {
         24,
         FloatOutBoyLedColorOrder::Grb,
     )
-    .with_reverse(true);
+    .reversed();
 
     let hardware_leds = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Both)
         .with_pin(FloatOutBoyLedPin::C9)
