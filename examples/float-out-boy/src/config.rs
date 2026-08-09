@@ -566,46 +566,27 @@ impl<'a> FloatOutBoyLedConfigDecoder<'a> {
         (self.offset == 242).then_some((hardware, leds))
     }
 
-    fn validate(mut self) -> Option<()> {
-        self.boolean()?;
-        self.boolean()?;
-        self.enum_value::<FloatOutBoyLedTransition>()?;
-        self.enum_value::<FloatOutBoyLedTransition>()?;
-        self.boolean()?;
-        self.boolean()?;
-        for _ in 0..4 {
-            self.validate_bar()?;
+    fn validate(self) -> Option<()> {
+        self.enums::<FloatOutBoyLedTransition>(&[177, 178])?;
+        self.enums::<FloatOutBoyLedAnimationMode>(&[181, 188, 195, 202, 220])?;
+        self.enums::<FloatOutBoyLedColor>(&[184, 185, 191, 192, 198, 199, 205, 206, 223, 224])?;
+        self.enums::<FloatOutBoyLedMode>(&[227])?;
+        self.enums::<FloatOutBoyLedPin>(&[228])?;
+        self.enums::<FloatOutBoyLedPinConfig>(&[229])?;
+        self.enums::<FloatOutBoyLedStripOrder>(&[230, 234, 238])?;
+        self.enums::<FloatOutBoyLedColorOrder>(&[232, 236, 240])?;
+        for offset in [182, 189, 196, 203, 209, 211, 214, 216, 221] {
+            let high = self.bytes.get(offset).copied()?;
+            let low = self.bytes.get(offset.saturating_add(1)).copied()?;
+            Ratio::from_ratio(f32::from(u16::from_be_bytes([high, low])) / 10_000.0).ok()?;
         }
-        self.ratio(10_000.0)?;
-        self.ratio(10_000.0)?;
-        self.boolean()?;
-        self.ratio(10_000.0)?;
-        self.ratio(10_000.0)?;
-        self.u16()?;
-        self.validate_bar()?;
-        self.enum_value::<FloatOutBoyLedMode>()?;
-        self.enum_value::<FloatOutBoyLedPin>()?;
-        self.enum_value::<FloatOutBoyLedPinConfig>()?;
-        for _ in 0..3 {
-            self.validate_strip()?;
-        }
-        (self.offset == 242).then_some(())
-    }
-
-    fn validate_bar(&mut self) -> Option<()> {
-        self.enum_value::<FloatOutBoyLedAnimationMode>()?;
-        self.ratio(10_000.0)?;
-        self.enum_value::<FloatOutBoyLedColor>()?;
-        self.enum_value::<FloatOutBoyLedColor>()?;
-        self.u16()?;
         Some(())
     }
 
-    fn validate_strip(&mut self) -> Option<()> {
-        self.enum_value::<FloatOutBoyLedStripOrder>()?;
-        self.byte()?;
-        self.enum_value::<FloatOutBoyLedColorOrder>()?;
-        self.boolean()?;
+    fn enums<T: TryFrom<u8>>(&self, offsets: &[usize]) -> Option<()> {
+        for offset in offsets {
+            T::try_from(self.bytes.get(*offset).copied()?).ok()?;
+        }
         Some(())
     }
 
