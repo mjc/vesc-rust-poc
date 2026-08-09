@@ -27,6 +27,38 @@ fn dispatch(
     response
 }
 
+fn dispatch_command(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    command: FloatOutBoyAppDataCommand,
+) -> Vec<u8> {
+    dispatch(
+        state,
+        firmware,
+        &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command.id()],
+    )
+}
+
+fn dispatch_payload(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    command: FloatOutBoyAppDataCommand,
+    payload: &[u8],
+) -> Vec<u8> {
+    let mut packet = Vec::with_capacity(payload.len() + 2);
+    packet.extend_from_slice(&[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), command.id()]);
+    packet.extend_from_slice(payload);
+    dispatch(state, firmware, &packet)
+}
+
+fn external_configured_state() -> FloatOutBoyPackageState {
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut config = state.serialized_config.as_bytes().to_vec();
+    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+    assert!(state.store_serialized_config(&config));
+    state
+}
+
 #[test]
 fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
     let firmware = FirmwareTest::new();
@@ -90,27 +122,20 @@ fn light_info_and_lights_control_match_refloat_wire_contract() {
     let mut state = external_state();
 
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
+            FloatOutBoyAppDataCommand::LcmLightInfo
         ),
         [101, 25, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     );
 
     assert_eq!(
-        dispatch(
+        dispatch_payload(
             &mut state,
             &firmware,
-            &[
-                101,
-                FloatOutBoyAppDataCommand::LightsControl.id(),
-                0,
-                0,
-                0,
-                3,
-                3,
-            ]
+            FloatOutBoyAppDataCommand::LightsControl,
+            &[0, 0, 0, 3, 3],
         ),
         [101, 20, 3]
     );
@@ -122,10 +147,10 @@ fn startup_lights_control_reflects_serialized_led_flags() {
     let mut state = external_state();
 
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
+            FloatOutBoyAppDataCommand::LightsControl
         ),
         [101, 20, 3]
     );
@@ -134,16 +159,13 @@ fn startup_lights_control_reflects_serialized_led_flags() {
 #[test]
 fn external_lcm_configuration_uses_serialized_led_brightness_like_refloat() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
-    assert!(state.store_serialized_config(&config));
+    let mut state = external_configured_state();
 
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
+            FloatOutBoyAppDataCommand::LcmLightInfo
         ),
         [101, 25, 3, 50, 50, 20, 0, 0, 0, 0, 0, 0]
     );
@@ -152,24 +174,15 @@ fn external_lcm_configuration_uses_serialized_led_brightness_like_refloat() {
 #[test]
 fn lights_control_is_temporary_across_later_config_writes() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = external_configured_state();
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
-    assert!(state.store_serialized_config(&config));
 
     assert_eq!(
-        dispatch(
+        dispatch_payload(
             &mut state,
             &firmware,
-            &[
-                101,
-                FloatOutBoyAppDataCommand::LightsControl.id(),
-                0,
-                0,
-                0,
-                3,
-                0
-            ]
+            FloatOutBoyAppDataCommand::LightsControl,
+            &[0, 0, 0, 3, 0],
         ),
         [101, 20, 0]
     );
@@ -179,18 +192,18 @@ fn lights_control_is_temporary_across_later_config_writes() {
     config[120] = 40;
     assert!(state.store_serialized_config(&config));
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
+            FloatOutBoyAppDataCommand::LightsControl
         ),
         [101, 20, 0]
     );
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LcmLightInfo.id()]
+            FloatOutBoyAppDataCommand::LcmLightInfo
         ),
         [101, 25, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     );
@@ -199,24 +212,15 @@ fn lights_control_is_temporary_across_later_config_writes() {
 #[test]
 fn lights_control_partial_mask_tracks_unoverridden_config_field() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = external_configured_state();
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
-    assert!(state.store_serialized_config(&config));
 
     assert_eq!(
-        dispatch(
+        dispatch_payload(
             &mut state,
             &firmware,
-            &[
-                101,
-                FloatOutBoyAppDataCommand::LightsControl.id(),
-                0,
-                0,
-                0,
-                1,
-                0
-            ]
+            FloatOutBoyAppDataCommand::LightsControl,
+            &[0, 0, 0, 1, 0],
         ),
         [101, 20, 2]
     );
@@ -224,10 +228,10 @@ fn lights_control_partial_mask_tracks_unoverridden_config_field() {
     config[176] = 0;
     assert!(state.store_serialized_config(&config));
     assert_eq!(
-        dispatch(
+        dispatch_command(
             &mut state,
             &firmware,
-            &[101, FloatOutBoyAppDataCommand::LightsControl.id()]
+            FloatOutBoyAppDataCommand::LightsControl
         ),
         [101, 20, 0]
     );
@@ -305,14 +309,23 @@ fn light_control_payload_is_forwarded_once_by_poll_and_device_info_echoes_name()
         &[101, 26, 10, 20, 30, 0xaa, 0x55],
     ));
 
-    let first = dispatch(&mut state, &firmware, &[101, 24, b'L', b'C', b'M', 0]);
+    let first = dispatch_payload(
+        &mut state,
+        &firmware,
+        FloatOutBoyAppDataCommand::LcmPoll,
+        b"LCM\0",
+    );
     assert_eq!(&first[..2], &[101, 24]);
     assert_eq!(&first[11..], &[10, 20, 30, 0xaa, 0x55]);
 
-    let second = dispatch(&mut state, &firmware, &[101, 24]);
+    let second = dispatch_command(&mut state, &firmware, FloatOutBoyAppDataCommand::LcmPoll);
     assert_eq!(second.len(), 14);
     assert_eq!(
-        dispatch(&mut state, &firmware, &[101, 27]),
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmDeviceInfo
+        ),
         [101, 27, b'L', b'C', b'M', 0]
     );
 }
@@ -331,7 +344,7 @@ fn light_control_relay_is_safely_capped_at_refloats_64_byte_storage() {
         &command,
     ));
 
-    let response = dispatch(&mut state, &firmware, &[101, 24]);
+    let response = dispatch_command(&mut state, &firmware, FloatOutBoyAppDataCommand::LcmPoll);
     assert_eq!(response.len(), 14 + MAX_LCM_PAYLOAD_LENGTH);
     assert_eq!(&response[14..], &(0_u8..64).collect::<Vec<_>>());
 }
@@ -359,11 +372,25 @@ fn shorter_lcm_name_replaces_the_previous_name_without_a_stale_suffix() {
     let firmware = FirmwareTest::new();
     let mut state = external_state();
 
-    dispatch(&mut state, &firmware, &[101, 24, b'L', b'O', b'N', b'G', 0]);
-    dispatch(&mut state, &firmware, &[101, 24, b'N']);
+    dispatch_payload(
+        &mut state,
+        &firmware,
+        FloatOutBoyAppDataCommand::LcmPoll,
+        b"LONG\0",
+    );
+    dispatch_payload(
+        &mut state,
+        &firmware,
+        FloatOutBoyAppDataCommand::LcmPoll,
+        b"N",
+    );
 
     assert_eq!(
-        dispatch(&mut state, &firmware, &[101, 27]),
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmDeviceInfo
+        ),
         [101, 27, b'N', 0]
     );
 }
@@ -373,9 +400,18 @@ fn lcm_name_stops_at_nul_and_at_refloats_twenty_byte_limit() {
     let firmware = FirmwareTest::new();
     let mut state = external_state();
 
-    dispatch(&mut state, &firmware, &[101, 24, b'A', 0, b'B']);
+    dispatch_payload(
+        &mut state,
+        &firmware,
+        FloatOutBoyAppDataCommand::LcmPoll,
+        b"A\0B",
+    );
     assert_eq!(
-        dispatch(&mut state, &firmware, &[101, 27]),
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmDeviceInfo
+        ),
         [101, 27, b'A', 0]
     );
 
@@ -384,16 +420,41 @@ fn lcm_name_stops_at_nul_and_at_refloats_twenty_byte_limit() {
     dispatch(&mut state, &firmware, &poll);
     let mut expected = vec![101, 27];
     expected.extend(1_u8..=MAX_LCM_NAME_LENGTH as u8);
-    assert_eq!(dispatch(&mut state, &firmware, &[101, 27]), expected);
+    assert_eq!(
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmDeviceInfo
+        ),
+        expected
+    );
 }
 
 #[test]
 fn battery_response_uses_float32_auto_and_disabled_lcm_stays_minimal() {
     let firmware = FirmwareTest::new();
     let mut state = external_state();
-    assert_eq!(dispatch(&mut state, &firmware, &[101, 29]).len(), 6);
+    assert_eq!(
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmGetBattery
+        )
+        .len(),
+        6
+    );
 
     state.set_lcm_hardware_mode_for_test(0);
-    assert_eq!(dispatch(&mut state, &firmware, &[101, 25]), [101, 25]);
-    assert_eq!(dispatch(&mut state, &firmware, &[101, 24]), [101, 24]);
+    assert_eq!(
+        dispatch_command(
+            &mut state,
+            &firmware,
+            FloatOutBoyAppDataCommand::LcmLightInfo
+        ),
+        [101, 25]
+    );
+    assert_eq!(
+        dispatch_command(&mut state, &firmware, FloatOutBoyAppDataCommand::LcmPoll),
+        [101, 24]
+    );
 }
