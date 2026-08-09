@@ -366,6 +366,29 @@ fn strip_frame_maps_logical_pixels_to_checked_physical_order() {
 }
 
 #[test]
+fn oversized_strip_frames_render_up_to_physical_capacity() {
+    let config = super::FloatOutBoyLedStripConfig::new(
+        super::FloatOutBoyLedStripOrder::First,
+        u8::MAX,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+    let red = FloatOutBoyLedPixel::from_named(FloatOutBoyLedColor::Red);
+
+    frame.render_target(
+        red,
+        Ratio::from_ratio_const(1.0),
+        Ratio::from_ratio_const(1.0),
+    );
+
+    assert_eq!(
+        frame.physical_pixel(super::MAX_LED_STRIP_PIXELS - 1),
+        Some(red)
+    );
+    assert_eq!(frame.physical_pixel(super::MAX_LED_STRIP_PIXELS), None);
+}
+
+#[test]
 fn solid_bar_applies_brightness_on_off_fade_and_blend_like_refloat() {
     let config = super::FloatOutBoyLedStripConfig::new(
         super::FloatOutBoyLedStripOrder::First,

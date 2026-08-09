@@ -1364,10 +1364,16 @@ impl FloatOutBoyLedStripFrame {
         }
     }
 
+    fn render_count(&self) -> u8 {
+        self.config
+            .count()
+            .min(u8::try_from(self.pixels.len()).unwrap_or(u8::MAX))
+    }
+
     /// Return one pixel in physical strip order.
     #[must_use]
     pub fn physical_pixel(&self, index: usize) -> Option<FloatOutBoyLedPixel> {
-        let len = usize::from(self.config.count());
+        let len = usize::from(self.render_count());
         if index >= len {
             return None;
         }
@@ -1380,7 +1386,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn pixels_mut(&mut self) -> &mut [FloatOutBoyLedPixel] {
-        let len = usize::from(self.config.count());
+        let len = usize::from(self.render_count());
         self.pixels.get_mut(..len).unwrap_or_default()
     }
 
@@ -1392,7 +1398,7 @@ impl FloatOutBoyLedStripFrame {
         reverse_roles: bool,
         overlay: FloatOutBoyLedOverlay,
     ) {
-        let len = usize::from(self.config.count());
+        let len = usize::from(self.render_count());
         if len == 0 {
             return;
         }
@@ -1500,8 +1506,9 @@ impl FloatOutBoyLedStripFrame {
         reverse: bool,
         overlay: FloatOutBoyLedOverlay,
     ) {
-        let len = usize::from(self.config.count());
-        let len_float = f32::from(self.config.count());
+        let count = self.render_count();
+        let len = usize::from(count);
+        let len_float = f32::from(count);
         let progress = len_float * value;
         let offset = usize::from(crate::wire::saturating_trunc_f32_to_u8(progress));
         let remaining = (progress - vescpkg_rs::floor(progress)) * 0.7;
@@ -1572,8 +1579,9 @@ impl FloatOutBoyLedStripFrame {
         on_off_fade: Ratio,
         progress: f32,
     ) {
-        let len = usize::from(self.config.count());
-        let len_float = f32::from(self.config.count());
+        let count = self.render_count();
+        let len = usize::from(count);
+        let len_float = f32::from(count);
         let progress = progress.min(1.0);
         let blend_time = 0.06;
         let blend = if progress <= blend_time {
@@ -1737,7 +1745,7 @@ impl FloatOutBoyLedStripFrame {
         on_off_fade: Ratio,
     ) {
         const MAX_CIPHER_STRIP_PIXELS: usize = 60;
-        let len = usize::from(self.config.count());
+        let len = usize::from(self.render_count());
         if len == 0 || len > MAX_CIPHER_STRIP_PIXELS {
             return;
         }
@@ -1839,7 +1847,7 @@ impl FloatOutBoyLedStripFrame {
         time: f32,
         center_divisor: f32,
     ) {
-        let len_float = f32::from(self.config.count());
+        let len_float = f32::from(self.render_count());
         if len_float == 0.0 {
             return;
         }
@@ -1862,7 +1870,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_knight_rider(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
-        let count = self.config.count();
+        let count = self.render_count();
         if count == 0 {
             return;
         }
@@ -1906,7 +1914,7 @@ impl FloatOutBoyLedStripFrame {
 
     fn render_felony(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
         let phase = vescpkg_rs::remainder(time, 0.15);
-        let len = usize::from(self.config.count());
+        let len = usize::from(self.render_count());
         let stop = len / 2;
         let start = stop.saturating_add(len & 1);
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color());
@@ -1955,7 +1963,7 @@ impl FloatOutBoyLedStripFrame {
                 );
             }
             FloatOutBoyLedAnimationMode::RainbowRoll => {
-                let count = self.config.count();
+                let count = self.render_count();
                 if count == 0 {
                     return;
                 }
