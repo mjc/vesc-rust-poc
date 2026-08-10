@@ -339,173 +339,10 @@ pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes
     true
 }
 
-struct OtherTunePacket<'a> {
-    flags: u8,
-    startup_speed: u8,
-    pitch_tolerance: u8,
-    roll_tolerance: u8,
-    brake_current: u8,
-    click_current: u8,
-    tilt_constant: u8,
-    nose_speed: u8,
-    constant_erpm: u8,
-    variable_rate: u8,
-    variable_max: u8,
-    variable_erpm: u8,
-    optional_input: &'a [u8],
-}
-
-impl<'a> OtherTunePacket<'a> {
-    fn parse(payload: &'a [u8]) -> Option<Self> {
-        let [
-            flags,
-            startup_speed,
-            pitch_tolerance,
-            roll_tolerance,
-            brake_current,
-            click_current,
-            tilt_constant,
-            nose_speed,
-            constant_erpm,
-            variable_rate,
-            variable_max,
-            variable_erpm,
-            optional_input @ ..,
-        ] = payload
-        else {
-            return None;
-        };
-        Some(Self {
-            flags: *flags,
-            startup_speed: *startup_speed,
-            pitch_tolerance: *pitch_tolerance,
-            roll_tolerance: *roll_tolerance,
-            brake_current: *brake_current,
-            click_current: *click_current,
-            tilt_constant: *tilt_constant,
-            nose_speed: *nose_speed,
-            constant_erpm: *constant_erpm,
-            variable_rate: *variable_rate,
-            variable_max: *variable_max,
-            variable_erpm: *variable_erpm,
-            optional_input,
-        })
-    }
-}
-
-fn apply_other_tune_base(
-    config: &mut crate::config::FloatOutBoyConfigEditor<'_>,
-    packet: &OtherTunePacket<'_>,
-) -> bool {
-    [
-        config.set_beeper_enabled(packet.flags & 0x02 != 0),
-        config.set_reversestop_enabled(packet.flags & 0x04 != 0),
-        config.set_dual_switch(packet.flags & 0x08 != 0),
-        config.set_darkride_enabled(packet.flags & 0x10 != 0),
-        config.set_dirty_landings_enabled(packet.flags & 0x20 != 0),
-        config.set_simplestart_enabled(packet.flags & 0x40 != 0),
-        config.set_pushstart_enabled(packet.flags & 0x80 != 0),
-        config.set_startup_speed(WireByte::new(packet.startup_speed).scaled(
-            1.0,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        )),
-        config.set_startup_pitch_tolerance(WireByte::new(packet.pitch_tolerance).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_startup_roll_tolerance(WireByte::new(packet.roll_tolerance).scaled(
-            1.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_brake_current(MotorCurrent::new(
-            WireByte::new(packet.brake_current).scaled(0.5, 0.0, Current::from_amps),
-        )),
-        config.set_startup_click_current(WireByte::new(packet.click_current)),
-    ]
-    .into_iter()
-    .all(core::convert::identity)
-}
-
-fn apply_other_tiltback(
-    config: &mut crate::config::FloatOutBoyConfigEditor<'_>,
-    packet: &OtherTunePacket<'_>,
-) -> bool {
-    if !(80..=120).contains(&packet.tilt_constant) {
-        return true;
-    }
-    let mut updated = [
-        config.set_tiltback_constant(WireByte::new(packet.tilt_constant).scaled(
-            0.5,
-            -50.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_tiltback_constant_erpm(WireByte::new(packet.constant_erpm).scaled(
-            100.0,
-            0.0,
-            electrical_speed,
-        )),
-        config.set_tiltback_variable(WireByte::new(packet.variable_rate).scaled_ratio(
-            1.0,
-            100.0,
-            0.0,
-            PidScale::new,
-        )),
-        config.set_tiltback_variable_max(WireByte::new(packet.variable_max).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )),
-        config.set_tiltback_variable_erpm(WireByte::new(packet.variable_erpm).scaled(
-            100.0,
-            0.0,
-            electrical_speed,
-        )),
-    ]
-    .into_iter()
-    .all(core::convert::identity);
-    if packet.nose_speed != 0 {
-        updated &= config.set_nose_angling_speed(WireByte::new(packet.nose_speed).scaled_ratio(
-            1.0,
-            10.0,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        ));
-    }
-    updated
-}
-
-fn apply_other_input(
-    config: &mut crate::config::FloatOutBoyConfigEditor<'_>,
-    packet: &OtherTunePacket<'_>,
-) -> bool {
-    let [input, input_speed, ..] = packet.optional_input else {
-        return true;
-    };
-    let remote_type = *input & 0x03;
-    if remote_type > 2 {
-        return true;
-    }
-    let mut updated = config.set_input_tilt_remote_type(WireByte::new(remote_type));
-    if remote_type != 0 {
-        updated &= config.set_input_tilt_angle_limit(WireByte::new(*input >> 2).scaled(
-            1.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        ));
-        updated &= config.set_input_tilt_speed(WireByte::new(*input_speed).scaled(
-            1.0,
-            0.0,
-            AngularVelocity::from_degrees_per_second,
-        ));
-    }
-    updated
-}
-
+#[expect(
+    clippy::too_many_lines,
+    reason = "one ordered Tune Other transaction is smaller and preserves progressive write gates"
+)]
 pub(super) fn handle_other_tune_packet(
     state: &mut FloatOutBoyPackageState,
     now: &mut impl FnMut() -> TimestampTicks,
@@ -515,14 +352,119 @@ pub(super) fn handle_other_tune_packet(
     else {
         return false;
     };
-    let Some(packet) = OtherTunePacket::parse(payload) else {
+    let [
+        flags,
+        startup_speed,
+        pitch_tolerance,
+        roll_tolerance,
+        brake_current,
+        click_current,
+        tilt_constant,
+        nose_speed,
+        constant_erpm,
+        variable_rate,
+        variable_max,
+        variable_erpm,
+        optional_input @ ..,
+    ] = payload
+    else {
         return false;
     };
 
     let updated = update_active_config(state, |config| {
-        apply_other_tune_base(config, &packet)
-            && apply_other_tiltback(config, &packet)
-            && apply_other_input(config, &packet)
+        let mut updated = [
+            config.set_beeper_enabled(*flags & 0x02 != 0),
+            config.set_reversestop_enabled(*flags & 0x04 != 0),
+            config.set_dual_switch(*flags & 0x08 != 0),
+            config.set_darkride_enabled(*flags & 0x10 != 0),
+            config.set_dirty_landings_enabled(*flags & 0x20 != 0),
+            config.set_simplestart_enabled(*flags & 0x40 != 0),
+            config.set_pushstart_enabled(*flags & 0x80 != 0),
+            config.set_startup_speed(WireByte::new(*startup_speed).scaled(
+                1.0,
+                0.0,
+                AngularVelocity::from_degrees_per_second,
+            )),
+            config.set_startup_pitch_tolerance(WireByte::new(*pitch_tolerance).scaled_ratio(
+                1.0,
+                10.0,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_startup_roll_tolerance(WireByte::new(*roll_tolerance).scaled(
+                1.0,
+                0.0,
+                AngleDegrees::from_degrees,
+            )),
+            config.set_brake_current(MotorCurrent::new(WireByte::new(*brake_current).scaled(
+                0.5,
+                0.0,
+                Current::from_amps,
+            ))),
+            config.set_startup_click_current(WireByte::new(*click_current)),
+        ]
+        .into_iter()
+        .all(core::convert::identity);
+
+        if updated && (80..=120).contains(tilt_constant) {
+            updated = [
+                config.set_tiltback_constant(WireByte::new(*tilt_constant).scaled(
+                    0.5,
+                    -50.0,
+                    AngleDegrees::from_degrees,
+                )),
+                config.set_tiltback_constant_erpm(WireByte::new(*constant_erpm).scaled(
+                    100.0,
+                    0.0,
+                    electrical_speed,
+                )),
+                config.set_tiltback_variable(WireByte::new(*variable_rate).scaled_ratio(
+                    1.0,
+                    100.0,
+                    0.0,
+                    PidScale::new,
+                )),
+                config.set_tiltback_variable_max(WireByte::new(*variable_max).scaled_ratio(
+                    1.0,
+                    10.0,
+                    0.0,
+                    AngleDegrees::from_degrees,
+                )),
+                config.set_tiltback_variable_erpm(WireByte::new(*variable_erpm).scaled(
+                    100.0,
+                    0.0,
+                    electrical_speed,
+                )),
+            ]
+            .into_iter()
+            .all(core::convert::identity);
+            if *nose_speed != 0 {
+                updated &= config.set_nose_angling_speed(WireByte::new(*nose_speed).scaled_ratio(
+                    1.0,
+                    10.0,
+                    0.0,
+                    AngularVelocity::from_degrees_per_second,
+                ));
+            }
+        }
+
+        if updated && let [input, input_speed, ..] = optional_input {
+            let remote_type = *input & 0x03;
+            if remote_type <= 2 {
+                updated = config.set_input_tilt_remote_type(WireByte::new(remote_type));
+                if remote_type != 0 {
+                    updated &= config.set_input_tilt_angle_limit(
+                        WireByte::new(*input >> 2).scaled(1.0, 0.0, AngleDegrees::from_degrees),
+                    );
+                    updated &= config.set_input_tilt_speed(WireByte::new(*input_speed).scaled(
+                        1.0,
+                        0.0,
+                        AngularVelocity::from_degrees_per_second,
+                    ));
+                }
+            }
+        }
+        updated
     });
     if !updated {
         return false;

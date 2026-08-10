@@ -579,7 +579,6 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
     assert_f32_eq!(
         motor
             .foc_id_current()
-            .as_measured()
             .expect("measured Id current")
             .current()
             .as_amps(),

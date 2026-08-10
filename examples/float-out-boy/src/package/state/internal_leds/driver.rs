@@ -203,8 +203,9 @@ impl FloatOutBoyInternalLedDriver {
                 let Some(pixel) = frame.physical_pixel(pixel_index) else {
                     return false;
                 };
-                for channel in pixel.physical_channels(strip.color_order()).as_slice() {
-                    if !encode_byte(pulses, &mut pulse_index, *channel) {
+                let (channels, channel_count) = pixel.physical_channels(strip.color_order());
+                for channel in channels.into_iter().take(channel_count) {
+                    if !encode_byte(pulses, &mut pulse_index, channel) {
                         return false;
                     }
                 }

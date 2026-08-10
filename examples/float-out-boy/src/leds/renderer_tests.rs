@@ -225,6 +225,14 @@ fn led_config_enum_ids_match_refloat_1_2_1_settings() {
     }
 }
 
+fn physical_channels(
+    pixel: FloatOutBoyLedPixel,
+    order: FloatOutBoyLedColorOrder,
+) -> std::vec::Vec<u8> {
+    let (channels, len) = pixel.physical_channels(order);
+    channels[..len].to_vec()
+}
+
 #[test]
 fn physical_channels_apply_refloat_gamma_and_color_order() {
     let pixel = FloatOutBoyLedPixel {
@@ -232,28 +240,20 @@ fn physical_channels_apply_refloat_gamma_and_color_order() {
     };
 
     assert_eq!(
-        pixel
-            .physical_channels(FloatOutBoyLedColorOrder::Grb)
-            .as_slice(),
-        &[16, 1, 64]
+        physical_channels(pixel, FloatOutBoyLedColorOrder::Grb),
+        [16, 1, 64]
     );
     assert_eq!(
-        pixel
-            .physical_channels(FloatOutBoyLedColorOrder::Grbw)
-            .as_slice(),
-        &[16, 1, 64, 255]
+        physical_channels(pixel, FloatOutBoyLedColorOrder::Grbw),
+        [16, 1, 64, 255]
     );
     assert_eq!(
-        pixel
-            .physical_channels(FloatOutBoyLedColorOrder::Rgb)
-            .as_slice(),
-        &[1, 16, 64]
+        physical_channels(pixel, FloatOutBoyLedColorOrder::Rgb),
+        [1, 16, 64]
     );
     assert_eq!(
-        pixel
-            .physical_channels(FloatOutBoyLedColorOrder::Wrgb)
-            .as_slice(),
-        &[255, 1, 16, 64]
+        physical_channels(pixel, FloatOutBoyLedColorOrder::Wrgb),
+        [255, 1, 16, 64]
     );
 }
 
@@ -271,10 +271,8 @@ fn physical_channels_match_refloat_gamma_for_every_input() {
             .expect("gamma stays in u8");
 
         assert_eq!(
-            pixel
-                .physical_channels(FloatOutBoyLedColorOrder::Wrgb)
-                .as_slice(),
-            &[expected; 4]
+            physical_channels(pixel, FloatOutBoyLedColorOrder::Wrgb),
+            [expected; 4]
         );
     }
 }
