@@ -4,7 +4,7 @@ use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
 
 #[cfg(test)]
 use super::{
-    booster::{Profile, Proportional},
+    booster::{Branch, Proportional},
     loop_io::PidState,
     pid::PitchRate,
 };

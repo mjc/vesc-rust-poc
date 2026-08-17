@@ -64,7 +64,7 @@ fn base_state() -> LoopState {
     LoopState {
         balance_current: motor_current(Current::from_amps(0.0)),
         booster_current: motor_current(Current::from_amps(0.0)),
-        pid: PidState::source_startup(),
+        pid: PidState::default(),
         softstart_pid_limit: motor_current(Current::from_amps(100.0)),
     }
 }
@@ -145,6 +145,91 @@ fn balance_loop_unit_persists_pid_integral_across_ticks_like_float_out_boy_pid()
     assert_current(
         second.state.pid.integral_current,
         motor_current(Current::from_amps(2.0)),
+    );
+}
+
+#[test]
+fn balance_loop_preserves_multisample_pid_trajectory() {
+    let config = LoopConfig {
+        kp: AngleCurrentGain::new(1.25),
+        kp2: RateCurrentGain::new(0.35),
+        ki: IntegralCurrentGain::new(0.075),
+        kp_brake: PidScale::new(1.8),
+        kp2_brake: PidScale::new(0.65),
+        ki_limit: motor_current_limit(Current::from_amps(50.0)),
+        ..base_config()
+    };
+    let inputs = [
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(4.25)),
+            balance_pitch: AngleDegrees::from_degrees(1.5),
+            roll: roll(AngleRadians::from_radians(0.3)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(12.5),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(-4.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(1_200.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-2.0)),
+            balance_pitch: AngleDegrees::from_degrees(0.75),
+            roll: roll(AngleRadians::from_radians(-0.4)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(-6.0),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(8.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(-1_500.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(1.0)),
+            balance_pitch: AngleDegrees::from_degrees(-0.25),
+            roll: roll(AngleRadians::from_radians(0.7)),
+            gyro_pitch: AngularVelocity::from_degrees_per_second(3.0),
+            gyro_yaw: AngularVelocity::from_degrees_per_second(9.0),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(250.0)),
+            ..base_input()
+        },
+    ];
+    let mut state = base_state();
+    let actual = inputs.map(|input| {
+        let output = advance_loop(config, input, state);
+        state = output.state;
+        [
+            output.requested_current.current().as_amps(),
+            state.pid.integral_current.current().as_amps(),
+            state.pid.kp_brake_scale.value(),
+            state.pid.kp2_brake_scale.value(),
+            state.pid.kp_accel_scale.value(),
+            state.pid.kp2_accel_scale.value(),
+        ]
+    });
+
+    assert_eq!(
+        actual.map(|sample| sample.map(f32::to_bits)),
+        [
+            [
+                1_015_909_680,
+                1_045_639_988,
+                1_065_420_325,
+                1_065_294_496,
+                1_065_353_216,
+                1_065_353_216,
+            ],
+            [
+                3_195_649_302,
+                0,
+                1_065_419_654,
+                1_065_295_083,
+                1_065_420_325,
+                1_065_294_496,
+            ],
+            [
+                3_198_952_061,
+                1_035_993_088,
+                1_065_418_990,
+                1_065_295_664,
+                1_065_419_654,
+                1_065_295_083,
+            ],
+        ],
     );
 }
 
@@ -386,11 +471,12 @@ fn balance_loop_unit_filters_booster_and_softstart_like_float_out_boy_main_loop(
 
 #[test]
 fn balance_loop_unit_booster_proportional_subtracts_brake_tilt_like_float_out_boy_main_loop() {
-    let proportional = Proportional::from_input(
-        setpoint(AngleDegrees::from_degrees(5.0)),
-        setpoint(AngleDegrees::from_degrees(5.0)),
-        AngleDegrees::from_degrees(0.0),
-    );
+    let proportional = LoopInput {
+        setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+        brake_tilt_setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+        ..base_input()
+    }
+    .booster_proportional();
 
     // Upstream subtracts brake tilt from booster proportional before
     // `booster_update` at `third_party/float-out-boy/src/main.c:921-922`.
@@ -435,27 +521,72 @@ fn balance_loop_unit_booster_subtracts_brake_tilt_like_float_out_boy_main_loop()
 
 #[test]
 fn booster_profile_deadbands_ramps_and_saturates_like_float_out_boy_booster() {
-    let profile = Profile {
-        current: motor_current(Current::from_amps(20.0)),
-        angle: AngleDegrees::from_degrees(1.0),
-        ramp: AngleDegrees::from_degrees(2.0),
+    let config = LoopConfig {
+        booster_current: motor_current(Current::from_amps(20.0)),
+        booster_angle: AngleDegrees::from_degrees(1.0),
+        booster_ramp: AngleDegrees::from_degrees(2.0),
+        ..base_config()
+    };
+    let target = |angle| {
+        Branch::Accel.target_current(
+            config,
+            electrical_speed(Rpm::ZERO),
+            Proportional::new(AngleDegrees::from_degrees(angle)),
+        )
     };
 
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(0.5))),
-        motor_current(Current::from_amps(0.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(2.0))),
-        motor_current(Current::from_amps(10.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(-2.0))),
-        motor_current(Current::from_amps(-10.0)),
-    );
-    assert_current(
-        profile.target_current(Proportional::new(AngleDegrees::from_degrees(4.0))),
-        motor_current(Current::from_amps(20.0)),
+    assert_current(target(0.5), motor_current(Current::from_amps(0.0)));
+    assert_current(target(2.0), motor_current(Current::from_amps(10.0)));
+    assert_current(target(-2.0), motor_current(Current::from_amps(-10.0)));
+    assert_current(target(4.0), motor_current(Current::from_amps(20.0)));
+}
+
+#[test]
+fn balance_loop_preserves_multisample_booster_trajectory() {
+    let config = LoopConfig {
+        booster_angle: AngleDegrees::from_degrees(2.0),
+        booster_ramp: AngleDegrees::from_degrees(4.0),
+        booster_current: motor_current(Current::from_amps(20.0)),
+        brkbooster_angle: AngleDegrees::from_degrees(3.0),
+        brkbooster_ramp: AngleDegrees::from_degrees(5.0),
+        brkbooster_current: motor_current(Current::from_amps(15.0)),
+        ..base_config()
+    };
+    let inputs = [
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(3.0)),
+            motor_current: motor_current(Current::from_amps(1.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(5.0)),
+            motor_current: motor_current(Current::from_amps(1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(8_000.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-5.0)),
+            motor_current: motor_current(Current::from_amps(-1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(8_000.0)),
+            ..base_input()
+        },
+        LoopInput {
+            setpoint: setpoint(AngleDegrees::from_degrees(-10.0)),
+            motor_current: motor_current(Current::from_amps(-1.0)),
+            motor_erpm: electrical_speed(Rpm::from_revolutions_per_minute(15_000.0)),
+            ..base_input()
+        },
+    ];
+    let mut state = base_state();
+    let actual = inputs.map(|input| {
+        let output = advance_loop(config, input, state);
+        state = output.state;
+        state.booster_current.current().as_amps().to_bits()
+    });
+
+    assert_eq!(
+        actual,
+        [1_028_443_340, 1_047_423_964, 1_041_227_914, 3_190_080_251]
     );
 }
 
