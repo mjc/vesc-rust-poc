@@ -262,8 +262,8 @@ impl FloatOutBoyPackageState {
                 &payloads,
                 item,
                 self.remote_control.input(),
-                self.ride_modifiers.atr_accel_diff(),
-                self.ride_modifiers.atr_speed_boost(),
+                self.ride_modifiers.atr_accel_diff().as_erpm_delta(),
+                self.ride_modifiers.atr_speed_boost().as_units(),
             ))
         });
         let mut sample = [0; SAMPLE_SIZE];

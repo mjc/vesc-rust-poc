@@ -17,10 +17,10 @@ use crate::domain::{
     FloatOutBoyWheelSlipState,
 };
 use crate::leds::{
-    FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
-    FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+    FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
+    FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
     FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder, FloatOutBoyLedTransition,
-    FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
+    FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig, FloatOutBoyStatusBarIdleTimeout,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::LoaderInfo;
@@ -41,9 +41,8 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 }
 
 #[test]
-fn package_author_builds_source_startup_all_data_payload() {
-    let payloads = FloatOutBoyAllDataPayloads::source_startup();
-    assert_eq!(payloads, FloatOutBoyAllDataPayloads::source_startup());
+fn package_author_encodes_default_all_data_payload() {
+    let payloads = FloatOutBoyAllDataPayloads::default();
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
         FloatOutBoyAllDataMode::with_mode4(),
     ));
@@ -244,7 +243,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (99, FloatOutBoyAppDataCommand::LcmDebug),
     ];
 
-    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 101);
+    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), 101);
     assert!(commands.into_iter().all(|(id, command)| {
         FloatOutBoyAppDataCommand::try_from_id(id)
             .is_ok_and(|parsed| parsed == command && parsed.id() == id)
@@ -260,7 +259,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
 #[test]
 fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     let request = FloatOutBoyAllDataRequest::parse(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
         FloatOutBoyAppDataCommand::GetAllData.id(),
         4,
     ])
@@ -273,7 +272,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     assert!(request.mode().includes_mode4());
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id()
         ])
         .expect_err("truncated request should be rejected"),
@@ -286,7 +285,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::PrintInfo.id(),
             4
         ])
@@ -295,7 +294,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
             FloatOutBoyAppDataCommand::GetAllData.id(),
             9
         ])
@@ -796,7 +795,7 @@ fn package_author_reads_led_wiring_config_without_raw_numbers() {
         24,
         FloatOutBoyLedColorOrder::Grbw,
     )
-    .with_reverse(true);
+    .reversed();
 
     assert_eq!(FloatOutBoyLedPin::B6.id(), 0);
     assert_eq!(FloatOutBoyLedPin::B7.id(), 1);
@@ -824,7 +823,7 @@ fn package_author_reads_led_bar_config_without_raw_ids() {
         FloatOutBoyLedColor::Gold,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Pulse,
-        1.5,
+        FloatOutBoyLedAnimationSpeed::from_units(1.5),
     );
 
     let color_ids = [
@@ -898,13 +897,13 @@ fn package_author_reads_led_bar_config_without_raw_ids() {
     assert_eq!(bar.primary_color(), FloatOutBoyLedColor::Gold);
     assert_eq!(bar.secondary_color(), FloatOutBoyLedColor::Black);
     assert_eq!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Pulse);
-    assert!((bar.animation_speed() - 1.5).abs() < f32::EPSILON);
+    assert!((bar.animation_speed().as_units() - 1.5).abs() < f32::EPSILON);
 }
 
 #[test]
 fn package_author_reads_status_bar_config_without_raw_scalars() {
     let status = FloatOutBoyStatusBarConfig::new(
-        30,
+        FloatOutBoyStatusBarIdleTimeout::from_seconds(30),
         Ratio::from_ratio_const(0.12),
         Ratio::from_ratio_const(0.25),
         Ratio::from_ratio_const(0.70),
@@ -912,7 +911,7 @@ fn package_author_reads_status_bar_config_without_raw_scalars() {
     )
     .showing_sensors_while_running();
 
-    assert_eq!(status.idle_timeout(), 30);
+    assert_eq!(status.idle_timeout().as_seconds(), 30);
     assert!((status.duty_threshold().as_ratio() - 0.12).abs() < f32::EPSILON);
     assert!((status.red_bar_percentage().as_ratio() - 0.25).abs() < f32::EPSILON);
     assert!(status.shows_sensors_while_running());
@@ -927,17 +926,17 @@ fn package_author_composes_leds_config_without_raw_flags() {
         FloatOutBoyLedColor::WhiteFull,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Solid,
-        1.0,
+        FloatOutBoyLedAnimationSpeed::from_units(1.0),
     );
     let taillights = FloatOutBoyLedBarConfig::new(
         Ratio::from_ratio_const(0.5),
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Pulse,
-        1.5,
+        FloatOutBoyLedAnimationSpeed::from_units(1.5),
     );
     let status = FloatOutBoyStatusBarConfig::new(
-        45,
+        FloatOutBoyStatusBarIdleTimeout::from_seconds(45),
         Ratio::from_ratio_const(0.10),
         Ratio::from_ratio_const(0.20),
         Ratio::from_ratio_const(0.75),
@@ -979,6 +978,6 @@ fn package_author_composes_leds_config_without_raw_flags() {
         leds.rear().animation_mode(),
         FloatOutBoyLedAnimationMode::Pulse
     );
-    assert_eq!(leds.status().idle_timeout(), 45);
+    assert_eq!(leds.status().idle_timeout().as_seconds(), 45);
     assert_eq!(leds.status_idle().primary_color(), FloatOutBoyLedColor::Red);
 }

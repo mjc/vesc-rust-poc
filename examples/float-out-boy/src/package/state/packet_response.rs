@@ -64,7 +64,7 @@ impl FloatOutBoyPackageState {
                 let response = encode_float_out_boy_get_realtime_data_response_with_remote(
                     &self.all_data_payloads,
                     self.remote_control.input(),
-                    self.ride_modifiers.atr_accel_diff(),
+                    self.ride_modifiers.atr_accel_diff().as_erpm_delta(),
                 );
                 reply(&response)
             }
@@ -100,11 +100,7 @@ impl FloatOutBoyPackageState {
                     base.footpad().state(),
                     base.status().beep_reason(),
                 )
-                .with_fatal_error(if self.alert_tracker.fatal_error() {
-                    crate::domain::FloatOutBoyFatalErrorState::Present
-                } else {
-                    crate::domain::FloatOutBoyFatalErrorState::None
-                })
+                .with_fatal_error(self.alert_tracker.fatal_error())
                 .with_data_recorder(self.data_recorder.flags());
                 let tail = FloatOutBoyRealtimeTail::new(
                     self.alert_tracker.firmware_fault_active(),
@@ -115,8 +111,8 @@ impl FloatOutBoyPackageState {
                     header,
                     tail,
                     self.remote_control.input(),
-                    self.ride_modifiers.atr_accel_diff(),
-                    self.ride_modifiers.atr_speed_boost(),
+                    self.ride_modifiers.atr_accel_diff().as_erpm_delta(),
+                    self.ride_modifiers.atr_speed_boost().as_units(),
                 );
                 reply(response.as_bytes())
             }
