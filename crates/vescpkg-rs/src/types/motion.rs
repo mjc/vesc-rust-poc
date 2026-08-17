@@ -56,7 +56,7 @@ impl PidPositionOffsetPersistence {
 macro_rules! speed_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Speed);
 
@@ -77,7 +77,7 @@ macro_rules! speed_type {
 macro_rules! distance_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Distance);
 
@@ -98,7 +98,7 @@ macro_rules! distance_type {
 macro_rules! mechanical_rpm_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(Rpm);
 
@@ -140,7 +140,7 @@ macro_rules! electrical_rpm_type {
 macro_rules! tachometer_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         #[repr(transparent)]
         pub struct $name(UnitTachometerSteps);
 
@@ -166,7 +166,7 @@ macro_rules! tachometer_type {
 macro_rules! angle_degrees_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(AngleDegrees);
 

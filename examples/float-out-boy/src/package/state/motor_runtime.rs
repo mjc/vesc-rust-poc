@@ -14,7 +14,7 @@ use vescpkg_rs::prelude::{
 const CURRENT_FILTER_Q: f32 = 0.707;
 const MOTOR_DATA_SMOOTHING_FACTOR: f32 = 0.01;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(super) struct FloatOutBoyMotorCurrentFilter {
     a0: f32,
     a1: f32,
@@ -27,19 +27,6 @@ pub(super) struct FloatOutBoyMotorCurrentFilter {
 }
 
 impl FloatOutBoyMotorCurrentFilter {
-    pub(super) const fn source_startup() -> Self {
-        Self {
-            a0: 0.0,
-            a1: 0.0,
-            a2: 0.0,
-            b1: 0.0,
-            b2: 0.0,
-            z1: 0.0,
-            z2: 0.0,
-            enabled: false,
-        }
-    }
-
     fn configure(&mut self, frequency: Frequency, sample_rate: SampleRate) {
         self.enabled = frequency.is_positive();
         if self.enabled {

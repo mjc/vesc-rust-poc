@@ -1,10 +1,10 @@
 use super::FloatOutBoyPackageState;
-use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyFootpadState};
+use crate::domain::FloatOutBoyFootpadState;
 use vescpkg_rs::prelude::{AdcVoltage, Voltage};
 
 #[test]
 fn footpad_runtime_refresh_decodes_adc_like_float_out_boy_sensor_update() {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     state.refresh_footpad_runtime_state(
         AdcVoltage::new(Voltage::from_volts(2.5)),

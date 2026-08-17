@@ -41,8 +41,8 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 }
 
 #[test]
-fn package_author_builds_source_startup_all_data_payload() {
-    let payloads = FloatOutBoyAllDataPayloads::source_startup();
+fn package_author_encodes_default_all_data_payload() {
+    let payloads = FloatOutBoyAllDataPayloads::default();
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
         FloatOutBoyAllDataMode::with_mode4(),
     ));
@@ -316,9 +316,7 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
     .with_charging(FloatOutBoyChargingState::Charging)
     .with_wheelslip(FloatOutBoyWheelSlipState::Detected)
     .with_darkride(FloatOutBoyDarkRideState::Active);
-    let recorder = FloatOutBoyDataRecorderFlags::inactive()
-        .with_recording()
-        .with_autostop();
+    let recorder = FloatOutBoyDataRecorderFlags::RECORDING | FloatOutBoyDataRecorderFlags::AUTOSTOP;
     let header = FloatOutBoyRealtimeDataHeader::new(
         TimestampTicks::from_ticks(123_456),
         ride_state,

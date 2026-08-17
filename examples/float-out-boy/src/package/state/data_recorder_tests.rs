@@ -1,4 +1,4 @@
-use super::FloatOutBoyPackageState;
+use super::{DataRecorderTrigger, FloatOutBoyPackageState};
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
 use crate::package::test_support::sample_all_data_payloads;
 use std::vec::Vec;
@@ -119,11 +119,11 @@ fn recorder_control_preserves_autostart_and_autostop_policy() {
 #[test]
 fn recorder_triggers_and_overwrites_the_oldest_sample_like_refloat() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-    state.trigger_data_recorder(true);
+    state.trigger_data_recorder(DataRecorderTrigger::Engage);
     for timestamp in 1..=25 {
         state.sample_data_recorder(TimestampTicks::from_ticks(timestamp));
     }
-    state.trigger_data_recorder(false);
+    state.trigger_data_recorder(DataRecorderTrigger::Disengage);
     state.sample_data_recorder(TimestampTicks::from_ticks(6));
 
     let (_, header) = handle(
@@ -303,14 +303,14 @@ fn engage_and_disengage_cover_every_autostart_autostop_combination() {
             );
         }
 
-        state.trigger_data_recorder(true);
+        state.trigger_data_recorder(DataRecorderTrigger::Engage);
         let (_, engaged) = handle(
             &mut state,
             &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),
         );
         assert_eq!(engaged[0][3] & 1 != 0, expected_after_engage);
 
-        state.trigger_data_recorder(false);
+        state.trigger_data_recorder(DataRecorderTrigger::Disengage);
         let (_, disengaged) = handle(
             &mut state,
             &request(FloatOutBoyAppDataCommand::RealtimeData, &[]),

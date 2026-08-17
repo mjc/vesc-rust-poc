@@ -8,10 +8,12 @@
 // C map: IDs mirror `third_party/float-out-boy/src/state.h:23-58`.
 vescpkg_rs::wire_enum! {
     /// Float Out Boy top-level run state.
+    #[derive(Default)]
     pub enum FloatOutBoyRunState {
         /// Package is disabled.
         Disabled = 0,
         /// Package is starting up.
+        #[default]
         Startup = 1,
         /// Package is ready but not actively balancing.
         Ready = 2,
@@ -22,8 +24,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy runtime mode.
+    #[derive(Default)]
     pub enum FloatOutBoyMode {
         /// Normal ride mode.
+        #[default]
         Normal = 0,
         /// Hand-test mode.
         HandTest = 1,
@@ -34,8 +38,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy stop reason.
+    #[derive(Default)]
     pub enum FloatOutBoyStopCondition {
         /// No stop condition is active.
+        #[default]
         None = 0,
         /// Pitch angle fault.
         Pitch = 1,
@@ -54,8 +60,10 @@ vescpkg_rs::wire_enum! {
 
 vescpkg_rs::wire_enum! {
     /// Float Out Boy setpoint adjustment or pushback reason.
+    #[derive(Default)]
     pub enum FloatOutBoySetpointAdjustment {
         /// No adjustment.
+        #[default]
         None = 0,
         /// Centering adjustment.
         Centering = 1,
@@ -89,18 +97,20 @@ impl FloatOutBoySetpointAdjustment {
 }
 
 /// Float Out Boy charging state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyChargingState {
     /// Not charging.
+    #[default]
     NotCharging,
     /// Charging is active.
     Charging,
 }
 
 /// Float Out Boy wheel-slip state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyWheelSlipState {
     /// No wheel slip detected.
+    #[default]
     None,
     /// Wheel slip detected.
     Detected,
@@ -117,9 +127,10 @@ pub enum FloatOutBoyTractionControlState {
 }
 
 /// Float Out Boy darkride/upside-down state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyDarkRideState {
     /// Board is upright.
+    #[default]
     Upright,
     /// Darkride/upside-down state is active.
     Active,
@@ -128,8 +139,10 @@ pub enum FloatOutBoyDarkRideState {
 // C map: IDs mirror `third_party/float-out-boy/src/main.c:61-80`.
 vescpkg_rs::wire_enum! {
     /// Float Out Boy beeper reason.
+    #[derive(Default)]
     pub enum FloatOutBoyBeepReason {
         /// No beep reason.
+        #[default]
         None = 0,
         /// Low-voltage warning.
         LowVoltage = 1,
@@ -172,65 +185,37 @@ vescpkg_rs::wire_enum! {
     }
 }
 
-/// Float Out Boy data-recorder status flags sent in realtime data.
-///
-/// C map: upstream packs fatal/data-recorder bits into realtime `extra_flags`
-/// at `third_party/float-out-boy/src/main.c:1927-1930`.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct FloatOutBoyDataRecorderFlags {
-    recording: bool,
-    autostart: bool,
-    autostop: bool,
+bitflags::bitflags! {
+    /// Float Out Boy data-recorder status flags sent in realtime data.
+    ///
+    /// C map: upstream packs fatal/data-recorder bits into realtime `extra_flags`
+    /// at `third_party/float-out-boy/src/main.c:1927-1930`.
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub struct FloatOutBoyDataRecorderFlags: u8 {
+        /// Data recording is active.
+        const RECORDING = 1 << 0;
+        /// Recording starts automatically when the board engages.
+        const AUTOSTART = 1 << 1;
+        /// Recording stops automatically when the board disengages.
+        const AUTOSTOP = 1 << 2;
+    }
 }
 
 impl FloatOutBoyDataRecorderFlags {
-    /// Return inactive data-recorder flags.
-    #[must_use]
-    pub const fn inactive() -> Self {
-        Self {
-            recording: false,
-            autostart: false,
-            autostop: false,
-        }
-    }
-
-    /// Return flags with recording enabled.
-    #[must_use]
-    pub const fn with_recording(mut self) -> Self {
-        self.recording = true;
-        self
-    }
-
-    /// Return flags with autostart enabled.
-    #[must_use]
-    pub const fn with_autostart(mut self) -> Self {
-        self.autostart = true;
-        self
-    }
-
-    /// Return flags with autostop enabled.
-    #[must_use]
-    pub const fn with_autostop(mut self) -> Self {
-        self.autostop = true;
-        self
-    }
-
     pub(crate) const fn extra_flags_compat(self, fatal_error: FloatOutBoyFatalErrorState) -> u8 {
         let fatal = match fatal_error {
             FloatOutBoyFatalErrorState::None => 0,
             FloatOutBoyFatalErrorState::Present => 0x8,
         };
-        let autostop = if self.autostop { 0x4 } else { 0 };
-        let autostart = if self.autostart { 0x2 } else { 0 };
-        let recording = if self.recording { 0x1 } else { 0 };
-        fatal | autostop | autostart | recording
+        fatal | self.bits()
     }
 }
 
 /// Float Out Boy fatal-error state for realtime-data extra flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FloatOutBoyFatalErrorState {
     /// No fatal error is active.
+    #[default]
     None,
     /// Fatal error is active.
     Present,

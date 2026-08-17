@@ -3,7 +3,7 @@ use super::{
     lock_test_float_out_boy_config_state, set_float_out_boy_custom_config_for_test,
 };
 use crate::config::FLOAT_OUT_BOY_CONFIG_LEN;
-use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyMode, FloatOutBoyRunState};
+use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
 use crate::package::FloatOutBoyPackageState;
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, default_float_out_boy_config_bytes, editable_config_from_state,
@@ -134,7 +134,7 @@ fn custom_config_current_callback_reads_state_serialized_config() {
 fn custom_config_set_callback_stores_serialized_config_in_state() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(1_500);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.replace_idle_epoch_for_test(TimestampTicks::from_ticks(7));
     let mut incoming = default_float_out_boy_config_bytes();
     incoming[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();

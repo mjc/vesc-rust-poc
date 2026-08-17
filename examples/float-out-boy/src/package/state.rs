@@ -26,8 +26,8 @@ use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit, InputCurrent,
-    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm, Temperature,
-    TemperatureLimitStart, TimestampTicks, Voltage,
+    MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
+    TemperatureLimitStart, TimestampTicks,
 };
 use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
 
@@ -79,7 +79,7 @@ pub(in crate::package) use config_storage::{
 };
 #[cfg(any(test, target_arch = "arm"))]
 pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
-use data_recorder::DataRecorderState;
+use data_recorder::{DataRecorderState, DataRecorderTrigger};
 use flywheel::FloatOutBoyFlywheelRuntime;
 #[cfg(any(test, target_arch = "arm"))]
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
@@ -148,8 +148,27 @@ struct UpsideDownRuntimeFlags {
     started: bool,
 }
 
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct KonamiRuntime {
+    flywheel: FloatOutBoyKonami,
+    headlights_on: FloatOutBoyKonami,
+    headlights_off: FloatOutBoyKonami,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl Default for KonamiRuntime {
+    fn default() -> Self {
+        Self {
+            flywheel: FloatOutBoyKonami::flywheel(),
+            headlights_on: FloatOutBoyKonami::headlights_on(),
+            headlights_off: FloatOutBoyKonami::headlights_off(),
+        }
+    }
+}
+
 /// Float Out Boy package state.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
 pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
@@ -162,11 +181,7 @@ pub struct FloatOutBoyPackageState {
     lcm: LcmState,
     led_runtime_overrides: LedRuntimeOverrides,
     #[cfg(any(test, target_arch = "arm"))]
-    flywheel_konami: FloatOutBoyKonami,
-    #[cfg(any(test, target_arch = "arm"))]
-    headlights_on_konami: FloatOutBoyKonami,
-    #[cfg(any(test, target_arch = "arm"))]
-    headlights_off_konami: FloatOutBoyKonami,
+    konami: KonamiRuntime,
     #[cfg(any(test, target_arch = "arm"))]
     haptic_feedback: HapticFeedbackState,
     beeper: FloatOutBoyBeeper,
@@ -234,88 +249,10 @@ impl FloatOutBoyPackageState {
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
-        let serialized_config = FloatOutBoyConfigImage::defaults();
-        Self {
-            all_data_payloads,
-            serialized_config,
-            config_load_outcome: FloatOutBoyConfigLoadOutcome::NotAttempted,
-            startup_configured: false,
-            firmware_imu_migration: FirmwareImuMigration::Pending,
-            data_recorder: DataRecorderState::default(),
-            alert_tracker: AlertTrackerState::default(),
-            lcm: LcmState::new(
-                serialized_config.hardware_led_mode_id(),
-                serialized_config.lights_off_when_lifted(),
-            ),
-            led_runtime_overrides: LedRuntimeOverrides::default(),
-            #[cfg(any(test, target_arch = "arm"))]
-            flywheel_konami: FloatOutBoyKonami::flywheel(),
-            #[cfg(any(test, target_arch = "arm"))]
-            headlights_on_konami: FloatOutBoyKonami::headlights_on(),
-            #[cfg(any(test, target_arch = "arm"))]
-            headlights_off_konami: FloatOutBoyKonami::headlights_off(),
-            #[cfg(any(test, target_arch = "arm"))]
-            haptic_feedback: HapticFeedbackState::new(),
-            beeper: FloatOutBoyBeeper::new(serialized_config.beeper_enabled()),
-            beeper_flags: BeeperRuntimeFlags::default(),
-            #[cfg(any(test, target_arch = "arm"))]
-            bms: bms_runtime::BmsRuntimeState::source_startup(),
-            flywheel: FloatOutBoyFlywheelRuntime::source_startup(),
-            ride_flags: RideRuntimeFlags::default(),
-            motor_control: FloatOutBoyMotorControl::new(),
-            balance_filter: BalanceFilter::source_startup(),
-            balance_loop: LoopState::source_startup(),
-            reverse_total_erpm: Rpm::ZERO,
-            motor_kinematics: MotorKinematicsTracker::default(),
-            motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter::source_startup(),
-            remote_control: RemoteControlState::default(),
-            runtime_board_setpoint: all_data_payloads.base().setpoints().board().angle(),
-            ride_modifiers: RideModifierState::default(),
-            charging_ticks: TimestampTicks::from_ticks(0),
-            engage_ticks: TimestampTicks::from_ticks(0),
-            disengage_ticks: TimestampTicks::from_ticks(0),
-            idle_ticks: TimestampTicks::from_ticks(0),
-            nag_ticks: TimestampTicks::from_ticks(0),
-            idle_voltage: BatteryVoltage::new(Voltage::ZERO),
-            fault_switch_ticks: TimestampTicks::from_ticks(0),
-            fault_switch_half_ticks: TimestampTicks::from_ticks(0),
-            reverse_ticks: TimestampTicks::from_ticks(0),
-            fault_angle_pitch_ticks: TimestampTicks::from_ticks(0),
-            fault_angle_roll_ticks: TimestampTicks::from_ticks(0),
-            high_voltage_ticks: TimestampTicks::from_ticks(0),
-            wheelslip_ticks: TimestampTicks::from_ticks(0),
-            upside_down_fault_ticks: TimestampTicks::from_ticks(0),
-            upside_down_flags: UpsideDownRuntimeFlags::default(),
-            motor_duty_raw: Ratio::from_ratio_const(0.0),
-            duty_max_with_margin: DutyCycleLimit::new(Ratio::from_ratio_const(0.0)),
-            motor_current_max: MotorCurrentLimit::new(Current::ZERO),
-            motor_current_min: MotorCurrentLimit::new(Current::ZERO),
-            battery_current_max: InputCurrent::new(Current::ZERO),
-            battery_current_min: InputCurrent::new(Current::ZERO),
-            mosfet_temperature: MosfetTemperature::new(Temperature::ZERO),
-            motor_temperature: MotorTemperature::new(Temperature::ZERO),
-            mosfet_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
-            motor_temperature_limit_start: TemperatureLimitStart::new(Temperature::ZERO),
-            battery_cell_count: None,
-            #[cfg(test)]
-            motor_config_initialized: false,
-            #[cfg(any(test, target_arch = "arm"))]
-            aux_odometer: OdometerMeters::from_meters(0),
-            #[cfg(any(test, target_arch = "arm"))]
-            aux_backup_failures: 0,
-            #[cfg(any(test, target_arch = "arm"))]
-            aux_motor_config_refresh_ticks: TimestampTicks::from_ticks(0),
-            #[cfg(test)]
-            internal_leds: None,
-            #[cfg(target_arch = "arm")]
-            internal_leds: None,
-            #[cfg(any(test, target_arch = "arm"))]
-            internal_led_refresh_pending: false,
-            #[cfg(any(test, target_arch = "arm"))]
-            internal_led_confirmation_pending: None,
-            #[cfg(any(test, target_arch = "arm"))]
-            firmware_version: None,
-        }
+        let mut state = Self::default();
+        state.all_data_payloads = all_data_payloads;
+        state.runtime_board_setpoint = state.all_data_payloads.base().setpoints().board().angle();
+        state
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -363,8 +300,8 @@ impl FloatOutBoyPackageState {
     /// at `third_party/float-out-boy/src/main.c:1160-1185`.
     #[cfg(any(test, target_arch = "arm"))]
     #[cfg(test)]
-    pub(super) fn from_persisted_config(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
-        let mut state = Self::new(all_data_payloads);
+    pub(super) fn from_persisted_config() -> Self {
+        let mut state = Self::default();
         state.load_persisted_config_on_main_thread(vescpkg_rs::FirmwareClock::current_timestamp());
         state.configure_loaded_config_on_main_thread();
         state
@@ -741,7 +678,8 @@ impl FloatOutBoyPackageState {
             if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
                 && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
                 && self
-                    .flywheel_konami
+                    .konami
+                    .flywheel
                     .check_flywheel(current_pitch, footpad, system_time_ticks)
             {
                 self.start_internal_led_confirmation(system_time_ticks);
@@ -767,7 +705,7 @@ impl FloatOutBoyPackageState {
         }
         let status = self.led_runtime_status();
         if !status.are_headlights_on()
-            && self.headlights_on_konami.check(footpad, system_time_ticks)
+            && self.konami.headlights_on.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
             self.apply_led_runtime_overrides(LedRuntimeOverrides {
@@ -776,7 +714,7 @@ impl FloatOutBoyPackageState {
             });
         }
         if status.are_headlights_on()
-            && self.headlights_off_konami.check(footpad, system_time_ticks)
+            && self.konami.headlights_off.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
             self.apply_led_runtime_overrides(LedRuntimeOverrides {

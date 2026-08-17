@@ -4,7 +4,7 @@ use std::vec::Vec;
 use vescpkg_rs::test_support::FirmwareTest;
 
 fn external_state() -> FloatOutBoyPackageState {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.set_lcm_hardware_mode_for_test(2);
     state
 }
@@ -52,7 +52,7 @@ fn dispatch_payload(
 }
 
 fn external_configured_state() -> FloatOutBoyPackageState {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     let mut config = state.serialized_config.as_bytes().to_vec();
     config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
     assert!(state.store_serialized_config(&config));

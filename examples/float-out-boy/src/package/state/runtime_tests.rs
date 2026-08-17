@@ -4,7 +4,9 @@ use super::{
     transition::FloatOutBoyStopEvent,
 };
 use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
-use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
+use crate::bms::{
+    FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
+};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
@@ -29,7 +31,7 @@ use std::vec::Vec;
 #[test]
 fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
     let now = TimestampTicks::from_ticks(1_000_000);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     state.initialize_time_epochs(now);
 
@@ -43,7 +45,7 @@ fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
 
 #[test]
 fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     enable_bms(&mut state);
     state.initialize_time_epochs(TimestampTicks::from_ticks(10_000));
 
@@ -51,7 +53,7 @@ fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
 
     assert_eq!(
         state.bms_faults_for_test(),
-        crate::bms::FloatOutBoyBmsFaults::from_fault(crate::bms::FloatOutBoyBmsFault::Connection)
+        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
     );
 }
 
@@ -66,7 +68,7 @@ fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -97,7 +99,7 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_float_out
         .with_input_voltage(InputVoltage::new(Voltage::from_volts(60.0)))
         .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     telemetry.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     enable_beeper(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -132,7 +134,7 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
         .with_input_voltage(InputVoltage::new(Voltage::from_volts(58.0)))
         .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     telemetry.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     enable_beeper(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -192,7 +194,7 @@ fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_float_out_bo
 
 #[test]
 fn startup_balance_filter_uses_firmware_orientation_like_float_out_boy_data_init() {
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.initialize_balance_filter(ImuOrientation::from_quaternion(
         ImuQuaternion::from_components(
             ImuQuaternionW::new(0.995_004_2),
@@ -252,7 +254,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
     state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
     state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
@@ -317,7 +319,7 @@ fn disabled_config_applies_before_startup_ready_like_float_out_boy() {
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_disabled(true));
     });
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(state.store_serialized_config(&incoming));
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -512,7 +514,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
         )
         .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-6.75)));
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -554,7 +556,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
     let telemetry =
         FirmwareTest::new().with_d_axis_current(Some(DCurrent::new(Current::from_amps(-4.0))));
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut state = FloatOutBoyPackageState::default();
     state.refresh_runtime_state(telemetry.telemetry(), imu, now);
 
     let mut packet = Vec::new();
@@ -1251,7 +1253,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             JoystickY::new(SignedRatio::from_ratio_const(uart)),
             RemoteAge::new(VescSeconds::from_seconds(0.5)),
         );
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut state = FloatOutBoyPackageState::default();
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
             assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.2)));
@@ -1277,7 +1279,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             JoystickY::new(SignedRatio::from_ratio_const(0.8)),
             RemoteAge::new(VescSeconds::from_seconds(1.0)),
         );
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut state = FloatOutBoyPackageState::default();
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
@@ -1294,7 +1296,7 @@ fn controller_input_fails_closed_when_the_selected_optional_slot_is_absent() {
         let firmware = FirmwareTest::new();
         firmware.set_remote_supported(remote_type != 1);
         firmware.set_ppm_available(remote_type != 2);
-        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut state = FloatOutBoyPackageState::default();
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });

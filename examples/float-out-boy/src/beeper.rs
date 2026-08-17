@@ -50,6 +50,12 @@ pub(crate) struct FloatOutBoyBeeper {
     pending_level: Option<FloatOutBoyBeeperLevel>,
 }
 
+impl Default for FloatOutBoyBeeper {
+    fn default() -> Self {
+        Self::new(crate::config::FLOAT_OUT_BOY_DEFAULT_BEEPER_ENABLED)
+    }
+}
+
 impl FloatOutBoyBeeper {
     pub(crate) const fn new(enabled: bool) -> Self {
         Self {

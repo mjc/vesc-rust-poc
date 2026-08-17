@@ -22,7 +22,7 @@ fn tone_half_period_ticks(frequency: AudioFrequency, sample_rate: SampleRate) ->
 ///
 /// Upstream `MotorControl` stores `current_requested` and `requested_current`
 /// at `third_party/float-out-boy/src/motor_control.h:27-30`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct FloatOutBoyMotorControl {
     disabled: bool,
     requested_current: Option<MotorCurrent>,
@@ -40,19 +40,9 @@ pub(crate) struct FloatOutBoyMotorControl {
 }
 
 impl FloatOutBoyMotorControl {
-    #[inline]
-    pub(crate) const fn new() -> Self {
-        Self {
-            disabled: false,
-            requested_current: None,
-            parking_brake_active: false,
-            brake_timer_ticks: TimestampTicks::from_ticks(0),
-            tone_ticks: 0,
-            tone_counter: 0,
-            tone_high: false,
-            tone_intensity: MotorCurrent::new(Current::ZERO),
-            click_transitions_remaining: 0,
-        }
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
     #[inline]

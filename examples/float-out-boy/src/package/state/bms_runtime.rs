@@ -19,16 +19,18 @@ pub(super) struct BmsRuntimeState {
     alert_ticks: TimestampTicks,
 }
 
-impl BmsRuntimeState {
-    pub(super) const fn source_startup() -> Self {
+impl Default for BmsRuntimeState {
+    fn default() -> Self {
         Self {
-            sample: FloatOutBoyBmsSample::source_startup(),
+            sample: FloatOutBoyBmsSample::default(),
             faults: FloatOutBoyBmsFaults::NONE,
             start_ticks: None,
             alert_ticks: TimestampTicks::from_ticks(0),
         }
     }
+}
 
+impl BmsRuntimeState {
     pub(super) fn record_sample(&mut self, sample: FloatOutBoyBmsSample) {
         self.sample = sample;
     }

@@ -36,6 +36,12 @@ pub(crate) struct BalanceFilter {
     feedback: MahonyFeedbackConfig,
 }
 
+impl Default for BalanceFilter {
+    fn default() -> Self {
+        Self::source_startup()
+    }
+}
+
 impl BalanceFilter {
     pub(crate) const fn source_startup() -> Self {
         Self {

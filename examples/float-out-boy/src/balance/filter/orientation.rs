@@ -168,7 +168,7 @@ impl EstimatedOrientation {
     pub(super) fn normalize(&mut self) {
         // C map: `third_party/float-out-boy/src/balance_filter.c:38-40` uses
         // `1.0 / sqrtf(x)` to renormalize the quaternion.
-        let recip_norm = 1.0 / sqrt(self.length_squared());
+        let recip_norm = sqrt(self.length_squared()).recip();
         self.0[0] *= recip_norm;
         self.0[1] *= recip_norm;
         self.0[2] *= recip_norm;
