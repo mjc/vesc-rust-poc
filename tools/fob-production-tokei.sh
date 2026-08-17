@@ -2,21 +2,21 @@
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
-filtered_dir=$(mktemp -d "${TMPDIR:-/tmp}/fob-production.XXXXXX")
-trap 'rm -rf -- "$filtered_dir"' EXIT
-
 cd "$repo_root"
-for source in \
+
+exec nix run nixpkgs#tokei -- \
   examples/float-out-boy/src \
   crates/vesc-float-out-boy-protocol/src \
-  crates/vesc-float-out-boy-leds/src
-do
-  "${CARGO:-cargo}" run --quiet \
-    --manifest-path tools/fob-production-rust/Cargo.toml -- \
-    "$source" "$filtered_dir/$source"
-done
-source=crates/vescpkg-rs/src/stm32/float_out_boy_ws2812.rs
-"${CARGO:-cargo}" run --quiet \
-  --manifest-path tools/fob-production-rust/Cargo.toml -- \
-  "$source" "$filtered_dir/$source"
-nix run nixpkgs#tokei -- "$filtered_dir" --types Rust "$@"
+  crates/vesc-float-out-boy-leds/src \
+  crates/vescpkg-rs/src/stm32/float_out_boy_ws2812.rs \
+  crates/vescpkg-rs/src/stm32/circular_dma_pwm.rs \
+  --types Rust \
+  --exclude test \
+  --exclude tests \
+  --exclude test_support \
+  --exclude test.rs \
+  --exclude tests.rs \
+  --exclude test_support.rs \
+  --exclude '*_test.rs' \
+  --exclude '*_tests.rs' \
+  "$@"
