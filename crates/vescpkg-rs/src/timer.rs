@@ -1,6 +1,52 @@
 //! Wrapping VESC system-tick timer operations.
 
-use crate::{SYSTEM_TICK_RATE_HZ, SystemTicks, TimestampTicks, VescSeconds};
+use core::num::NonZeroU32;
+use core::time::Duration;
+
+use crate::{SYSTEM_TICK_RATE_HZ, SampleRate, SystemTicks, TimestampTicks, VescSeconds};
+
+/// System-tick timing for a fixed-rate package loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedRateLoopTiming {
+    nominal_ticks: NonZeroU32,
+}
+
+impl FixedRateLoopTiming {
+    /// Build loop timing from a requested sample rate.
+    #[must_use]
+    pub fn from_sample_rate(sample_rate: SampleRate) -> Self {
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        let ticks =
+            crate::protocol_buffer::saturating_trunc_f32_to_u32(tick_rate / sample_rate.as_hertz())
+                .max(1);
+        Self {
+            nominal_ticks: NonZeroU32::new(ticks).unwrap_or(NonZeroU32::MIN),
+        }
+    }
+
+    /// Return the nominal sleep duration before accounting for loop work.
+    #[must_use]
+    pub fn nominal_sleep(self) -> Duration {
+        ticks_to_duration(self.nominal_ticks.get())
+    }
+
+    /// Return the remaining sleep after rounding work time to system ticks.
+    #[must_use]
+    pub fn sleep_after_work(self, elapsed: VescSeconds) -> Duration {
+        let elapsed = elapsed.as_seconds();
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        if !elapsed.is_finite() || elapsed < 0.0 {
+            return self.nominal_sleep();
+        }
+        let work_ticks =
+            crate::protocol_buffer::saturating_trunc_f32_to_u32(elapsed * tick_rate + 0.5);
+        ticks_to_duration(self.nominal_ticks.get().saturating_sub(work_ticks).max(1))
+    }
+}
+
+fn ticks_to_duration(ticks: u32) -> Duration {
+    Duration::from_micros(u64::from(ticks).saturating_mul(1_000_000) / SYSTEM_TICK_RATE_HZ)
+}
 
 /// A restartable timer backed by the wrapping VESC system clock.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -79,9 +125,36 @@ pub fn timer_older(now: TimestampTicks, then: TimestampTicks, duration: VescSeco
 #[cfg(test)]
 mod tests {
     use super::{
-        WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
+        FixedRateLoopTiming, WrappingTimer, expire_timer_whole_seconds, timer_older,
+        timer_older_whole_seconds,
     };
-    use crate::{TimestampTicks, VescSeconds};
+    use crate::{SampleRate, TimestampTicks, VescSeconds};
+    use core::time::Duration;
+
+    #[test]
+    fn fixed_rate_loop_timing_rounds_work_to_system_ticks() {
+        let timing = FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
+
+        assert_eq!(timing.nominal_sleep(), Duration::from_micros(1_200));
+        assert_eq!(
+            timing.sleep_after_work(VescSeconds::from_seconds(0.000_31)),
+            Duration::from_micros(900),
+        );
+    }
+
+    #[test]
+    fn fixed_rate_loop_timing_retains_one_tick_after_delays() {
+        let timing = FixedRateLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
+
+        assert_eq!(
+            timing.sleep_after_work(VescSeconds::from_seconds(0.025)),
+            Duration::from_micros(100),
+        );
+        assert_eq!(
+            timing.sleep_after_work(VescSeconds::from_seconds(f32::NAN)),
+            timing.nominal_sleep(),
+        );
+    }
 
     #[test]
     fn whole_second_timers_preserve_strict_boundaries_and_wrapping() {

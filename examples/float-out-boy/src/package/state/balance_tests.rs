@@ -14,7 +14,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::REFLOAT_COMPAT_TORQUE_CONSTANT;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -28,14 +28,14 @@ fn configured_sample_rate(state: &FloatOutBoyPackageState) -> SampleRate {
 }
 
 fn integral_current_amps(state: &FloatOutBoyPackageState) -> f32 {
-    MotorTorqueConstant::REFLOAT_COMPAT
+    REFLOAT_COMPAT_TORQUE_CONSTANT
         .current_from_torque(state.balance_loop.pid.integral_torque)
         .as_amps()
 }
 
 fn torque_output_scale(state: &FloatOutBoyPackageState) -> f32 {
-    MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
-        / state.motor_torque_constant.newton_meters_per_amp()
+    REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp()
+        / state.motor_torque_constant().as_newton_meters_per_amp()
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     // `pid_update` clamps the I term at `third_party/float-out-boy/src/pid.c:40-46` before RUNNING
     // smooths it into `balance_current` at `third_party/float-out-boy/src/main.c:932-954`.
     let expected = (30.0 * torque_output_scale(&state))
-        .min(state.motor_current_max.current().as_amps())
+        .min(state.motor_current_limits.positive().current().as_amps())
         * ema_alpha(25.0, configured_sample_rate(&state));
     assert!((telemetry.commanded_current().current().as_amps() - expected).abs() < 0.0001);
 }
@@ -513,7 +513,7 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
     } else {
         unclamped_i
     };
-    let current_limit = state.motor_current_max.current().as_amps();
+    let current_limit = state.motor_current_limits.positive().current().as_amps();
     let new_current = ((setpoint_error * balance.kp().as_amps_per_degree() + expected_i)
         * torque_output_scale(state))
     .clamp(-current_limit, current_limit);

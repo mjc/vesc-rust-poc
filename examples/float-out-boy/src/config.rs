@@ -31,7 +31,7 @@ use vescpkg_rs::{
     CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
     CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
     CustomConfigRatioField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
-    CustomConfigWireByteField, WireByte,
+    CustomConfigWireByteField, SmoothSetpointConfig, WireByte,
 };
 
 mod flywheel;
@@ -89,34 +89,24 @@ pub(crate) struct FloatOutBoySetpointFilterConfig {
 }
 
 impl FloatOutBoySetpointFilterConfig {
-    const fn new(
-        time_constant: VescSeconds,
-        on_speed_time_constant: VescSeconds,
-        off_speed_time_constant: VescSeconds,
-        on_speed_limit: AngularVelocity,
-        off_speed_limit: AngularVelocity,
-    ) -> Self {
-        Self {
-            time_constant,
-            on_speed_time_constant,
-            off_speed_time_constant,
-            on_speed_limit,
-            off_speed_limit,
-        }
+    pub(crate) const fn smooth_setpoint_config(
+        self,
+        winddown_time_constant: VescSeconds,
+    ) -> SmoothSetpointConfig {
+        SmoothSetpointConfig::symmetric(
+            self.time_constant,
+            self.on_speed_time_constant,
+            self.off_speed_time_constant,
+            winddown_time_constant,
+            self.on_speed_limit,
+            self.off_speed_limit,
+        )
     }
 
-    pub(crate) const fn time_constant(self) -> VescSeconds {
-        self.time_constant
-    }
-    pub(crate) const fn on_speed_time_constant(self) -> VescSeconds {
-        self.on_speed_time_constant
-    }
-    pub(crate) const fn off_speed_time_constant(self) -> VescSeconds {
-        self.off_speed_time_constant
-    }
     pub(crate) const fn on_speed_limit(self) -> AngularVelocity {
         self.on_speed_limit
     }
+    #[cfg(test)]
     pub(crate) const fn off_speed_limit(self) -> AngularVelocity {
         self.off_speed_limit
     }
@@ -834,23 +824,23 @@ impl FloatOutBoyBalanceConfig<'_> {
     }
 
     pub(crate) fn torque_tilt_filter(self) -> FloatOutBoySetpointFilterConfig {
-        FloatOutBoySetpointFilterConfig::new(
-            self.torque_tilt_filter_time_constant(),
-            self.torque_tilt_filter_on_speed_time_constant(),
-            self.torque_tilt_filter_off_speed_time_constant(),
-            self.torque_tilt_filter_on_speed_limit(),
-            self.torque_tilt_filter_off_speed_limit(),
-        )
+        FloatOutBoySetpointFilterConfig {
+            time_constant: self.torque_tilt_filter_time_constant(),
+            on_speed_time_constant: self.torque_tilt_filter_on_speed_time_constant(),
+            off_speed_time_constant: self.torque_tilt_filter_off_speed_time_constant(),
+            on_speed_limit: self.torque_tilt_filter_on_speed_limit(),
+            off_speed_limit: self.torque_tilt_filter_off_speed_limit(),
+        }
     }
 
     pub(crate) fn atr_filter(self) -> FloatOutBoySetpointFilterConfig {
-        FloatOutBoySetpointFilterConfig::new(
-            self.atr_filter_time_constant(),
-            self.atr_filter_on_speed_time_constant(),
-            self.atr_filter_off_speed_time_constant(),
-            self.atr_filter_on_speed_limit(),
-            self.atr_filter_off_speed_limit(),
-        )
+        FloatOutBoySetpointFilterConfig {
+            time_constant: self.atr_filter_time_constant(),
+            on_speed_time_constant: self.atr_filter_on_speed_time_constant(),
+            off_speed_time_constant: self.atr_filter_off_speed_time_constant(),
+            on_speed_limit: self.atr_filter_on_speed_limit(),
+            off_speed_limit: self.atr_filter_off_speed_limit(),
+        }
     }
 }
 

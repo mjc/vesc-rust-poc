@@ -17,10 +17,8 @@ pub use circular_dma_pwm::DmaHalfWordBuffer;
 pub use circular_dma_pwm::DmaHalfWordStorage;
 pub use circular_dma_pwm::{Stm32F4CircularDmaPwm, Stm32F4CircularDmaPwmConfig};
 
-/// Provisional Float Out Boy/Refloat WS2812 driver.
-///
-/// This is intentionally package-specific rather than a generic VESC LED API.
-pub mod float_out_boy_ws2812;
+/// VESC STM32F4 WS2812 timer/DMA driver.
+pub mod ws2812;
 
 #[cfg(test)]
 mod circular_dma_pwm_tests {
