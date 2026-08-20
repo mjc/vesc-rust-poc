@@ -19,8 +19,210 @@ use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
     AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
-    MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
+    MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, SYSTEM_TICK_RATE_HZ, TimestampTicks,
 };
+
+fn persist_deferred_config_for_test(
+    state: &mut FloatOutBoyPackageState,
+    firmware: &FirmwareTest,
+    now: TimestampTicks,
+) -> bool {
+    let Some(config) = state.begin_deferred_config_persistence(now) else {
+        return false;
+    };
+    let stored = firmware.with_effects(|effects| super::store_persisted_config(effects, &config));
+    let migration = firmware.with_effects(super::migrate_legacy_firmware_imu_settings);
+    state.finish_config_persistence(&config, stored, now);
+    state.record_firmware_imu_migration(migration);
+    true
+}
+
+#[test]
+fn deferred_config_waits_until_stopped_and_persists_the_latest_appui_snapshot() {
+    let firmware = FirmwareTest::new();
+    let started = TimestampTicks::from_ticks(0);
+    let one_second = u32::try_from(SYSTEM_TICK_RATE_HZ).expect("system tick rate fits u32");
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    let mut first = FloatOutBoyConfigImage::defaults();
+    assert!(
+        first
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(6.0))
+    );
+    let mut second = first;
+    assert!(
+        second
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0))
+    );
+    let mut volatile = second;
+    assert!(
+        volatile
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(8.0))
+    );
+
+    for config in [first, second] {
+        state.commit_custom_config(config, false, started);
+        assert!(state.begin_active_config_persistence(started).is_none());
+        state.finish_configure_without_firmware_migration();
+    }
+    state.replace_active_config(&volatile);
+    state.all_data_payloads = sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    );
+    state.disengage_ticks.restart(started);
+
+    assert!(!persist_deferred_config_for_test(
+        &mut state,
+        &firmware,
+        TimestampTicks::from_ticks(one_second)
+    ));
+    assert!(persist_deferred_config_for_test(
+        &mut state,
+        &firmware,
+        TimestampTicks::from_ticks(one_second + 1)
+    ));
+
+    let persisted = firmware
+        .with_effects(|effects| {
+            firmware
+                .eeprom()
+                .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects)
+        })
+        .expect("the safely stopped flush must persist the pending image");
+    assert_eq!(&persisted[..second.as_bytes().len()], second.as_bytes());
+    assert_eq!(state.active_config_image(), volatile);
+    assert!(
+        state
+            .begin_deferred_config_persistence(TimestampTicks::from_ticks(one_second + 2))
+            .is_none()
+    );
+}
+
+#[test]
+fn running_config_save_defers_without_eeprom_writes() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    let mut config = FloatOutBoyConfigImage::defaults();
+    assert!(
+        config
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0))
+    );
+    state.replace_active_config(&config);
+
+    assert!(handle_config_command(
+        &firmware,
+        &mut state,
+        FloatOutBoyAppDataCommand::ConfigSave,
+        &[],
+    ));
+
+    assert_eq!(firmware.eeprom_write_count(), 0);
+    assert!(
+        state
+            .begin_deferred_config_persistence(TimestampTicks::from_ticks(u32::MAX))
+            .is_none()
+    );
+}
+
+#[test]
+fn failed_deferred_config_waits_for_another_ride_before_retrying() {
+    let firmware = FirmwareTest::new();
+    let one_second = u32::try_from(SYSTEM_TICK_RATE_HZ).expect("system tick rate fits u32");
+    let started = TimestampTicks::from_ticks(0);
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    let mut pending = FloatOutBoyConfigImage::defaults();
+    assert!(
+        pending
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0))
+    );
+    state.commit_custom_config(pending, false, started);
+    assert!(state.begin_active_config_persistence(started).is_none());
+    state.all_data_payloads = sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    );
+    state.disengage_ticks.restart(started);
+    firmware.fail_eeprom_write_after(0);
+
+    assert!(persist_deferred_config_for_test(
+        &mut state,
+        &firmware,
+        TimestampTicks::from_ticks(one_second + 1)
+    ));
+    let writes_after_failure = firmware.eeprom_write_count();
+    assert!(!persist_deferred_config_for_test(
+        &mut state,
+        &firmware,
+        TimestampTicks::from_ticks(one_second * 10)
+    ));
+    assert_eq!(firmware.eeprom_write_count(), writes_after_failure);
+
+    let rode_at = TimestampTicks::from_ticks(one_second * 11);
+    state.all_data_payloads = sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    );
+    state.refresh_running_epochs(rode_at);
+    state.all_data_payloads = sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    );
+    assert!(persist_deferred_config_for_test(
+        &mut state,
+        &firmware,
+        TimestampTicks::from_ticks(one_second * 12 + 1)
+    ));
+
+    let persisted = firmware
+        .with_effects(|effects| {
+            firmware
+                .eeprom()
+                .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects)
+        })
+        .expect("the next safe stop must retry the failed deferred snapshot");
+    assert_eq!(&persisted[..pending.as_bytes().len()], pending.as_bytes());
+}
+
+#[test]
+fn restart_before_the_safe_flush_restores_the_previous_persisted_config() {
+    let firmware = FirmwareTest::new();
+    let previous = FloatOutBoyConfigImage::defaults();
+    assert!(firmware.with_effects(|effects| super::store_persisted_config(effects, &previous)));
+    let started = TimestampTicks::from_ticks(0);
+    let mut running = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    let mut pending = previous;
+    assert!(
+        pending
+            .editor()
+            .set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0))
+    );
+    running.commit_custom_config(pending, false, started);
+    assert!(running.begin_active_config_persistence(started).is_none());
+
+    let loaded = firmware.with_effects(super::load_persisted_config);
+    let mut restarted = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    restarted.begin_restore_persisted_config(&loaded, started);
+
+    assert_eq!(restarted.active_config_image(), previous);
+    assert_ne!(restarted.active_config_image(), pending);
+}
 
 #[test]
 fn cutoff_axis_fault_angles_use_one_byte_integer_degrees() {
@@ -485,7 +687,7 @@ fn assert_restored_runtime_state(
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::External.id()
+        crate::lcm::FloatOutBoyLedMode::External
     );
     assert_eq!(
         state
@@ -560,7 +762,7 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::Off.id()
+        crate::lcm::FloatOutBoyLedMode::Off
     );
     firmware.clear_settings_write_observations();
     assert_eq!(
@@ -791,7 +993,7 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
     );
     assert_eq!(
         state.lcm_hardware_mode_for_test(),
-        crate::lcm::FloatOutBoyLedMode::External.id()
+        crate::lcm::FloatOutBoyLedMode::External
     );
     assert_eq!(
         state.firmware_imu_migration_for_test(),

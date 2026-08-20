@@ -16,10 +16,14 @@ mod ride_state;
 mod selected_realtime;
 mod state;
 
+#[cfg(any(test, feature = "test-support"))]
 pub use self::all_data::{
     FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode2Payload,
     FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload,
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
+    FloatOutBoyAllDataStatus,
+};
+pub use self::all_data::{
+    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataResponse,
     encode_float_out_boy_all_data_fault_response,
 };
 pub use self::app_data::{

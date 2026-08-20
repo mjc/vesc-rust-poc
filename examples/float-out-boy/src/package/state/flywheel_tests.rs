@@ -1,8 +1,8 @@
 use super::*;
 use crate::domain::{
-    FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRideState,
+    FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload,
+    FloatOutBoyAllDataStatus, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
+    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRideState,
 };
 use crate::motor_torque::MotorTorqueConstant;
 use crate::package::test_support::{
@@ -32,7 +32,7 @@ fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloa
         ImuRoll::new(AngleRadians::from(roll)),
         ImuPitch::new(AngleRadians::from(pitch)),
     );
-    FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             attitude,
@@ -70,7 +70,7 @@ fn set_ride_state(state: &mut FloatOutBoyPackageState, run_state: FloatOutBoyRun
     .with_charging(previous.charging())
     .with_wheelslip(previous.wheelslip())
     .with_darkride(previous.darkride());
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -89,7 +89,7 @@ fn set_ride_state(state: &mut FloatOutBoyPackageState, run_state: FloatOutBoyRun
 fn set_footpad(state: &mut FloatOutBoyPackageState, footpad: FloatOutBoyFootpadState) {
     let payloads = state.all_data_payloads;
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -139,7 +139,7 @@ fn set_duty_cycle(state: &mut FloatOutBoyPackageState, duty_cycle: DutyCycle) {
         duty_cycle,
         motor.foc_id_current(),
     );
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -170,7 +170,7 @@ fn flywheel_start_calibrates_upright_attitude_and_applies_payload_overrides() {
         &flywheel_packet(&[0x81, 90, 50, 30, 20, 1, 12]),
     ));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     assert_eq!(ride_state.mode(), FloatOutBoyMode::Flywheel);
     assert_f32_eq!(
         state.serialized_config.balance().kp().as_amps_per_degree(),
@@ -427,7 +427,7 @@ fn rejected_forced_recalibration_restores_the_persisted_config() {
     ));
     let payloads = state.all_data_payloads;
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             FloatOutBoyAllDataAttitude::new(
@@ -590,7 +590,7 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         &mut state,
         DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
     );
-    let initial_board_setpoint = state.all_data_payloads().base().setpoints().board().angle();
+    let initial_board_setpoint = state.all_data_payloads().setpoints().board().angle();
     let duty_step = AngleDegrees::from_degrees(5.0 / 500.0);
 
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
@@ -955,7 +955,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let payloads = state.all_data_payloads;
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::ZERO)),
             base.attitude(),
@@ -1035,7 +1035,7 @@ fn either_single_footpad_aborts_flywheel_and_restores_config_without_current() {
         set_footpad(&mut state, footpad);
         state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 
-        let ride_state = state.all_data_payloads().base().status().ride_state();
+        let ride_state = state.all_data_payloads().ride_state();
         assert_eq!(
             ride_state.run_state(),
             FloatOutBoyRunState::Ready,
@@ -1054,7 +1054,7 @@ fn either_single_footpad_aborts_flywheel_and_restores_config_without_current() {
             TimestampTicks::from_ticks(2),
         ));
 
-        let ride_state = state.all_data_payloads().base().status().ride_state();
+        let ride_state = state.all_data_payloads().ride_state();
         assert_eq!(ride_state.mode(), FloatOutBoyMode::Normal);
         assert_eq!(state.serialized_config, persisted);
         assert!(state.apply_motor_control(

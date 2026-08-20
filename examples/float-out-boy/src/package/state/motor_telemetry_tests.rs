@@ -239,7 +239,9 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         .with_temperature_limit_starts(
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(82.0)),
             TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0)),
-        );
+        )
+        .with_duty_cycle_limit(DutyCycleLimit::new(Ratio::from_ratio_const(0.93)))
+        .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     let settings = FirmwareSettings;
     firmware.with_effects(|effects| {
         settings
@@ -250,7 +252,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
             .unwrap();
     });
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
-    let initial_electrical_speed = state.all_data_payloads.base().motor().electrical_speed();
+    let initial_electrical_speed = state.all_data_payloads.electrical_speed();
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));
     let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
@@ -261,10 +263,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         |_| {},
     );
     assert!(!backup_due);
-    state.refresh_aux_motor_config_runtime_state(
-        firmware.telemetry(),
-        TimestampTicks::from_ticks(5_000),
-    );
+    assert!(!state.aux_motor_config_refresh_due(TimestampTicks::from_ticks(5_000)));
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::ZERO)
@@ -279,10 +278,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         |_| {},
     );
     assert!(!backup_due);
-    state.refresh_aux_motor_config_runtime_state(
-        firmware.telemetry(),
-        TimestampTicks::from_ticks(5_001),
-    );
+    let now = TimestampTicks::from_ticks(5_001);
+    assert!(state.aux_motor_config_refresh_due(now));
+    let config = super::snapshot_motor_config(firmware.telemetry());
+    state.finish_aux_motor_config_refresh(config, now);
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::from_amps(42.0))
@@ -290,6 +289,10 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     assert_eq!(
         state.motor_current_min,
         MotorCurrentLimit::new(Current::from_amps(17.0))
+    );
+    assert_eq!(
+        state.duty_max_with_margin,
+        DutyCycleLimit::new(Ratio::from_ratio_const(0.88))
     );
     assert_eq!(
         state.battery_current_max,
@@ -307,6 +310,7 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
         state.motor_temperature_limit_start,
         TemperatureLimitStart::new(Temperature::from_degrees_celsius(91.0))
     );
+    assert_eq!(state.battery_cell_count, BatteryCellCount::try_new(18).ok());
     assert_eq!(
         state.all_data_payloads.base().motor().electrical_speed(),
         initial_electrical_speed
@@ -415,7 +419,7 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
     let setpoints = FloatOutBoyRealtimeRuntimeSetpoints::new(
         setpoint, setpoint, setpoint, setpoint, setpoint, setpoint,
     );
-    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(10.0))),
             FloatOutBoyAllDataAttitude::new(
@@ -452,7 +456,7 @@ fn darkride_traction_loss_refreshes_like_float_out_boy_loop() {
     ));
     assert!(state.apply_requested_motor_current(bindings));
 
-    let ride_state = state.all_data_payloads().base().status().ride_state();
+    let ride_state = state.all_data_payloads().ride_state();
     // Upstream detects traction loss from acceleration, ERPM, and duty at
     // `third_party/float-out-boy/src/main.c:551-562`, then freewheels while traction control is set at
     // `third_party/float-out-boy/src/main.c:949-954`.

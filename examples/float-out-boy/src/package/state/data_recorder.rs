@@ -1,5 +1,5 @@
 use super::super::protocol::realtime_value;
-use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
+use super::FloatOutBoyPackageState;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
     FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags, FloatOutBoyRunState,
@@ -170,10 +170,9 @@ impl FloatOutBoyPackageState {
 
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let flags = ride_state.setpoint_adjustment().id() << 4
-            | base.footpad().state().id() << 2
+            | payloads.footpad().state().id() << 2
             | u8::from(ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected) << 1
             | u8::from(ride_state.run_state() == FloatOutBoyRunState::Running);
         let values = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(|item| {
@@ -199,13 +198,8 @@ impl FloatOutBoyPackageState {
     pub(super) fn handle_data_recorder_packet(
         &mut self,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        let Some(payload) =
-            float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::DataRecordRequest)
-        else {
-            return false;
-        };
         let control = matches!(payload, [1, _, ..]);
         if !self.data_recorder.has_capability() && !control {
             return true;

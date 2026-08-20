@@ -5,7 +5,7 @@ use vescpkg_rs::test_support::FirmwareTest;
 
 fn external_state() -> FloatOutBoyPackageState {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
-    state.set_lcm_hardware_mode_for_test(2);
+    state.set_lcm_hardware_mode_for_test(FloatOutBoyLedMode::External);
     state
 }
 
@@ -67,7 +67,7 @@ fn lcm_dispatch_recognizes_exactly_its_six_refloat_commands() {
 
 #[test]
 fn every_lcm_response_starts_with_the_refloat_package_and_command_ids() {
-    let state = LcmState::new(2, false);
+    let state = LcmState::new(FloatOutBoyLedMode::External, false);
     assert_eq!(
         &state.light_info_response().as_bytes()[..2],
         [
@@ -244,7 +244,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
     );
     let payloads = state.all_data_payloads;
     let base = payloads.base();
-    state.all_data_payloads = FloatOutBoyAllDataPayloads::new(
+    state.all_data_payloads = FloatOutBoyAllDataPayloads::from_groups(
         crate::domain::FloatOutBoyAllDataBasePayload::new(
             base.balance_current(),
             base.attitude(),
@@ -435,7 +435,7 @@ fn battery_response_uses_float32_auto_and_disabled_lcm_stays_minimal() {
     let mut state = external_state();
     assert_eq!(dispatch(&mut state, &firmware, &[101, 29]).len(), 6);
 
-    state.set_lcm_hardware_mode_for_test(0);
+    state.set_lcm_hardware_mode_for_test(FloatOutBoyLedMode::Off);
     assert_eq!(dispatch(&mut state, &firmware, &[101, 25]), [101, 25]);
     assert_eq!(dispatch(&mut state, &firmware, &[101, 24]), [101, 24]);
 }

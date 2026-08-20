@@ -641,6 +641,10 @@ pub(crate) fn fail_eeprom_write_after(successful_writes: usize) {
     EEPROM_WRITE_FAILURE_AT_COUNT.store(failure, Ordering::Relaxed);
 }
 
+pub(crate) fn eeprom_write_count() -> usize {
+    EEPROM_WRITE_COUNT.load(Ordering::Relaxed)
+}
+
 pub unsafe fn read_nvm(buffer: *mut u8, len: u32, address: u32) -> Option<bool> {
     if !NVM_SUPPORTED.load(Ordering::Relaxed) || !NVM_AVAILABLE.load(Ordering::Relaxed) {
         return None;

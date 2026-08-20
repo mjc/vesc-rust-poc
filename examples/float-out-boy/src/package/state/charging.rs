@@ -1,8 +1,6 @@
-use super::float_out_boy_command_payload;
-use crate::domain::{
-    FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
-};
+#[cfg(test)]
+use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyChargingState};
 use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
@@ -21,9 +19,9 @@ fn decode_charging_current(hi: u8, lo: u8) -> BatteryCurrent {
     ))
 }
 
-pub(super) fn handle_packet(
+pub(super) fn handle_command(
     payloads: FloatOutBoyAllDataPayloads,
-    bytes: &[u8],
+    payload: &[u8],
 ) -> Option<FloatOutBoyAllDataPayloads> {
     // Float Out Boy v1.2.1 routes COMMAND_CHARGING_STATE at `third_party/float-out-boy/src/main.c:2267-2269`;
     // the command ID is defined in `third_party/float-out-boy/src/charging.h:25`.
@@ -35,7 +33,7 @@ pub(super) fn handle_packet(
         current_hi,
         current_lo,
         ..,
-    ] = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::ChargingState)?
+    ] = payload
     else {
         return None;
     };
@@ -53,11 +51,9 @@ pub(super) fn handle_packet(
         ),
     };
 
-    let base = payloads.base();
-    let status = base.status();
     // C map: the same packet writes `state->charging` before storing
     // voltage/current at `third_party/float-out-boy/src/charging.c:53-63`.
-    let ride_state = status.ride_state().with_charging(match *charging {
+    let ride_state = payloads.ride_state().with_charging(match *charging {
         // C map: `charging_state_request` writes `state->charging` from the
         // packet byte at `third_party/float-out-boy/src/charging.c:37-63`.
         0 => FloatOutBoyChargingState::NotCharging,
@@ -65,12 +61,23 @@ pub(super) fn handle_packet(
     });
     Some(
         payloads
-            .with_base(base.with_status(FloatOutBoyAllDataStatus::new(
-                ride_state,
-                status.beep_reason(),
-            )))
-            .with_mode4_charging(FloatOutBoyAllDataMode4Payload::new(current, voltage)),
+            .with_ride_state(ride_state)
+            .with_charging_current(current)
+            .with_charging_voltage(voltage),
     )
+}
+
+#[cfg(test)]
+pub(super) fn handle_packet(
+    payloads: FloatOutBoyAllDataPayloads,
+    bytes: &[u8],
+) -> Option<FloatOutBoyAllDataPayloads> {
+    let (command, payload) = vescpkg_rs::protocol_app_data::parse_app_data_command::<
+        FloatOutBoyAppDataCommand,
+    >(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)?;
+    (command == FloatOutBoyAppDataCommand::ChargingState)
+        .then(|| handle_command(payloads, payload))
+        .flatten()
 }
 
 pub(super) fn timeout(
@@ -78,19 +85,14 @@ pub(super) fn timeout(
     now: TimestampTicks,
     last_update: WrappingTimer,
 ) -> FloatOutBoyAllDataPayloads {
-    let base = payloads.base();
-    let status = base.status();
-    let ride_state = status.ride_state();
+    let ride_state = payloads.ride_state();
     if !matches!(ride_state.charging(), FloatOutBoyChargingState::Charging)
         || !last_update.older_than_secs(now, 5)
     {
         return payloads;
     }
 
-    payloads.with_base(base.with_status(FloatOutBoyAllDataStatus::new(
-        ride_state.with_charging(FloatOutBoyChargingState::NotCharging),
-        status.beep_reason(),
-    )))
+    payloads.with_ride_state(ride_state.with_charging(FloatOutBoyChargingState::NotCharging))
 }
 
 #[cfg(test)]

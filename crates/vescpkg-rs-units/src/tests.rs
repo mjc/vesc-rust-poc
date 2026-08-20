@@ -377,6 +377,23 @@ fn ratios_keep_closed_arithmetic_and_bound_predicates_typed() {
 }
 
 #[test]
+fn ratios_slew_between_boolean_endpoints_without_leaving_bounds() {
+    let quarter = Ratio::from_ratio_const(0.25);
+
+    assert_eq!(Ratio::from(false), Ratio::ZERO);
+    assert_eq!(Ratio::from(true), Ratio::FULL);
+    assert_eq!(Ratio::ZERO.slew_toward(Ratio::FULL, quarter), quarter);
+    assert_eq!(
+        Ratio::FULL.slew_toward(Ratio::ZERO, quarter),
+        Ratio::from_ratio_const(0.75)
+    );
+    assert_eq!(
+        quarter.slew_toward(Ratio::from_ratio_const(0.4), quarter),
+        Ratio::from_ratio_const(0.4)
+    );
+}
+
+#[test]
 fn fugit_timer_aliases_model_vesc_system_ticks() {
     let ticks = SystemTicks::from_ticks(10_000);
 
