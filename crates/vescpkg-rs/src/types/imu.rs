@@ -33,6 +33,16 @@ macro_rules! finite_imu_scalar {
         pub struct $name(f32);
 
         impl $name {
+            /// Construct a compile-time checked firmware configuration constant.
+            #[must_use]
+            pub const fn new_const(value: f32) -> Self {
+                assert!(
+                    value.is_finite() && value >= 0.0,
+                    "firmware IMU constants must be finite and non-negative"
+                );
+                Self(value)
+            }
+
             /// Construct a checked firmware configuration value.
             pub fn try_new(value: f32) -> Option<Self> {
                 (value.is_finite() && value >= 0.0).then_some(Self(value))
@@ -619,6 +629,11 @@ mod tests {
 
     #[test]
     fn configuration_scalars_reject_non_finite_values() {
+        const PROPORTIONAL: ImuMahonyProportionalGain = ImuMahonyProportionalGain::new_const(0.2);
+        const INTEGRAL: ImuMahonyIntegralGain = ImuMahonyIntegralGain::new_const(0.0);
+
+        assert_eq!(PROPORTIONAL.value(), 0.2);
+        assert_eq!(INTEGRAL.value(), 0.0);
         assert!(ImuMahonyProportionalGain::try_new(f32::NAN).is_none());
         assert!(ImuMahonyIntegralGain::try_new(f32::INFINITY).is_none());
         assert!(ImuMadgwickBeta::try_new(f32::NEG_INFINITY).is_none());

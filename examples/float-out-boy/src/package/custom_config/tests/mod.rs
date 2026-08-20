@@ -204,7 +204,7 @@ fn custom_config_set_callback_rejects_zero_filter_time_constant_before_persisten
     assert!(!set_float_out_boy_custom_config_for_test(
         &mut state, &incoming
     ));
-    assert_ne!(state.configured_loop_time_us(), u32::MAX);
+    assert_ne!(FloatOutBoyPackageState::configured_loop_time_us(), u32::MAX);
     assert_eq!(
         *FloatOutBoyCustomConfig::current_config(&state).as_bytes(),
         default_float_out_boy_config_bytes()

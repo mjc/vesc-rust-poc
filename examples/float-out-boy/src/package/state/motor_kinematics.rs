@@ -17,6 +17,7 @@ pub(super) struct MotorKinematicsTracker(pub(super) vescpkg_rs::MotorKinematics<
 #[cfg(target_arch = "arm")]
 const _: [(); 912] = [(); core::mem::size_of::<MotorKinematicsTracker>()];
 
+#[cfg(test)]
 impl Default for MotorKinematicsTracker {
     fn default() -> Self {
         let mut tracker = vescpkg_rs::MotorKinematics::default();

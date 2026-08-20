@@ -1429,14 +1429,14 @@ fn running_wheelslip_refreshes_timer_and_zeros_target_above_max_duty_like_float_
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.ride_flags.traction_control = true;
+    state.traction_control = true;
     state.wheelslip_ticks.restart(TimestampTicks::from_ticks(1));
     let now = TimestampTicks::from_ticks(5_000);
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
     assert_eq!(state.wheelslip_ticks.started(), now);
-    assert!(!state.ride_flags.traction_control);
+    assert!(!state.traction_control);
     assert_eq!(
         state
             .all_data_payloads()

@@ -20,18 +20,16 @@ use crate::domain::{
 use crate::lcm::FloatOutBoyLedMode;
 use crate::wire::{FloatOutBoyPacket, degrees};
 use vescpkg_rs::MotorTelemetry;
-use vescpkg_rs::prelude::FirmwareFault;
 
 const MAX_LCM_NAME_LENGTH: usize = 20;
 const MAX_LCM_PAYLOAD_LENGTH: usize = 64;
 const POLL_RESPONSE_CAPACITY: usize = 2 + 3 + 6 + 3 + MAX_LCM_PAYLOAD_LENGTH;
 
 fn nul_terminated_prefix(bytes: &[u8]) -> &[u8] {
-    let len = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .map_or(bytes.len(), |index| index.saturating_add(1));
-    &bytes[..len]
+    bytes
+        .split_inclusive(|byte| *byte == 0)
+        .next()
+        .unwrap_or_default()
 }
 
 fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
@@ -150,7 +148,8 @@ impl LcmState {
             state |= 0x80;
         }
         packet.push(state);
-        packet.push(firmware_fault_code(telemetry.firmware_fault()));
+        let (_, firmware_fault) = telemetry.firmware_fault().active_and_wire_code();
+        packet.push(firmware_fault.wire_code());
 
         let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
@@ -182,9 +181,7 @@ impl LcmState {
             packet.extend(&self.brightness);
             // Refloat's Float-specific LED fields are intentionally not sent
             // through this LCM interface.
-            for _ in 0..6 {
-                packet.push(0);
-            }
+            packet.extend(&[0; 6]);
         }
         packet
     }
@@ -211,13 +208,6 @@ fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoy
     packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(command.id());
     packet
-}
-
-fn firmware_fault_code(fault: FirmwareFault) -> u8 {
-    match fault {
-        FirmwareFault::Active(fault) => fault.wire_code().wire_code(),
-        FirmwareFault::None | FirmwareFault::Unknown => 0,
-    }
 }
 
 impl FloatOutBoyPackageState {
@@ -247,13 +237,13 @@ impl FloatOutBoyPackageState {
             Command::LcmDeviceInfo => reply(self.lcm.device_info_response().as_bytes()),
             Command::LcmGetBattery => reply(self.lcm.battery_response(telemetry).as_bytes()),
             Command::LightsControl => {
-                if let [_, _, _, mask, value, ..] = payload {
-                    if *mask != 0 {
-                        self.set_led_runtime_overrides(
-                            (mask & 1 != 0).then_some(value & 1 != 0),
-                            (mask & 2 != 0).then_some(value & 2 != 0),
-                        );
-                    }
+                if let [_, _, _, mask, value, ..] = payload
+                    && *mask != 0
+                {
+                    self.set_led_runtime_overrides(
+                        (mask & 1 != 0).then_some(value & 1 != 0),
+                        (mask & 2 != 0).then_some(value & 2 != 0),
+                    );
                 }
                 let status = self.led_runtime_status();
                 reply(&[

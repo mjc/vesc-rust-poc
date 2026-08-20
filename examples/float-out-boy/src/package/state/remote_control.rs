@@ -85,11 +85,8 @@ impl RemoteControlState {
         maximum_move_speed: Speed,
         payload: &[u8],
     ) -> bool {
-        let Some(byte) = payload.first() else {
-            return false;
-        };
-        let Some(input) = parse_remote_command(*byte) else {
-            return true;
+        let Some(input) = payload.first().copied().and_then(parse_remote_command) else {
+            return !payload.is_empty();
         };
 
         self.input = input;
@@ -198,16 +195,14 @@ impl RemoteControlState {
         let speed_time_constant =
             VescSeconds::from_seconds(filter_time_constant.as_seconds() * 0.25);
         self.tilt_setpoint.configure(
-            SmoothSetpointConfig {
-                time_constant: filter_time_constant,
-                on_speed_time_constant: speed_time_constant,
-                off_speed_time_constant: speed_time_constant,
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(100.0),
-                off_speed_up: AngularVelocity::from_degrees_per_second(100.0),
-                on_speed_down: AngularVelocity::from_degrees_per_second(100.0),
-                off_speed_down: AngularVelocity::from_degrees_per_second(100.0),
-            },
+            SmoothSetpointConfig::symmetric(
+                filter_time_constant,
+                speed_time_constant,
+                speed_time_constant,
+                VescSeconds::from_seconds(0.2),
+                AngularVelocity::from_degrees_per_second(100.0),
+                AngularVelocity::from_degrees_per_second(100.0),
+            ),
             SampleRate::from_hertz(1.0 / seconds),
         );
         let upright_target = angle_limit * self.input.as_ratio();
@@ -246,10 +241,11 @@ impl RemoteControlState {
         };
         let error = target.as_kilometers_per_hour() - vehicle_speed.as_kilometers_per_hour();
         advance_remote_move_integral(&mut self.move_integral, error, elapsed);
-        let torque = MotorTorque::from_newton_meters(
-            (1.2 * error + self.move_integral.as_newton_meters()).clamp(-10.0, 10.0),
-        );
-        Some(torque_constant.motor_current_from_torque(torque))
+        Some(
+            torque_constant.motor_current_from_torque(MotorTorque::from_newton_meters(
+                (1.2 * error + self.move_integral.as_newton_meters()).clamp(-10.0, 10.0),
+            )),
+        )
     }
 }
 

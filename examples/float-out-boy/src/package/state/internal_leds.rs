@@ -89,14 +89,7 @@ impl FloatOutBoyPackageState {
         if runtime.driver.setup(hardware::setup, |pin| {
             let _ = hardware::teardown(pin);
         }) {
-            #[cfg(test)]
-            {
-                self.internal_leds = Some(runtime);
-            }
-            #[cfg(target_arch = "arm")]
-            {
-                self.internal_leds = Some(runtime);
-            }
+            self.internal_leds = Some(runtime);
         }
     }
 
@@ -181,15 +174,18 @@ impl FloatOutBoyPackageState {
     ) {
         let payloads = self.all_data_payloads;
         let ride_state = payloads.ride_state();
+        let motor_config = self.motor_config;
         let filtered_current = payloads.filtered_motor_current().current().current();
-        let motor_limit = self
+        let motor_limit = motor_config
             .motor_current_limits
             .for_current(payloads.motor_current().current());
         let motor_current_saturation =
             vescpkg_rs::current_limit_saturation(filtered_current, motor_limit.current())
                 .as_ratio();
         let battery_current = payloads.battery_current().current();
-        let battery_limit = self.battery_current_limits.for_current(battery_current);
+        let battery_limit = motor_config
+            .battery_current_limits
+            .for_current(battery_current);
         let battery_current_saturation =
             vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current())
                 .as_ratio();
@@ -215,14 +211,13 @@ impl FloatOutBoyPackageState {
         let runtime = self.internal_leds.as_mut();
         #[cfg(target_arch = "arm")]
         let runtime = self.internal_leds.as_deref_mut();
-        if let Some(runtime) = runtime {
-            if runtime.renderer.update(runtime.config, frame, current_time)
-                && runtime
-                    .driver
-                    .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
-            {
-                paint(&runtime.renderer);
-            }
+        if let Some(runtime) = runtime
+            && runtime.renderer.update(runtime.config, frame, current_time)
+            && runtime
+                .driver
+                .paint(&runtime.renderer, hardware::quiesce, hardware::restart)
+        {
+            paint(&runtime.renderer);
         }
     }
 }
