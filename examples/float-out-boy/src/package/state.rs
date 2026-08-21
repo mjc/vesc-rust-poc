@@ -1,6 +1,3 @@
-#[cfg(any(test, target_arch = "arm"))]
-use super::time::float_out_boy_expire_timer;
-use super::time::{float_out_boy_ticks_elapsed, float_out_boy_ticks_elapsed_seconds};
 use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 #[cfg(any(test, target_arch = "arm"))]
 use crate::beeper::FloatOutBoyBeeperLevel;
@@ -21,6 +18,8 @@ use crate::motor_control::FloatOutBoyMotorControl;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::ImuPitch;
 #[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::expire_timer_whole_seconds as float_out_boy_expire_timer;
+#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::OdometerMeters;
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
@@ -29,7 +28,10 @@ use vescpkg_rs::prelude::{
     MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
     TemperatureLimitStart, TimestampTicks,
 };
-use vescpkg_rs::{Imu, MotorOutput, MotorTelemetry};
+use vescpkg_rs::{
+    Imu, MotorOutput, MotorTelemetry, timer_older as float_out_boy_ticks_elapsed_seconds,
+    timer_older_whole_seconds as float_out_boy_ticks_elapsed,
+};
 
 mod alert_tracker;
 mod alerts;
@@ -456,6 +458,7 @@ impl FloatOutBoyPackageState {
     }
 
     /// Apply and clear a pending motor-current request.
+    #[cfg(test)]
     pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
         self.motor_control
             .apply_requested_current(motor)
@@ -813,7 +816,7 @@ impl FloatOutBoyPackageState {
         if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
             return None;
         }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from_id(*command) else {
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
             return None;
         };
 

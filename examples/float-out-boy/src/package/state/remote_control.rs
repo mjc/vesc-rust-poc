@@ -1,38 +1,18 @@
 use crate::config::FloatOutBoyRemoteThrottleConfig;
 use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
 use crate::package::state::float_out_boy_command_payload;
-use crate::package::time::float_out_boy_ticks_elapsed_seconds;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, Rpm, SampleRate, TimestampTicks,
 };
+use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
+
+const REMOTE_CURRENT_FILTER: Ratio = Ratio::from_ratio_const(0.05);
 
 fn zero_motor_current() -> MotorCurrent {
     // C map: `reset_runtime_vars` and the RC-move idle branches clear current
     // by writing zero at `third_party/float-out-boy/src/main.c:239-252` and
     // `third_party/float-out-boy/src/main.c:291-298`.
     MotorCurrent::new(Current::ZERO)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct CurrentSmoothing(Ratio);
-
-impl CurrentSmoothing {
-    // C map: `do_rc_move` filters remote current as old * 0.95 + target * 0.05
-    // at `third_party/float-out-boy/src/main.c:275-286` and `third_party/float-out-boy/src/main.c:291-298`.
-    const REMOTE_CURRENT_FILTER: Self = Self(Ratio::from_ratio_const(0.05));
-
-    #[inline]
-    const fn retain_previous(self) -> Ratio {
-        // C map: `do_rc_move` keeps the previous RC current with 95% weight.
-        Ratio::from_ratio_const(1.0 - self.0.as_ratio())
-    }
-
-    #[inline]
-    const fn accept_target(self) -> Ratio {
-        // C map: `do_rc_move` keeps the new RC target with 5% weight.
-        self.0
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -289,10 +269,7 @@ impl RemoteControlState {
         // Upstream READY falls through to `do_rc_move(d)` at
         // `third_party/float-out-boy/src/main.c:1069`, where active RC move steps
         // filter/request `rc_current` at `third_party/float-out-boy/src/main.c:276-286`.
-        self.filter_current(
-            self.target.motor_current(),
-            CurrentSmoothing::REMOTE_CURRENT_FILTER,
-        );
+        self.filter_current(self.target.motor_current());
         if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
             self.current = zero_motor_current();
         }
@@ -338,21 +315,16 @@ impl RemoteControlState {
         // `third_party/float-out-boy/src/main.c:1069`, where the remote-throttle idle
         // branch filters and requests `rc_current` at
         // `third_party/float-out-boy/src/main.c:291-298`.
-        Some(self.filter_current(target_current, CurrentSmoothing::REMOTE_CURRENT_FILTER))
+        Some(self.filter_current(target_current))
     }
 
-    fn filter_current(
-        &mut self,
-        target_current: MotorCurrent,
-        smoothing: CurrentSmoothing,
-    ) -> MotorCurrent {
+    fn filter_current(&mut self, target_current: MotorCurrent) -> MotorCurrent {
         // C map: `do_rc_move` blends the previous RC current with the target
         // using the same 95/5 smoothing factor at
         // `third_party/float-out-boy/src/main.c:275-286` and
         // `third_party/float-out-boy/src/main.c:291-298`.
-        let retain_previous = smoothing.retain_previous().as_ratio();
-        let accept_target = smoothing.accept_target().as_ratio();
-        self.current = self.current * retain_previous + target_current * accept_target;
+        self.current = self.current * REMOTE_CURRENT_FILTER.complement().as_ratio()
+            + target_current * REMOTE_CURRENT_FILTER.as_ratio();
         self.current
     }
 

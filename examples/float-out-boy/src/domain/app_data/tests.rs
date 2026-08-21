@@ -36,6 +36,6 @@ fn every_refloat_command_id_round_trips_through_the_typed_model() {
         (FloatOutBoyAppDataCommand::LcmDebug, 99),
     ] {
         assert_eq!(command.id(), id);
-        assert_eq!(FloatOutBoyAppDataCommand::try_from_id(id), Ok(command));
+        assert_eq!(FloatOutBoyAppDataCommand::try_from(id), Ok(command));
     }
 }

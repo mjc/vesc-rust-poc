@@ -121,6 +121,7 @@ mod sync;
 mod terminal;
 #[cfg(all(feature = "test-support", not(test)))]
 mod test_ffi;
+mod timer;
 mod uart;
 
 pub use firmware_str::FirmwareStr;
@@ -232,7 +233,8 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor, FirmwareDataRecorderDescriptorError,
+    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage,
 };
 pub use vesc_protocol::buffer as protocol_buffer;
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
@@ -246,7 +248,7 @@ pub use vescpkg_rs_units::{
 };
 
 #[cfg(feature = "alloc")]
-pub use alloc::VescAllocator;
+pub use alloc::{FallibleBox, VescAllocator};
 pub use can_bus::{
     CanBus, CanError, CanHardwareType, CanReceiverCallback, CanReceiverGuard, CanReceiverHandler,
     CanReceiverId, CanRemoteMotor, CanStatus, CanStatus2, CanStatus3, CanStatus4, CanStatus5,
@@ -306,6 +308,7 @@ pub use thread::{
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
+pub use timer::{expire_timer_whole_seconds, timer_older, timer_older_whole_seconds};
 pub use uart::{Uart, UartError, UartSession};
 
 /// CAN transport and status snapshot helpers for package code.
