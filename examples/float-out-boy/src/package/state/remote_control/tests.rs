@@ -13,6 +13,22 @@ use vescpkg_rs::prelude::{
     TimestampTicks, VescSeconds,
 };
 
+impl RemoteCurrentTarget {
+    const fn deciamps(self) -> i16 {
+        self.0
+    }
+}
+
+impl RemoteControlState {
+    const fn target_deciamps_for_test(self) -> i16 {
+        self.target.deciamps()
+    }
+
+    const fn remaining_steps_for_test(self) -> u16 {
+        self.steps
+    }
+}
+
 #[test]
 fn input_tilt_reversal_respects_float_out_boy_ramp_down() {
     let mut remote_control = RemoteControlState::default();

@@ -25,11 +25,6 @@ impl RemoteCurrentTarget {
         Self(deciamps)
     }
 
-    #[cfg(test)]
-    const fn deciamps(self) -> i16 {
-        self.0
-    }
-
     fn motor_current(self) -> MotorCurrent {
         // C map: `cmd_rc_move` stores packet current as deciamps at
         // `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` requests amps.
@@ -165,7 +160,6 @@ impl Default for RemoteControlState {
 }
 
 impl RemoteControlState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn set_input(&mut self, input: crate::domain::FloatOutBoyRealtimeRemoteInput) {
         // C map: `remote_input` stores the connected, deadbanded, optionally
         // inverted input at `third_party/float-out-boy/src/remote.c:36-68`.
@@ -326,16 +320,6 @@ impl RemoteControlState {
         self.current = self.current * REMOTE_CURRENT_FILTER.complement().as_ratio()
             + target_current * REMOTE_CURRENT_FILTER.as_ratio();
         self.current
-    }
-
-    #[cfg(test)]
-    pub(super) const fn target_deciamps_for_test(self) -> i16 {
-        self.target.deciamps()
-    }
-
-    #[cfg(test)]
-    pub(super) const fn remaining_steps_for_test(self) -> u16 {
-        self.steps
     }
 }
 

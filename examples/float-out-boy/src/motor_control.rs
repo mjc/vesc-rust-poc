@@ -40,11 +40,6 @@ pub(crate) struct FloatOutBoyMotorControl {
 }
 
 impl FloatOutBoyMotorControl {
-    #[cfg(test)]
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     #[inline]
     pub(crate) fn request_current(&mut self, current: MotorCurrent) {
         // Upstream `motor_control_request_current` sets the request flag and
@@ -204,5 +199,7 @@ impl FloatOutBoyMotorControl {
     }
 }
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

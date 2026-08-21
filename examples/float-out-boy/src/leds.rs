@@ -186,85 +186,34 @@ pub enum FloatOutBoyLedTransition {
 }
 }
 
-/// Float Out Boy LED animation speed scalar.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct FloatOutBoyLedAnimationSpeed(f32);
+vescpkg_rs::typed_newtype! {
+    /// Float Out Boy LED animation speed scalar.
+    #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyLedAnimationSpeed(f32);
+    from_units(value);
+    as_units;
+}
 
-impl FloatOutBoyLedAnimationSpeed {
-    /// Wrap a Float Out Boy LED animation speed value.
-    #[must_use]
-    pub const fn from_units(value: f32) -> Self {
-        Self(value)
-    }
-
-    /// Return the Float Out Boy LED animation speed value.
-    #[must_use]
-    pub const fn as_units(self) -> f32 {
-        self.0
+vescpkg_rs::typed_fields! {
+    /// Float Out Boy LED bar configuration.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct FloatOutBoyLedBarConfig {
+        brightness: Ratio => brightness,
+        primary_color: FloatOutBoyLedColor => primary_color,
+        secondary_color: FloatOutBoyLedColor => secondary_color,
+        animation_mode: FloatOutBoyLedAnimationMode => animation_mode,
+        animation_speed: FloatOutBoyLedAnimationSpeed => animation_speed,
     }
 }
 
-/// Float Out Boy LED bar configuration.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FloatOutBoyLedBarConfig {
-    brightness: Ratio,
-    primary_color: FloatOutBoyLedColor,
-    secondary_color: FloatOutBoyLedColor,
-    animation_mode: FloatOutBoyLedAnimationMode,
-    animation_speed: FloatOutBoyLedAnimationSpeed,
-}
-
-impl FloatOutBoyLedBarConfig {
-    /// Build a typed Float Out Boy LED bar config.
-    #[must_use]
-    pub const fn new(
-        brightness: Ratio,
-        primary_color: FloatOutBoyLedColor,
-        secondary_color: FloatOutBoyLedColor,
-        animation_mode: FloatOutBoyLedAnimationMode,
-        animation_speed: FloatOutBoyLedAnimationSpeed,
-    ) -> Self {
-        Self {
-            brightness,
-            primary_color,
-            secondary_color,
-            animation_mode,
-            animation_speed,
-        }
-    }
-
-    vescpkg_rs::const_field_getters! {
-        /// Return the configured brightness.
-        pub fn brightness -> Ratio = brightness;
-        /// Return the primary LED color.
-        pub fn primary_color -> FloatOutBoyLedColor = primary_color;
-        /// Return the secondary LED color.
-        pub fn secondary_color -> FloatOutBoyLedColor = secondary_color;
-        /// Return the animation mode.
-        pub fn animation_mode -> FloatOutBoyLedAnimationMode = animation_mode;
-        /// Return the animation speed.
-        pub fn animation_speed -> FloatOutBoyLedAnimationSpeed = animation_speed;
-    }
-}
-
-/// Float Out Boy status-bar idle timeout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct FloatOutBoyStatusBarIdleTimeout(u16);
-
-impl FloatOutBoyStatusBarIdleTimeout {
-    /// Wrap a Float Out Boy status-bar idle timeout in seconds.
-    #[must_use]
-    pub const fn from_seconds(value: u16) -> Self {
-        Self(value)
-    }
-
-    /// Return the idle timeout in seconds.
-    #[must_use]
-    pub const fn as_seconds(self) -> u16 {
-        self.0
-    }
+vescpkg_rs::typed_newtype! {
+    /// Float Out Boy status-bar idle timeout.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[repr(transparent)]
+    pub struct FloatOutBoyStatusBarIdleTimeout(u16);
+    from_seconds(value);
+    as_seconds;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1542,11 +1491,7 @@ impl FloatOutBoyLedStripFrame {
 
         for index in 0..len {
             let index_float = f32::from(u8::try_from(index).unwrap_or_default());
-            let distance = if index_float < len_float * 0.5 {
-                index_float - offset + 1.0
-            } else {
-                len_float - offset - index_float
-            };
+            let distance = (index_float - offset + 1.0).min(len_float - offset - index_float);
             let target = FloatOutBoyLedPixel::blend(
                 FloatOutBoyLedPixel::default(),
                 confirm,
@@ -1769,11 +1714,9 @@ impl FloatOutBoyLedStripFrame {
         let fade = if time < ratio { time / ratio } else { 1.0 };
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let index = f32::from(u8::try_from(index).unwrap_or_default());
-            let distance_from_start = index - offset + 1.0;
-            let distance_from_end = len_float - offset - index;
-            let start = (distance_from_start / feather).clamp(0.0, 1.0);
-            let end = (distance_from_end / feather).clamp(0.0, 1.0);
-            let target = FloatOutBoyLedPixel::blend(secondary, primary, start.min(end) * fade);
+            let distance = (index - offset + 1.0).min(len_float - offset - index);
+            let blend = (distance / feather).clamp(0.0, 1.0) * fade;
+            let target = FloatOutBoyLedPixel::blend(secondary, primary, blend);
             *pixel = pixel.scaled_and_blended(target, brightness, Ratio::from_ratio_const(1.0));
         }
     }

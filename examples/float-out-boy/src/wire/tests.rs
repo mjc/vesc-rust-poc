@@ -1,7 +1,17 @@
 use super::{
     saturating_trunc_f32_to_i16, saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
-    saturating_usize_to_u8, truncating_u64_to_u32,
+    truncating_u64_to_u32,
 };
+
+const fn saturating_usize_to_u8(value: usize) -> u8 {
+    // Packet string lengths are one byte in the upstream C format. Saturating
+    // prevents a malformed or future oversized field from wrapping its length.
+    if value > 255 {
+        return u8::MAX;
+    }
+    let [low, ..] = value.to_le_bytes();
+    low
+}
 
 #[test]
 fn unsigned_wire_conversion_saturates_without_panicking() {

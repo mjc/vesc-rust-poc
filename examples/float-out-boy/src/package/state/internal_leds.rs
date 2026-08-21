@@ -19,6 +19,8 @@ mod driver;
     )
 )]
 mod hardware;
+#[cfg(test)]
+mod test_support;
 
 use driver::FloatOutBoyInternalLedDriver;
 #[cfg(target_arch = "arm")]
@@ -33,12 +35,10 @@ pub(super) struct FloatOutBoyInternalLedRuntime {
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) fn request_internal_led_refresh(&mut self) {
         self.internal_led_refresh_pending = true;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn apply_pending_internal_led_refresh(&mut self) {
         if !core::mem::take(&mut self.internal_led_refresh_pending) {
             return;
@@ -56,7 +56,6 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn start_internal_led_confirmation(&mut self, system_time_ticks: TimestampTicks) {
-        #[cfg(any(test, target_arch = "arm"))]
         if self.internal_led_refresh_pending {
             self.internal_led_confirmation_pending
                 .get_or_insert(system_time_ticks);
@@ -160,22 +159,6 @@ impl FloatOutBoyPackageState {
         #[cfg(target_arch = "arm")]
         let runtime = self.internal_leds.as_deref();
         runtime.is_some_and(|runtime| runtime.driver.is_operational())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn internal_led_renderer_for_test(&self) -> Option<FloatOutBoyLedRenderer> {
-        self.internal_leds.as_ref().map(|runtime| runtime.renderer)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn internal_led_confirmation_start_for_test(&self) -> Option<f32> {
-        self.internal_leds
-            .as_ref()
-            .map(|runtime| runtime.renderer.confirmation_start_for_test())
-            .or_else(|| {
-                self.internal_led_confirmation_pending
-                    .map(|timestamp| timestamp.as_vesc_seconds().as_seconds())
-            })
     }
 
     /// Sample one coherent firmware snapshot, render it, and expose it for one paint.

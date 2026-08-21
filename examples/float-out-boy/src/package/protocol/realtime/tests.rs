@@ -4,7 +4,10 @@ use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
     FloatOutBoyChargingState,
 };
-use vescpkg_rs::prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed};
+use vescpkg_rs::{
+    FirmwareFaultWireCode,
+    prelude::{AngleDegrees, AngleRadians, Speed, TimestampTicks, VehicleSpeed},
+};
 
 fn sample_payloads_with_speed(meters_per_second: f32) -> FloatOutBoyAllDataPayloads {
     let payloads = sample_all_data_payloads();

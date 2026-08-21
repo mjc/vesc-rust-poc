@@ -28,7 +28,6 @@ pub use self::state::FloatOutBoyPackageState;
 /// `third_party/float-out-boy/src/main.c:2419-2453`; IMU, config, app-data, and
 /// extension registration at `third_party/float-out-boy/src/main.c:2455-2459` are
 /// best-effort side effects.
-#[cfg(any(test, target_arch = "arm"))]
 fn finish_startup(
     required_setup: Result<(), vescpkg_rs::PackageStartError>,
     registrations: impl FnOnce(),
@@ -38,12 +37,10 @@ fn finish_startup(
     Ok(())
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(crate) fn stop(state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
     stop_with(state, FloatOutBoyPackageState::destroy_internal_leds)
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn stop_with(
     state: &mut FloatOutBoyPackageState,
     destroy_internal_leds: impl FnOnce(&mut FloatOutBoyPackageState) -> bool,
@@ -54,11 +51,6 @@ fn stop_with(
     } else {
         vescpkg_rs::PackageStopDisposition::Retain
     }
-}
-
-#[cfg(all(not(test), not(target_arch = "arm")))]
-pub(crate) fn stop(_state: &mut FloatOutBoyPackageState) -> vescpkg_rs::PackageStopDisposition {
-    vescpkg_rs::PackageStopDisposition::Drop
 }
 
 #[cfg(test)]

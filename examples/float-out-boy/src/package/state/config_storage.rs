@@ -12,11 +12,8 @@ pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
     #[default]
     NotAttempted,
-    #[cfg(any(test, target_arch = "arm"))]
     Persisted,
-    #[cfg(any(test, target_arch = "arm"))]
     DefaultAfterReadFailure,
-    #[cfg(any(test, target_arch = "arm"))]
     DefaultAfterInvalidImage,
 }
 
@@ -33,7 +30,6 @@ fn log_config_message(effects: &FirmwareEffects, message: &[u8]) {
     let _ = log.flush(effects);
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 fn log_config_load_fallback(effects: &FirmwareEffects, outcome: FloatOutBoyConfigLoadOutcome) {
     let message = match outcome {
         FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure => b"read fail".as_slice(),
@@ -111,27 +107,18 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct FloatOutBoyEepromImage([u8; FLOAT_OUT_BOY_EEPROM_LEN]);
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct FloatOutBoyEepromImageError;
 
 impl FloatOutBoyEepromImage {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) const fn from_bytes(bytes: &[u8; FLOAT_OUT_BOY_EEPROM_LEN]) -> Self {
         Self(*bytes)
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(super) const fn as_bytes(&self) -> &[u8; FLOAT_OUT_BOY_EEPROM_LEN] {
         &self.0
     }
 
-    #[cfg(test)]
-    pub(super) const fn into_bytes(self) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
-        self.0
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
     fn load(effects: &FirmwareEffects) -> Result<Self, vescpkg_rs::EepromError> {
         vescpkg_rs::CustomEeprom::new()
             .read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects)
@@ -170,7 +157,6 @@ impl From<FloatOutBoyConfigImage> for FloatOutBoyEepromImage {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
     type Error = FloatOutBoyEepromImageError;
 
@@ -180,14 +166,12 @@ impl core::convert::TryFrom<FloatOutBoyEepromImage> for FloatOutBoyConfigImage {
     }
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) struct FloatOutBoyPersistedConfig {
     config: FloatOutBoyConfigImage,
     outcome: FloatOutBoyConfigLoadOutcome,
 }
 
-#[cfg(any(test, target_arch = "arm"))]
 pub(in crate::package) fn load_persisted_config(
     effects: &FirmwareEffects,
 ) -> FloatOutBoyPersistedConfig {
@@ -221,16 +205,11 @@ pub(in crate::package) fn store_persisted_config(
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn acknowledge_command_config_write(&mut self, now: TimestampTicks) {
         self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
-        #[cfg(any(test, target_arch = "arm"))]
         self.start_internal_led_confirmation(now);
-        #[cfg(not(any(test, target_arch = "arm")))]
-        let _ = now;
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) const fn active_config_image(&self) -> FloatOutBoyConfigImage {
         self.serialized_config
     }
@@ -258,7 +237,6 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn apply_persisted_config(
         &mut self,
         loaded: &FloatOutBoyPersistedConfig,
@@ -272,7 +250,6 @@ impl FloatOutBoyPackageState {
         self.refresh_idle_epoch(now);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn begin_restore_persisted_config(
         &mut self,
         loaded: &FloatOutBoyPersistedConfig,
@@ -317,13 +294,11 @@ impl FloatOutBoyPackageState {
         }
         self.serialized_config = config;
         self.begin_configure_active(now);
-        #[cfg(any(test, target_arch = "arm"))]
         if stored {
             self.start_internal_led_confirmation(now);
         }
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn apply_lock_from_persisted(
         &mut self,
         loaded: &FloatOutBoyPersistedConfig,
@@ -352,36 +327,16 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn finish_startup_configure(&mut self, migration: FirmwareImuMigration) {
         self.firmware_imu_migration = migration;
         self.alert_after_configure();
         self.startup_configured = true;
     }
 
-    #[cfg(test)]
-    pub(in crate::package) fn load_persisted_config_on_main_thread(&mut self, now: TimestampTicks) {
-        let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
-        self.apply_persisted_config(&loaded);
-        self.initialize_time_epochs(now);
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn configure_loaded_config_on_main_thread(&mut self) {
-        self.refresh_balance_filter_config();
-        super::config_runtime::refresh_led_effects(self);
-        self.refresh_config_runtime_state();
-        let migration =
-            vescpkg_rs::test_support::with_firmware_effects(migrate_legacy_firmware_imu_settings);
-        self.finish_startup_configure(migration);
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) const fn startup_configured(&self) -> bool {
         self.startup_configured
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(in crate::package) fn setup_loaded_led_hardware_after_threads(
         &mut self,
         adc1: vescpkg_rs::AdcVoltage,
@@ -440,7 +395,6 @@ impl FloatOutBoyPackageState {
         true
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn bms_enabled(&self) -> bool {
         self.serialized_config.bms().enabled()
     }
@@ -451,39 +405,6 @@ impl FloatOutBoyPackageState {
         self.serialized_config.as_bytes()
     }
 
-    #[cfg(test)]
-    pub(in crate::package) fn replace_serialized_config_for_test(
-        &mut self,
-        config: &crate::config::FloatOutBoyConfigImage,
-    ) {
-        self.serialized_config = *config;
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn balance_config_for_test(
-        &self,
-    ) -> crate::config::FloatOutBoyBalanceConfig<'_> {
-        self.serialized_config.balance()
-    }
-
-    #[cfg(test)]
-    pub(in crate::package) fn store_serialized_config(&mut self, config: &[u8]) -> bool {
-        let Some(config) = self.prepare_serialized_config(config) else {
-            return false;
-        };
-        let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-            store_persisted_config(effects, &config)
-        });
-        if stored {
-            self.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
-        }
-        self.replace_active_config(&config);
-        let migration =
-            vescpkg_rs::test_support::with_firmware_effects(migrate_legacy_firmware_imu_settings);
-        self.finish_configure_active(migration);
-        true
-    }
-
     pub(super) fn refresh_balance_filter_config(&mut self) {
         // C map: `reconfigure(d)` refreshes Mahony filter gains through
         // `balance_filter_configure` at `third_party/float-out-boy/src/main.c:154-160`.
@@ -491,7 +412,6 @@ impl FloatOutBoyPackageState {
             .configure_from(self.serialized_config.filter());
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
         // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
         // `third_party/float-out-boy/src/main.c:190-191`, then `float_out_boy_thd`
@@ -499,15 +419,5 @@ impl FloatOutBoyPackageState {
         // Target Rust must not panic if config bytes are corrupt, so keep the
         // startup default instead of dividing by zero.
         self.serialized_config.startup().loop_time_us()
-    }
-
-    #[cfg(test)]
-    pub(super) const fn firmware_imu_migration_for_test(&self) -> FirmwareImuMigration {
-        self.firmware_imu_migration
-    }
-
-    #[cfg(test)]
-    pub(super) const fn config_load_outcome_for_test(&self) -> FloatOutBoyConfigLoadOutcome {
-        self.config_load_outcome
     }
 }

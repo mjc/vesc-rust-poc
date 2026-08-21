@@ -43,6 +43,10 @@ impl FloatOutBoyRideState {
     }
 
     vescpkg_rs::const_field_builders! {
+        /// Return this state with the requested top-level run state.
+        pub(crate) fn with_run_state(run_state: FloatOutBoyRunState) => run_state;
+        /// Return this state with the requested runtime mode.
+        pub(crate) fn with_mode(mode: FloatOutBoyMode) => mode;
         /// Return this state with the requested charging state.
         pub fn with_charging(charging: FloatOutBoyChargingState) => charging;
         /// Return this state with the requested wheel-slip state.

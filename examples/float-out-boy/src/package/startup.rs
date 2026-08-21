@@ -1,6 +1,4 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::FloatOutBoyPackageState;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::PackageStart;
 
 /// Allocate and install source-startup Float Out Boy state through firmware memory.
@@ -13,7 +11,6 @@ use vescpkg_rs::PackageStart;
 /// still installs the narrow `FloatOutBoyPackageState` before the registration tail at
 /// `third_party/float-out-boy/src/main.c:2455-2459`.
 ///
-#[cfg(any(test, target_arch = "arm"))]
 fn allocate_float_out_boy_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
@@ -37,7 +34,6 @@ fn allocate_float_out_boy_startup_state(
 ///
 /// This matches the loader metadata step from upstream `third_party/float-out-boy/src/main.c:2419-2432`;
 /// callback/LispBM registration is a separate step at `third_party/float-out-boy/src/main.c:2455-2459`.
-#[cfg(any(test, target_arch = "arm"))]
 pub fn install_float_out_boy_package_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {

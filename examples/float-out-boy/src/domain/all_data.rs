@@ -131,11 +131,11 @@ vescpkg_rs::typed_fields! {
     pub struct FloatOutBoyAllDataBasePayload {
         balance_current: FloatOutBoyRealtimeBalanceCurrent => balance_current,
         attitude: FloatOutBoyAllDataAttitude => attitude,
-        status: FloatOutBoyAllDataStatus => status,
-        footpad: FloatOutBoyFootpadSample => footpad,
+        status: FloatOutBoyAllDataStatus => status => with_status,
+        footpad: FloatOutBoyFootpadSample => footpad => with_footpad,
         setpoints: FloatOutBoyRealtimeRuntimeSetpoints => setpoints,
         booster_current: FloatOutBoyRealtimeBoosterCurrent => booster_current,
-        motor: FloatOutBoyAllDataMotorPayload => motor,
+        motor: FloatOutBoyAllDataMotorPayload => motor => with_motor,
     }
 }
 

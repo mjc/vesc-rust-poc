@@ -1,15 +1,15 @@
-#[cfg(any(test, target_arch = "arm"))]
 use super::super::protocol::realtime_value;
 use super::{FloatOutBoyPackageState, float_out_boy_command_payload};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
     FloatOutBoyAppDataCommand, FloatOutBoyDataRecorderFlags,
 };
-#[cfg(any(test, target_arch = "arm"))]
 use crate::domain::{FloatOutBoyRunState, FloatOutBoyWheelSlipState};
 use crate::wire::FloatOutBoyPacket;
-#[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::TimestampTicks;
+
+#[cfg(test)]
+mod test_support;
 
 const RECORDED_VALUE_COUNT: usize = FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.len();
 const SAMPLE_SIZE: usize = 4 + 1 + 2 * RECORDED_VALUE_COUNT;
@@ -22,8 +22,6 @@ const TEST_SAMPLE_CAPACITY: usize = 24;
 type DataRecorderStorage = Option<[u8; TEST_SAMPLE_CAPACITY * SAMPLE_SIZE]>;
 #[cfg(all(not(test), target_arch = "arm"))]
 type DataRecorderStorage = Option<vescpkg_rs::FirmwareDataRecorderBuffer>;
-#[cfg(all(not(test), not(target_arch = "arm")))]
-type DataRecorderStorage = Option<[u8; 0]>;
 #[derive(Debug)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq, Eq))]
 pub(super) struct DataRecorderState {
@@ -103,13 +101,11 @@ impl DataRecorderState {
         self.flags.remove(FloatOutBoyDataRecorderFlags::RECORDING);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn shutdown(&mut self) {
         self.stop();
         self.records.replace_storage(None);
     }
 
-    #[cfg(any(test, target_arch = "arm"))]
     fn sample(&mut self, sample: &[u8; SAMPLE_SIZE]) {
         if self.flags.contains(FloatOutBoyDataRecorderFlags::RECORDING) {
             let _ = self.records.push(sample);
@@ -126,7 +122,6 @@ impl DataRecorderState {
 }
 
 impl FloatOutBoyPackageState {
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn stop_data_recorder(&mut self) {
         self.data_recorder.shutdown();
     }
@@ -139,13 +134,6 @@ impl FloatOutBoyPackageState {
         self.data_recorder.initialize(buffer);
     }
 
-    #[cfg(test)]
-    pub(super) fn disable_data_recorder_for_test(&mut self) {
-        self.data_recorder.records.replace_storage(None);
-        self.data_recorder.stop();
-    }
-
-    #[cfg(any(test, target_arch = "arm"))]
     pub(crate) fn sample_data_recorder(&mut self, timestamp: TimestampTicks) {
         let payloads = self.all_data_payloads;
         let base = payloads.base();
