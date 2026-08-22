@@ -413,11 +413,13 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
-        // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
-        // `third_party/float-out-boy/src/main.c:190-191`, then `float_out_boy_thd`
-        // sleeps that value at `third_party/float-out-boy/src/main.c:1080`.
-        // Target Rust must not panic if config bytes are corrupt, so keep the
-        // startup default instead of dividing by zero.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz; legacy `hertz`
+        // bytes are retained only as storage-layout padding.
         self.serialized_config.startup().loop_time_us()
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn configured_main_loop_sample_rate(&self) -> vescpkg_rs::prelude::SampleRate {
+        self.serialized_config.startup().sample_rate()
     }
 }

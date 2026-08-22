@@ -14,6 +14,8 @@ use crate::{
     },
 };
 use vescpkg_rs::CustomConfigResetField;
+#[cfg(test)]
+use vescpkg_rs::CustomConfigSampleRateField;
 use vescpkg_rs::CustomConfigVoltageField;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, IntegralCurrentGain,
@@ -27,8 +29,8 @@ use vescpkg_rs::{
     CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
     CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
     CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigSampleRateField,
-    CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
+    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigScaledVoltageField,
+    CustomConfigSecondsField, CustomConfigWireByteField, WireByte,
 };
 
 mod flywheel;
@@ -61,6 +63,7 @@ vescpkg_rs::firmware_section_static!(
 // `third_party/float-out-boy/src/Makefile:12-29`.
 pub(crate) const FLOAT_OUT_BOY_CONFIG_SIGNATURE_BYTES: [u8; 4] = [0x90, 0xb7, 0xa9, 0xba];
 pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.len();
+pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE: SampleRate = SampleRate::from_hertz(500.0);
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[179] != 0;
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: u8 = FLOAT_OUT_BOY_DEFAULT_CONFIG[227];
@@ -192,7 +195,6 @@ impl FloatOutBoyConfigImage {
         TILTBACK_VARIABLE_ERPM_FIELD: CustomConfigElectricalSpeedField => tiltback_variable_erpm -> ElectricalSpeed, offset: 75;
         NOSE_ANGLING_SPEED_FIELD: CustomConfigAngularVelocityField => nose_angling_speed -> AngularVelocity, offset: 77, scale: 100.0;
         INPUT_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => input_tilt_angle_limit -> AngleDegrees, offset: 80, scale: 100.0;
-        INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => input_tilt_speed -> AngularVelocity, offset: 82, scale: 100.0;
         HIGH_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => high_voltage_pushback_angle -> AngleDegrees, offset: 51, scale: 100.0;
         HIGH_VOLTAGE_THRESHOLD_FIELD: CustomConfigScaledVoltageField => high_voltage_threshold -> Voltage, offset: 55, scale: 100.0;
         LOW_VOLTAGE_PUSHBACK_ANGLE_FIELD: CustomConfigAngleField => low_voltage_pushback_angle -> AngleDegrees, offset: 57, scale: 100.0;
@@ -212,6 +214,9 @@ impl FloatOutBoyConfigImage {
         // at offset 175 in Refloat v1.2.1's generated `confparser.c`.
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 227, map: WireByte::as_u8;
     }
+    // Retain the legacy byte slot for image compatibility. Current Refloat
+    // removed `inputtilt_speed` and configures remote tilt at 100 degrees/second.
+    const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 82, scale: 100.0);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 224; upstream serializes it immediately before
     // `disabled` at offset 243 (`third_party/float-out-boy/src/conf/settings.xml:4049-4064`).
@@ -769,11 +774,9 @@ impl FloatOutBoyFaultConfig<'_> {
 pub(crate) struct FloatOutBoyStartupConfig<'a>(&'a FloatOutBoyConfigImage);
 
 impl FloatOutBoyStartupConfig<'_> {
-    // Upstream defines `hertz` at `third_party/float-out-boy/src/conf/settings.xml:223-246`,
-    // then serializes startup tolerances/speed/flags at
-    // `third_party/float-out-boy/src/conf/settings.xml:3966-3972`.
+    // Refloat removed `hertz` in 7c72c6d3. Its v1.2.1 bytes remain reserved so
+    // every later persisted field keeps the same offset.
     generated_config_fields! {
-        HERTZ_FIELD: CustomConfigSampleRateField => sample_rate -> SampleRate, offset: 18;
         PITCH_TOLERANCE_FIELD: CustomConfigAngleField => pitch_tolerance -> AngleDegrees, offset: 91, scale: 100.0;
         ROLL_TOLERANCE_FIELD: CustomConfigAngleField => roll_tolerance -> AngleDegrees, offset: 93, scale: 100.0;
         SPEED_FIELD: CustomConfigAngularVelocityField => startup_speed -> AngularVelocity, offset: 95, scale: 100.0;
@@ -786,26 +789,27 @@ impl FloatOutBoyStartupConfig<'_> {
     const DIRTY_LANDINGS_OFFSET: usize = 100;
     const DIRTY_LANDINGS_FIELD: CustomConfigFlagField = vescpkg_rs::generated_custom_config_field!(CustomConfigFlagField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: Self::DIRTY_LANDINGS_OFFSET);
 
+    #[cfg(test)]
+    const LEGACY_HERTZ_FIELD: CustomConfigSampleRateField = vescpkg_rs::generated_custom_config_field!(CustomConfigSampleRateField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 18);
+
+    pub(crate) const fn sample_rate(self) -> SampleRate {
+        let _ = self;
+        FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE
+    }
+
     #[expect(clippy::inline_always, reason = "keeps the linked ARM image compact")]
     #[inline(always)]
     pub(crate) fn click_current(self) -> WireByte {
         WireByte::new(self.0.as_bytes()[97])
     }
 
-    pub(crate) fn loop_time_us(self) -> u32 {
-        crate::wire::saturating_trunc_f32_to_u32(1_000_000.0 / self.sample_rate().as_hertz())
+    pub(crate) const fn loop_time_us(self) -> u32 {
+        let _ = self;
+        2_000
     }
 
     pub(crate) const fn dirty_landings_enabled(self) -> bool {
         self.0.as_bytes()[Self::DIRTY_LANDINGS_OFFSET] != 0
-    }
-
-    pub(crate) fn centering_step(self) -> AngleDegrees {
-        self.sample_rate()
-            .sample_period()
-            .map_or(AngleDegrees::from_degrees(0.0), |period| {
-                AngleDegrees::from(self.startup_speed() * period)
-            })
     }
 }
 
@@ -838,7 +842,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         TURN_TILT_ANGLE_LIMIT_FIELD: CustomConfigAngleField => turn_tilt_angle_limit -> AngleDegrees, offset: 132, scale: 100.0;
         TURN_TILT_START_ANGLE_FIELD: CustomConfigAngleField => turn_tilt_start_angle -> AngleDegrees, offset: 134, scale: 100.0;
         TURN_TILT_START_ERPM_FIELD: CustomConfigElectricalSpeedField => turn_tilt_start_erpm -> ElectricalSpeed, offset: 136;
-        TURN_TILT_SPEED_FIELD: CustomConfigAngularVelocityField => turn_tilt_speed -> AngularVelocity, offset: 138, scale: 100.0;
         ATR_STRENGTH_UP_FIELD: CustomConfigPidScaleField => atr_strength_up -> PidScale, offset: 145, scale: 1000.0;
         ATR_STRENGTH_DOWN_FIELD: CustomConfigPidScaleField => atr_strength_down -> PidScale, offset: 147, scale: 1000.0;
         ATR_THRESHOLD_UP_FIELD: CustomConfigAngleField => atr_threshold_up -> AngleDegrees, offset: 149, scale: 100.0;
@@ -847,7 +850,6 @@ impl FloatOutBoyBalanceConfig<'_> {
         ATR_ANGLE_LIMIT_FIELD: CustomConfigAngleField => atr_angle_limit -> AngleDegrees, offset: 155, scale: 100.0;
         ATR_ON_SPEED_FIELD: CustomConfigAngularVelocityField => atr_on_speed -> AngularVelocity, offset: 157, scale: 100.0;
         ATR_OFF_SPEED_FIELD: CustomConfigAngularVelocityField => atr_off_speed -> AngularVelocity, offset: 159, scale: 100.0;
-        ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField => atr_response_boost -> PidScale, offset: 161, scale: 1000.0;
         ATR_TRANSITION_BOOST_FIELD: CustomConfigPidScaleField => atr_transition_boost -> PidScale, offset: 163, scale: 1000.0;
         ATR_AMPS_ACCEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_accel_ratio -> PidScale, offset: 167, scale: 100.0;
         ATR_AMPS_DECEL_RATIO_FIELD: CustomConfigPidScaleField => atr_amps_decel_ratio -> PidScale, offset: 169, scale: 100.0;
@@ -857,6 +859,7 @@ impl FloatOutBoyBalanceConfig<'_> {
         TURN_TILT_ERPM_BOOST_END_FIELD: CustomConfigElectricalSpeedField => turn_tilt_erpm_boost_end -> Rpm, offset: 142, map: ElectricalSpeed::rpm;
         TURN_TILT_YAW_AGGREGATE_FIELD: CustomConfigWireByteField => turn_tilt_yaw_aggregate -> AngleDegrees, offset: 144, map: |value: WireByte| AngleDegrees::from_degrees(f32::from(value.as_u8()));
     }
+    const ATR_RESPONSE_BOOST_FIELD: CustomConfigPidScaleField = vescpkg_rs::generated_custom_config_field!(CustomConfigPidScaleField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 161, scale: 1000.0);
 
     pub(crate) fn turn_tilt_erpm_boost(self) -> u16 {
         u16::from_be_bytes([self.0.as_bytes()[140], self.0.as_bytes()[141]])

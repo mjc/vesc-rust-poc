@@ -5,15 +5,16 @@
 use vescpkg_rs::{
     AmpHoursCharged, AmpHoursDischarged, AngleDegrees, AverageMosfetTemperature,
     AverageMotorTemperature, BatteryCellCount, BatteryLevel, BrakeCurrent, BrakeCurrentRelative,
-    Charge, Current, CurrentOffDelay, CurrentRelative, DCurrent, DirectionalMotorCurrent,
+    Charge, Current, CurrentOffDelay, CurrentRelative, DCurrent, DirectionalMotorCurrent, Distance,
     DutyCycle, DutyCycleLimit, ElectricalSpeed, Energy, EnergyCounterReset, FetTemperature,
     FirmwareFault, FirmwareFaultId, FirmwareFaultWireCode, HandbrakeCurrent, HandbrakeRelative,
     InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorOutput,
     MotorReleaseOutcome, MotorSelection, MotorTelemetry, MotorTemperature, OdometerMeters,
     OpenLoopCurrent, OpenLoopPhase, PeakMosfetTemperature, PeakMotorTemperature, PidPosition,
-    PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, Speed,
-    TachometerReset, TachometerSteps, Temperature, TemperatureLimitEnd, TemperatureLimitStart,
-    TotalMotorCurrent, VehicleSpeed, VescSeconds, WattHoursRemaining,
+    PidPositionOffsetPersistence, PwmCallbackError, Ratio, Rpm, SignedRatio, SignedTripDistance,
+    Speed, TachometerReset, TachometerSteps, Temperature, TemperatureLimitEnd,
+    TemperatureLimitStart, TotalMotorCurrent, TripDistance, VehicleSpeed, VescSeconds,
+    WattHoursRemaining,
 };
 
 unsafe extern "C" fn test_pwm_callback() {}
@@ -70,6 +71,8 @@ fn motor_exposes_typed_handbrake_commands() {
             BatteryLevel::from_fraction(0.0),
         )
         .with_battery_level_remaining(WattHoursRemaining::new(Energy::from_watt_hours(321.0)))
+        .with_trip_distance(TripDistance::new(Distance::from_meters(7.0)))
+        .with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-3.5)))
         .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-11.0)))
         .with_d_axis_current(Some(DCurrent::new(Current::from_amps(1.5))))
         .with_firmware_fault(FirmwareFault::Active(FirmwareFaultId::OverTemperatureFet));
@@ -273,6 +276,7 @@ fn motor_exposes_typed_handbrake_commands() {
         telemetry.signed_trip_distance().distance().as_meters(),
         -3.5
     );
+    assert_eq!(telemetry.trip_distance().distance().as_meters(), 7.0);
     assert_eq!(telemetry.pid_position_setpoint().angle().as_degrees(), 42.0);
     assert_eq!(telemetry.pid_position().angle().as_degrees(), 12.0);
     assert_eq!(telemetry.d_axis_current().unwrap().current().as_amps(), 1.5);

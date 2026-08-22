@@ -4,6 +4,25 @@ use super::{
     FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel,
 };
 use crate::config::FloatOutBoyConfigImage;
+use vescpkg_rs::TimestampTicks;
+
+#[test]
+fn short_alert_transitions_from_elapsed_controller_time() {
+    let mut beeper = FloatOutBoyBeeper::new(true);
+    assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(100)), None);
+    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+
+    assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(600)), None);
+    assert_eq!(
+        beeper.tick_at(TimestampTicks::from_ticks(601)),
+        Some(FloatOutBoyBeeperLevel::Low)
+    );
+    assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(1_101)), None);
+    assert_eq!(
+        beeper.tick_at(TimestampTicks::from_ticks(1_102)),
+        Some(FloatOutBoyBeeperLevel::High)
+    );
+}
 
 impl FloatOutBoyBeeper {
     fn on(&mut self) {
@@ -61,20 +80,20 @@ fn three_short_alert_matches_float_out_boy_transition_sequence() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
 
-    let changes: Vec<_> = (1..=560)
+    let changes: Vec<_> = (1..=42)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
         .collect();
 
     assert_eq!(
         changes,
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
-            (320, FloatOutBoyBeeperLevel::High),
-            (400, FloatOutBoyBeeperLevel::Low),
-            (480, FloatOutBoyBeeperLevel::High),
-            (560, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
+            (24, FloatOutBoyBeeperLevel::High),
+            (30, FloatOutBoyBeeperLevel::Low),
+            (36, FloatOutBoyBeeperLevel::High),
+            (42, FloatOutBoyBeeperLevel::Low),
         ]
     );
 }
@@ -84,20 +103,20 @@ fn three_long_alert_uses_float_out_boy_long_period() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     beeper.alert(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
 
-    let changes: Vec<_> = (1..=2_100)
+    let changes: Vec<_> = (1..=182)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
         .collect();
 
     assert_eq!(
         changes,
         [
-            (300, FloatOutBoyBeeperLevel::Low),
-            (600, FloatOutBoyBeeperLevel::High),
-            (900, FloatOutBoyBeeperLevel::Low),
-            (1_200, FloatOutBoyBeeperLevel::High),
-            (1_500, FloatOutBoyBeeperLevel::Low),
-            (1_800, FloatOutBoyBeeperLevel::High),
-            (2_100, FloatOutBoyBeeperLevel::Low),
+            (26, FloatOutBoyBeeperLevel::Low),
+            (52, FloatOutBoyBeeperLevel::High),
+            (78, FloatOutBoyBeeperLevel::Low),
+            (104, FloatOutBoyBeeperLevel::High),
+            (130, FloatOutBoyBeeperLevel::Low),
+            (156, FloatOutBoyBeeperLevel::High),
+            (182, FloatOutBoyBeeperLevel::Low),
         ]
     );
 }
@@ -107,12 +126,12 @@ fn four_short_alert_uses_float_out_boy_transition_count() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::FOUR));
 
-    let changes: Vec<_> = (1..=720)
+    let changes: Vec<_> = (1..=54)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
         .collect();
 
     assert_eq!(changes.len(), 9);
-    assert_eq!(changes.last(), Some(&(720, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(54, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -120,12 +139,12 @@ fn seven_long_alert_uses_float_out_boy_capped_transition_count() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     beeper.alert(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::SEVEN));
 
-    let changes: Vec<_> = (1..=4_500)
+    let changes: Vec<_> = (1..=390)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
         .collect();
 
     assert_eq!(changes.len(), 15);
-    assert_eq!(changes.last(), Some(&(4_500, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(390, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -138,15 +157,15 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
     beeper.force_on();
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
 
-    let changes: Vec<_> = (1..=240)
+    let changes: Vec<_> = (1..=18)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
         .collect();
     assert_eq!(
         changes,
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ]
     );
 

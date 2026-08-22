@@ -6,7 +6,9 @@
 use super::state::FloatOutBoyPackageState;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
-use vescpkg_rs::prelude::{OdometerMeters, ThreadPriority, TimestampTicks};
+use vescpkg_rs::prelude::{
+    OdometerMeters, SYSTEM_TICK_RATE_HZ, SampleRate, ThreadPriority, TimestampTicks, VescSeconds,
+};
 #[cfg(all(not(test), target_arch = "arm"))]
 use vescpkg_rs::{AnalogPin, DigitalPin, GpioMode};
 use vescpkg_rs::{FirmwareThreads, Imu, MotorOutput, MotorTelemetry};
@@ -21,6 +23,42 @@ use test_support::{
 // `aux_thd` sleeps `1e6 / LEDS_REFRESH_RATE` at `third_party/float-out-boy/src/main.c:1155`.
 const FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ: u32 = 30;
 const FLOAT_OUT_BOY_AUX_LOOP_TIME_US: u32 = 1_000_000 / FLOAT_OUT_BOY_LEDS_REFRESH_RATE_HZ;
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FloatOutBoyMainLoopTiming {
+    nominal_ticks: u32,
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+impl FloatOutBoyMainLoopTiming {
+    fn from_sample_rate(sample_rate: SampleRate) -> Self {
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        let nominal_ticks =
+            crate::wire::saturating_trunc_f32_to_u32(tick_rate / sample_rate.as_hertz()).max(1);
+        Self { nominal_ticks }
+    }
+
+    fn nominal_sleep(self) -> Duration {
+        Self::ticks_to_duration(self.nominal_ticks)
+    }
+
+    fn sleep_after_work(self, elapsed: VescSeconds) -> Duration {
+        let elapsed = elapsed.as_seconds();
+        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).map_or(f32::NAN, f32::from);
+        if !elapsed.is_finite() || elapsed < 0.0 {
+            return self.nominal_sleep();
+        }
+        // C map: Refloat rounds work time to system ticks with `lrintf`, then
+        // retains at least one sleep tick at `src/main.c` in `fa5d9f73`.
+        let work_ticks = crate::wire::saturating_trunc_f32_to_u32(elapsed * tick_rate + 0.5);
+        Self::ticks_to_duration(self.nominal_ticks.saturating_sub(work_ticks).max(1))
+    }
+
+    fn ticks_to_duration(ticks: u32) -> Duration {
+        Duration::from_micros(u64::from(ticks).saturating_mul(1_000_000) / SYSTEM_TICK_RATE_HZ)
+    }
+}
 
 use vescpkg_rs::prelude::AdcVoltage;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +135,7 @@ impl FloatOutBoyMainThreadTick {
         }
     }
 
+    #[cfg(test)]
     const fn sleep_us(self) -> u32 {
         self.sleep_us
     }
@@ -113,23 +152,23 @@ fn prepare_float_out_boy_main_thread_tick(
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
     motor: &impl MotorOutput,
-    footpad_adc1: AdcVoltage,
-    footpad_adc2: AdcVoltage,
+    footpads: (AdcVoltage, AdcVoltage),
     system_time_ticks: TimestampTicks,
+    elapsed: VescSeconds,
 ) -> FloatOutBoyMainThreadPrepare {
     // C map: `float_out_boy_thd` refreshes runtime inputs, executes state/control
     // logic, applies motor control, then sleeps `loop_time_us` through
     // `third_party/float-out-boy/src/main.c:772-1080`.
     // C calls `beeper_update` before its state switch at
     // `third_party/float-out-boy/src/main.c:776-824`.
-    let alert_level = state.tick_beeper();
-    let restore_flywheel_config = state.refresh_main_loop_runtime_state(
+    let alert_level = state.tick_beeper_at(system_time_ticks);
+    let restore_flywheel_config = state.refresh_main_loop_runtime_state_elapsed(
         telemetry,
         imu,
         motor,
-        footpad_adc1,
-        footpad_adc2,
+        footpads,
         system_time_ticks,
+        elapsed,
     );
     FloatOutBoyMainThreadPrepare {
         alert_level,
@@ -143,14 +182,22 @@ fn finish_float_out_boy_main_thread_tick(
     system_time_ticks: TimestampTicks,
     prepared: FloatOutBoyMainThreadPrepare,
 ) -> FloatOutBoyMainThreadTick {
-    let run_state = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state();
-    state.apply_motor_control(motor, run_state, system_time_ticks);
-    state.sample_data_recorder(system_time_ticks);
+    #[cfg(test)]
+    {
+        let run_state = state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state();
+        // Host main-loop fixtures preserve their existing deterministic control
+        // step. The ARM artifact applies motor output and records samples from
+        // the IMU callback, matching Refloat main.
+        state.apply_motor_control(motor, run_state, system_time_ticks);
+        state.sample_data_recorder(system_time_ticks);
+    }
+    #[cfg(not(test))]
+    let _ = (motor, system_time_ticks);
     let beeper_level = state.take_beeper_level().or(prepared.alert_level);
 
     let configure_beeper = state.take_beeper_configuration_request();
@@ -167,6 +214,7 @@ fn finish_float_out_boy_main_thread_tick(
 /// `aux_thd` renders LEDs, conditionally stores the backup, then refreshes motor
 /// configuration after a strict half-second interval at
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
+#[cfg(test)]
 pub(crate) fn tick_float_out_boy_aux_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -176,6 +224,16 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
     store_backup: impl FnOnce() -> bool,
 ) -> Option<bool> {
+    let running = matches!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        crate::domain::FloatOutBoyRunState::Running
+    );
+    state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
     state.render_internal_leds(telemetry, current_time, paint_leds);
     let stored = state.aux_backup_due(odometer).then(|| {
@@ -270,9 +328,31 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             });
             let migration = ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
             let _ = ctx.with_state_mut(|state| state.finish_startup_configure(migration));
+            let imu_frequency = vescpkg_rs::FirmwareSettings.imu_sample_rate().sample_rate();
+            let frequency_epoch = ctx.firmware().clock().now();
+            let _ = ctx.with_state_mut(|state| {
+                state.initialize_frequency_tracking(imu_frequency, frequency_epoch);
+            });
 
+            let mut timing = ctx
+                .with_state_mut(|state| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        state.configured_main_loop_sample_rate(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE,
+                    )
+                });
+            let mut next_sleep = timing.nominal_sleep();
+            let mut loop_timer = ctx.firmware().clock().timer_now();
             while !ctx.firmware().threads().should_terminate() {
-                let system_time_ticks = ctx.firmware().clock().now();
+                let firmware = ctx.firmware();
+                firmware.threads().sleep_for(next_sleep);
+                let elapsed = firmware.clock().timer_elapsed_since(loop_timer);
+                loop_timer = firmware.clock().timer_now();
+                let system_time_ticks = firmware.clock().now();
                 // C map: Float Out Boy `footpad_sensor_update` reads ADC1/ADC2 at
                 // `third_party/float-out-boy/src/footpad_sensor.c:28-31`; VESC
                 // defines those enum slots at `third_party/vesc/lispBM/c_libs/vesc_c_if.h:219-220`.
@@ -287,9 +367,9 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                             firmware.telemetry(),
                             firmware.imu(),
                             firmware.motor(),
-                            footpad_voltage1,
-                            footpad_voltage2,
+                            (footpad_voltage1, footpad_voltage2),
                             system_time_ticks,
+                            elapsed,
                         )
                     })
                 };
@@ -317,18 +397,23 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
                         )
                     })
                 });
-                let sleep_us = tick.map_or(1, |tick| {
+                if let Some(tick) = tick {
                     if let Some(level) = tick.beeper_pin_level {
                         if let Ok(pin) = ctx.firmware().gpio().acquire_digital(DigitalPin::PPM) {
                             let _ = pin.set_mode(GpioMode::Output);
                             let _ = pin.write(level);
                         }
                     }
-                    tick.sleep_us()
-                });
-                ctx.firmware()
-                    .threads()
-                    .sleep_for(Duration::from_micros(u64::from(sleep_us)));
+                }
+                if let Some(configured) = ctx.with_state_mut(|state| {
+                    FloatOutBoyMainLoopTiming::from_sample_rate(
+                        state.configured_main_loop_sample_rate(),
+                    )
+                }) {
+                    timing = configured;
+                }
+                next_sleep =
+                    timing.sleep_after_work(ctx.firmware().clock().timer_elapsed_since(loop_timer));
             }
         }
 
@@ -376,17 +461,34 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                 let clock = firmware.clock();
                 let system_time_ticks = clock.now();
                 let current_time = clock.uptime().as_seconds();
-                let _ = ctx.with_state_mut(|state| {
-                    tick_float_out_boy_aux_thread_with(
-                        state,
-                        telemetry,
-                        odometer,
-                        system_time_ticks,
-                        current_time,
-                        |_| {},
-                        || firmware.inputs().store_backup().is_ok(),
-                    )
+                let prepared = ctx.with_state_mut(|state| {
+                    let running = matches!(
+                        state
+                            .all_data_payloads()
+                            .base()
+                            .status()
+                            .ride_state()
+                            .run_state(),
+                        crate::domain::FloatOutBoyRunState::Running
+                    );
+                    state.check_frequency_tracking(running, system_time_ticks);
+                    let backup_due = state.aux_backup_due(odometer);
+                    let leds = state.prepare_internal_led_aux_work(telemetry, current_time);
+                    (leds, backup_due)
                 });
+                if let Some((leds, backup_due)) = prepared {
+                    let leds = leds.execute();
+                    let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
+                    let _ = ctx.with_state_mut(|state| {
+                        state.commit_internal_led_aux_work(leds);
+                        match stored {
+                            Some(true) => state.record_aux_backup(odometer),
+                            Some(false) => state.record_aux_backup_failure(),
+                            None => {}
+                        }
+                        state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
+                    });
+                }
                 threads.sleep_for(Duration::from_micros(u64::from(
                     FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
                 )));

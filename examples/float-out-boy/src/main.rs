@@ -109,6 +109,8 @@ pub mod leds;
 #[cfg(any(test, target_arch = "arm"))]
 mod motor_control;
 #[cfg(any(test, target_arch = "arm"))]
+mod motor_torque;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod package;
 #[cfg(any(test, target_arch = "arm"))]
 mod wire;

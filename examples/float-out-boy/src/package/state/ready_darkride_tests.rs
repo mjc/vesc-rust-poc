@@ -116,7 +116,7 @@ fn ready_darkride_disables_and_alerts_after_ten_seconds_like_float_out_boy() {
 
     for (ticks, expected_darkride, expected_first_high) in [
         (100_000, FloatOutBoyDarkRideState::Active, None),
-        (100_001, FloatOutBoyDarkRideState::Upright, Some(600)),
+        (100_001, FloatOutBoyDarkRideState::Upright, Some(52)),
     ] {
         let mut state = FloatOutBoyPackageState::new(ready_darkride_payloads());
         assert!(state.serialized_config.editor().set_beeper_enabled(true));

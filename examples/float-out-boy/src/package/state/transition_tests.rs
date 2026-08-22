@@ -999,6 +999,10 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
     );
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(running_payloads(FloatOutBoyMode::Normal));
+    state.initialize_frequency_tracking(
+        SampleRate::from_hertz(832.0),
+        TimestampTicks::from_ticks(0),
+    );
     configure_startup_click(&mut state, WireByte::new(6));
     edit_config(&mut state, |config| {
         assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(4.0)));
