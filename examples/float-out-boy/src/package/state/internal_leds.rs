@@ -356,3 +356,17 @@ impl FloatOutBoyInternalLedAuxWork {
         true
     }
 }
+
+#[cfg(target_arch = "arm")]
+impl FloatOutBoyInternalLedAuxResult {
+    pub(in crate::package) fn destroy_after_rejected_commit(mut self) {
+        let Some(mut runtime) = self.runtime.take() else {
+            return;
+        };
+        if !runtime.driver.destroy(hardware::teardown) {
+            // DMA still owns the pulse buffer. Leaking it during package stop is
+            // the only memory-safe outcome when hardware refuses to quiesce.
+            let _ = core::mem::ManuallyDrop::new(runtime);
+        }
+    }
+}

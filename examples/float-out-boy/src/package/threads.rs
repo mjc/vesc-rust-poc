@@ -477,10 +477,12 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                     (leds, backup_due)
                 });
                 if let Some((leds, backup_due)) = prepared {
-                    let leds = leds.execute();
+                    let mut leds = Some(leds.execute());
                     let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
-                    let _ = ctx.with_state_mut(|state| {
-                        state.commit_internal_led_aux_work(leds);
+                    let committed = ctx.with_state_mut(|state| {
+                        if let Some(leds) = leds.take() {
+                            state.commit_internal_led_aux_work(leds);
+                        }
                         match stored {
                             Some(true) => state.record_aux_backup(odometer),
                             Some(false) => state.record_aux_backup_failure(),
@@ -488,6 +490,11 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                         }
                         state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
                     });
+                    if committed.is_none()
+                        && let Some(leds) = leds
+                    {
+                        leds.destroy_after_rejected_commit();
+                    }
                 }
                 threads.sleep_for(Duration::from_micros(u64::from(
                     FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
