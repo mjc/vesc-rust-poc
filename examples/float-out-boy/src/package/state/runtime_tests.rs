@@ -435,7 +435,10 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
-    assert_eq!(state.motor_kinematics.average(), Rpm::ZERO);
+    assert_eq!(
+        state.motor_kinematics.average(),
+        super::motor_kinematics::ElectricalAcceleration::ZERO
+    );
     assert_eq!(
         base.motor().duty_cycle(),
         DutyCycle::new(SignedRatio::from_ratio_const(0.0))

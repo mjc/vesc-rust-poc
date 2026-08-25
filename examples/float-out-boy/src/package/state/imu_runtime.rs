@@ -204,7 +204,7 @@ struct TransitionPhase {
     imu_roll: ImuRoll,
     motor_erpm: Rpm,
     control: ControlConditions,
-    motor_acceleration: Rpm,
+    motor_acceleration: super::motor_kinematics::ElectricalAcceleration,
 }
 
 struct FaultInputs {

@@ -1,3 +1,4 @@
+use super::motor_kinematics::ElectricalAcceleration;
 use super::smooth_setpoint::{
     SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
@@ -311,7 +312,7 @@ pub(super) struct RideModifierInput {
     pub(super) motor_erpm: Rpm,
     pub(super) filtered_torque: MotorTorque,
     pub(super) motor_current: MotorCurrent,
-    pub(super) acceleration: Rpm,
+    pub(super) acceleration: ElectricalAcceleration,
     pub(super) darkride: bool,
     pub(super) wheelslip: FloatOutBoyWheelSlipState,
 }
@@ -482,9 +483,8 @@ impl RideModifierState {
         let expected =
             atr_expected_acceleration(input.filtered_torque, motor.erpm, ratio).as_erpm_delta();
         let forward = motor.direction.is_forward();
-        let measured = (input.acceleration.as_revolutions_per_minute()
-            / LOOP_RATE_COMPAT.as_hertz())
-        .clamp(-5.0, 5.0);
+        let measured = (input.acceleration.as_erpm_per_second() / LOOP_RATE_COMPAT.as_hertz())
+            .clamp(-5.0, 5.0);
         let new_diff = expected - measured;
         let abs_erpm = motor.abs_erpm();
         let cutoff_hertz = if abs_erpm > ATR_FILTER_ONE_HZ_MIN_ERPM {

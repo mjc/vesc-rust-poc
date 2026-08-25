@@ -37,6 +37,9 @@
     )
 )]
 
+#[cfg(target_arch = "arm")]
+extern crate alloc;
+
 #[cfg(any(test, not(target_arch = "arm")))]
 extern crate std;
 

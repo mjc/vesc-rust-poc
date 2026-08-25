@@ -33,7 +33,7 @@ fn input() -> RideModifierInput {
         motor_erpm: rpm(3_000.0),
         filtered_torque: MotorTorque::ZERO,
         motor_current: MotorCurrent::new(Current::ZERO),
-        acceleration: Rpm::ZERO,
+        acceleration: ElectricalAcceleration::ZERO,
         darkride: false,
         wheelslip: FloatOutBoyWheelSlipState::None,
     }

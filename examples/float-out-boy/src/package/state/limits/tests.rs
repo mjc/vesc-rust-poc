@@ -1,4 +1,5 @@
 use super::*;
+use crate::package::state::motor_kinematics::ElectricalAcceleration;
 
 #[test]
 fn float_out_boy_limits_keep_source_backed_typed_values() {
@@ -29,11 +30,11 @@ fn float_out_boy_limits_keep_source_backed_typed_values() {
 
     assert_eq!(
         traction_loss::ACCELERATION_DETECT,
-        Rpm::from_revolutions_per_minute(10_000.0)
+        ElectricalAcceleration::from_erpm_per_second(10_000.0)
     );
     assert_eq!(
         traction_loss::ACCELERATION_CLEAR,
-        Rpm::from_revolutions_per_minute(7_000.0)
+        ElectricalAcceleration::from_erpm_per_second(7_000.0)
     );
     assert_eq!(traction_loss::DUTY, SignedRatio::from_ratio_const(0.3));
     assert_eq!(
