@@ -29,6 +29,7 @@ const VESC_PACKET_THREAD_STACK_BYTES: usize = 2048;
 const VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES: usize = 512;
 const APP_DATA_CALLBACK_STACK_BUDGET: usize =
     VESC_PACKET_THREAD_STACK_BYTES - VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES;
+const VESC_IMU_CALLBACK_STACK_BUDGET: usize = 1024;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -614,7 +615,8 @@ fn validate_native_stack(elf: &Path) -> Result<(), BuildError> {
     )?;
     let report = String::from_utf8_lossy(&output.stdout);
     validate_loader_init_stack_report(&report)?;
-    validate_app_data_callback_stack_report(&report)
+    validate_app_data_callback_stack_report(&report)?;
+    validate_imu_callback_stack_report(&report)
 }
 
 fn numbered_register(register: &str) -> Option<(char, usize)> {
@@ -798,6 +800,23 @@ fn validate_app_data_callback_stack_report(report: &str) -> Result<(), BuildErro
     Ok(())
 }
 
+fn validate_imu_callback_stack_report(report: &str) -> Result<(), BuildError> {
+    let functions = disassembled_functions(report)?;
+    for callback in functions
+        .iter()
+        .filter(|function| function.name.ends_with("imu_read_callback"))
+    {
+        let call_chain_bytes = stack_through(&callback.name, &functions, &mut Vec::new());
+        if call_chain_bytes > VESC_IMU_CALLBACK_STACK_BUDGET {
+            return Err(BuildError(format!(
+                "{} call chain uses {call_chain_bytes} bytes of stack, exceeding VESC's {VESC_IMU_CALLBACK_STACK_BUDGET}-byte IMU thread stack",
+                callback.name,
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_loader_entrypoint_layout(report: &str) -> Result<(), BuildError> {
     let symbol_address = |name| {
         report.lines().find_map(|line| {
@@ -971,9 +990,9 @@ mod tests {
         build_package_bytes, cargo_build_command, cargo_message_artifacts, command_failure_message,
         package_slug, select_package, stage_generated_assets,
         validate_app_data_callback_stack_report, validate_descriptor_fullscreen,
-        validate_image_offset_relocations, validate_loader_entrypoint_layout,
-        validate_loader_init_stack_report, validate_relocation_report, validate_target,
-        validate_writable_section_report,
+        validate_image_offset_relocations, validate_imu_callback_stack_report,
+        validate_loader_entrypoint_layout, validate_loader_init_stack_report,
+        validate_relocation_report, validate_target, validate_writable_section_report,
     };
     use crate::package::Package;
     use crate::package_wire::parse_vescpkg;
@@ -1528,6 +1547,23 @@ Symbol table '.symtab' contains 2 entries:\n\
             validate_app_data_callback_stack_report(report).expect_err("oversized call chain");
 
         assert!(error.to_string().contains("1548 bytes"));
+    }
+
+    #[test]
+    fn rejects_an_imu_callback_call_chain_larger_than_the_vesc_thread() {
+        let report = "\
+00001000 <float_out_boy_imu_read_callback>:\n\
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    1002:\tb09b      \tsub\tsp, #108\n\
+    1004:\tf000 f801 \tbl\t2000 <helper>\n\
+00002000 <helper>:\n\
+    2000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    2002:\tf5ad 7d6f \tsub.w\tsp, sp, #956\n";
+
+        let error = validate_imu_callback_stack_report(report).expect_err("oversized call chain");
+
+        assert!(error.to_string().contains("1104 bytes"));
+        assert!(error.to_string().contains("1024-byte IMU thread"));
     }
 
     #[test]

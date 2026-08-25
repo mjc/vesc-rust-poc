@@ -141,10 +141,15 @@ impl RollProjection {
         // C map: `imu_update` uses raw roll radians for the pitch-rate yaw
         // projection at `third_party/float-out-boy/src/imu.c:46-51`.
         let roll_radians = roll.angle().as_radians();
-        Self {
-            sin: sin(roll_radians),
-            cos: cos(roll_radians),
+        if !roll_radians.is_finite() {
+            return Self {
+                sin: f32::NAN,
+                cos: f32::NAN,
+            };
         }
+        let roll_radians = roll_radians.clamp(-core::f32::consts::PI, core::f32::consts::PI);
+        let (sin, cos) = bounded_sin_cos(roll_radians);
+        Self { sin, cos }
     }
 
     #[inline]
@@ -153,6 +158,58 @@ impl RollProjection {
         // on pitch-rate while the board is rolled.
         let Self { sin, cos } = self;
         gyro_pitch * (cos * cos) + gyro_yaw * (sin * cos)
+    }
+}
+
+fn bounded_sin_cos(angle: f32) -> (f32, f32) {
+    let (angle, cosine_sign) = if angle > core::f32::consts::FRAC_PI_2 {
+        (core::f32::consts::PI - angle, -1.0)
+    } else if angle < -core::f32::consts::FRAC_PI_2 {
+        (-core::f32::consts::PI - angle, -1.0)
+    } else {
+        (angle, 1.0)
+    };
+    let squared = angle * angle;
+    let sin = angle
+        * (1.0
+            + squared
+                * (-1.0 / 6.0
+                    + squared * (1.0 / 120.0 + squared * (-1.0 / 5040.0 + squared / 362_880.0))));
+    let cos = cosine_sign
+        * (1.0
+            + squared
+                * (-1.0 / 2.0
+                    + squared * (1.0 / 24.0 + squared * (-1.0 / 720.0 + squared / 40_320.0))));
+    (sin, cos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RollProjection, bounded_sin_cos};
+    use vescpkg_rs::prelude::{AngleRadians, ImuRoll};
+
+    #[test]
+    fn roll_projection_bounds_out_of_contract_firmware_angles_before_trigonometry() {
+        let projection =
+            RollProjection::from_roll(ImuRoll::new(AngleRadians::from_radians(f32::MAX)));
+
+        assert!(projection.sin.is_finite());
+        assert!(projection.cos.is_finite());
+    }
+
+    #[test]
+    fn bounded_projection_matches_refloat_trigonometry_over_valid_rolls() {
+        for angle in [
+            -core::f32::consts::PI,
+            -1.0,
+            0.0,
+            1.0,
+            core::f32::consts::PI,
+        ] {
+            let (sin, cos) = bounded_sin_cos(angle);
+            assert!((sin - vescpkg_rs::sin(angle)).abs() < 0.001);
+            assert!((cos - vescpkg_rs::cos(angle)).abs() < 0.001);
+        }
     }
 }
 
@@ -467,4 +524,3 @@ impl LoopState {
         }
     }
 }
-use vescpkg_rs::{cos, sin};

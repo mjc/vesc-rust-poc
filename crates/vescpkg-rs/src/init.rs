@@ -373,9 +373,9 @@ impl<'info> PackageStart<'info> {
 
     /// Allocate loader-owned package state and default-initialize it in place.
     ///
-    /// Unlike [`Self::install_runtime_state`], this does not pass a completed `T` through the
-    /// package entrypoint's stack. Use it for large default package states because VESC invokes
-    /// package initialization on the `LispBM` evaluator's bounded stack.
+    /// This writes the default value into loader-owned storage. Rust does not guarantee that a
+    /// generic `T::default()` is constructed directly at its destination, so package artifacts
+    /// must still satisfy the native stack validator.
     ///
     /// # Errors
     ///

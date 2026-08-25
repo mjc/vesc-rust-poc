@@ -360,13 +360,43 @@ impl FloatOutBoyInternalLedAuxWork {
 #[cfg(target_arch = "arm")]
 impl FloatOutBoyInternalLedAuxResult {
     pub(in crate::package) fn destroy_after_rejected_commit(mut self) {
-        let Some(mut runtime) = self.runtime.take() else {
+        let Some(runtime) = self.runtime.take() else {
             return;
         };
-        if !runtime.driver.destroy(hardware::teardown) {
-            // DMA still owns the pulse buffer. Leaking it during package stop is
-            // the only memory-safe outcome when hardware refuses to quiesce.
-            let _ = core::mem::ManuallyDrop::new(runtime);
+        destroy_or_retain(runtime, |runtime| {
+            runtime.driver.destroy(hardware::teardown)
+        });
+    }
+}
+
+fn destroy_or_retain<T>(mut value: T, destroy: impl FnOnce(&mut T) -> bool) {
+    if !destroy(&mut value) {
+        // DMA still owns the pulse buffer. Leaking it during package stop is
+        // the only memory-safe outcome when hardware refuses to quiesce.
+        let _ = core::mem::ManuallyDrop::new(value);
+    }
+}
+
+#[cfg(test)]
+mod rejected_commit_tests {
+    use super::destroy_or_retain;
+    use core::cell::Cell;
+
+    struct DropProbe<'count>(&'count Cell<u8>);
+
+    impl Drop for DropProbe<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
         }
+    }
+
+    #[test]
+    fn rejected_commit_drops_quiesced_storage_but_retains_dma_owned_storage() {
+        let drops = Cell::new(0);
+        destroy_or_retain(DropProbe(&drops), |_| true);
+        assert_eq!(drops.get(), 1);
+
+        destroy_or_retain(DropProbe(&drops), |_| false);
+        assert_eq!(drops.get(), 1);
     }
 }
