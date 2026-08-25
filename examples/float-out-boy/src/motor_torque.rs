@@ -1,4 +1,4 @@
-use vescpkg_rs::prelude::{Current, SignedRatio};
+use vescpkg_rs::prelude::{Current, MotorCurrent, MotorCurrentLimit, SignedRatio};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::prelude::{FocMotorFluxLinkage, MotorPoleCount};
 
@@ -33,8 +33,28 @@ impl MotorTorque {
         Self(self.0.max(other.0))
     }
 
+    pub(crate) fn add(self, other: Self) -> Self {
+        core::ops::Add::add(self, other)
+    }
+
+    pub(crate) fn sub(self, other: Self) -> Self {
+        core::ops::Sub::sub(self, other)
+    }
+
+    pub(crate) fn scaled_by(self, scale: f32) -> Self {
+        core::ops::Mul::mul(self, scale)
+    }
+
+    pub(crate) fn lerp(self, target: Self, alpha: f32) -> Self {
+        self.add(target.sub(self).scaled_by(alpha))
+    }
+
     pub(crate) const fn is_negative(self) -> bool {
         self.0 < 0.0
+    }
+
+    pub(crate) const fn is_positive(self) -> bool {
+        self.0 > 0.0
     }
 
     pub(crate) const fn signum(self) -> SignedRatio {
@@ -74,6 +94,37 @@ impl core::ops::Div<f32> for MotorTorque {
     }
 }
 
+impl core::ops::Neg for MotorTorque {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+
+/// Positive magnitude limit in the motor-torque domain.
+#[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub(crate) struct MotorTorqueLimit(MotorTorque);
+
+impl MotorTorqueLimit {
+    pub(crate) const fn new(torque: MotorTorque) -> Self {
+        Self(torque.abs())
+    }
+
+    pub(crate) const fn torque(self) -> MotorTorque {
+        self.0
+    }
+
+    pub(crate) fn clamp(self, torque: MotorTorque) -> MotorTorque {
+        if torque.abs().as_newton_meters() > self.0.as_newton_meters() {
+            self.0.scaled_by(torque.signum().as_ratio())
+        } else {
+            torque
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct MotorTorqueConstant(f32);
@@ -109,6 +160,21 @@ impl MotorTorqueConstant {
 
     pub(crate) fn current_from_torque(self, torque: MotorTorque) -> Current {
         Current::from_amps(torque.as_newton_meters() / self.newton_meters_per_amp())
+    }
+
+    pub(crate) fn torque_from_motor_current(self, current: MotorCurrent) -> MotorTorque {
+        self.torque_from_current(current.current())
+    }
+
+    pub(crate) fn motor_current_from_torque(self, torque: MotorTorque) -> MotorCurrent {
+        MotorCurrent::new(self.current_from_torque(torque))
+    }
+
+    pub(crate) fn torque_limit_from_current_limit(
+        self,
+        limit: MotorCurrentLimit,
+    ) -> MotorTorqueLimit {
+        MotorTorqueLimit::new(self.torque_from_current(limit.current()))
     }
 }
 

@@ -87,10 +87,20 @@ pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &im
     state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
     state.motor_temperature_limit_start = telemetry.motor_temperature_limit_start();
     state.battery_cell_count = telemetry.battery_cell_count();
-    state.motor_torque_constant = crate::motor_torque::MotorTorqueConstant::from_firmware_config(
-        settings.foc_motor_flux_linkage(),
-        settings.motor_pole_count().ok(),
-    );
+    #[cfg(all(not(test), target_arch = "arm"))]
+    {
+        state.motor_torque_constant =
+            crate::motor_torque::MotorTorqueConstant::from_firmware_config(
+                settings.foc_motor_flux_linkage(),
+                settings.motor_pole_count().ok(),
+            );
+    }
+    #[cfg(any(test, not(target_arch = "arm")))]
+    {
+        // Host fixtures model the legacy compatibility motor; the ARM package
+        // reads the live firmware value above.
+        state.motor_torque_constant = crate::motor_torque::MotorTorqueConstant::REFLOAT_COMPAT;
+    }
 }
 
 pub(super) fn refresh(

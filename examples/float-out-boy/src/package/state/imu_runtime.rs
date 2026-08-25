@@ -602,6 +602,7 @@ fn evaluate_transition_phase(
     let normal = evaluate_normal_faults(state, base, system_time_ticks, &fault_inputs);
     let darkride =
         evaluate_darkride_faults(state, system_time_ticks, &fault_inputs, normal.can_engage);
+    let backup_allows_engagement = state.aux_backup_allows_engagement(system_time_ticks);
     let faults = state.serialized_config.faults();
     let startup = state.serialized_config.startup();
     let dirty_landing_margin = matches!(
@@ -646,7 +647,8 @@ fn evaluate_transition_phase(
         && balance_pitch.angle_degrees().abs() < push_start::ANGLE
         && roll_abs < push_start::ANGLE
         && !(faults.reversestop_enabled() && motor_erpm.is_negative());
-    let state_engage = ready_engage || ready_darkride || ready_push_start;
+    let state_engage =
+        backup_allows_engagement && (ready_engage || ready_darkride || ready_push_start);
     let stop_event = first_transition_stop(&normal, &darkride);
     let reverse_stop_entry_pending = !matches!(
         ride_state.setpoint_adjustment(),
@@ -1154,8 +1156,10 @@ fn advance_running_control(
         let gyro = imu.angular_rate();
         let mut loop_state = state.balance_loop;
         loop_state.balance_current = runtime.balance_current.current();
-        loop_state.booster_current = runtime.booster_current.current();
-        let balance_loop = loop_state.advance_balance_loop_elapsed(
+        loop_state.booster_torque = state
+            .motor_torque_constant
+            .torque_from_motor_current(runtime.booster_current.current());
+        let balance_loop = loop_state.advance_balance_loop_elapsed_with_torque(
             state.runtime_balance_loop_config(),
             LoopInput {
                 setpoint: runtime.setpoints.board(),
@@ -1174,10 +1178,14 @@ fn advance_running_control(
                 traction_control: state.ride_flags.traction_control,
             },
             elapsed,
+            state.motor_torque_constant,
         );
         state.balance_loop = balance_loop.state;
-        runtime.booster_current =
-            FloatOutBoyRealtimeBoosterCurrent::new(state.balance_loop.booster_current);
+        runtime.booster_current = FloatOutBoyRealtimeBoosterCurrent::new(
+            state
+                .motor_torque_constant
+                .motor_current_from_torque(state.balance_loop.booster_torque),
+        );
         runtime.balance_current =
             FloatOutBoyRealtimeBalanceCurrent::new(state.balance_loop.balance_current);
         state.request_motor_current(balance_loop.requested_current);
@@ -1206,8 +1214,7 @@ pub(super) fn refresh(
     let mut runtime = if reset_runtime {
         // Upstream `reset_runtime_vars` clears control-loop history and seeds only
         // the board setpoint from the current balance pitch.
-        state.balance_loop.reset_pid();
-        state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
+        state.balance_loop.reset_runtime();
         state.reverse_stop.reset(state.motor_distance);
         state.motor_kinematics.reset_acceleration();
         state.motor_current_filter.reset_runtime();

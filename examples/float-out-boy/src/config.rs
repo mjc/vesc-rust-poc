@@ -4,6 +4,7 @@
 
 use crate::balance::LoopConfig;
 use crate::bms::{FloatOutBoyBmsIntegration, FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
+use crate::motor_torque::MotorTorqueConstant;
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
@@ -299,13 +300,16 @@ impl FloatOutBoyConfigImage {
             ki: balance.ki(),
             kp_brake: balance.kp_brake(),
             kp2_brake: balance.kp2_brake(),
-            ki_limit: balance.ki_limit(),
+            ki_limit: MotorTorqueConstant::REFLOAT_COMPAT
+                .torque_limit_from_current_limit(balance.ki_limit()),
             booster_angle: balance.booster_angle(),
             booster_ramp: balance.booster_ramp(),
-            booster_current: balance.booster_current(),
+            booster_torque: MotorTorqueConstant::REFLOAT_COMPAT
+                .torque_from_motor_current(balance.booster_current()),
             brkbooster_angle: balance.brake_booster_angle(),
             brkbooster_ramp: balance.brake_booster_ramp(),
-            brkbooster_current: balance.brake_booster_current(),
+            brkbooster_torque: MotorTorqueConstant::REFLOAT_COMPAT
+                .torque_from_motor_current(balance.brake_booster_current()),
             hertz: self.startup().sample_rate(),
         }
     }

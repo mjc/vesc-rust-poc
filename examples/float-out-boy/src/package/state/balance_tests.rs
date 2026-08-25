@@ -14,6 +14,7 @@ use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
     FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -164,7 +165,9 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     let first_error = (first_base.setpoints().board().angle()
         - first_base.attitude().balance_pitch().angle_degrees())
     .as_degrees();
-    let first_integral = state.balance_loop.pid.integral_current.current().as_amps();
+    let first_integral = MotorTorqueConstant::REFLOAT_COMPAT
+        .current_from_torque(state.balance_loop.pid.integral_torque)
+        .as_amps();
     let integration_scale = sample_rate
         .sample_period()
         .map_or(0.0, |period| 720.0 * period.as_seconds());
@@ -200,7 +203,9 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     let second_error = (second_base.setpoints().board().angle()
         - second_base.attitude().balance_pitch().angle_degrees())
     .as_degrees();
-    let second_integral = state.balance_loop.pid.integral_current.current().as_amps();
+    let second_integral = MotorTorqueConstant::REFLOAT_COMPAT
+        .current_from_torque(state.balance_loop.pid.integral_torque)
+        .as_amps();
     let expected_integral = first_integral + second_error * 0.1 * integration_scale;
     assert!(
         (second_integral - expected_integral).abs() < 0.0001,

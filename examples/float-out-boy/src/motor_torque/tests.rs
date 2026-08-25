@@ -1,5 +1,5 @@
 use super::*;
-use vescpkg_rs::prelude::FluxLinkage;
+use vescpkg_rs::prelude::{FluxLinkage, MotorCurrent};
 
 fn flux(webers: f32) -> FocMotorFluxLinkage {
     FocMotorFluxLinkage::new(FluxLinkage::from_webers(webers))
@@ -54,5 +54,24 @@ fn torque_sign_and_arithmetic_stay_in_the_torque_domain() {
     assert_f32_eq!(
         (torque + MotorTorque::from_newton_meters(3.0)).as_newton_meters(),
         1.0
+    );
+}
+
+#[test]
+fn torque_has_an_explicit_live_current_boundary() {
+    let torque = MotorTorqueConstant::REFLOAT_COMPAT
+        .torque_from_motor_current(MotorCurrent::new(Current::from_amps(30.0)));
+    let live = MotorTorqueConstant::REFLOAT_COMPAT.motor_current_from_torque(torque);
+
+    assert_eq!(live, MotorCurrent::new(Current::from_amps(30.0)));
+}
+
+#[test]
+fn torque_limit_preserves_vesc_nan_comparison_semantics() {
+    let torque = MotorTorque::from_newton_meters(2.0);
+
+    assert_eq!(
+        MotorTorqueLimit::new(MotorTorque::from_newton_meters(f32::NAN)).clamp(torque),
+        torque
     );
 }

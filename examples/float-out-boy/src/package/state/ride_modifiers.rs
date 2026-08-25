@@ -10,7 +10,7 @@ use crate::domain::{
 };
 use crate::ema::EmaAlpha;
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
-use core::ops::{Mul, Sub};
+use core::ops::Mul;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Current, Frequency, MotorCurrent, PidScale, Rpm, SampleRate,
     VescSeconds,

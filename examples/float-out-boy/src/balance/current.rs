@@ -3,6 +3,7 @@ use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
 use crate::ema::EmaAlpha;
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, VescSeconds};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
@@ -14,38 +15,39 @@ const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-struct PitchBasedDemand(MotorCurrent);
+struct PitchBasedDemand(MotorTorque);
 
 impl PitchBasedDemand {
     #[inline]
-    fn from_terms(rate_p: MotorCurrent, booster: MotorCurrent) -> Self {
+    fn from_torques(rate_damping: MotorTorque, booster: MotorTorque) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
         // booster terms before soft-start and current limiting.
-        Self(rate_p + booster)
+        Self(rate_damping.add(booster))
     }
 
     #[inline]
     fn with_softstart(
         self,
-        softstart_pid_limit: MotorCurrent,
+        motor_torque_constant: MotorTorqueConstant,
+        softstart_pid_limit: MotorCurrentLimit,
         motor_current_max: MotorCurrentLimit,
-        elapsed: VescSeconds,
+        softstart_increment: Current,
     ) -> PitchBasedCurrent {
+        let current = motor_torque_constant.motor_current_from_torque(self.0);
         if softstart_pid_limit.current() < motor_current_max.current() {
             PitchBasedCurrent {
                 // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only
                 // magnitude; sign remains the requested direction.
-                current: MotorCurrentLimit::new(softstart_pid_limit.current()).clamp(self.0),
+                current: softstart_pid_limit.clamp(current),
                 // C map: `third_party/float-out-boy/src/main.c:927-929` advances the
                 // soft-start current limit at 100 A/s.
-                softstart_pid_limit: softstart_pid_limit
-                    + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed),
-                    )),
+                softstart_pid_limit: MotorCurrentLimit::new(
+                    softstart_pid_limit.current() + softstart_increment,
+                ),
             }
         } else {
             PitchBasedCurrent {
-                current: self.0,
+                current,
                 softstart_pid_limit,
             }
         }
@@ -64,26 +66,32 @@ fn valid_elapsed_seconds(elapsed: VescSeconds) -> f32 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PitchBasedCurrent {
     pub(super) current: MotorCurrent,
-    pub(super) softstart_pid_limit: MotorCurrent,
+    pub(super) softstart_pid_limit: MotorCurrentLimit,
 }
 
 impl PitchBasedCurrent {
     /// Source map: upstream soft-start clamps pitch-based current at
     /// `third_party/float-out-boy/src/main.c:924-930`.
     #[inline]
-    pub(super) fn from_rate_and_booster(
-        rate_p: MotorCurrent,
-        booster: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
+    pub(super) fn from_torques(
+        rate_damping: MotorTorque,
+        booster: MotorTorque,
+        motor_torque_constant: MotorTorqueConstant,
+        softstart_pid_limit: MotorCurrentLimit,
         motor_current_max: MotorCurrentLimit,
-        elapsed: VescSeconds,
+        softstart_increment: Current,
     ) -> Self {
-        PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
+        PitchBasedDemand::from_torques(rate_damping, booster).with_softstart(
+            motor_torque_constant,
             softstart_pid_limit,
             motor_current_max,
-            elapsed,
+            softstart_increment,
         )
     }
+}
+
+pub(super) fn softstart_increment(elapsed: VescSeconds) -> Current {
+    Current::from_amps(SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -150,13 +158,13 @@ impl LoopInput {
 
 impl LoopState {
     #[inline]
-    pub(super) fn with_booster_current_and_softstart_limit(
+    pub(super) fn with_booster_torque_and_softstart_limit(
         self,
-        booster_current: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
+        booster_torque: MotorTorque,
+        softstart_pid_limit: MotorCurrentLimit,
     ) -> Self {
         Self {
-            booster_current,
+            booster_torque,
             softstart_pid_limit,
             ..self
         }

@@ -2,8 +2,9 @@ use super::loop_io::LoopConfig;
 use super::loop_io::LoopInput;
 use crate::domain::FloatOutBoyRealtimeRuntimeSetpoint;
 use crate::ema::EmaAlpha;
+use crate::motor_torque::MotorTorque;
 use vescpkg_rs::Rpm;
-use vescpkg_rs::prelude::{AngleDegrees, Current, ElectricalSpeed, MotorCurrent};
+use vescpkg_rs::prelude::{AngleDegrees, ElectricalSpeed, MotorCurrent};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -19,19 +20,19 @@ impl Direction {
 
     /// C map: `third_party/float-out-boy/src/booster.c:65-66`.
     #[inline]
-    fn ramp_current(
+    fn ramp_torque(
         self,
-        current: MotorCurrent,
+        torque: MotorTorque,
         ramp_offset: RampOffset,
         ramp: AngleDegrees,
-    ) -> MotorCurrent {
-        current * ((ramp_offset.angle() * self.0) / ramp)
+    ) -> MotorTorque {
+        torque.scaled_by((ramp_offset.angle() * self.0) / ramp)
     }
 
     /// C map: `third_party/float-out-boy/src/booster.c:67-69`.
     #[inline]
-    fn saturated_current(self, current: MotorCurrent) -> MotorCurrent {
-        current * self.0
+    fn saturated_torque(self, torque: MotorTorque) -> MotorTorque {
+        torque.scaled_by(self.0)
     }
 }
 
@@ -99,12 +100,12 @@ impl Branch {
         // or brake booster parameters before applying speed stiffness.
         match self {
             Self::Accel => Profile {
-                current: config.booster_current,
+                torque: config.booster_torque,
                 angle: config.booster_angle,
                 ramp: config.booster_ramp,
             },
             Self::Brake => Profile {
-                current: config.brkbooster_current,
+                torque: config.brkbooster_torque,
                 angle: config.brkbooster_angle,
                 ramp: config.brkbooster_ramp,
             },
@@ -114,34 +115,34 @@ impl Branch {
     /// Source map: upstream computes booster target current at
     /// `third_party/float-out-boy/src/booster.c:32-73`.
     #[inline]
-    pub(super) fn target_current(
+    pub(super) fn target_torque(
         self,
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
         proportional: Proportional,
-    ) -> MotorCurrent {
+    ) -> MotorTorque {
         self.profile(config)
             .with_speed_stiffness(self, motor_erpm)
-            .target_current(proportional)
+            .target_torque(proportional)
     }
 
     /// Source map: upstream filters booster current at
     /// `third_party/float-out-boy/src/booster.c:74-75`.
     #[inline]
-    pub(super) fn filtered_current(
+    pub(super) fn filtered_torque(
         self,
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
         proportional: Proportional,
-        previous: MotorCurrent,
+        previous: MotorTorque,
         elapsed: vescpkg_rs::prelude::VescSeconds,
-    ) -> MotorCurrent {
-        let target = self.target_current(config, motor_erpm, proportional);
+    ) -> MotorTorque {
+        let target = self.target_torque(config, motor_erpm, proportional);
 
         // C map: `third_party/float-out-boy/src/booster.c:74-75` uses the same 1%
         // one-pole filter shape as PID scale smoothing.
         let alpha = EmaAlpha::from_elapsed(vescpkg_rs::Frequency::from_hertz(1.0), elapsed);
-        previous + (target - previous) * alpha.factor()
+        previous.lerp(target, alpha.factor())
     }
 }
 
@@ -205,10 +206,10 @@ impl SpeedStiffness {
     }
 
     #[inline]
-    fn boosted_current(self, current: MotorCurrent) -> MotorCurrent {
+    fn boosted_torque(self, torque: MotorTorque) -> MotorTorque {
         // C map: braking adds `current * speedstiffness` at
         // `third_party/float-out-boy/src/booster.c:52-54`.
-        current + current * self.0
+        torque.add(torque.scaled_by(self.0))
     }
 
     #[inline]
@@ -221,15 +222,15 @@ impl SpeedStiffness {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct Profile {
-    pub(super) current: MotorCurrent,
+    pub(super) torque: MotorTorque,
     pub(super) angle: AngleDegrees,
     pub(super) ramp: AngleDegrees,
 }
 
 impl Profile {
     #[inline]
-    fn zero_current() -> MotorCurrent {
-        MotorCurrent::new(Current::ZERO)
+    fn zero_torque() -> MotorTorque {
+        MotorTorque::ZERO
     }
 
     #[inline]
@@ -239,7 +240,7 @@ impl Profile {
         let stiffness = SpeedStiffness::from_motor_erpm(motor_erpm);
         match branch {
             Branch::Brake => Self {
-                current: stiffness.boosted_current(self.current),
+                torque: stiffness.boosted_torque(self.torque),
                 ..self
             },
             Branch::Accel => Self {
@@ -250,15 +251,15 @@ impl Profile {
     }
 
     #[inline]
-    pub(super) fn target_current(self, proportional: Proportional) -> MotorCurrent {
+    pub(super) fn target_torque(self, proportional: Proportional) -> MotorTorque {
         let direction = proportional.direction();
 
         // C map: `third_party/float-out-boy/src/booster.c:63-72` applies booster as
         // a deadband, then a linear ramp, then saturated current.
         match RampOffset::from_profile(proportional, self).range(self.ramp) {
-            Range::Deadband => Self::zero_current(),
-            Range::Ramp(offset) => direction.ramp_current(self.current, offset, self.ramp),
-            Range::Saturated => direction.saturated_current(self.current),
+            Range::Deadband => Self::zero_torque(),
+            Range::Ramp(offset) => direction.ramp_torque(self.torque, offset, self.ramp),
+            Range::Saturated => direction.saturated_torque(self.torque),
         }
     }
 }
@@ -278,14 +279,14 @@ impl Phase {
     }
 
     #[inline]
-    pub(super) fn filtered_current(
+    pub(super) fn filtered_torque(
         self,
-        previous: MotorCurrent,
+        previous: MotorTorque,
         elapsed: vescpkg_rs::prelude::VescSeconds,
-    ) -> MotorCurrent {
+    ) -> MotorTorque {
         // C map: `third_party/float-out-boy/src/booster.c:74-75` filters the newly
         // computed booster current with the previous sample.
-        Branch::from_motor_current(self.input.motor_current).filtered_current(
+        Branch::from_motor_current(self.input.motor_current).filtered_torque(
             self.config,
             self.input.motor_erpm,
             self.input.booster_proportional(),

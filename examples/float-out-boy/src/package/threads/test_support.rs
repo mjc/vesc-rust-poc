@@ -23,7 +23,7 @@ impl FloatOutBoyMainThreadTick {
 }
 
 #[inline]
-pub(super) fn tick_float_out_boy_main_thread_with(
+pub(crate) fn tick_float_out_boy_main_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,

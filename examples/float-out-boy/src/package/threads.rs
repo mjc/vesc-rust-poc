@@ -215,6 +215,20 @@ fn finish_float_out_boy_main_thread_tick(
 /// configuration after a strict half-second interval at
 /// `third_party/float-out-boy/src/main.c:1131-1155`.
 #[cfg(test)]
+fn store_aux_backup_if_due(
+    state: &mut FloatOutBoyPackageState,
+    odometer: OdometerMeters,
+    now: TimestampTicks,
+    store_backup: impl FnOnce() -> bool,
+) -> Option<bool> {
+    state.begin_aux_backup(odometer).then(|| {
+        let stored = store_backup();
+        state.finish_aux_backup(odometer, stored, now);
+        stored
+    })
+}
+
+#[cfg(test)]
 pub(crate) fn tick_float_out_boy_aux_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
@@ -236,15 +250,7 @@ pub(crate) fn tick_float_out_boy_aux_thread_with(
     state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
     state.render_internal_leds(telemetry, current_time, paint_leds);
-    let stored = state.aux_backup_due(odometer).then(|| {
-        let stored = store_backup();
-        if stored {
-            state.record_aux_backup(odometer);
-        } else {
-            state.record_aux_backup_failure();
-        }
-        stored
-    });
+    let stored = store_aux_backup_if_due(state, odometer, system_time_ticks, store_backup);
     state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
     stored
 }
@@ -431,34 +437,32 @@ struct FloatOutBoyAuxThread;
 impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
     type State = FloatOutBoyPackageState;
 
-    fn run(ctx: vescpkg_rs::ThreadContext<Self::State>) {
+    fn run(mut ctx: vescpkg_rs::ThreadContext<Self::State>) {
         // C map: Float Out Boy v1.2.1 `aux_thd` starts at
         // `third_party/float-out-boy/src/main.c:1130`.
         #[cfg(all(not(test), target_arch = "arm"))]
         {
-            let firmware = ctx.firmware();
-            let threads = firmware.threads();
-            while !threads.should_terminate()
+            while !ctx.firmware().threads().should_terminate()
                 && !ctx
                     .with_state_mut(|state| state.startup_configured())
                     .unwrap_or(false)
             {
-                threads.sleep_for(Duration::from_millis(1));
+                ctx.firmware().threads().sleep_for(Duration::from_millis(1));
             }
-            if threads.should_terminate() {
+            if ctx.firmware().threads().should_terminate() {
                 return;
             }
-            let (footpad_voltage1, footpad_voltage2) = read_float_out_boy_footpads(firmware.gpio());
+            let (footpad_voltage1, footpad_voltage2) =
+                read_float_out_boy_footpads(ctx.firmware().gpio());
             let _ = ctx.with_state_mut(|state| {
                 state.setup_loaded_led_hardware_after_threads(footpad_voltage1, footpad_voltage2);
             });
             if let Ok(priority) = ThreadPriority::try_new(-1) {
-                let _ = threads.set_priority(priority);
+                let _ = ctx.firmware().threads().set_priority(priority);
             }
-            while !threads.should_terminate() {
-                let telemetry = firmware.telemetry();
-                let odometer = telemetry.odometer();
-                let clock = firmware.clock();
+            while !ctx.firmware().threads().should_terminate() {
+                let odometer = ctx.firmware().telemetry().odometer();
+                let clock = ctx.firmware().clock();
                 let system_time_ticks = clock.now();
                 let current_time = clock.uptime().as_seconds();
                 let prepared = ctx.with_state_mut(|state| {
@@ -472,23 +476,34 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                         crate::domain::FloatOutBoyRunState::Running
                     );
                     state.check_frequency_tracking(running, system_time_ticks);
-                    let backup_due = state.aux_backup_due(odometer);
-                    let leds = state.prepare_internal_led_aux_work(telemetry, current_time);
+                    let leds = state
+                        .prepare_internal_led_aux_work(ctx.firmware().telemetry(), current_time);
+                    let backup_due = state.begin_aux_backup(odometer);
                     (leds, backup_due)
                 });
                 if let Some((leds, backup_due)) = prepared {
                     let mut leds = Some(leds.execute());
-                    let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
+                    let backup_result = backup_due.then(|| {
+                        let inputs = *ctx.firmware().inputs();
+                        let stored =
+                            ctx.with_effects(|effects| inputs.store_backup(effects).is_ok());
+                        (
+                            stored,
+                            ctx.firmware().telemetry().odometer(),
+                            ctx.firmware().clock().now(),
+                        )
+                    });
                     let committed = ctx.with_state_mut(|state| {
+                        if let Some((stored, stored_odometer, completed_at)) = backup_result {
+                            state.finish_aux_backup(stored_odometer, stored, completed_at);
+                        }
                         if let Some(leds) = leds.take() {
                             state.commit_internal_led_aux_work(leds);
                         }
-                        match stored {
-                            Some(true) => state.record_aux_backup(odometer),
-                            Some(false) => state.record_aux_backup_failure(),
-                            None => {}
-                        }
-                        state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
+                        state.refresh_aux_motor_config_runtime_state(
+                            ctx.firmware().telemetry(),
+                            system_time_ticks,
+                        );
                     });
                     if committed.is_none()
                         && let Some(leds) = leds
@@ -496,9 +511,11 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                         leds.destroy_after_rejected_commit();
                     }
                 }
-                threads.sleep_for(Duration::from_micros(u64::from(
-                    FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
-                )));
+                ctx.firmware()
+                    .threads()
+                    .sleep_for(Duration::from_micros(u64::from(
+                        FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
+                    )));
             }
         }
 
@@ -510,6 +527,6 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
 }
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;

@@ -13,6 +13,7 @@ use crate::domain::{
     FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
     FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
 };
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
     edit_config, editable_config_from_state, sample_all_data_payloads_with_ride_state,
@@ -22,6 +23,49 @@ use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
 use std::vec::Vec;
+
+fn compatibility_torque(current: Current) -> MotorTorque {
+    MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(current)
+}
+
+fn seed_stale_balance_runtime(state: &mut FloatOutBoyPackageState) {
+    state.balance_loop.pid.integral_torque = compatibility_torque(Current::from_amps(8.0));
+    state.balance_loop.balance_current = MotorCurrent::new(Current::from_amps(6.0));
+    state.balance_loop.booster_torque = compatibility_torque(Current::from_amps(4.0));
+    state.balance_loop.softstart_pid_limit = MotorCurrentLimit::new(Current::from_amps(12.0));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
+}
+
+fn assert_ready_engagement_runtime_reset(state: &FloatOutBoyPackageState) {
+    let base = state.all_data_payloads().base();
+    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_eq!(
+        state.balance_loop.balance_current,
+        MotorCurrent::new(Current::ZERO)
+    );
+    assert_eq!(state.balance_loop.booster_torque, MotorTorque::ZERO);
+    assert_eq!(
+        state.balance_loop.softstart_pid_limit,
+        MotorCurrentLimit::new(Current::ZERO)
+    );
+    assert_eq!(state.balance_loop.pid.integral_torque, MotorTorque::ZERO);
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
+    assert_eq!(
+        state.motor_kinematics.average(),
+        super::motor_kinematics::ElectricalAcceleration::ZERO
+    );
+    assert_eq!(
+        base.motor().duty_cycle(),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0))
+    );
+}
 
 #[test]
 fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
@@ -251,11 +295,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::default();
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
-    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
-    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
-    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
-    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
-    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
+    seed_stale_balance_runtime(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -282,9 +322,15 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
     assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
     assert_eq!(
-        state.balance_loop.pid.integral_current.current(),
-        Current::ZERO
+        state.balance_loop.balance_current,
+        MotorCurrent::new(Current::ZERO)
     );
+    assert_eq!(state.balance_loop.booster_torque, MotorTorque::ZERO);
+    assert_eq!(
+        state.balance_loop.softstart_pid_limit,
+        MotorCurrentLimit::new(Current::ZERO)
+    );
+    assert_eq!(state.balance_loop.pid.integral_torque, MotorTorque::ZERO);
     assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
@@ -387,11 +433,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         payloads.mode4(),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
-    state.balance_loop.pid.integral_current = MotorCurrent::new(Current::from_amps(8.0));
-    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
-    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
-    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
-    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
+    seed_stale_balance_runtime(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -411,8 +453,6 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     // breaks out of the READY branch without running the RUNNING
     // balance-current loop.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
-    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
     let expected_engage_setpoint = AngleRadians::from_radians(0.05).as_degrees();
     assert_f32_eq!(
         base.setpoints().board().angle().as_degrees(),
@@ -427,22 +467,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     ] {
         assert_f32_eq!(setpoint.angle().as_degrees(), 0.0);
     }
-    assert_eq!(
-        state.balance_loop.pid.integral_current.current(),
-        Current::ZERO
-    );
-    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
-    assert_eq!(
-        state.motor_kinematics.average(),
-        super::motor_kinematics::ElectricalAcceleration::ZERO
-    );
-    assert_eq!(
-        base.motor().duty_cycle(),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0))
-    );
+    assert_ready_engagement_runtime_reset(&state);
     assert!(!state.apply_requested_motor_current(bindings));
 }
 

@@ -1,7 +1,8 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopOutput, LoopState};
+use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::prelude::VescSeconds;
 
-use super::{booster::Phase as BoosterPhase, pid::Phase as PidPhase};
+use super::{booster::Phase as BoosterPhase, current::softstart_increment, pid::Phase as PidPhase};
 
 #[cfg(test)]
 use super::{
@@ -42,28 +43,45 @@ impl LoopState {
     }
 
     #[inline]
+    #[cfg(test)]
     pub(crate) fn advance_balance_loop_elapsed(
         self,
         config: LoopConfig,
         input: LoopInput,
         elapsed: VescSeconds,
     ) -> LoopOutput {
-        let (pid_currents, state) = PidPhase::from_step(config, input).update_state(self, elapsed);
-        let booster_current =
-            BoosterPhase::from_step(config, input).filtered_current(state.booster_current, elapsed);
-        let pitch_based = pid_currents.pitch_based_current(
-            booster_current,
+        self.advance_balance_loop_elapsed_with_torque(
+            config,
+            input,
+            elapsed,
+            MotorTorqueConstant::REFLOAT_COMPAT,
+        )
+    }
+
+    pub(crate) fn advance_balance_loop_elapsed_with_torque(
+        self,
+        config: LoopConfig,
+        input: LoopInput,
+        elapsed: VescSeconds,
+        motor_torque_constant: MotorTorqueConstant,
+    ) -> LoopOutput {
+        let (pid_torques, state) = PidPhase::from_step(config, input).update_state(self, elapsed);
+        let booster_torque =
+            BoosterPhase::from_step(config, input).filtered_torque(state.booster_torque, elapsed);
+        let pitch_based = pid_torques.pitch_based_current(
+            booster_torque,
+            motor_torque_constant,
             state.softstart_pid_limit,
             input.motor_current_max,
-            elapsed,
+            softstart_increment(elapsed),
         );
-        let state = state.with_booster_current_and_softstart_limit(
-            booster_current,
+        let state = state.with_booster_torque_and_softstart_limit(
+            booster_torque,
             pitch_based.softstart_pid_limit,
         );
 
-        let balance_current = pid_currents
-            .requested_with_pitch_based(pitch_based)
+        let balance_current = pid_torques
+            .requested_with_pitch_based(pitch_based, motor_torque_constant)
             .clamped_to(input.current_limit())
             .adjusted_for_darkride(input.darkride)
             .filtered_from(state.balance_current, input.traction_control, elapsed);

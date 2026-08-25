@@ -29,7 +29,13 @@ const VESC_PACKET_THREAD_STACK_BYTES: usize = 2048;
 const VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES: usize = 512;
 const APP_DATA_CALLBACK_STACK_BUDGET: usize =
     VESC_PACKET_THREAD_STACK_BYTES - VESC_PACKET_FIRMWARE_STACK_RESERVE_BYTES;
-const VESC_IMU_CALLBACK_STACK_BUDGET: usize = 1024;
+const VESC_IMU_THREAD_STACK_BYTES: usize = 1024;
+// Firmware keeps its sensor-thread and IMU/AHRS frames live while it invokes
+// the package callback. Reserve bounded caller headroom and leave the
+// remainder for package code.
+const VESC_IMU_FIRMWARE_STACK_RESERVE_BYTES: usize = 384;
+const VESC_IMU_CALLBACK_STACK_BUDGET: usize =
+    VESC_IMU_THREAD_STACK_BYTES - VESC_IMU_FIRMWARE_STACK_RESERVE_BYTES;
 const STATICLIB_LINKER_SCRIPT: &[u8] = include_bytes!("vescpkg-link.ld");
 const VESC_TARGET: &str = "thumbv7em-none-eabihf";
 
@@ -809,7 +815,7 @@ fn validate_imu_callback_stack_report(report: &str) -> Result<(), BuildError> {
         let call_chain_bytes = stack_through(&callback.name, &functions, &mut Vec::new());
         if call_chain_bytes > VESC_IMU_CALLBACK_STACK_BUDGET {
             return Err(BuildError(format!(
-                "{} call chain uses {call_chain_bytes} bytes of stack, exceeding VESC's {VESC_IMU_CALLBACK_STACK_BUDGET}-byte IMU thread stack",
+                "{} call chain uses {call_chain_bytes} bytes of package stack, exceeding cargo-vescpkg's {VESC_IMU_CALLBACK_STACK_BUDGET}-byte IMU callback budget; {VESC_IMU_FIRMWARE_STACK_RESERVE_BYTES} bytes remain within VESC's {VESC_IMU_THREAD_STACK_BYTES}-byte IMU thread",
                 callback.name,
             )));
         }
@@ -1563,6 +1569,7 @@ Symbol table '.symtab' contains 2 entries:\n\
         let error = validate_imu_callback_stack_report(report).expect_err("oversized call chain");
 
         assert!(error.to_string().contains("1104 bytes"));
+        assert!(error.to_string().contains("640-byte IMU callback budget"));
         assert!(error.to_string().contains("1024-byte IMU thread"));
     }
 

@@ -6,6 +6,7 @@ use crate::package::test_support::{
     imu_acceleration, imu_angular_rate, imu_period, imu_pitch_rate, imu_read_sample, imu_roll_rate,
     imu_yaw_rate, sample_all_data_payloads_with_ride_state,
 };
+use crate::package::threads::test_support::tick_float_out_boy_main_thread_with;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -107,7 +108,7 @@ fn imu_callback_state_update_feeds_normal_balance_pitch_like_float_out_boy_loop(
 }
 
 #[test]
-fn ready_imu_callback_requests_remote_current_on_every_sample_like_refloat() {
+fn ready_remote_current_is_consumed_by_the_fixed_main_loop() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(1);
     firmware.set_remote_input(
@@ -143,7 +144,25 @@ fn ready_imu_callback_requests_remote_current_on_every_sample_like_refloat() {
     );
 
     float_out_boy_imu_callback_with_state(&mut state, sample);
+    tick_float_out_boy_main_thread_with(
+        &mut state,
+        firmware.telemetry(),
+        firmware.imu(),
+        firmware.motor(),
+        AdcVoltage::new(Voltage::from_volts(2.5)),
+        AdcVoltage::new(Voltage::ZERO),
+        TimestampTicks::from_ticks(1),
+    );
     float_out_boy_imu_callback_with_state(&mut state, sample);
+    tick_float_out_boy_main_thread_with(
+        &mut state,
+        firmware.telemetry(),
+        firmware.imu(),
+        firmware.motor(),
+        AdcVoltage::new(Voltage::from_volts(2.5)),
+        AdcVoltage::new(Voltage::ZERO),
+        TimestampTicks::from_ticks(2),
+    );
 
     assert_eq!(firmware.current_command_count(), 2);
     assert!(!firmware.commanded_current().current().is_zero());

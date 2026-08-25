@@ -514,15 +514,129 @@ fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
 }
 
 #[test]
-fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
-    let mut state = FloatOutBoyPackageState::default();
+fn aux_backup_claim_rechecks_running_state() {
+    let mut state = state_in(FloatOutBoyRunState::Running);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    state.record_aux_backup_failure();
+    let mut stores = 0;
+
+    let result = super::store_aux_backup_if_due(
+        &mut state,
+        OdometerMeters::from_meters(1_201),
+        TimestampTicks::from_ticks(0),
+        || {
+            stores += 1;
+            true
+        },
+    );
+
+    assert_eq!(result, None);
+    assert_eq!(stores, 0);
+}
+
+#[test]
+fn aux_backup_claim_blocks_a_second_claim_until_the_effect_finishes() {
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+
+    assert!(state.begin_aux_backup(odometer));
+    assert!(!state.begin_aux_backup(odometer));
+    assert!(!state.aux_backup_due(odometer));
+
+    let completed_at = TimestampTicks::from_ticks(10);
+    state.finish_aux_backup(odometer, true, completed_at);
+
+    assert!(!state.aux_backup_due(odometer));
+    assert!(!state.aux_backup_allows_engagement(completed_at));
+    assert!(
+        state.aux_backup_allows_engagement(TimestampTicks::from_ticks(
+            completed_at
+                .as_ticks()
+                .saturating_add(
+                    u32::try_from(5 * SYSTEM_TICK_RATE_HZ).expect("five seconds fits in ticks"),
+                )
+                .saturating_add(1),
+        ))
+    );
+}
+
+#[test]
+fn failed_aux_backup_is_diagnosable_and_advances_threshold_like_refloat() {
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+    assert!(state.begin_aux_backup(odometer));
+    state.finish_aux_backup(odometer, false, TimestampTicks::from_ticks(0));
 
     assert_eq!(state.aux_backup_failures(), 1);
-    assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
-    state.record_aux_backup(OdometerMeters::from_meters(1_201));
-    assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    assert!(!state.aux_backup_due(odometer));
+}
+
+#[test]
+fn aux_backup_write_and_cooldown_block_ready_engagement() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_ready(true);
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+    assert!(state.begin_aux_backup(odometer));
+
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(1),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Ready
+    );
+
+    let completed_at = TimestampTicks::from_ticks(2);
+    state.finish_aux_backup(odometer, true, completed_at);
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(3),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Ready
+    );
+
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(
+            completed_at
+                .as_ticks()
+                .saturating_add(
+                    u32::try_from(5 * SYSTEM_TICK_RATE_HZ).expect("five seconds fits in ticks"),
+                )
+                .saturating_add(1),
+        ),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running
+    );
 }
 
 #[test]
@@ -630,7 +744,7 @@ fn aux_tick_does_not_touch_backup_before_threshold() {
 }
 
 #[test]
-fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
+fn aux_tick_records_a_rejected_backup_without_retrying_the_same_distance() {
     let firmware = FirmwareTest::new();
     let mut state = state_in(FloatOutBoyRunState::Ready);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
@@ -647,5 +761,5 @@ fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
 
     assert_eq!(result, Some(false));
     assert_eq!(state.aux_backup_failures(), 1);
-    assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
 }

@@ -20,7 +20,7 @@ use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit,
     InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
-    SignedTripDistance, TemperatureLimitStart, TimestampTicks,
+    SignedTripDistance, TemperatureLimitStart, TimestampTicks, VescSeconds,
 };
 use vescpkg_rs::{
     Imu, MotorOutput, MotorTelemetry, timer_older as float_out_boy_ticks_elapsed_seconds,
@@ -94,6 +94,34 @@ use ride_modifiers::{RideModifierInput, RideModifierState};
 // C map: `aux_thd` stores backup data after more than 200 m while not running
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
+// VESC 7.00 `conf_general_store_backup_data` first suppresses motor input for
+// 5000 ms. Its motor-release failure path returns truthy `100` without reducing
+// that timeout, so the package cannot infer the shorter successful cooldown.
+const FLOAT_OUT_BOY_AUX_BACKUP_COOLDOWN: VescSeconds = VescSeconds::from_seconds(5.0);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum AuxBackupPhase {
+    #[default]
+    Idle,
+    Writing,
+    CoolingDown {
+        since: TimestampTicks,
+    },
+}
+
+impl AuxBackupPhase {
+    fn refresh(&mut self, now: TimestampTicks) {
+        if let Self::CoolingDown { since } = *self
+            && float_out_boy_ticks_elapsed_seconds(now, since, FLOAT_OUT_BOY_AUX_BACKUP_COOLDOWN)
+        {
+            *self = Self::Idle;
+        }
+    }
+
+    const fn is_idle(self) -> bool {
+        matches!(self, Self::Idle)
+    }
+}
 
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
@@ -223,6 +251,7 @@ pub struct FloatOutBoyPackageState {
     #[cfg(test)]
     motor_config_initialized: bool,
     aux_odometer: OdometerMeters,
+    aux_backup_phase: AuxBackupPhase,
     aux_backup_failures: u32,
     aux_motor_config_refresh_ticks: TimestampTicks,
     #[cfg(test)]
@@ -291,28 +320,49 @@ impl FloatOutBoyPackageState {
 
     /// Return whether the source-backed auxiliary backup threshold has been crossed.
     pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
-        !matches!(
-            self.all_data_payloads
-                .base()
-                .status()
-                .ride_state()
-                .run_state(),
-            FloatOutBoyRunState::Running
-        ) && odometer.as_meters()
-            > self
-                .aux_odometer
-                .as_meters()
-                .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
+        self.aux_backup_phase.is_idle()
+            && !matches!(
+                self.all_data_payloads
+                    .base()
+                    .status()
+                    .ride_state()
+                    .run_state(),
+                FloatOutBoyRunState::Running
+            )
+            && odometer.as_meters()
+                > self
+                    .aux_odometer
+                    .as_meters()
+                    .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
-    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
-    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
+    /// Claim one due backup before leaving the package-state critical section.
+    pub(crate) fn begin_aux_backup(&mut self, odometer: OdometerMeters) -> bool {
+        if !self.aux_backup_due(odometer) {
+            return false;
+        }
+        self.aux_backup_phase = AuxBackupPhase::Writing;
+        true
+    }
+
+    /// Return whether VESC's backup effect allows a new ride to engage.
+    pub(crate) fn aux_backup_allows_engagement(&mut self, now: TimestampTicks) -> bool {
+        self.aux_backup_phase.refresh(now);
+        self.aux_backup_phase.is_idle()
+    }
+
+    /// Commit an auxiliary backup result after returning to the state critical section.
+    pub(crate) fn finish_aux_backup(
+        &mut self,
+        odometer: OdometerMeters,
+        stored: bool,
+        now: TimestampTicks,
+    ) {
         self.aux_odometer = odometer;
-    }
-
-    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
-    pub(crate) fn record_aux_backup_failure(&mut self) {
-        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+        if !stored {
+            self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+        }
+        self.aux_backup_phase = AuxBackupPhase::CoolingDown { since: now };
     }
 
     pub(crate) fn refresh_aux_motor_config_runtime_state(
@@ -462,7 +512,7 @@ impl FloatOutBoyPackageState {
         match ride_state.run_state() {
             FloatOutBoyRunState::Running => {
                 let angular_rate = sample.angular_rate();
-                let output = self.balance_loop.advance_balance_loop_elapsed(
+                let output = self.balance_loop.advance_balance_loop_elapsed_with_torque(
                     self.runtime_balance_loop_config(),
                     LoopInput {
                         setpoint: base.setpoints().board(),
@@ -481,21 +531,14 @@ impl FloatOutBoyPackageState {
                         traction_control: self.ride_flags.traction_control,
                     },
                     sample.period().duration(),
+                    self.motor_torque_constant,
                 );
                 self.balance_loop = output.state;
                 self.request_motor_current(output.requested_current);
             }
-            FloatOutBoyRunState::Ready => {
-                if let Some(current) = self.remote_control.request_ready_current(
-                    base.motor().electrical_speed().rpm(),
-                    self.serialized_config.remote_throttle(),
-                    now,
-                    self.disengage_ticks,
-                ) {
-                    self.request_motor_current(current);
-                }
-            }
-            FloatOutBoyRunState::Disabled | FloatOutBoyRunState::Startup => {}
+            FloatOutBoyRunState::Ready
+            | FloatOutBoyRunState::Disabled
+            | FloatOutBoyRunState::Startup => {}
         }
 
         let attitude = FloatOutBoyAllDataAttitude::new(
@@ -509,7 +552,10 @@ impl FloatOutBoyPackageState {
             base.status(),
             base.footpad(),
             base.setpoints(),
-            FloatOutBoyRealtimeBoosterCurrent::new(self.balance_loop.booster_current),
+            FloatOutBoyRealtimeBoosterCurrent::new(
+                self.motor_torque_constant
+                    .motor_current_from_torque(self.balance_loop.booster_torque),
+            ),
             base.motor(),
         );
         self.all_data_payloads = payloads.with_base(base);
@@ -688,8 +734,27 @@ impl FloatOutBoyPackageState {
             self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
-        self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed)
-            || restore_flywheel_config
+        let restored = self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed);
+        self.refresh_ready_remote_current(system_time_ticks);
+        restored || restore_flywheel_config
+    }
+
+    fn refresh_ready_remote_current(&mut self, now: TimestampTicks) {
+        let base = self.all_data_payloads.base();
+        if !matches!(
+            base.status().ride_state().run_state(),
+            FloatOutBoyRunState::Ready
+        ) {
+            return;
+        }
+        if let Some(current) = self.remote_control.request_ready_current(
+            base.motor().electrical_speed().rpm(),
+            self.serialized_config.remote_throttle(),
+            now,
+            self.disengage_ticks,
+        ) {
+            self.request_motor_current(current);
+        }
     }
 
     fn refresh_konami_runtime_state(
