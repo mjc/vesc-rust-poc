@@ -62,11 +62,11 @@ impl HistoryIndex {
     }
 }
 
-// The package schema caps loop frequency at 4 kHz; Refloat's 8 Hz source
-// formula needs 221 samples there. One spare slot bounds package state.
-const MAX_WINDOW: usize = 222;
-const MAX_WINDOW_U8: u8 = 222;
-const MAX_WINDOW_U32: u32 = 222;
+// Float Out Boy's package loop is fixed at 500 Hz. Refloat's 8 Hz source
+// formula needs 27 samples there; keep a small bounded margin for jitter.
+const MAX_WINDOW: usize = 32;
+const MAX_WINDOW_U8: u8 = 32;
+const MAX_WINDOW_U32: u32 = 32;
 const ABS_ERPM_CUTOFF: Frequency = Frequency::from_hertz(10.0);
 const ACCELERATION_CUTOFF: Frequency = Frequency::from_hertz(8.0);
 

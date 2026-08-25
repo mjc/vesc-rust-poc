@@ -43,7 +43,7 @@ pub(crate) use flywheel::FloatOutBoyFlywheelConfig;
 // `third_party/float-out-boy/src/main.c:2388-2396`.
 vescpkg_rs::firmware_section_static!(
     ".text.float_out_boy_config_xml",
-    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_513] = *include_bytes!("conf/float_out_boy_config.dat")
+    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_525] = *include_bytes!("conf/float_out_boy_config.dat")
 );
 
 // Float Out Boy generated serialized default custom config. Upstream
@@ -214,7 +214,8 @@ impl FloatOutBoyConfigImage {
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 225, map: WireByte::as_u8;
     }
     // Retain the legacy byte slot for image compatibility. Current Refloat
-    // removed `inputtilt_speed` and configures remote tilt at 100 degrees/second.
+    // removed `inputtilt_speed`; the XML marks this slot non-transmittable and
+    // the runtime uses the fixed compatibility smoothing profile.
     const INPUT_TILT_SPEED_FIELD: CustomConfigAngularVelocityField = vescpkg_rs::generated_custom_config_field!(CustomConfigAngularVelocityField, len: FLOAT_OUT_BOY_CONFIG_LEN, offset: 80, scale: 100.0);
     // Generated `is_beeper_enabled` follows the 18-byte hardware LED block
     // beginning at offset 222; upstream serializes it immediately before

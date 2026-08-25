@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn tracker_layout_covers_the_valid_config_range_without_unbounded_storage() {
-    assert_eq!(core::mem::size_of::<MotorKinematicsTracker>(), 908);
+    assert_eq!(core::mem::size_of::<MotorKinematicsTracker>(), 148);
 }
 
 #[test]

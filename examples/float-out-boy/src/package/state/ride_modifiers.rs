@@ -619,8 +619,9 @@ impl RideModifierState {
         let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
-        // Current Refloat removed the legacy serialized turn-tilt speed and
-        // configures its SmoothSetpoint at a fixed 20 degrees/second.
+        // The legacy XML speed slot is non-transmittable. Keep this fixed
+        // compatibility profile until the current Refloat filter fields have
+        // a typed representation in this package schema.
         self.turn.angle.configure(
             SmoothSetpointConfig {
                 time_constant: VescSeconds::from_seconds(0.2),
