@@ -241,7 +241,7 @@ struct NormalFaultEvaluation {
     reason = "one fault pass is smaller than a private one-use switch-fault handoff"
 )]
 fn evaluate_normal_faults(
-    state: &FloatOutBoyPackageState,
+    state: &mut FloatOutBoyPackageState,
     base: &FloatOutBoyAllDataBasePayload,
     system_time_ticks: TimestampTicks,
     input: &FaultInputs,
@@ -258,9 +258,12 @@ fn evaluate_normal_faults(
         );
     let flywheel_footpad = running && flywheel && footpad.is_pressed();
     let reverse_no_footpads = reverse_active && !footpad.is_pressed();
-    let reverse_timer = !input.darkride_active
+    let reverse_stop = !input.darkride_active
         && reverse_active
-        && state.reverse_stop.should_stop(system_time_ticks);
+        && (state
+            .reverse_stop
+            .should_stop_for_pitch(system_time_ticks, input.pitch_abs)
+            || state.reverse_stop.should_stop(system_time_ticks));
 
     let single_footpad = matches!(
         footpad,
@@ -342,7 +345,7 @@ fn evaluate_normal_faults(
         conditions: [
             flywheel_footpad,
             reverse_no_footpads,
-            reverse_timer,
+            reverse_stop,
             full_fault,
             quickstop_fault,
             half_fault,
@@ -425,7 +428,7 @@ fn first_transition_stop(
     let [
         flywheel_footpad,
         reverse_no_footpads,
-        reverse_timer,
+        reverse_stop,
         full_switch,
         quickstop,
         half_switch,
@@ -440,7 +443,7 @@ fn first_transition_stop(
             FloatOutBoyStopEvent::ReverseStopNoFootpads,
             reverse_no_footpads,
         ),
-        (FloatOutBoyStopEvent::ReverseStopTimer, reverse_timer),
+        (FloatOutBoyStopEvent::ReverseStop, reverse_stop),
         (FloatOutBoyStopEvent::FullSwitch, full_switch),
         (FloatOutBoyStopEvent::QuickStop, quickstop),
         (FloatOutBoyStopEvent::HalfSwitch, half_switch),
@@ -594,7 +597,6 @@ fn evaluate_transition_phase(
             ReverseStopEntryPolicy::from_enabled(
                 state.serialized_config.faults().reversestop_enabled(),
             ),
-            elapsed,
         );
     }
     let normal = evaluate_normal_faults(state, base, system_time_ticks, &fault_inputs);

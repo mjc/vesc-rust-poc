@@ -19,7 +19,7 @@ use crate::domain::{
 pub(crate) enum FloatOutBoyStopEvent {
     FlywheelFootpad,
     ReverseStopNoFootpads,
-    ReverseStopTimer,
+    ReverseStop,
     FullSwitch,
     QuickStop,
     HalfSwitch,
@@ -42,7 +42,7 @@ impl FloatOutBoyStopEvent {
                 FloatOutBoyStopCondition::SwitchHalf
             }
             Self::ReverseStopNoFootpads | Self::FullSwitch => FloatOutBoyStopCondition::SwitchFull,
-            Self::ReverseStopTimer | Self::DarkrideHighErpm | Self::DarkrideLowErpm => {
+            Self::ReverseStop | Self::DarkrideHighErpm | Self::DarkrideLowErpm => {
                 FloatOutBoyStopCondition::ReverseStop
             }
             Self::QuickStop => FloatOutBoyStopCondition::QuickStop,

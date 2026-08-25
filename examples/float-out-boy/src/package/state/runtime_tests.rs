@@ -10,8 +10,8 @@ use crate::domain::{
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
     FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
-    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyTractionControlState,
-    FloatOutBoyWheelSlipState,
+    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
+    FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
 };
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
@@ -1454,6 +1454,125 @@ fn reverse_stop_entry_precedes_wheelslip_detection_like_float_out_boy() {
         FloatOutBoySetpointAdjustment::ReverseStop
     );
     assert_eq!(ride_state.wheelslip(), FloatOutBoyWheelSlipState::None);
+}
+
+fn entered_reverse_stop_with_pressed_footpad() -> (FirmwareTest, FloatOutBoyPackageState) {
+    let (_, telemetry, mut state) = running_protective_pushback_fixture(
+        SignedRatio::from_ratio_const(0.10),
+        Rpm::from_revolutions_per_minute(-500.0),
+        FloatOutBoySetpointAdjustment::None,
+        InputVoltage::new(Voltage::from_volts(72.0)),
+    );
+
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
+
+    // More than the two-centimetre entry threshold, but nowhere near the full
+    // 0.25 m reverse-stop distance.
+    let telemetry =
+        telemetry.with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.03)));
+
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_degrees(0.0)),
+        ImuPitch::new(AngleRadians::from_degrees(0.0)),
+        ImuYaw::new(AngleRadians::from_degrees(0.0)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(0));
+
+    let base = state.all_data_payloads().base();
+
+    assert_eq!(
+        base.status().ride_state().setpoint_adjustment(),
+        FloatOutBoySetpointAdjustment::ReverseStop,
+        "fixture must enter Reverse Stop before testing its shutdown behavior",
+    );
+    assert_eq!(
+        base.footpad().state(),
+        FloatOutBoyFootpadState::Both,
+        "fixture must keep the footpad logically pressed",
+    );
+
+    (telemetry, state)
+}
+
+#[test]
+fn reverse_stop_uses_physical_pitch_hard_stop_with_pressed_footpad() {
+    let (telemetry, mut state) = entered_reverse_stop_with_pressed_footpad();
+
+    // Refloat v1.2.3 stopped immediately above 18 degrees using measured pitch.
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_degrees(0.0)),
+        ImuPitch::new(AngleRadians::from_degrees(18.1)),
+        ImuYaw::new(AngleRadians::from_degrees(0.0)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(1));
+
+    let base = state.all_data_payloads().base();
+    let ride_state = base.status().ride_state();
+
+    assert_eq!(
+        base.footpad().state(),
+        FloatOutBoyFootpadState::Both,
+        "this must test pitch protection, not ordinary footpad release",
+    );
+    assert_eq!(
+        ride_state.run_state(),
+        FloatOutBoyRunState::Ready,
+        "physical pitch above 18 degrees must stop Reverse Stop even when the pad remains pressed",
+    );
+    assert_eq!(
+        ride_state.stop_condition(),
+        FloatOutBoyStopCondition::ReverseStop,
+    );
+}
+
+#[test]
+fn reverse_stop_uses_physical_pitch_timeout_with_pressed_footpad() {
+    let (telemetry, mut state) = entered_reverse_stop_with_pressed_footpad();
+    let telemetry =
+        telemetry.with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.13)));
+
+    // Refloat v1.2.3 stopped after measured pitch remained above 10 degrees
+    // for strictly more than one second.
+    telemetry.set_imu_attitude(
+        ImuRoll::new(AngleRadians::from_degrees(0.0)),
+        ImuPitch::new(AngleRadians::from_degrees(11.0)),
+        ImuYaw::new(AngleRadians::from_degrees(0.0)),
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(10_000));
+
+    let base = state.all_data_payloads().base();
+    assert_eq!(
+        base.status().ride_state().run_state(),
+        FloatOutBoyRunState::Running,
+        "exactly one second is the strict legacy boundary",
+    );
+    assert_eq!(
+        base.footpad().state(),
+        FloatOutBoyFootpadState::Both,
+        "the test must continue simulating a ghosted footpad",
+    );
+    assert!(
+        base.setpoints().board().angle() < AngleDegrees::from_degrees(8.5),
+        "the commanded setpoint must remain below the v1.3 timer gate",
+    );
+
+    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(10_001));
+
+    let ride_state = state.all_data_payloads().base().status().ride_state();
+    assert_eq!(
+        ride_state.run_state(),
+        FloatOutBoyRunState::Ready,
+        "physical pitch above 10 degrees for more than one second must stop even when distance progress is incomplete",
+    );
+    assert_eq!(
+        ride_state.stop_condition(),
+        FloatOutBoyStopCondition::ReverseStop,
+    );
 }
 
 #[test]
