@@ -7,7 +7,7 @@ use vescpkg_rs::prelude::SYSTEM_TICK_RATE_HZ;
 pub(super) const FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN: usize = 60;
 // Float Out Boy v1.2.1 `cmd_realtime_data_ids` writes the counted ID-list packet at
 // `third_party/float-out-boy/src/main.c:1876-1901`.
-pub(super) const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 405;
+pub(super) const FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN: usize = 414;
 
 const FLOAT_OUT_BOY_PACKAGE_NAME: &[u8] = b"Float Out Boy";
 const FLOAT_OUT_BOY_VERSION_SUFFIX: &[u8] = b"";
@@ -45,8 +45,8 @@ vescpkg_rs::firmware_section_static!(
             \x09imu.pitch\
             \x11imu.balance_pitch\
             \x08imu.roll\
-            \x0cfootpad.adc1\
-            \x0cfootpad.adc2\
+            \x10footpad.adc_left\
+            \x11footpad.adc_right\
             \x0cremote.input\
             \x0a\x08setpoint\
             \x0catr.setpoint\

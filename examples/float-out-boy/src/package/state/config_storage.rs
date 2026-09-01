@@ -77,7 +77,7 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     if gain.value() <= 1.0 {
         return FirmwareImuMigration::NotRequired;
     }
-    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
+    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.2) else {
         return FirmwareImuMigration::InvalidTarget;
     };
     let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {

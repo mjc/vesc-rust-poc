@@ -58,6 +58,7 @@ impl LoopState {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn advance_balance_loop_elapsed_with_torque(
         self,
         config: LoopConfig,
@@ -65,9 +66,27 @@ impl LoopState {
         elapsed: VescSeconds,
         motor_torque_constant: MotorTorqueConstant,
     ) -> LoopOutput {
-        let (pid_torques, state) = PidPhase::from_step(config, input).update_state(self, elapsed);
-        let booster_torque =
-            BoosterPhase::from_step(config, input).filtered_torque(state.booster_torque, elapsed);
+        self.advance_balance_loop_elapsed_with_filter_rate(
+            config,
+            input,
+            elapsed,
+            config.hertz,
+            motor_torque_constant,
+        )
+    }
+
+    pub(crate) fn advance_balance_loop_elapsed_with_filter_rate(
+        self,
+        config: LoopConfig,
+        input: LoopInput,
+        elapsed: VescSeconds,
+        filter_rate: vescpkg_rs::prelude::SampleRate,
+        motor_torque_constant: MotorTorqueConstant,
+    ) -> LoopOutput {
+        let (pid_torques, state) =
+            PidPhase::from_step(config, input).update_state(self, elapsed, filter_rate);
+        let booster_torque = BoosterPhase::from_step(config, input)
+            .filtered_torque(state.booster_torque, filter_rate);
         let pitch_based = pid_torques.pitch_based_current(
             booster_torque,
             motor_torque_constant,
@@ -84,7 +103,7 @@ impl LoopState {
             .requested_with_pitch_based(pitch_based, motor_torque_constant)
             .clamped_to(input.current_limit())
             .adjusted_for_darkride(input.darkride)
-            .filtered_from(state.balance_current, input.traction_control, elapsed);
+            .filtered_from(state.balance_current, input.traction_control, filter_rate);
         let state = state.with_balance_current(balance_current);
 
         LoopOutput {

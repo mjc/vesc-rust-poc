@@ -1,7 +1,7 @@
 use super::FloatOutBoyConfigEditor;
 use super::FloatOutBoyFaultConfig;
 use vescpkg_rs::prelude::{
-    AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio,
+    AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio, WireByte,
 };
 use vescpkg_rs::prelude::{Current, MotorCurrent};
 
@@ -21,12 +21,12 @@ impl FloatOutBoyConfigEditor<'_> {
             && self.set_startup_pitch_tolerance(AngleDegrees::from_degrees(0.2))
             && self.set_startup_roll_tolerance(AngleDegrees::from_degrees(25.0))
             && FloatOutBoyFaultConfig::PITCH_FIELD
-                .write(self, AngleDegrees::from_degrees(6.0))
+                .write(self, WireByte::new(6))
                 .is_some()
             && FloatOutBoyFaultConfig::ROLL_FIELD
                 .write(
                     self,
-                    AngleDegrees::from_degrees(if config.relaxed_roll { 90.0 } else { 35.0 }),
+                    WireByte::new(if config.relaxed_roll { 90 } else { 35 }),
                 )
                 .is_some()
             && self.set_kp(config.kp)

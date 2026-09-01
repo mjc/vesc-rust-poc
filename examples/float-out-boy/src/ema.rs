@@ -6,6 +6,7 @@ pub(crate) struct EmaAlpha(Ratio);
 
 impl EmaAlpha {
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn from_elapsed(cutoff: Frequency, elapsed: VescSeconds) -> Self {
         Self::from_omega(core::f32::consts::TAU * cutoff.as_hertz() * elapsed.as_seconds())
     }

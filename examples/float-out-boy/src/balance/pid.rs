@@ -3,8 +3,8 @@ use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyRealtimeRuntimeSetpoint};
 use crate::ema::EmaAlpha;
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant, MotorTorqueLimit};
-use vescpkg_rs::prelude::VescSeconds;
 use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll};
+use vescpkg_rs::prelude::{SampleRate, VescSeconds};
 use vescpkg_rs::{AngleCurrentGain, IntegralCurrentGain, PidScale, RateCurrentGain, Rpm};
 
 /// Board setpoint error used by Float Out Boy PID P/I terms.
@@ -300,10 +300,10 @@ impl ScaleTargets {
     };
 
     #[inline]
-    fn smoothed_into(self, state: LoopState, elapsed: VescSeconds) -> PidState {
+    fn smoothed_into(self, state: LoopState, filter_rate: SampleRate) -> PidState {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
-        let alpha = EmaAlpha::from_elapsed(vescpkg_rs::Frequency::from_hertz(1.0), elapsed);
+        let alpha = EmaAlpha::from_sample_rate(vescpkg_rs::Frequency::from_hertz(1.0), filter_rate);
         PidState {
             kp_brake_scale: self
                 .brake
@@ -465,6 +465,7 @@ impl Phase {
         self,
         state: LoopState,
         elapsed: VescSeconds,
+        filter_rate: SampleRate,
     ) -> (Torques, LoopState) {
         // C map: `third_party/float-out-boy/src/pid.c:37-73` updates P/I/rate-P before
         // smoothing the accel/brake scale coefficients for the next tick.
@@ -482,11 +483,11 @@ impl Phase {
                 elapsed,
             ),
         };
-        let state = state.with_updated_pid_state(
+        let state = state.with_updated_pid_state_at_rate(
             self.config,
             self.input.motor_erpm,
             torques.integral,
-            elapsed,
+            filter_rate,
         );
 
         (torques, state)
@@ -509,6 +510,7 @@ impl LoopState {
     /// Source map: upstream stores integral current and smooths PID scales at
     /// `third_party/float-out-boy/src/pid.c:40-67`.
     #[inline]
+    #[cfg(test)]
     pub(super) fn with_updated_pid_state(
         self,
         config: LoopConfig,
@@ -516,12 +518,23 @@ impl LoopState {
         integral: MotorTorque,
         elapsed: VescSeconds,
     ) -> Self {
+        let filter_rate = SampleRate::from_hertz(1.0 / elapsed.as_seconds());
+        self.with_updated_pid_state_at_rate(config, motor_erpm, integral, filter_rate)
+    }
+
+    pub(super) fn with_updated_pid_state_at_rate(
+        self,
+        config: LoopConfig,
+        motor_erpm: ElectricalSpeed,
+        integral: MotorTorque,
+        filter_rate: SampleRate,
+    ) -> Self {
         Self {
             pid: PidState {
                 integral_torque: integral,
                 ..ScaleDirection::from_motor_erpm(motor_erpm)
                     .targets(config)
-                    .smoothed_into(self, elapsed)
+                    .smoothed_into(self, filter_rate)
             },
             ..self
         }

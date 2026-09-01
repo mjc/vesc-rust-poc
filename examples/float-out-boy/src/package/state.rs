@@ -87,7 +87,7 @@ use internal_leds::FloatOutBoyInternalLedRuntime;
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
-use remote_control::RemoteControlState;
+use remote_control::{RemoteControlState, RemotePhysicalInputContext};
 use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
 
@@ -279,38 +279,37 @@ impl FloatOutBoyPackageState {
         clippy::trivially_copy_pass_by_ref,
         reason = "the capability reference keeps the package input seam explicit"
     )]
-    pub(crate) fn refresh_controller_input(&mut self, input: &vescpkg_rs::FirmwareInputs) {
-        // C map: Float Out Boy selects UART/PPM, rejects samples one second old,
-        // applies deadband rescaling, then optional inversion at
-        // `third_party/float-out-boy/src/remote.c:36-68`.
+    pub(crate) fn refresh_controller_input(
+        &mut self,
+        input: &vescpkg_rs::FirmwareInputs,
+        now: TimestampTicks,
+    ) {
+        // C map: current Refloat gives COMMAND_REMOTE priority for 0.5 s,
+        // selects UART/PPM, rejects samples older than 0.5 s, then applies
+        // deadband, move-idle, and inversion at `src/remote.c:61-119`.
         let config = self.serialized_config;
         let value = match config.input_tilt_remote_type() {
             1 => input.remote().ok().and_then(|remote| {
-                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| remote.joystick_y().ratio().as_ratio())
+                (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(0.5))
+                    .then(|| remote.joystick_y().ratio())
             }),
             2 => input.ppm().ok().and_then(|ppm| {
-                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(1.0))
-                    .then(|| ppm.value().ratio().as_ratio())
+                (ppm.age().duration() < vescpkg_rs::VescSeconds::from_seconds(0.5))
+                    .then(|| ppm.value().ratio())
             }),
             _ => None,
-        }
-        .unwrap_or(0.0);
-        let deadband = config.input_tilt_deadband().as_ratio();
-        let value = if value.abs() < deadband {
-            0.0
-        } else {
-            value.signum() * (value.abs() - deadband) / (1.0 - deadband)
         };
-        let value = if config.input_tilt_inverted() {
-            -value
-        } else {
-            value
-        };
-        self.remote_control
-            .set_input(crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-                vescpkg_rs::SignedRatio::clamped(value),
-            ));
+        self.remote_control.refresh_physical_input(
+            value,
+            RemotePhysicalInputContext {
+                now,
+                disengage_ticks: self.disengage_ticks,
+                deadband: config.input_tilt_deadband(),
+                inverted: config.input_tilt_inverted(),
+                maximum_move_speed: config.remote().max_move_speed(),
+                move_grace: config.remote().grace_period(),
+            },
+        );
     }
 
     /// Seed the auxiliary backup threshold from the firmware odometer at startup.
@@ -512,33 +511,43 @@ impl FloatOutBoyPackageState {
         match ride_state.run_state() {
             FloatOutBoyRunState::Running => {
                 let angular_rate = sample.angular_rate();
-                let output = self.balance_loop.advance_balance_loop_elapsed_with_torque(
-                    self.runtime_balance_loop_config(),
-                    LoopInput {
-                        setpoint: base.setpoints().board(),
-                        brake_tilt_setpoint: base.setpoints().brake_tilt(),
-                        balance_pitch: balance_pitch.angle_degrees(),
-                        raw_pitch: pitch,
-                        roll: ImuRoll::new(AngleRadians::from(roll)),
-                        gyro_pitch: angular_rate.pitch(),
-                        gyro_yaw: angular_rate.yaw(),
-                        motor_erpm: base.motor().electrical_speed(),
-                        motor_current: base.motor().motor_current(),
-                        motor_current_max: self.motor_current_max,
-                        motor_current_min: self.motor_current_min,
-                        mode: ride_state.mode(),
-                        darkride: ride_state.darkride(),
-                        traction_control: self.ride_flags.traction_control,
-                    },
-                    sample.period().duration(),
-                    self.motor_torque_constant,
-                );
+                let output = self
+                    .balance_loop
+                    .advance_balance_loop_elapsed_with_filter_rate(
+                        self.runtime_balance_loop_config(),
+                        LoopInput {
+                            setpoint: base.setpoints().board(),
+                            brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                            balance_pitch: balance_pitch.angle_degrees(),
+                            raw_pitch: pitch,
+                            roll: ImuRoll::new(AngleRadians::from(roll)),
+                            gyro_pitch: angular_rate.pitch(),
+                            gyro_yaw: angular_rate.yaw(),
+                            motor_erpm: base.motor().electrical_speed(),
+                            motor_current: base.motor().motor_current(),
+                            motor_current_max: self.motor_current_max,
+                            motor_current_min: self.motor_current_min,
+                            mode: ride_state.mode(),
+                            darkride: ride_state.darkride(),
+                            traction_control: self.ride_flags.traction_control,
+                        },
+                        sample.period().duration(),
+                        self.frequency_trackers.imu.filter_frequency(),
+                        self.motor_torque_constant,
+                    );
                 self.balance_loop = output.state;
                 self.request_motor_current(output.requested_current);
             }
-            FloatOutBoyRunState::Ready
-            | FloatOutBoyRunState::Disabled
-            | FloatOutBoyRunState::Startup => {}
+            FloatOutBoyRunState::Ready => {
+                if let Some(current) = self.remote_control.request_remote_move_current(
+                    base.motor().vehicle_speed().speed(),
+                    sample.period().duration(),
+                    self.motor_torque_constant,
+                ) {
+                    self.request_motor_current(current);
+                }
+            }
+            FloatOutBoyRunState::Disabled | FloatOutBoyRunState::Startup => {}
         }
 
         let attitude = FloatOutBoyAllDataAttitude::new(
@@ -735,26 +744,7 @@ impl FloatOutBoyPackageState {
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
         let restored = self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed);
-        self.refresh_ready_remote_current(system_time_ticks);
         restored || restore_flywheel_config
-    }
-
-    fn refresh_ready_remote_current(&mut self, now: TimestampTicks) {
-        let base = self.all_data_payloads.base();
-        if !matches!(
-            base.status().ride_state().run_state(),
-            FloatOutBoyRunState::Ready
-        ) {
-            return;
-        }
-        if let Some(current) = self.remote_control.request_ready_current(
-            base.motor().electrical_speed().rpm(),
-            self.serialized_config.remote_throttle(),
-            now,
-            self.disengage_ticks,
-        ) {
-            self.request_motor_current(current);
-        }
     }
 
     fn refresh_konami_runtime_state(
@@ -902,7 +892,22 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
+            || self.handle_remote_packet(now, bytes)
             || self.handle_rc_move_packet(bytes)
+    }
+
+    fn handle_remote_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
+        remote_control::handle_remote_packet(
+            &mut self.remote_control,
+            bytes,
+            now(),
+            self.disengage_ticks,
+            self.serialized_config.remote().max_move_speed(),
+        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

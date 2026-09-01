@@ -60,34 +60,43 @@ impl FloatOutBoyFootpadState {
 
 /// Float Out Boy footpad ADC sample and decoded state.
 ///
-/// C map: `third_party/float-out-boy/src/footpad_sensor.h:29-32`.
+/// C map: `adc_left`, `adc_right`, and `state` in
+/// `third_party/float-out-boy/src/footpad_sensor.h:29-32`.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FloatOutBoyFootpadSample {
-    adc1: Voltage,
-    adc2: Voltage,
+    left_voltage: Voltage,
+    right_voltage: Voltage,
     state: FloatOutBoyFootpadState,
 }
 
 impl FloatOutBoyFootpadSample {
-    /// Build a footpad sample from Float Out Boy's raw ADC pin voltages.
+    /// Build a footpad sample from Float Out Boy's logical left/right voltages.
     ///
-    /// C map: Float Out Boy v1.2.1 stores `VESC_IF->io_read_analog` results in
-    /// `FootpadSensor.adc1/adc2` at `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    /// C map: the mapping-adjusted values are stored in
+    /// `FootpadSensor.adc_left/adc_right`.
     #[must_use]
-    pub const fn new(adc1: Voltage, adc2: Voltage, state: FloatOutBoyFootpadState) -> Self {
-        Self { adc1, adc2, state }
+    pub const fn new(
+        left_voltage: Voltage,
+        right_voltage: Voltage,
+        state: FloatOutBoyFootpadState,
+    ) -> Self {
+        Self {
+            left_voltage,
+            right_voltage,
+            state,
+        }
     }
 
-    /// Return Float Out Boy's raw ADC1 voltage from `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    /// Return the logical left footpad voltage after ADC mapping.
     #[must_use]
-    pub const fn adc1_volts(self) -> f32 {
-        self.adc1.as_volts()
+    pub const fn left_voltage(self) -> Voltage {
+        self.left_voltage
     }
 
-    /// Return Float Out Boy's raw ADC2 voltage from `third_party/float-out-boy/src/footpad_sensor.c:28-31`.
+    /// Return the logical right footpad voltage after ADC mapping.
     #[must_use]
-    pub const fn adc2_volts(self) -> f32 {
-        self.adc2.as_volts()
+    pub const fn right_voltage(self) -> Voltage {
+        self.right_voltage
     }
 
     /// Return the decoded footpad sensor state.
@@ -96,5 +105,32 @@ impl FloatOutBoyFootpadSample {
     #[must_use]
     pub const fn state(self) -> FloatOutBoyFootpadState {
         self.state
+    }
+}
+
+/// Mapping from physical ADC pins to logical footpad sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FloatOutBoyFootpadAdcMapping {
+    /// ADC1 is left and ADC2 is right.
+    #[default]
+    Direct,
+    /// ADC2 is left and ADC1 is right.
+    Swapped,
+}
+
+impl FloatOutBoyFootpadAdcMapping {
+    /// Decode the generated `hardware.swap_footpad_adcs` flag.
+    #[must_use]
+    pub const fn from_swapped(swapped: bool) -> Self {
+        if swapped { Self::Swapped } else { Self::Direct }
+    }
+
+    /// Map physical ADC1/ADC2 voltages to logical left/right voltages.
+    #[must_use]
+    pub const fn logical_voltages(self, adc1: Voltage, adc2: Voltage) -> (Voltage, Voltage) {
+        match self {
+            Self::Direct => (adc1, adc2),
+            Self::Swapped => (adc2, adc1),
+        }
     }
 }

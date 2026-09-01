@@ -1114,12 +1114,17 @@ fn advance_running_control(
         control.board_setpoint = AngleDegrees::ZERO;
     }
     state.runtime_board_setpoint = control.board_setpoint;
-    let remote_setpoint = state.remote_control.update_input_tilt_elapsed(
-        state.serialized_config.input_tilt_angle_limit(),
-        elapsed,
-        phase.control.darkride_active,
-    );
-    runtime.setpoints = state.ride_modifiers.advance_elapsed(
+    let main_filter_rate = state.frequency_trackers.main.filter_frequency();
+    let remote_setpoint = state
+        .remote_control
+        .update_input_tilt_elapsed_with_filter_rate(
+            state.serialized_config.input_tilt_angle_limit(),
+            elapsed,
+            phase.control.darkride_active,
+            state.serialized_config.remote().filter_time_constant(),
+            main_filter_rate,
+        );
+    runtime.setpoints = state.ride_modifiers.advance_elapsed_with_filter_rate(
         &state.serialized_config,
         RideModifierInput {
             base_setpoint: control.board_setpoint,
@@ -1135,6 +1140,7 @@ fn advance_running_control(
             wheelslip: control.ride_state.wheelslip(),
         },
         elapsed,
+        main_filter_rate,
     );
     if !matches!(control.ride_state.mode(), FloatOutBoyMode::Flywheel) {
         let warning = matches!(
@@ -1153,13 +1159,14 @@ fn advance_running_control(
 
     #[cfg(test)]
     {
+        let imu_filter_rate = state.frequency_trackers.imu.filter_frequency();
         let gyro = imu.angular_rate();
         let mut loop_state = state.balance_loop;
         loop_state.balance_current = runtime.balance_current.current();
         loop_state.booster_torque = state
             .motor_torque_constant
             .torque_from_motor_current(runtime.booster_current.current());
-        let balance_loop = loop_state.advance_balance_loop_elapsed_with_torque(
+        let balance_loop = loop_state.advance_balance_loop_elapsed_with_filter_rate(
             state.runtime_balance_loop_config(),
             LoopInput {
                 setpoint: runtime.setpoints.board(),
@@ -1178,6 +1185,7 @@ fn advance_running_control(
                 traction_control: state.ride_flags.traction_control,
             },
             elapsed,
+            imu_filter_rate,
             state.motor_torque_constant,
         );
         state.balance_loop = balance_loop.state;

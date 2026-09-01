@@ -4,7 +4,9 @@ use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
 use crate::ema::EmaAlpha;
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
-use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, VescSeconds};
+use vescpkg_rs::prelude::{
+    Current, Frequency, MotorCurrent, MotorCurrentLimit, SampleRate, VescSeconds,
+};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -121,17 +123,17 @@ impl RequestedCurrent {
         self,
         previous: MotorCurrent,
         traction_control: FloatOutBoyTractionControlState,
-        elapsed: VescSeconds,
+        filter_rate: SampleRate,
     ) -> MotorCurrent {
         match traction_control {
-            // C map: Refloat main at caff10a resets the EMA to zero while its
+            // C map: current Refloat upstream/main resets the EMA to zero while its
             // darkride traction recovery is freewheeling (`src/main.c:723-728`).
             FloatOutBoyTractionControlState::Freewheeling => MotorCurrent::new(Current::ZERO),
             FloatOutBoyTractionControlState::FilteringCurrent => {
-                // C map: Refloat main at caff10a updates the EMA as
+                // C map: current Refloat upstream/main updates the EMA as
                 // `previous += alpha * (target - previous)` in
                 // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
-                let alpha = EmaAlpha::from_elapsed(BALANCE_CURRENT_FILTER_CUTOFF, elapsed);
+                let alpha = EmaAlpha::from_sample_rate(BALANCE_CURRENT_FILTER_CUTOFF, filter_rate);
                 previous + (self.0 - previous) * alpha.factor()
             }
         }
