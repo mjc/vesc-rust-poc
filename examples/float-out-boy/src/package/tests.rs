@@ -68,7 +68,7 @@ fn stop_tears_down_internal_led_runtime() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[225] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&config));
     state.apply_pending_internal_led_refresh();
     assert!(state.internal_leds_operational());
@@ -83,7 +83,7 @@ fn stop_retains_state_when_internal_led_dma_cannot_quiesce() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[225] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&config));
     state.apply_pending_internal_led_refresh();
 

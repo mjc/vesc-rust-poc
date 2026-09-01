@@ -35,10 +35,10 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    assert_eq!(bytes.as_bytes().len(), 25_525);
+    assert_eq!(bytes.as_bytes().len(), 27_514);
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x53, 0x91, 0x78, 0xda]
+        &[0x00, 0x05, 0x9e, 0xf7, 0x78, 0xda]
     );
 }
 
@@ -52,7 +52,7 @@ fn custom_config_default_callback_returns_upstream_serialized_defaults() {
     // generated `conf/confparser.h:11-12` fixes signature/length, and
     // generated `conf/confparser.c:8-178,363-531` writes these bytes.
     assert_eq!(*config.as_bytes(), default_float_out_boy_config_bytes());
-    assert_eq!(&config.as_bytes()[..4], &[0xfd, 0x27, 0x46, 0x35]);
+    assert_eq!(&config.as_bytes()[..4], &[0x19, 0x1a, 0x6c, 0x1b]);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn custom_config_set_callback_stores_serialized_config_in_state() {
     let mut state = FloatOutBoyPackageState::default();
     state.replace_idle_epoch_for_test(TimestampTicks::from_ticks(7));
     let mut incoming = default_float_out_boy_config_bytes();
-    incoming[225] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    incoming[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_meta_is_default(false));
     });
@@ -196,7 +196,7 @@ fn custom_config_set_callback_rejects_zero_runtime_divisors() {
     let _firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-    for offset in [140, 242, 246, 250] {
+    for offset in [153, 250, 254, 258] {
         let mut incoming = default_float_out_boy_config_bytes();
         incoming[offset..offset + 2].fill(0);
         assert!(
@@ -206,7 +206,7 @@ fn custom_config_set_callback_rejects_zero_runtime_divisors() {
     }
 
     let mut incoming = default_float_out_boy_config_bytes();
-    incoming[142] = 0;
+    incoming[155] = 0;
     assert!(state.prepare_serialized_config(&incoming).is_none());
 }
 
@@ -215,7 +215,7 @@ fn custom_config_set_callback_rejects_invalid_modes_and_led_layout() {
     let _firmware = FirmwareTest::new();
     let state = FloatOutBoyPackageState::new(sample_all_data_payloads());
 
-    for (offset, value) in [(77, 3), (99, u8::MAX), (225, u8::MAX)] {
+    for (offset, value) in [(99, 3), (118, u8::MAX), (232, u8::MAX)] {
         let mut incoming = default_float_out_boy_config_bytes();
         incoming[offset] = value;
         assert!(

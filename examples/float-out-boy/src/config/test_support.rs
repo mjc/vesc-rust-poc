@@ -27,9 +27,9 @@ impl FloatOutBoyConfigEditor<'_> {
         set_switch_full_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_FULL_FIELD;
     }
 
-    generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
+    generated_config_setters! { set_remote_max_move_speed(speed: vescpkg_rs::WireByte) => FloatOutBoyRemoteConfig::MAX_MOVE_SPEED_FIELD; }
 
-    generated_config_setters! { set_remote_throttle_grace_period(duration: VescSeconds) => FloatOutBoyRemoteThrottleConfig::GRACE_PERIOD_FIELD; }
+    generated_config_setters! { set_remote_grace_period(duration: VescSeconds) => FloatOutBoyRemoteConfig::GRACE_PERIOD_FIELD; }
 
     generated_config_setters! { set_speed_pushback_threshold(speed: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD; }
 

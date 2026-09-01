@@ -323,30 +323,29 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
         (10, [0x65, 0x90]),
         (14, [0x00, 0x1E]),
         (16, [0x00, 0x50]),
-        (102, [0x00, 0xD2]),
-        (116, [0x07, 0x6C]),
-        (118, [0x01, 0x5E]),
-        (120, [0x00, 0x96]),
-        (122, [0x03, 0x84]),
-        (124, [0x00, 0x96]),
-        (126, [0x01, 0x2C]),
-        (128, [0x01, 0xF4]),
-        (130, [0x01, 0x2C]),
-        (134, [0x07, 0xD0]),
-        (143, [0x00, 0x00]),
-        (145, [0x02, 0xBC]),
-        (147, [0x01, 0x2C]),
-        (149, [0x01, 0x90]),
-        (151, [0xF2, 0x54]),
-        (153, [0x03, 0x84]),
-        (155, [0x01, 0x90]),
-        (157, [0x01, 0xF4]),
-        (159, [0x05, 0xDC]),
-        (161, [0x0B, 0xB8]),
-        (165, [0x03, 0x20]),
-        (167, [0x03, 0x84]),
-        (169, [0x00, 0x64]),
-        (171, [0x07, 0xD0]),
+        (121, [0x00, 0xD2]),
+        (135, [0x07, 0x6C]),
+        (137, [0x01, 0x5E]),
+        (34, [0x00, 0x96]),
+        (36, [0x03, 0x84]),
+        (139, [0x00, 0x96]),
+        (141, [0x01, 0x2C]),
+        (143, [0x01, 0xF4]),
+        (145, [0x01, 0x2C]),
+        (149, [0x07, 0xD0]),
+        (156, [0x00, 0x00]),
+        (158, [0x02, 0xBC]),
+        (160, [0x01, 0x2C]),
+        (162, [0x01, 0x90]),
+        (164, [0xF2, 0x54]),
+        (166, [0x03, 0x84]),
+        (24, [0x01, 0x90]),
+        (26, [0x01, 0xF4]),
+        (168, [0x0B, 0xB8]),
+        (172, [0x03, 0x20]),
+        (174, [0x03, 0x84]),
+        (176, [0x00, 0x64]),
+        (178, [0x07, 0xD0]),
     ] {
         assert_eq!(&bytes[offset..offset + 2], &expected);
     }
@@ -412,8 +411,8 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
         &block_two,
     ));
     assert_ne!(
-        &state.serialized_config.as_bytes()[147..149],
-        &original.as_bytes()[147..149]
+        &state.serialized_config.as_bytes()[149..151],
+        &original.as_bytes()[149..151]
     );
     assert_eq!(state.tick_beeper(), None);
 }
@@ -435,8 +434,8 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
     ));
 
     let bytes = state.serialized_config.as_bytes();
-    assert_eq!(&bytes[42..49], &[0x00, 0xFA, 0x01, 0x2C, 0x03, 0x52, 1]);
-    assert_eq!(&bytes[62..64], &[0x00, 0x96]);
+    assert_eq!(&bytes[64..71], &[0x00, 0xFA, 0x01, 0x2C, 0x03, 0x52, 1]);
+    assert_eq!(&bytes[84..86], &[0x00, 0x96]);
     let changes: Vec<_> = (1..=560)
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
@@ -469,20 +468,19 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     ));
 
     let bytes = state.serialized_config.as_bytes();
-    assert_eq!(&bytes[37..42], &[1, 0, 1, 1, 1]);
+    assert_eq!(&bytes[59..64], &[1, 0, 1, 1, 1]);
     assert_eq!(
-        &bytes[65..82],
+        &bytes[87..102],
         &[
-            0x13, 0x88, 0x07, 0xD0, 0x00, 0xFA, 0x01, 0x5E, 0x0F, 0xA0, 0x01, 0x2C, 2, 0x04, 0xB0,
-            0x03, 0x20
+            0x13, 0x88, 0x07, 0xD0, 0x00, 0xFA, 0x01, 0x5E, 0x0F, 0xA0, 0x01, 0x2C, 2, 0x04, 0xB0
         ]
     );
     assert_eq!(
-        &bytes[89..99],
+        &bytes[108..118],
         &[0x00, 0xC8, 0x05, 0xDC, 0x09, 0xC4, 7, 1, 1, 1]
     );
-    assert_eq!(&bytes[100..102], &[0x04, 0xE2]);
-    assert_eq!(bytes[240], 1);
+    assert_eq!(&bytes[119..121], &[0x04, 0xE2]);
+    assert_eq!(bytes[248], 1);
     assert_eq!(state.tick_beeper(), None);
 }
 
@@ -490,7 +488,7 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
 fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
-    let original_nose = state.serialized_config.as_bytes()[65..82].to_vec();
+    let original_nose = state.serialized_config.as_bytes()[87..102].to_vec();
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;
 
@@ -536,7 +534,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
             10,
         ],
     ));
-    assert_eq!(&state.serialized_config.as_bytes()[65..82], original_nose);
+    assert_eq!(&state.serialized_config.as_bytes()[87..102], original_nose);
 
     let original_input = state.serialized_config.as_bytes()[77..82].to_vec();
     assert!(state.handle_packet_with_telemetry(

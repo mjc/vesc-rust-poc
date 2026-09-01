@@ -144,7 +144,6 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
     let atr_speed_amount = FloatOutBoyTuneNibble::high(*atr_speed);
     let atr_angle = FloatOutBoyTuneNibble::low(*atr_limits);
     let atr_speeds = FloatOutBoyTuneNibble::high(*atr_limits);
-    let response_boost = FloatOutBoyTuneNibble::low(*atr_boost);
     let transition_boost = FloatOutBoyTuneNibble::high(*atr_boost);
     let accel_ratio = FloatOutBoyTuneNibble::low(*atr_ratios);
     let decel_ratio = FloatOutBoyTuneNibble::high(*atr_ratios);
@@ -192,7 +191,6 @@ fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8
                 2.0,
                 AngularVelocity::from_degrees_per_second,
             )),
-            config.set_atr_response_boost(response_boost.divided(10.0, 1.0, PidScale::new)),
             config.set_atr_transition_boost(transition_boost.divided(5.0, 1.0, PidScale::new)),
             config.set_atr_amps_accel_ratio(accel_ratio.scaled(1.0, 5.0, PidScale::new)),
             config.set_atr_amps_decel_ratio(decel_ratio.scaled(1.0, 5.0, PidScale::new)),
@@ -448,7 +446,7 @@ pub(super) fn handle_other_tune_packet(
             }
         }
 
-        if updated && let [input, input_speed, ..] = optional_input {
+        if updated && let [input, ..] = optional_input {
             let remote_type = *input & 0x03;
             if remote_type <= 2 {
                 updated = config.set_input_tilt_remote_type(WireByte::new(remote_type));
@@ -456,11 +454,6 @@ pub(super) fn handle_other_tune_packet(
                     updated &= config.set_input_tilt_angle_limit(
                         WireByte::new(*input >> 2).scaled(1.0, 0.0, AngleDegrees::from_degrees),
                     );
-                    updated &= config.set_input_tilt_speed(WireByte::new(*input_speed).scaled(
-                        1.0,
-                        0.0,
-                        AngularVelocity::from_degrees_per_second,
-                    ));
                 }
             }
         }
