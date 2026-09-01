@@ -18,6 +18,11 @@ use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
+const REALTIME_DATA_PACKET: [u8; 2] = [
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FloatOutBoyAppDataCommand::RealtimeData.id(),
+];
+
 fn ready_zero_attitude_firmware() -> FirmwareTest {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
@@ -74,7 +79,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
     let expected_current = refloat_main_filtered_balance_current(
         MotorCurrent::new(Current::ZERO),
         MotorCurrent::new(Current::from_amps(-50.0)),
-        state.serialized_config.startup().sample_rate(),
+        state.frequency_trackers.imu.filter_frequency(),
     );
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_degrees(5.0)));
 
@@ -83,10 +88,7 @@ fn app_data_running_uses_balance_filter_pitch_like_float_out_boy_pid() {
         lifecycle,
         telemetry.telemetry(),
         imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
+        &REALTIME_DATA_PACKET,
     ));
     assert!(state.apply_requested_motor_current(bindings));
 
@@ -150,15 +152,13 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         assert!(config.set_ki(IntegralCurrentGain::new(0.1)));
     });
     let sample_rate = state.serialized_config.startup().sample_rate();
+    let filter_rate = state.frequency_trackers.imu.filter_frequency();
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
         lifecycle,
         telemetry.telemetry(),
         imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
+        &REALTIME_DATA_PACKET,
     ));
     assert!(state.apply_requested_motor_current(bindings));
     let first_base = state.all_data_payloads().base();
@@ -180,7 +180,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     let expected_first_current = refloat_main_filtered_balance_current(
         MotorCurrent::new(Current::ZERO),
         MotorCurrent::new(Current::from_amps(first_integral)),
-        sample_rate,
+        filter_rate,
     );
     assert_motor_current_near(first_current, expected_first_current);
 
@@ -189,10 +189,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
         lifecycle,
         telemetry.telemetry(),
         imu,
-        &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-            FloatOutBoyAppDataCommand::RealtimeData.id(),
-        ],
+        &REALTIME_DATA_PACKET,
     ));
     assert!(state.apply_requested_motor_current(bindings));
 
@@ -214,7 +211,7 @@ fn app_data_running_accumulates_angle_i_balance_current_like_float_out_boy_pid()
     let expected_current = refloat_main_filtered_balance_current(
         first_current,
         MotorCurrent::new(Current::from_amps(second_integral)),
-        sample_rate,
+        filter_rate,
     );
     assert_motor_current_near(telemetry.commanded_current(), expected_current);
 }
@@ -259,7 +256,7 @@ fn app_data_running_clamps_angle_i_at_default_ki_limit_like_float_out_boy_pid() 
     let expected_current = refloat_main_filtered_balance_current(
         MotorCurrent::new(Current::ZERO),
         MotorCurrent::new(Current::from_amps(30.0)),
-        state.serialized_config.startup().sample_rate(),
+        state.frequency_trackers.imu.filter_frequency(),
     );
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -328,7 +325,7 @@ fn app_data_running_limits_handtest_and_flywheel_current_like_float_out_boy_loop
         let expected_current = refloat_main_filtered_balance_current(
             MotorCurrent::new(Current::ZERO),
             MotorCurrent::new(Current::from_amps(current_limit)),
-            state.serialized_config.startup().sample_rate(),
+            state.frequency_trackers.imu.filter_frequency(),
         );
 
         assert!(tick_float_out_boy_state_and_handle_packet(
@@ -510,7 +507,7 @@ fn expected_smoothed_current(state: &FloatOutBoyPackageState, setpoint_error: f3
     refloat_main_filtered_balance_current(
         MotorCurrent::new(Current::ZERO),
         MotorCurrent::new(Current::from_amps(new_current)),
-        state.serialized_config.startup().sample_rate(),
+        state.frequency_trackers.imu.filter_frequency(),
     )
     .current()
     .as_amps()
@@ -595,7 +592,6 @@ fn app_data_input_tilt_changes_final_motor_current_with_source_cadence() {
         ));
     edit_config(&mut state, |config| {
         assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
     });
 
     assert!(tick_realtime_data(&mut state, &telemetry, 0));

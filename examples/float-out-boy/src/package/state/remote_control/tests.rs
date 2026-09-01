@@ -3,13 +3,10 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRealtimeRemoteInput, FloatOutBoyRunState,
 };
-use crate::package::state::FloatOutBoyPackageState;
-use crate::package::test_support::{
-    FloatOutBoyConfigTestBytes, editable_config_from_bytes,
-    sample_all_data_payloads_with_ride_state,
-};
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use crate::package::test_support::sample_all_data_payloads_with_ride_state;
 use vescpkg_rs::prelude::{
-    AngleDegrees, Current, MotorCurrent, Rpm, SampleRate, SignedRatio, TimestampTicks, VescSeconds,
+    AngleDegrees, Rpm, SampleRate, SignedRatio, Speed, TimestampTicks, VescSeconds,
 };
 
 impl RemoteCurrentTarget {
@@ -127,39 +124,65 @@ fn runtime_reset_clears_remote_tilt_motion() {
 }
 
 #[test]
-fn remote_throttle_requests_idle_current_like_float_out_boy_do_rc_move() {
+fn remote_command_starts_a_speed_control_target_after_disengage_grace() {
     let mut remote_control = RemoteControlState::default();
-    remote_control.set_input(FloatOutBoyRealtimeRemoteInput::new(
-        SignedRatio::from_ratio_const(0.5),
-    ));
-    let state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
-    let mut config = *state.serialized_config();
-    config.edit_float_out_boy_config(|config| {
-        assert!(
-            config.set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0,)))
-        );
-    });
-    config.edit_float_out_boy_config(|config| {
-        assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
-    });
-    let config = editable_config_from_bytes(&config);
-    let remote_throttle = config.remote_throttle();
+    let now = TimestampTicks::from_ticks(20_001);
+    let packet = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FloatOutBoyAppDataCommand::Remote.id(),
+        127,
+    ];
 
-    let requested_current = remote_control
-        .request_remote_throttle_current(
-            remote_throttle,
-            TimestampTicks::from_ticks(1),
-            TimestampTicks::from_ticks(0),
+    assert!(super::handle_remote_packet(
+        &mut remote_control,
+        &packet,
+        now,
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+    ));
+    assert_eq!(
+        remote_control.input().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+    assert_eq!(
+        remote_control.move_target,
+        Some(Speed::from_kilometers_per_hour(5.0))
+    );
+}
+
+#[test]
+fn remote_move_current_is_torque_limited_and_stops_at_target_speed() {
+    let mut remote_control = RemoteControlState::default();
+    let packet = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FloatOutBoyAppDataCommand::Remote.id(),
+        127,
+    ];
+    assert!(super::handle_remote_packet(
+        &mut remote_control,
+        &packet,
+        TimestampTicks::from_ticks(20_001),
+        TimestampTicks::from_ticks(0),
+        Speed::ZERO,
+    ));
+    let current = remote_control
+        .request_remote_move_current(
+            Speed::ZERO,
+            VescSeconds::from_seconds(0.002),
+            MotorTorqueConstant::REFLOAT_COMPAT,
         )
-        .expect("remote throttle should request current");
-
-    // Upstream `do_rc_move(d)` uses default inverted throttle and filters
-    // `rc_current = old * 0.95 + target * 0.05` before requesting current
-    // at `third_party/float-out-boy/src/main.c:291-298`; 10A max with 50% input requests -0.25A.
-    assert_f32_eq!(requested_current.current().as_amps(), -0.25);
+        .expect("move target requests torque");
+    assert!(current.current().as_amps().abs() <= 10.0);
+    let at_target = remote_control
+        .request_remote_move_current(
+            Speed::from_kilometers_per_hour(5.0),
+            VescSeconds::from_seconds(0.002),
+            MotorTorqueConstant::REFLOAT_COMPAT,
+        )
+        .expect("move integral remains active at target");
+    let expected = MotorTorqueConstant::REFLOAT_COMPAT
+        .motor_current_from_torque(MotorTorque::from_newton_meters(0.01));
+    assert!((at_target - expected).abs().current().as_amps() < 0.0001);
 }
 
 #[test]

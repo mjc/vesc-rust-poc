@@ -801,7 +801,6 @@ fn running_input_tilt_ignores_the_removed_legacy_speed_like_refloat() {
         ));
     edit_config(&mut state, |config| {
         assert!(config.set_input_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_input_tilt_speed(AngularVelocity::from_degrees_per_second(25.0)));
     });
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
@@ -824,11 +823,11 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         let firmware = FirmwareTest::new();
         firmware.set_ppm_input(
             PpmInput::new(SignedRatio::from_ratio_const(ppm)),
-            PpmAge::new(VescSeconds::from_seconds(0.5)),
+            PpmAge::new(VescSeconds::from_seconds(0.49)),
         );
         firmware.set_remote_input(
             JoystickY::new(SignedRatio::from_ratio_const(uart)),
-            RemoteAge::new(VescSeconds::from_seconds(0.5)),
+            RemoteAge::new(VescSeconds::from_seconds(0.49)),
         );
         let mut state = FloatOutBoyPackageState::default();
         edit_config(&mut state, |config| {
@@ -837,7 +836,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             assert!(config.set_input_tilt_inverted(true));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         let actual = state.remote_control.input().ratio().as_ratio();
         assert!(
@@ -861,7 +860,7 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         assert!(state.remote_control.input().ratio().as_ratio().abs() < f32::EPSILON);
     }
@@ -878,7 +877,7 @@ fn controller_input_fails_closed_when_the_selected_optional_slot_is_absent() {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
 
-        state.refresh_controller_input(firmware.inputs());
+        state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(0));
 
         assert_f32_eq!(state.remote_control.input().ratio().as_ratio(), 0.0);
     }
@@ -1027,7 +1026,7 @@ fn tick_running_protective_pushback(
 
 fn enable_bms(state: &mut FloatOutBoyPackageState) {
     let mut config = default_float_out_boy_config_bytes();
-    config[263] = 1;
+    config[271] = 1;
     assert!(state.store_serialized_config(&config));
 }
 

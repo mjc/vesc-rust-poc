@@ -218,7 +218,7 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[240] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
@@ -256,7 +256,7 @@ fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
     let telemetry = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[240] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     state.force_beeper_on();
 
@@ -276,8 +276,8 @@ fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
     for (remote_type, expected) in [(0, true), (1, true), (2, false)] {
         let mut state = FloatOutBoyPackageState::default();
         let mut config = default_float_out_boy_config_bytes();
-        config[77] = remote_type;
-        config[240] = 0;
+        config[99] = remote_type;
+        config[248] = 0;
         assert!(state.store_serialized_config(&config));
 
         assert_eq!(
@@ -294,12 +294,12 @@ fn enabling_the_beeper_after_startup_acquires_ppm_instead_of_reproducing_refloat
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[77] = 2;
-    config[240] = 0;
+    config[99] = 2;
+    config[248] = 0;
     assert!(state.store_serialized_config(&config));
     assert!(!state.take_beeper_configuration_request());
 
-    config[240] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
 
     assert!(state.take_beeper_configuration_request());
@@ -318,7 +318,7 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
     firmware.set_imu_ready(true);
     let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
-    config[240] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     for _ in 0..=240 {
         let _ = state.tick_beeper();
@@ -360,8 +360,8 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
     firmware.set_imu_ready(true);
     let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
-    config[48] = 1;
-    config[240] = 1;
+    config[70] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     for _ in 0..=240 {
         let _ = state.tick_beeper();

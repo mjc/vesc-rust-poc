@@ -119,16 +119,15 @@ fn ready_remote_current_is_consumed_by_the_fixed_main_loop() {
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
+    state.initialize_time_epochs(TimestampTicks::from_ticks(1));
     edit_config(&mut state, |config| {
         assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
         assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.0)));
         assert!(config.set_input_tilt_inverted(false));
-        assert!(
-            config.set_remote_throttle_current_max(MotorCurrent::new(Current::from_amps(10.0),))
-        );
-        assert!(config.set_remote_throttle_grace_period(VescSeconds::ZERO));
+        assert!(config.set_remote_max_move_speed(vescpkg_rs::WireByte::new(5)));
+        assert!(config.set_remote_grace_period(VescSeconds::ZERO));
     });
-    state.refresh_controller_input(firmware.inputs());
+    state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(1));
     let sample = imu_read_sample(
         imu_acceleration(
             imu_accel_x(AccelerationG::ZERO),

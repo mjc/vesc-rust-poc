@@ -133,7 +133,7 @@ fn realtime_data_ids_response_matches_float_out_boy_qml_metadata() {
     // QML asks for IDs at `ui.qml.in:704-705`;
     // upstream `cmd_realtime_data_ids` writes the counted string sets at
     // `third_party/float-out-boy/src/main.c:1876-1901`, using IDs from `third_party/float-out-boy/src/rt_data.h:38-66`.
-    assert_eq!(bytes.len(), 405);
+    assert_eq!(bytes.len(), 414);
     assert_eq!(bytes.get(..2), Some(&[101, 32][..]));
     let mut index = 2;
     assert_eq!(
@@ -152,8 +152,8 @@ fn realtime_data_ids_response_matches_float_out_boy_qml_metadata() {
             "imu.pitch",
             "imu.balance_pitch",
             "imu.roll",
-            "footpad.adc1",
-            "footpad.adc2",
+            "footpad.adc_left",
+            "footpad.adc_right",
             "remote.input",
         ]
     );
