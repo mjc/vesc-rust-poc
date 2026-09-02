@@ -110,7 +110,7 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         payload: &[u8],
     ) -> bool {
-        if !self.data_recorder.has_capability() {
+        if !self.data_recorder.0.has_capability() {
             return true;
         }
         #[cfg(test)]

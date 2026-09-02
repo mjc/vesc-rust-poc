@@ -34,7 +34,7 @@ crate::typed_fields! {
         cell_low_temperature: BmsTemperature => cell_low_temperature,
         cell_high_temperature: BmsTemperature => cell_high_temperature,
         bms_high_temperature: BmsTemperature => bms_high_temperature,
-        message_age: VescSeconds => message_age,
+        message_age: VescSeconds => message_age => with_message_age,
     }
 }
 
@@ -224,10 +224,8 @@ impl BmsMonitor {
     pub fn refresh(&mut self, enabled: bool, thresholds: BmsThresholds, now: TimestampTicks) {
         let last_push_ticks = *self.last_push_ticks.get_or_insert(now);
         let message_age = self.sample.message_age()
-            + TimestampTicks::from_ticks(
-                now.wrapping_duration_since(last_push_ticks).as_ticks(),
-            )
-            .as_vesc_seconds();
+            + TimestampTicks::from_ticks(now.wrapping_duration_since(last_push_ticks).as_ticks())
+                .as_vesc_seconds();
         let sample = self.sample.with_message_age(message_age);
         let start_ticks = *self.start_ticks.get_or_insert(now);
         let startup_timeout_elapsed = timer_older(now, start_ticks, VescSeconds::from_seconds(5.0));

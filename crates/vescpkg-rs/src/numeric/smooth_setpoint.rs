@@ -503,7 +503,7 @@ mod tests {
         assert_eq!(SmoothSetpointMultiplier::from_factor(f32::NAN), None);
         assert_eq!(SmoothSetpointMultiplier::from_factor(f32::INFINITY), None);
         assert_eq!(
-            SmoothSetpointMultiplier::from_factor(0.0).map(|m| m.factor()),
+            SmoothSetpointMultiplier::from_factor(0.0).map(SmoothSetpointMultiplier::factor),
             Some(0.0)
         );
     }

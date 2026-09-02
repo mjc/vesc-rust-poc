@@ -159,8 +159,8 @@ impl Default for KonamiRuntime {
 
 /// Float Out Boy package state.
 #[pin_init::pin_init]
-#[derive(Debug, Default)]
-#[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
+#[derive(Debug)]
+#[cfg_attr(test, derive(Default, Clone, Copy, PartialEq))]
 pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
@@ -233,7 +233,7 @@ impl FloatOutBoyPackageState {
             config_eeprom_read_state: Default::default(),
             startup_configured: Default::default(),
             firmware_imu_migration: Default::default(),
-            data_recorder: Default::default(),
+            data_recorder: data_recorder::default_data_recorder(),
             alert_tracker: Default::default(),
             lcm: Default::default(),
             led_runtime_overrides: Default::default(),
@@ -243,7 +243,7 @@ impl FloatOutBoyPackageState {
             beeper_flags: Default::default(),
             bms: Default::default(),
             flywheel: Default::default(),
-            ride_flags: Default::default(),
+            traction_control: Default::default(),
             motor_control: Default::default(),
             balance_filter: Default::default(),
             balance_loop: Default::default(),
@@ -252,7 +252,7 @@ impl FloatOutBoyPackageState {
             motor_distance_meters: Default::default(),
             motor_kinematics: MotorKinematicsTracker::default_in_place(),
             motor_current_filter: Default::default(),
-            motor_torque_constant: Default::default(),
+            motor_config: Default::default(),
             remote_control: Default::default(),
             runtime_board_setpoint: Default::default(),
             ride_modifiers: Default::default(),
@@ -271,15 +271,8 @@ impl FloatOutBoyPackageState {
             upside_down_fault_ticks: Default::default(),
             upside_down_flags: Default::default(),
             motor_duty_raw: Default::default(),
-            duty_max_with_margin: Default::default(),
-            motor_current_limits: Default::default(),
-            battery_current_limits: Default::default(),
             mosfet_temperature: Default::default(),
             motor_temperature: Default::default(),
-            mosfet_temperature_limit_start: Default::default(),
-            motor_temperature_limit_start: Default::default(),
-            battery_cell_count: Default::default(),
-            motor_config_initialized: Default::default(),
             aux_odometer: Default::default(),
             aux_backup_failures: Default::default(),
             aux_motor_config_refresh_ticks: Default::default(),
@@ -311,6 +304,7 @@ impl FloatOutBoyPackageState {
 
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
+    #[cfg(test)]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::default();
         state.all_data_payloads = all_data_payloads;
