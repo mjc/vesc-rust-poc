@@ -17,13 +17,9 @@ fn tune_angle_from(value: WireByte, base: AngleDegrees) -> AngleDegrees {
 }
 
 fn tune_variable_tilt_maximum(value: u8) -> AngleDegrees {
+    let value = value.min(200);
     if value > 100 {
-        WireByte::new(value.saturating_sub(100)).scaled_ratio(
-            -1.0,
-            10.0,
-            0.0,
-            AngleDegrees::from_degrees,
-        )
+        WireByte::new(value - 100).scaled_ratio(-1.0, 10.0, 0.0, AngleDegrees::from_degrees)
     } else {
         WireByte::new(value).scaled_ratio(1.0, 10.0, 0.0, AngleDegrees::from_degrees)
     }

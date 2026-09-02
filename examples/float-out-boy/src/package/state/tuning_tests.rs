@@ -622,7 +622,7 @@ fn tune_other_decodes_cutoff_negative_variable_tilt_boundaries() {
         (100, 10.0),
         (101, -0.1),
         (110, -1.0),
-        (u8::MAX, -15.5),
+        (u8::MAX, -10.0),
     ] {
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = OTHER_TUNE_PACKET.to_vec();

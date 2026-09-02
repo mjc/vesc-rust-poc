@@ -344,7 +344,7 @@ readonly property int formatVersionMajor:1
 readonly property int formatVersionMinor:0
 readonly property string formatVersion:"%1.%2".arg(formatVersionMajor).arg(formatVersionMinor)
 readonly property string packageName:"Float Out Boy"
-readonly property string packageVersion:"0.1.0"
+readonly property string packageVersion:"1.3.0"
 readonly property int maxTunes:6
 signal idBackupFinished(var backup)
 signal autoBackupFinished(var backup)
@@ -889,7 +889,7 @@ horizontalAlignment:TextInput.AlignHCenter
 text:Math.round(decimationSlider.value)+" ("+(recMenu.recordDuration*decimationSlider.value).toFixed(1)+"s)"}
 Slider{id:decimationSlider
 from:1
-to:recMenu.recordDuration>0?Math.floor(120/recMenu.recordDuration):100
+to:recMenu.recordDuration>0?Math.max(1,Math.floor(120/recMenu.recordDuration)):100
 value:mainItem.state.extraRecDecimation
 stepSize:1
 snapMode:Slider.SnapAlways
@@ -967,7 +967,7 @@ property var seriesKey:menu.selectedSeries?plot.plotData.getMinMaxKey(menu.selec
 property var customBound:seriesKey!==null?plot.plotData.customScaling[seriesKey]:undefined
 property bool isAuto:customBound===undefined
 property bool hasData:seriesKey!==null&&plot.plotData.minMaxes[seriesKey]!==undefined
-property real maxBound:{if(!hasData)return 0;var mm=plot.plotData.minMaxes[seriesKey];return Math.max(Math.abs(mm.max),Math.abs(mm.min),plot.plotData.smallValueThreshold);}
+property real maxBound:{if(!hasData)return plot.plotData.smallValueThreshold;var mm=plot.plotData.minMaxes[seriesKey];return Math.max(Math.abs(mm.max),Math.abs(mm.min),plot.plotData.smallValueThreshold);}
 Column{id:scalingColumn
 anchors.fill:parent
 anchors.topMargin:8
@@ -998,10 +998,11 @@ onMoved:{var cs=plot.plotData.customScaling;cs[scalingPanel.seriesKey]=realValue
 MenuCheckBox{id:autoCheckBox
 size:20
 anchors.horizontalCenter:parent.horizontalCenter
+checkable:false
 checked:scalingPanel.isAuto
 enabled:scalingPanel.hasData||!checked
 markerText:"A"
-onClicked:{var cs=plot.plotData.customScaling;if(checked){delete cs[scalingPanel.seriesKey];}else{cs[scalingPanel.seriesKey]=scaleSlider.realValue;}
+onClicked:{var cs=plot.plotData.customScaling;if(scalingPanel.isAuto){cs[scalingPanel.seriesKey]=scaleSlider.realValue;}else{delete cs[scalingPanel.seriesKey];}
 plot.plotData.customScaling=cs;plot.plotData.calculateRanges();}}}}}
 PinchArea{anchors.fill:parent
 property real initialPlotWindow
@@ -1923,7 +1924,7 @@ return"";}}
 Item{id:remoteSliderArea
 anchors.centerIn:parent
 width:parent.width*0.5
-height:500
+height:Math.min(500,parent.height*0.8)
 Rectangle{id:remoteSliderContent
 anchors.fill:parent
 color:"#22bbbbbb"
