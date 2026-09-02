@@ -27,6 +27,7 @@ struct Cli {
 #[derive(Debug, Clone, PartialEq, Subcommand)]
 enum Command {
     Build(BuildArgs),
+    AudioBeep(DeviceArgs),
     #[command(name = "loopback")]
     Probe(DeviceArgs),
     CustomAppData(CustomAppDataArgs),
@@ -133,6 +134,7 @@ where
 {
     match parse_args(args) {
         Ok(Command::Build(args)) => run_build(args),
+        Ok(Command::AudioBeep(command)) => run_audio_beep(command),
         Ok(Command::Probe(command)) => run_probe(command),
         Ok(Command::CustomAppData(command)) => run_custom_app_data(command),
         Ok(Command::CustomConfig(command)) => run_custom_config(command),
@@ -309,6 +311,37 @@ fn run_custom_app_data(command: CustomAppDataArgs) -> ExitCode {
         }
         Err(error) => {
             eprintln!("custom app-data failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn run_audio_beep(command: DeviceArgs) -> ExitCode {
+    use vesc_protocol::audio_smoke::{BeepResponse, BeepStatus, encode_beep_command};
+
+    let target = command.into_target();
+    match deploy::run_custom_app_data_probe(target, &encode_beep_command()) {
+        Ok(report) => match BeepResponse::decode(report.response()).map(BeepResponse::status) {
+            Ok(BeepStatus::Played) => {
+                let version = report.firmware_version();
+                println!(
+                    "audio beep accepted on firmware={}.{}",
+                    version.major(),
+                    version.minor()
+                );
+                ExitCode::SUCCESS
+            }
+            Ok(status) => {
+                eprintln!("audio beep was not played: {status:?}");
+                ExitCode::from(1)
+            }
+            Err(error) => {
+                eprintln!("audio beep returned an invalid response: {error:?}");
+                ExitCode::from(1)
+            }
+        },
+        Err(error) => {
+            eprintln!("audio beep failed: {error}");
             ExitCode::from(1)
         }
     }
@@ -518,6 +551,7 @@ mod tests {
         let reference = include_str!("../../../docs/cargo-vescpkg-command.md");
         for command in [
             "build",
+            "audio-beep",
             "loopback",
             "custom-app-data",
             "custom-config",
@@ -603,6 +637,17 @@ mod tests {
 
         let Command::CustomConfig(args) = command else {
             panic!("expected custom-config command");
+        };
+        assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
+    }
+
+    #[test]
+    fn parse_args_builds_a_fixed_audio_beep_probe() {
+        let command = parse_args(["cargo-vescpkg", "audio-beep", "--device", "VESC BLE UART"])
+            .expect("parse audio-beep probe");
+
+        let Command::AudioBeep(args) = command else {
+            panic!("expected audio-beep command");
         };
         assert_eq!(args.device_name.as_deref(), Some("VESC BLE UART"));
     }

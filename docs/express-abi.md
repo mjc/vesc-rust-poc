@@ -108,6 +108,14 @@ The fixed-address `ExpressInterface::from_target` constructor is also unsafe:
 it is only valid on the matching 32-bit Express target and is intentionally not
 used by host tests. This foundation deliberately does not use bindgen.
 
+Host tests verify the independent slot order and kinds, version rejection,
+optional appended slots, target/image selection, and fail-closed behavior when
+functions are absent. A wider host cannot execute the table's 32-bit target
+function addresses, so these tests do not claim successful runtime forwarding
+or RAII teardown against Express firmware. That proof requires the compiler,
+target runner, package integration, and device work tracked separately from the
+STM32 SDK.
+
 The loader entry contract is available independently of any target toolchain:
 `ExpressLibInfo` mirrors the pinned `lib_info` record, and
 `express_native_start!` emits the `.program_ptr` and `.init_fun` entry symbols

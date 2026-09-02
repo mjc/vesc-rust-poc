@@ -41,6 +41,7 @@ impl Default for ControlLoopState {
 
 impl ControlLoopState {
     /// Create an idle, no-actuation control state.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             setpoint: 0,
@@ -51,21 +52,25 @@ impl ControlLoopState {
     }
 
     /// Return the requested setpoint.
+    #[must_use]
     pub const fn setpoint(self) -> i16 {
         self.setpoint
     }
 
     /// Return the synthetic sampled input.
+    #[must_use]
     pub const fn sampled_input(self) -> i16 {
         self.sampled_input
     }
 
     /// Return the computed, non-actuating control output.
+    #[must_use]
     pub const fn output(self) -> i16 {
         self.output
     }
 
     /// Return the number of completed loop ticks.
+    #[must_use]
     pub const fn tick_count(self) -> u32 {
         self.tick_count
     }
@@ -78,13 +83,26 @@ impl ControlLoopState {
     /// Advance the deliberately simple proportional control step.
     pub fn tick(&mut self) {
         let error = i32::from(self.setpoint) - i32::from(self.sampled_input);
-        self.sampled_input = self.sampled_input.saturating_add((error / 2) as i16);
-        self.output = error.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        self.sampled_input = self.sampled_input.saturating_add(saturating_i16(error / 2));
+        self.output = saturating_i16(error);
         self.tick_count = self.tick_count.wrapping_add(1);
     }
 }
 
+fn saturating_i16(value: i32) -> i16 {
+    i16::try_from(value).unwrap_or(if value.is_negative() {
+        i16::MIN
+    } else {
+        i16::MAX
+    })
+}
+
 /// Handle one host command without touching firmware or performing I/O.
+///
+/// # Errors
+///
+/// Returns a typed command error for an unknown command, malformed request, or
+/// response buffer that cannot hold the selected reply.
 pub fn handle_command(
     state: &mut ControlLoopState,
     packet: &[u8],
@@ -168,13 +186,18 @@ vescpkg_rs::firmware_stateful_app_data_callback!(
 vescpkg_rs::package_start!(crate::start, ControlLoopState);
 
 /// Initialize the example package.
+///
+/// # Errors
+///
+/// Returns an error when runtime-state installation, thread creation, or
+/// app-data callback registration fails.
 #[cfg(any(test, all(not(test), target_arch = "arm")))]
 pub fn start(start: &mut vescpkg_rs::PackageStart) -> Result<(), vescpkg_rs::PackageStartError> {
     start.install_runtime_state(ControlLoopState::new())?;
     #[cfg(all(not(test), target_arch = "arm"))]
     {
         let stack = vescpkg_rs::ThreadWorkingAreaSize::try_from_bytes(1_024)
-            .expect("control-loop thread stack satisfies ChibiOS alignment");
+            .map_err(|_| vescpkg_rs::PackageStartError::ThreadSpawnFailed)?;
         start.spawn_threads([vescpkg_rs::ThreadSpec::<ControlLoopState>::new::<
             ControlLoopThread,
         >(stack, vescpkg_rs::thread_name!("Control Loop"))])?;
@@ -202,6 +225,23 @@ mod tests {
         assert_eq!(state.sampled_input(), 50);
         assert_eq!(state.output(), 100);
         assert_eq!(state.tick_count(), 1);
+    }
+
+    #[test]
+    fn control_step_saturates_extreme_errors() {
+        let mut state = ControlLoopState {
+            setpoint: i16::MAX,
+            sampled_input: i16::MIN,
+            output: 0,
+            tick_count: 0,
+        };
+        state.tick();
+        assert_eq!(state.output(), i16::MAX);
+
+        state.setpoint = i16::MIN;
+        state.sampled_input = i16::MAX;
+        state.tick();
+        assert_eq!(state.output(), i16::MIN);
     }
 
     #[test]
