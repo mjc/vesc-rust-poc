@@ -226,7 +226,8 @@ timestamp.
 
 Boundary example: `[101, 33, 255, 255, 255, 255, 255, 255, 255, 255, 255]`
 preserves every unknown bit while emitting every currently assigned field that
-has an available source.
+has an available source. The nine bytes after command `33` are one control byte
+followed by the two four-byte selection masks.
 
 ## Data recorder
 

@@ -141,7 +141,7 @@ correctly in every client.
 Build a package from the workspace root:
 
 ```console
-$ cargo run -p cargo-vescpkg -- build -p my-package
+cargo run -p cargo-vescpkg -- build -p my-package
 ```
 
 The command stages the native payload and assets below

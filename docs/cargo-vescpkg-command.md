@@ -4,7 +4,7 @@
 repository root in the development environment described by the root README:
 
 ```console
-$ cargo run -p cargo-vescpkg -- --help
+cargo run -p cargo-vescpkg -- --help
 ```
 
 The command does not require or invoke VESC Tool. Device operations use the
@@ -54,7 +54,7 @@ This table is checked against the live Clap subcommand list by a unit test.
 ## Host-only build
 
 ```console
-$ cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
+cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
 ```
 
 Build options:
@@ -76,18 +76,18 @@ These commands require a reachable controller but do not change its package or
 firmware configuration:
 
 ```console
-$ cargo run -p cargo-vescpkg -- custom-config --device "Floatwheel PintV"
-$ cargo run -p cargo-vescpkg -- firmware-values --device "Floatwheel PintV"
-$ cargo run -p cargo-vescpkg -- firmware-imu --device "Floatwheel PintV"
-$ cargo run -p cargo-vescpkg -- lisp-stats --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- custom-config --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- firmware-values --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- firmware-imu --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- lisp-stats --device "Floatwheel PintV"
 ```
 
 Package-specific read-only probes:
 
 ```console
-$ cargo run -p cargo-vescpkg -- loopback --device "VESC BLE UART"
-$ cargo run -p cargo-vescpkg -- control-loop --device "VESC BLE UART"
-$ cargo run -p cargo-vescpkg -- fob-log target/fob.csv --samples 100 --interval-ms 100 --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- loopback --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- control-loop --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- fob-log target/fob.csv --samples 100 --interval-ms 100 --device "Floatwheel PintV"
 ```
 
 `fob-log` opens one session, requests Float Out Boy realtime command 31 for
@@ -101,7 +101,7 @@ future fields.
 command byte expected by the installed package:
 
 ```console
-$ cargo run -p cargo-vescpkg -- custom-app-data 101,0,2,0 --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- custom-app-data 101,0,2,0 --device "Floatwheel PintV"
 ```
 
 The example above is a read-only Float Out Boy info query. Other payloads can
@@ -125,7 +125,7 @@ Read current values by omitting mutation flags. Update the running firmware
 configuration with:
 
 ```console
-$ cargo run -p cargo-vescpkg -- firmware-imu --set-live 0.2 0.0 0.1 --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- firmware-imu --set-live 0.2 0.0 0.1 --device "Floatwheel PintV"
 ```
 
 > **Warning:** `--set-live` changes the controller's live firmware IMU
@@ -134,7 +134,7 @@ $ cargo run -p cargo-vescpkg -- firmware-imu --set-live 0.2 0.0 0.1 --device "Fl
 Persist the same change with:
 
 ```console
-$ cargo run -p cargo-vescpkg -- firmware-imu --set-live 0.2 0.0 0.1 --store --device "Floatwheel PintV"
+cargo run -p cargo-vescpkg -- firmware-imu --set-live 0.2 0.0 0.1 --store --device "Floatwheel PintV"
 ```
 
 > **Warning:** `--store` writes the firmware application configuration. Back up
@@ -149,7 +149,7 @@ firmware command, then reads the values back.
 Install an existing archive:
 
 ```console
-$ cargo run -p cargo-vescpkg -- package-install target/vescpkg/Example.vescpkg --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- package-install target/vescpkg/Example.vescpkg --device "VESC BLE UART"
 ```
 
 > **Warning:** `package-install` stops the running LispBM program and replaces
@@ -158,7 +158,7 @@ $ cargo run -p cargo-vescpkg -- package-install target/vescpkg/Example.vescpkg -
 Build and install in one command:
 
 ```console
-$ cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback --device "VESC BLE UART"
 ```
 
 > **Warning:** `deploy` performs the same controller mutation as
@@ -167,7 +167,7 @@ $ cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback --device "VESC B
 Build, install, then run the no-actuation control-loop probe:
 
 ```console
-$ cargo run -p cargo-vescpkg -- control-loop-deploy -p vesc-example-control-loop-smoke --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- control-loop-deploy -p vesc-example-control-loop-smoke --device "VESC BLE UART"
 ```
 
 > **Warning:** `control-loop-deploy` replaces the installed package before
@@ -176,7 +176,7 @@ $ cargo run -p cargo-vescpkg -- control-loop-deploy -p vesc-example-control-loop
 Erase the installed package:
 
 ```console
-$ cargo run -p cargo-vescpkg -- erase-package --device "VESC BLE UART"
+cargo run -p cargo-vescpkg -- erase-package --device "VESC BLE UART"
 ```
 
 > **Warning:** `erase-package` removes installed package Lisp/QML/native data.
@@ -191,7 +191,7 @@ normal preflight cannot complete.
 The ignored HIL profile exercises a real control-loop package over BLE:
 
 ```console
-$ VESC_DEVICE="Floatwheel PintV" VESC_BLE_ADDR="AA:BB:CC:DD:EE:FF" cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored
+VESC_DEVICE="Floatwheel PintV" VESC_BLE_ADDR="AA:BB:CC:DD:EE:FF" cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored
 ```
 
 It is intentionally outside the default workspace gate. Building a package or

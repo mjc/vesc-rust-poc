@@ -24,7 +24,7 @@ QML, LispBM, description, descriptor, and default-generation contracts.
 ## Build pipeline
 
 ```console
-$ cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
+cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
 ```
 
 The command:
@@ -58,8 +58,8 @@ warnings live in the
 ## Repository checks
 
 ```console
-$ make check
-$ make check-full
+make check
+make check-full
 ```
 
 `make check` covers formatting, host and target checks, lints, tests, and
