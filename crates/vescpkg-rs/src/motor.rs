@@ -21,8 +21,8 @@ use crate::types::{
     TripDistance, VehicleSpeed, WattHoursCharged, WattHoursDischarged,
 };
 #[cfg(not(test))]
-use crate::units::{Charge, Current, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
-use crate::units::{Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
+use crate::units::{Charge, Distance, Energy, Power, Rpm, Speed, Temperature, Voltage};
+use crate::units::{Current, Frequency, OdometerMeters, Ratio, SignedRatio, VescSeconds};
 use crate::{PwmCallback, PwmCallbackError, PwmCallbackLease};
 
 /// Outcome of waiting for firmware to release motor output.
@@ -65,6 +65,54 @@ impl MotorReleaseOutcome {
     #[must_use]
     pub const fn is_timed_out(self) -> bool {
         matches!(self, Self::TimedOut)
+    }
+}
+
+/// Positive and negative current limits selected by the current direction.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DirectionalCurrentLimits<T> {
+    positive: T,
+    negative: T,
+}
+
+impl<T: Copy> DirectionalCurrentLimits<T> {
+    /// Build a directional limit pair.
+    #[must_use]
+    pub const fn new(positive: T, negative: T) -> Self {
+        Self { positive, negative }
+    }
+
+    /// Return the limit for the current's sign; zero uses the positive limit.
+    #[must_use]
+    pub const fn for_current(self, current: Current) -> T {
+        if current.is_negative() {
+            self.negative
+        } else {
+            self.positive
+        }
+    }
+
+    /// Return the positive-current limit.
+    #[must_use]
+    pub const fn positive(self) -> T {
+        self.positive
+    }
+
+    /// Return the negative-current limit.
+    #[must_use]
+    pub const fn negative(self) -> T {
+        self.negative
+    }
+}
+
+/// Return the bounded magnitude of current relative to a signed current limit.
+#[must_use]
+pub fn current_limit_saturation(current: Current, limit: Current) -> Ratio {
+    let limit = limit.abs();
+    if limit.is_positive() {
+        Ratio::clamped(current.abs().as_amps() / limit.as_amps())
+    } else {
+        Ratio::ZERO
     }
 }
 
@@ -957,9 +1005,10 @@ pub struct MotorControlApi<B> {
 #[cfg(test)]
 mod tests {
     use super::{
-        battery_cell_count_from_firmware, duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
+        DirectionalCurrentLimits, battery_cell_count_from_firmware, current_limit_saturation,
+        duty_cycle_from_firmware, duty_cycle_limit_from_firmware,
     };
-    use crate::{DutyCycle, Ratio, SignedRatio};
+    use crate::{Current, DutyCycle, Ratio, SignedRatio};
 
     #[test]
     fn duty_cycle_preserves_direction_and_normalizes_invalid_values() {
@@ -1003,6 +1052,33 @@ mod tests {
                 .as_ratio(),
             0.85
         );
+    }
+
+    #[test]
+    fn current_limit_saturation_normalizes_sign_zero_and_overload() {
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(-10.0), Current::from_amps(-20.0)),
+            Ratio::from_ratio_const(0.5)
+        );
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(5.0), Current::ZERO),
+            Ratio::ZERO
+        );
+        assert_eq!(
+            current_limit_saturation(Current::from_amps(30.0), Current::from_amps(20.0)),
+            Ratio::FULL
+        );
+    }
+
+    #[test]
+    fn directional_current_limits_select_by_current_sign() {
+        let limits = DirectionalCurrentLimits::new(20_u8, 10_u8);
+
+        assert_eq!(limits.for_current(Current::from_amps(1.0)), 20);
+        assert_eq!(limits.for_current(Current::ZERO), 20);
+        assert_eq!(limits.for_current(Current::from_amps(-1.0)), 10);
+        assert_eq!(limits.positive(), 20);
+        assert_eq!(limits.negative(), 10);
     }
 }
 

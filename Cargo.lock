@@ -1426,6 +1426,7 @@ version = "0.1.0"
 name = "vescpkg-rs"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "libm",
  "pin-init",
  "rstest",

@@ -1,13 +1,18 @@
-use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, Rpm, SampleRate, VescSeconds};
+use crate::{AngleDegrees, AngularVelocity, Rpm, SampleRate, VescSeconds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SmoothSetpointDirection {
+/// Travel direction used to select directional setpoint slew limits.
+pub enum SmoothSetpointDirection {
+    /// Forward travel.
     Forward,
+    /// Reverse travel.
     Reverse,
 }
 
 impl SmoothSetpointDirection {
-    pub(super) const fn from_forward(forward: bool) -> Self {
+    /// Select a direction from a forward flag.
+    #[must_use]
+    pub const fn from_forward(forward: bool) -> Self {
         if forward {
             Self::Forward
         } else {
@@ -15,18 +20,23 @@ impl SmoothSetpointDirection {
         }
     }
 
-    pub(super) fn from_erpm(erpm: Rpm) -> Self {
+    /// Select forward for non-negative electrical RPM and reverse otherwise.
+    #[must_use]
+    pub fn from_erpm(erpm: Rpm) -> Self {
         Self::from_forward(!erpm.is_negative())
     }
 
-    pub(super) const fn is_forward(self) -> bool {
+    /// Return whether this is forward travel.
+    #[must_use]
+    pub const fn is_forward(self) -> bool {
         matches!(self, Self::Forward)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-pub(super) struct SmoothSetpointMultiplier(f32);
+/// Per-update multiplier for filter response and speed limits.
+pub struct SmoothSetpointMultiplier(f32);
 
 impl Default for SmoothSetpointMultiplier {
     fn default() -> Self {
@@ -35,13 +45,22 @@ impl Default for SmoothSetpointMultiplier {
 }
 
 impl SmoothSetpointMultiplier {
-    pub(super) const ONE: Self = Self::from_factor(1.0);
+    /// An unscaled update.
+    pub const ONE: Self = Self(1.0);
 
-    pub(super) const fn from_factor(factor: f32) -> Self {
-        Self(factor)
+    /// Build a multiplier from a finite, non-negative raw factor.
+    #[must_use]
+    pub const fn from_factor(factor: f32) -> Option<Self> {
+        if factor.is_finite() && factor >= 0.0 {
+            Some(Self(factor))
+        } else {
+            None
+        }
     }
 
-    pub(super) const fn factor(self) -> f32 {
+    /// Return the raw multiplier factor.
+    #[must_use]
+    pub const fn factor(self) -> f32 {
         self.0
     }
 }
@@ -70,15 +89,56 @@ impl FilterAlpha {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct SmoothSetpointConfig {
-    pub(super) time_constant: VescSeconds,
-    pub(super) on_speed_time_constant: VescSeconds,
-    pub(super) off_speed_time_constant: VescSeconds,
-    pub(super) winddown_time_constant: VescSeconds,
-    pub(super) on_speed_up: AngularVelocity,
-    pub(super) off_speed_up: AngularVelocity,
-    pub(super) on_speed_down: AngularVelocity,
-    pub(super) off_speed_down: AngularVelocity,
+/// Time constants and directional slew limits for [`SmoothSetpoint`].
+pub struct SmoothSetpointConfig {
+    /// Target low-pass time constant.
+    pub time_constant: VescSeconds,
+    /// Engaging-step filter time constant.
+    pub on_speed_time_constant: VescSeconds,
+    /// Disengaging-step filter time constant.
+    pub off_speed_time_constant: VescSeconds,
+    /// Exponential wind-down time constant.
+    pub winddown_time_constant: VescSeconds,
+    /// Engaging slew limit while moving forward.
+    pub on_speed_up: AngularVelocity,
+    /// Disengaging slew limit while moving forward.
+    pub off_speed_up: AngularVelocity,
+    /// Engaging slew limit while moving in reverse.
+    pub on_speed_down: AngularVelocity,
+    /// Disengaging slew limit while moving in reverse.
+    pub off_speed_down: AngularVelocity,
+}
+
+impl SmoothSetpointConfig {
+    /// Build a configuration with the same slew limits in both travel directions.
+    #[must_use]
+    pub const fn symmetric(
+        time_constant: VescSeconds,
+        on_speed_time_constant: VescSeconds,
+        off_speed_time_constant: VescSeconds,
+        winddown_time_constant: VescSeconds,
+        on_speed: AngularVelocity,
+        off_speed: AngularVelocity,
+    ) -> Self {
+        Self {
+            time_constant,
+            on_speed_time_constant,
+            off_speed_time_constant,
+            winddown_time_constant,
+            on_speed_up: on_speed,
+            off_speed_up: off_speed,
+            on_speed_down: on_speed,
+            off_speed_down: off_speed,
+        }
+    }
+
+    /// Replace the shared forward and reverse disengaging slew limit.
+    #[must_use]
+    pub const fn with_off_speed(mut self, off_speed: AngularVelocity) -> Self {
+        self.off_speed_up = off_speed;
+        self.off_speed_down = off_speed;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +161,8 @@ impl SetpointPhase {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub(super) struct SmoothSetpoint {
+/// Fixed-state, second-order filtered and directionally rate-limited angle setpoint.
+pub struct SmoothSetpoint {
     on_speed_up: AngularVelocity,
     off_speed_up: AngularVelocity,
     on_speed_down: AngularVelocity,
@@ -121,7 +182,8 @@ fn same_source_sign(lhs: AngleDegrees, rhs: AngleDegrees) -> bool {
 }
 
 impl SmoothSetpoint {
-    pub(super) fn configure(&mut self, config: SmoothSetpointConfig, frequency: SampleRate) {
+    /// Update filter coefficients and directional speed limits without resetting live motion.
+    pub fn configure(&mut self, config: SmoothSetpointConfig, frequency: SampleRate) {
         self.on_speed_up = config.on_speed_up;
         self.off_speed_up = config.off_speed_up;
         self.on_speed_down = config.on_speed_down;
@@ -136,14 +198,16 @@ impl SmoothSetpoint {
             FilterAlpha::from_time_constant(config.winddown_time_constant, frequency);
     }
 
-    pub(super) fn reset(&mut self) {
+    /// Clear live filter motion while retaining the current configuration.
+    pub fn reset(&mut self) {
         self.is_winddown = false;
         self.filtered_target = AngleDegrees::ZERO;
         self.step = AngleDegrees::ZERO;
         self.value = AngleDegrees::ZERO;
     }
 
-    pub(super) fn update(
+    /// Advance the setpoint by one measured control-loop interval.
+    pub fn update(
         &mut self,
         target: AngleDegrees,
         direction: SmoothSetpointDirection,
@@ -195,17 +259,22 @@ impl SmoothSetpoint {
         }
     }
 
-    pub(super) fn wind_down(&mut self) {
+    /// Exponentially decay the current value toward zero.
+    pub fn wind_down(&mut self) {
         self.is_winddown = true;
         self.value = self.value * self.winddown_alpha.retained();
     }
 
-    pub(super) const fn value(self) -> AngleDegrees {
+    /// Return the current rate-limited value.
+    #[must_use]
+    pub const fn value(self) -> AngleDegrees {
         self.value
     }
 
-    #[cfg(test)]
-    pub(super) fn set_value_for_test(&mut self, value: AngleDegrees) {
+    /// Replace the live value without changing filter configuration.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn set_value_for_test(&mut self, value: AngleDegrees) {
         self.value = value;
     }
 }
@@ -227,6 +296,37 @@ mod tests {
             on_speed_down: AngularVelocity::from_degrees_per_second(20.0),
             off_speed_down: AngularVelocity::from_degrees_per_second(10.0),
         }
+    }
+
+    #[test]
+    fn symmetric_config_pairs_forward_and_reverse_speed_limits() {
+        let on_speed = AngularVelocity::from_degrees_per_second(24.0);
+        let off_speed = AngularVelocity::from_degrees_per_second(12.0);
+        let replacement_off_speed = AngularVelocity::from_degrees_per_second(8.0);
+        let config = SmoothSetpointConfig::symmetric(
+            VescSeconds::from_seconds(0.2),
+            VescSeconds::from_seconds(0.08),
+            VescSeconds::from_seconds(0.16),
+            VescSeconds::from_seconds(0.2),
+            on_speed,
+            off_speed,
+        )
+        .with_off_speed(replacement_off_speed);
+
+        assert_eq!(
+            (
+                config.on_speed_up,
+                config.on_speed_down,
+                config.off_speed_up,
+                config.off_speed_down,
+            ),
+            (
+                on_speed,
+                on_speed,
+                replacement_off_speed,
+                replacement_off_speed,
+            )
+        );
     }
 
     fn configured() -> SmoothSetpoint {
@@ -352,7 +452,7 @@ mod tests {
         boosted_filter.update(
             AngleDegrees::from_degrees(10.0),
             SmoothSetpointDirection::Forward,
-            SmoothSetpointMultiplier::from_factor(2.0),
+            SmoothSetpointMultiplier::from_factor(2.0).expect("finite multiplier"),
             elapsed,
         );
 
@@ -371,7 +471,7 @@ mod tests {
         boosted_limit.update(
             AngleDegrees::from_degrees(100.0),
             SmoothSetpointDirection::Forward,
-            SmoothSetpointMultiplier::from_factor(2.0),
+            SmoothSetpointMultiplier::from_factor(2.0).expect("finite multiplier"),
             elapsed,
         );
 
@@ -391,6 +491,17 @@ mod tests {
 
         assert_angle_close(setpoint.value(), 10.0 * 0.990_05 * 0.990_05);
         assert!(setpoint.is_winddown);
+    }
+
+    #[test]
+    fn multiplier_rejects_non_finite_and_negative_factors() {
+        assert_eq!(SmoothSetpointMultiplier::from_factor(-1.0), None);
+        assert_eq!(SmoothSetpointMultiplier::from_factor(f32::NAN), None);
+        assert_eq!(SmoothSetpointMultiplier::from_factor(f32::INFINITY), None);
+        assert_eq!(
+            SmoothSetpointMultiplier::from_factor(0.0).map(|m| m.factor()),
+            Some(0.0)
+        );
     }
 
     #[test]

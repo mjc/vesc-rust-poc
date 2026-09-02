@@ -13,29 +13,13 @@ pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 const DEFERRED_CONFIG_PERSISTENCE_DELAY_SECONDS: u32 = 1;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeferredConfigPersistence {
-    #[default]
-    Clean,
-    Pending(FloatOutBoyConfigImage),
-    Writing(Option<FloatOutBoyConfigImage>),
-    Failed(FloatOutBoyConfigImage),
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ConfigEepromReadState {
     #[default]
     Idle,
     Reading,
 }
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
-    #[default]
-    NotAttempted,
-    Persisted,
-    DefaultAfterReadFailure,
-    DefaultAfterInvalidImage,
-}
+pub(super) type DeferredConfigPersistence = vescpkg_rs::DeferredPersistence<FloatOutBoyConfigImage>;
+pub(in crate::package) use vescpkg_rs::PersistedLoadOutcome as FloatOutBoyConfigLoadOutcome;
 
 // Startup fallback logging is reachable from `package_lib_init`; an extra call
 // frame would exceed the firmware's 2 KiB Lisp evaluator stack.
@@ -124,6 +108,7 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     }
 }
 
+#[cfg(test)]
 pub(super) fn float_out_boy_eeprom_image(
     config: &FloatOutBoyConfigImage,
 ) -> [u8; FLOAT_OUT_BOY_EEPROM_LEN] {
@@ -132,39 +117,25 @@ pub(super) fn float_out_boy_eeprom_image(
     bytes
 }
 
+#[cfg(test)]
 pub(super) fn float_out_boy_config_from_eeprom(
     image: &[u8; FLOAT_OUT_BOY_EEPROM_LEN],
 ) -> Option<FloatOutBoyConfigImage> {
     FloatOutBoyConfigImage::from_serialized(&image[..FLOAT_OUT_BOY_CONFIG_LEN])
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::package) struct FloatOutBoyPersistedConfig {
-    config: FloatOutBoyConfigImage,
-    outcome: FloatOutBoyConfigLoadOutcome,
-}
+pub(in crate::package) type FloatOutBoyPersistedConfig =
+    vescpkg_rs::PersistedValue<FloatOutBoyConfigImage>;
 
 pub(in crate::package) fn load_persisted_config(
     effects: &FirmwareEffects,
 ) -> FloatOutBoyPersistedConfig {
-    let loaded =
-        match vescpkg_rs::CustomEeprom::new().read_image::<FLOAT_OUT_BOY_EEPROM_LEN>(effects) {
-            Ok(image) => match float_out_boy_config_from_eeprom(&image) {
-                Some(config) => FloatOutBoyPersistedConfig {
-                    config,
-                    outcome: FloatOutBoyConfigLoadOutcome::Persisted,
-                },
-                None => FloatOutBoyPersistedConfig {
-                    config: FloatOutBoyConfigImage::defaults(),
-                    outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterInvalidImage,
-                },
-            },
-            Err(_) => FloatOutBoyPersistedConfig {
-                config: FloatOutBoyConfigImage::defaults(),
-                outcome: FloatOutBoyConfigLoadOutcome::DefaultAfterReadFailure,
-            },
-        };
-    log_config_load_fallback(effects, loaded.outcome);
+    let loaded = vescpkg_rs::CustomEeprom::new()
+        .read_validated_or_default::<FloatOutBoyConfigImage, FLOAT_OUT_BOY_EEPROM_LEN>(
+            effects,
+            |image| FloatOutBoyConfigImage::from_serialized(&image[..FLOAT_OUT_BOY_CONFIG_LEN]),
+        );
+    log_config_load_fallback(effects, loaded.outcome());
     loaded
 }
 
@@ -172,9 +143,8 @@ pub(in crate::package) fn store_persisted_config(
     effects: &FirmwareEffects,
     config: &FloatOutBoyConfigImage,
 ) -> bool {
-    let image = float_out_boy_eeprom_image(config);
     let stored = vescpkg_rs::CustomEeprom::new()
-        .write_signature_committed_image(effects, &image)
+        .write_signature_committed_prefix::<FLOAT_OUT_BOY_EEPROM_LEN>(effects, config.as_bytes())
         .is_ok();
     log_config_store_result(effects, stored);
     stored
@@ -206,50 +176,23 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    fn queue_config_persistence(&mut self, config: &FloatOutBoyConfigImage) {
-        // Keep one queued snapshot; each later AppUI apply replaces it.
-        self.deferred_config_persistence = match self.deferred_config_persistence {
-            DeferredConfigPersistence::Writing(_) => {
-                DeferredConfigPersistence::Writing(Some(*config))
-            }
-            _ => DeferredConfigPersistence::Pending(*config),
-        };
-    }
-
     pub(in crate::package) fn begin_active_config_persistence(
         &mut self,
         now: TimestampTicks,
     ) -> Option<FloatOutBoyConfigImage> {
         let config = self.active_config_image();
-        if self.config_can_persist_now(now)
-            && matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
-            && !matches!(
-                self.deferred_config_persistence,
-                DeferredConfigPersistence::Writing(_)
-            )
-        {
-            self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
-            Some(config)
-        } else {
-            self.queue_config_persistence(&config);
-            None
-        }
+        let can_begin = self.config_can_persist_now(now)
+            && matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle);
+        self.deferred_config_persistence.request(config, can_begin)
     }
 
     pub(in crate::package) fn begin_deferred_config_persistence(
         &mut self,
         now: TimestampTicks,
     ) -> Option<FloatOutBoyConfigImage> {
-        if !self.config_can_persist_now(now)
-            || !matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
-        {
-            return None;
-        }
-        let DeferredConfigPersistence::Pending(config) = self.deferred_config_persistence else {
-            return None;
-        };
-        self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
-        Some(config)
+        let can_begin = self.config_can_persist_now(now)
+            && matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle);
+        self.deferred_config_persistence.begin_pending(can_begin)
     }
 
     pub(in crate::package) fn finish_config_persistence(
@@ -258,24 +201,14 @@ impl FloatOutBoyPackageState {
         stored: bool,
         now: TimestampTicks,
     ) {
-        self.deferred_config_persistence = match self.deferred_config_persistence {
-            DeferredConfigPersistence::Writing(Some(pending)) => {
-                DeferredConfigPersistence::Pending(pending)
-            }
-            DeferredConfigPersistence::Writing(None) if stored => DeferredConfigPersistence::Clean,
-            DeferredConfigPersistence::Writing(None) => DeferredConfigPersistence::Failed(*config),
-            state => state,
-        };
+        self.deferred_config_persistence.finish(*config, stored);
         if stored {
             self.acknowledge_command_config_write(now);
         }
     }
 
     pub(super) const fn config_persistence_blocks_engagement(&self) -> bool {
-        matches!(
-            self.deferred_config_persistence,
-            DeferredConfigPersistence::Writing(_)
-        )
+        self.deferred_config_persistence.is_writing()
     }
 
     pub(super) const fn config_eeprom_operation_in_progress(&self) -> bool {
@@ -296,9 +229,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn retry_failed_config_persistence_after_ride(&mut self) {
-        if let DeferredConfigPersistence::Failed(config) = self.deferred_config_persistence {
-            self.deferred_config_persistence = DeferredConfigPersistence::Pending(config);
-        }
+        self.deferred_config_persistence.retry_failed();
     }
 
     pub(in crate::package) fn finish_configure_without_firmware_migration(&mut self) {
@@ -340,14 +271,10 @@ impl FloatOutBoyPackageState {
         &mut self,
         loaded: &FloatOutBoyPersistedConfig,
     ) {
-        self.serialized_config = loaded.config;
-        self.config_load_outcome = loaded.outcome;
-        self.deferred_config_persistence = match self.deferred_config_persistence {
-            DeferredConfigPersistence::Writing(_) => {
-                DeferredConfigPersistence::Writing(Some(loaded.config))
-            }
-            _ => DeferredConfigPersistence::Clean,
-        };
+        let config = *loaded.value();
+        self.serialized_config = config;
+        self.config_load_outcome = loaded.outcome();
+        self.deferred_config_persistence.supersede(config);
     }
 
     pub(in crate::package) fn begin_configure_active(&mut self, now: TimestampTicks) {

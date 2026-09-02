@@ -22,7 +22,8 @@ fn duty_pushback_starts_the_scaled_warning_tone_like_float_out_boy() {
     let mut haptic = HapticFeedbackState::new();
     let mut motor_control = FloatOutBoyMotorControl::new();
 
-    haptic.update(
+    update_haptic_feedback(
+        &mut haptic,
         FloatOutBoyConfigImage::defaults().haptic(),
         duty_input(),
         firmware.motor(),
@@ -67,10 +68,20 @@ fn generated_haptic_defaults_decode_at_the_float_out_boy_offsets() {
 fn haptic_strength_scaling_uses_speed_magnitude_in_reverse() {
     let image = FloatOutBoyConfigImage::defaults();
     let config = image.haptic();
-    let forward = strength_scale(config, Speed::from_meters_per_second(5.0));
-    let reverse = strength_scale(config, Speed::from_meters_per_second(-5.0));
+    let forward = haptic_strength_scale(
+        Speed::from_meters_per_second(5.0),
+        config.min_strength(),
+        config.max_strength_speed(),
+        config.strength_curvature(),
+    );
+    let reverse = haptic_strength_scale(
+        Speed::from_meters_per_second(-5.0),
+        config.min_strength(),
+        config.max_strength_speed(),
+        config.strength_curvature(),
+    );
 
-    assert_f32_eq!(reverse, forward);
+    assert_eq!(reverse, forward);
 }
 
 #[test]
@@ -80,7 +91,8 @@ fn warning_pattern_stops_on_the_odd_beat_and_restarts_on_the_next_even_beat() {
     let mut haptic = HapticFeedbackState::new();
     let mut motor_control = FloatOutBoyMotorControl::new();
     for tick in [0, TONE_LENGTH_TICKS, TONE_LENGTH_TICKS * 2] {
-        haptic.update(
+        update_haptic_feedback(
+            &mut haptic,
             config.haptic(),
             duty_input(),
             firmware.motor(),
@@ -109,7 +121,11 @@ fn patterned_haptic_periods_match_refloat() {
         assert_eq!(TONE_LENGTH_TICKS.checked_mul(beats), Some(cycle_ticks));
     }
     assert_eq!(HapticFeedbackType::DutyContinuous.beats(), 0);
-    assert_eq!(HapticFeedbackType::None.beats(), 0);
+}
+
+#[test]
+fn haptic_player_keeps_the_original_fixed_state_size() {
+    assert_eq!(core::mem::size_of::<HapticFeedbackState>(), 8);
 }
 
 #[test]
@@ -120,7 +136,8 @@ fn fatal_alert_uses_the_error_tone_before_pushback_selection() {
     let mut input = duty_input();
     input.fatal_error = true;
 
-    haptic.update(
+    update_haptic_feedback(
+        &mut haptic,
         FloatOutBoyConfigImage::defaults().haptic(),
         input,
         firmware.motor(),
@@ -144,7 +161,8 @@ fn handtest_stops_an_active_haptic_tone() {
     let config = FloatOutBoyConfigImage::defaults();
     let mut haptic = HapticFeedbackState::new();
     let mut motor_control = FloatOutBoyMotorControl::new();
-    haptic.update(
+    update_haptic_feedback(
+        &mut haptic,
         config.haptic(),
         duty_input(),
         firmware.motor(),
@@ -154,7 +172,8 @@ fn handtest_stops_an_active_haptic_tone() {
     );
     let mut handtest = duty_input();
     handtest.mode = FloatOutBoyMode::HandTest;
-    haptic.update(
+    update_haptic_feedback(
+        &mut haptic,
         config.haptic(),
         handtest,
         firmware.motor(),
@@ -181,7 +200,8 @@ fn configured_current_saturation_starts_the_continuous_warning() {
     input.setpoint_adjustment = FloatOutBoySetpointAdjustment::None;
     input.current_saturation = Ratio::from_ratio_const(0.81);
 
-    haptic.update(
+    update_haptic_feedback(
+        &mut haptic,
         config.haptic(),
         input,
         firmware.motor(),
@@ -195,10 +215,10 @@ fn configured_current_saturation_starts_the_continuous_warning() {
 
 #[test]
 fn negative_regen_limit_produces_refloat_battery_saturation() {
-    let saturation = super::normalized_current_saturation(
+    let saturation = vescpkg_rs::current_limit_saturation(
         vescpkg_rs::Current::from_amps(-10.0),
         vescpkg_rs::Current::from_amps(-20.0),
     );
 
-    assert!((saturation - 0.5).abs() < f32::EPSILON);
+    assert_eq!(saturation, Ratio::from_ratio_const(0.5));
 }

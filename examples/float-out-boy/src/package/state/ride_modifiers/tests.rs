@@ -24,7 +24,18 @@ fn nominal_rate() -> SampleRate {
 }
 
 fn compat_torque(current_amps: f32) -> MotorTorque {
-    MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(Current::from_amps(current_amps))
+    REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_current(Current::from_amps(current_amps))
+}
+
+fn configure_modifiers(
+    state: &mut RideModifierState,
+    config: &FloatOutBoyConfigImage,
+    elapsed: VescSeconds,
+) {
+    state.configure_smooth_setpoints(
+        config.balance(),
+        smooth_setpoint_frequency(elapsed).expect("positive test period"),
+    );
 }
 
 #[test]
@@ -212,6 +223,42 @@ fn wheelslip_winds_down_and_aggregates_the_stronger_matching_torque_like_float_o
         setpoints.board().angle(),
         AngleDegrees::from_degrees(1.0 + 2.0 * (1.0 - 0.009_95) + (4.0 + 5.0) * (1.0 - 0.009_95)),
     );
+}
+
+#[test]
+fn wheelslip_winds_down_even_when_elapsed_time_is_invalid() {
+    let config = FloatOutBoyConfigImage::defaults();
+    let mut state = RideModifierState::default();
+    configure_modifiers(&mut state, &config, nominal_elapsed());
+    state
+        .turn
+        .angle
+        .set_value_for_test(AngleDegrees::from_degrees(2.0));
+    state
+        .torque
+        .set_value_for_test(AngleDegrees::from_degrees(3.0));
+    state
+        .atr
+        .angle
+        .set_value_for_test(AngleDegrees::from_degrees(4.0));
+    state
+        .brake
+        .set_value_for_test(AngleDegrees::from_degrees(5.0));
+
+    let before = state.runtime_setpoints(input());
+    let after = state.advance_elapsed(
+        &config,
+        RideModifierInput {
+            wheelslip: FloatOutBoyWheelSlipState::Detected,
+            ..input()
+        },
+        VescSeconds::ZERO,
+    );
+
+    assert!(after.turn_tilt().angle() < before.turn_tilt().angle());
+    assert!(after.torque_tilt().angle() < before.torque_tilt().angle());
+    assert!(after.atr().angle() < before.atr().angle());
+    assert!(after.brake_tilt().angle() < before.brake_tilt().angle());
 }
 
 #[test]
@@ -405,6 +452,7 @@ fn torque_tilt_covers_source_threshold_regen_limit_and_return() {
     }
 
     let mut state = RideModifierState::default();
+    configure_modifiers(&mut state, &config, VescSeconds::from_seconds(0.01));
     let motor = ModifierMotorState {
         erpm: Rpm::from_revolutions_per_minute(3_000.0),
         direction: SmoothSetpointDirection::Forward,
@@ -437,7 +485,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
     assert!(editor.set_torque_tilt_strength(PidScale::new(0.1)));
     assert!(editor.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
     let current = Current::from_amps(30.0);
-    let low_torque_constant = MotorTorqueConstant::from_firmware_config(
+    let low_torque_constant = crate::motor_torque::motor_torque_constant_from_firmware_config(
         vescpkg_rs::prelude::FocMotorFluxLinkage::new(
             vescpkg_rs::prelude::FluxLinkage::from_webers(0.004),
         ),
@@ -446,7 +494,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
 
     let compatibility_target = torque_target(
         config.balance(),
-        MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(current),
+        REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_current(current),
         false,
     );
     let configured_target = torque_target(
@@ -463,7 +511,7 @@ fn torque_tilt_uses_firmware_derived_torque_instead_of_raw_current() {
 fn atr_expected_acceleration_switches_slope_at_fifteen_newton_meters() {
     let erpm = Rpm::from_revolutions_per_minute(1_000.0);
     let ratio = PidScale::new(2.0);
-    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let compatibility_constant = REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
     let factor = 2.0 * compatibility_constant;
     let offset = 8.0 * compatibility_constant;
 
@@ -513,6 +561,7 @@ fn atr_covers_acceleration_speed_boost_braking_limit_and_recovery() {
     assert!(editor.set_atr_amps_decel_ratio(PidScale::new(1.0)));
     let balance = config.balance();
     let mut state = RideModifierState::default();
+    configure_modifiers(&mut state, &config, VescSeconds::from_seconds(0.01));
     let accelerating = RideModifierInput {
         motor_erpm: Rpm::from_revolutions_per_minute(4_000.0),
         filtered_torque: compat_torque(30.0),
@@ -590,6 +639,7 @@ fn brake_and_turn_tilt_cover_source_gates_saturation_direction_and_return() {
         },
         ..RideModifierState::default()
     };
+    configure_modifiers(&mut state, &config, VescSeconds::from_seconds(0.01));
 
     assert_eq!(
         turn_target(

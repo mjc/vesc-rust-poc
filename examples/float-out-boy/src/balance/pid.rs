@@ -1,6 +1,6 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::FloatOutBoyDarkRideState;
-use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use crate::motor_torque::{MotorTorque, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::prelude::{AngularVelocity, ElectricalSpeed, ImuRoll, PidScale};
 use vescpkg_rs::{Rpm, cos, sin};
 
@@ -71,10 +71,10 @@ impl LoopState {
             self.pid.kp_accel_scale,
             self.pid.kp_brake_scale,
         );
-        let angle_proportional = MotorTorqueConstant::REFLOAT_COMPAT
+        let angle_proportional = REFLOAT_COMPAT_TORQUE_CONSTANT
             .torque_from_motor_current(error * config.kp.scaled_by(angle_scale));
 
-        let rate_damping = MotorTorqueConstant::REFLOAT_COMPAT
+        let rate_damping = REFLOAT_COMPAT_TORQUE_CONSTANT
             .torque_from_motor_current(input.pitch_rate().rate() * -config.kp2);
         let rate_scale = selected_scale(
             rate_damping.is_positive(),
@@ -87,11 +87,10 @@ impl LoopState {
         let integral = self
             .pid
             .integral_torque
-            .plus(MotorTorqueConstant::REFLOAT_COMPAT.torque_from_motor_current(increment));
+            .plus(REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_motor_current(increment));
         let integral = if config.ki_limit.current().is_positive() {
             integral.clamped_to(
-                MotorTorqueConstant::REFLOAT_COMPAT
-                    .torque_limit_from_current_limit(config.ki_limit),
+                REFLOAT_COMPAT_TORQUE_CONSTANT.torque_limit_from_current_limit(config.ki_limit),
             )
         } else {
             integral

@@ -516,7 +516,7 @@ fn evaluate_transition_phase(
         && faults.reversestop_enabled()
         && state.reverse_stop.active()
         && !darkride_active;
-    let motor_acceleration = state.motor_kinematics.average();
+    let motor_acceleration = state.motor_kinematics.0.average();
     let traction_loss_detected = stop_event.is_none()
         && !state_engage
         && !ride_state
@@ -946,7 +946,7 @@ fn advance_running_control(
             balance_pitch: phase.balance_pitch.angle_degrees(),
             motor_erpm: phase.motor_erpm,
             filtered_torque: state
-                .motor_torque_constant
+                .motor_torque_constant()
                 .torque_from_current(payloads.filtered_motor_current().current().current()),
             motor_current: payloads.motor_current(),
             acceleration: phase.motor_acceleration,
@@ -989,12 +989,11 @@ fn advance_running_control(
                 gyro_yaw: gyro.yaw(),
                 motor_erpm: payloads.electrical_speed(),
                 motor_current: payloads.motor_current(),
-                motor_current_max: state.motor_current_max,
-                motor_current_min: state.motor_current_min,
+                motor_current_limits: state.motor_current_limits,
                 mode: phase.ride_state.mode(),
                 darkride: phase.ride_state.darkride(),
                 traction_control: state.ride_flags.traction_control,
-                motor_torque_constant: state.motor_torque_constant,
+                motor_torque_constant: state.motor_torque_constant(),
             },
             elapsed,
         );
@@ -1033,7 +1032,7 @@ pub(super) fn refresh(
         state.balance_loop.reset_pid();
         state.balance_loop.softstart_pid_limit = MotorCurrent::new(Current::ZERO);
         state.reverse_stop.reset(state.motor_distance_meters);
-        state.motor_kinematics.reset_acceleration();
+        state.motor_kinematics.0.reset_acceleration();
         state.motor_current_filter.reset();
         state.ride_flags.traction_control = false;
         state.remote_control.reset_runtime_vars();
@@ -1067,7 +1066,7 @@ pub(super) fn refresh(
         && let Some(current) = state.remote_control.request_ready_current(
             payloads.vehicle_speed().speed(),
             elapsed,
-            state.motor_torque_constant,
+            state.motor_torque_constant(),
         )
     {
         state.request_motor_current(current);

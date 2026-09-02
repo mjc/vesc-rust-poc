@@ -16,7 +16,7 @@ use crate::domain::{
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
-use crate::motor_torque::MotorTorqueConstant;
+use crate::motor_torque::{MotorTorqueConstant, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
@@ -25,7 +25,8 @@ use vescpkg_rs::prelude::{
     TemperatureLimitStart, TimestampTicks,
 };
 use vescpkg_rs::{
-    Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry, WrappingTimer,
+    DirectionalCurrentLimits, Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry,
+    WrappingTimer,
 };
 
 mod alert_tracker;
@@ -63,7 +64,6 @@ mod reverse_stop_tests;
 mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
-mod smooth_setpoint;
 mod transition;
 #[cfg(test)]
 mod transition_tests;
@@ -80,7 +80,7 @@ pub(in crate::package) use config_storage::{
 pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
 use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
-use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
+use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, update_haptic_feedback};
 #[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
 #[cfg(test)]
@@ -196,7 +196,7 @@ pub struct FloatOutBoyPackageState {
     #[pin]
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: vescpkg_rs::BiquadLowPass,
-    motor_torque_constant: MotorTorqueConstant,
+    motor_torque_constant: Option<MotorTorqueConstant>,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
@@ -216,10 +216,8 @@ pub struct FloatOutBoyPackageState {
     upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
-    motor_current_max: MotorCurrentLimit,
-    motor_current_min: MotorCurrentLimit,
-    battery_current_max: InputCurrent,
-    battery_current_min: InputCurrent,
+    motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
+    battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
     mosfet_temperature: MosfetTemperature,
     motor_temperature: MotorTemperature,
     mosfet_temperature_limit_start: TemperatureLimitStart,
@@ -288,10 +286,8 @@ impl FloatOutBoyPackageState {
             upside_down_flags: Default::default(),
             motor_duty_raw: Default::default(),
             duty_max_with_margin: Default::default(),
-            motor_current_max: Default::default(),
-            motor_current_min: Default::default(),
-            battery_current_max: Default::default(),
-            battery_current_min: Default::default(),
+            motor_current_limits: Default::default(),
+            battery_current_limits: Default::default(),
             mosfet_temperature: Default::default(),
             motor_temperature: Default::default(),
             mosfet_temperature_limit_start: Default::default(),
@@ -306,6 +302,11 @@ impl FloatOutBoyPackageState {
             internal_led_confirmation_pending: Default::default(),
             firmware_version: Default::default(),
         })
+    }
+
+    fn motor_torque_constant(&self) -> MotorTorqueConstant {
+        self.motor_torque_constant
+            .unwrap_or(REFLOAT_COMPAT_TORQUE_CONSTANT)
     }
 
     fn realtime_live_values(&self) -> FloatOutBoyRealtimeLiveValues {
@@ -546,7 +547,7 @@ impl FloatOutBoyPackageState {
         self.motor_control.apply(
             motor,
             run_state,
-            self.motor_kinematics.smoothed_abs_erpm(),
+            self.motor_kinematics.0.smoothed_abs_erpm(),
             system_time_ticks,
             self.serialized_config.motor_control().parking_brake_mode(),
             self.serialized_config.motor_control().brake_current(),
@@ -597,12 +598,11 @@ impl FloatOutBoyPackageState {
                     gyro_yaw: angular_rate.yaw(),
                     motor_erpm: payloads.electrical_speed(),
                     motor_current: payloads.motor_current(),
-                    motor_current_max: self.motor_current_max,
-                    motor_current_min: self.motor_current_min,
+                    motor_current_limits: self.motor_current_limits,
                     mode: ride_state.mode(),
                     darkride: ride_state.darkride(),
                     traction_control: self.ride_flags.traction_control,
-                    motor_torque_constant: self.motor_torque_constant,
+                    motor_torque_constant: self.motor_torque_constant(),
                 },
                 sample.period().duration(),
             );
@@ -941,35 +941,30 @@ impl FloatOutBoyPackageState {
         let payloads = self.all_data_payloads;
         let ride_state = payloads.ride_state();
         let filtered_current = payloads.filtered_motor_current().current().current();
-        let braking = payloads.motor_current().is_negative();
-        let current_limit = if braking {
-            self.motor_current_min
-        } else {
-            self.motor_current_max
-        };
+        let motor_limit = self
+            .motor_current_limits
+            .for_current(payloads.motor_current().current());
         let motor_saturation =
-            normalized_current_saturation(filtered_current, current_limit.current());
+            vescpkg_rs::current_limit_saturation(filtered_current, motor_limit.current());
         let battery_current = payloads.battery_current().current();
-        let battery_limit = if battery_current.is_negative() {
-            self.battery_current_min
-        } else {
-            self.battery_current_max
-        };
+        let battery_limit = self.battery_current_limits.for_current(battery_current);
         let battery_saturation =
-            normalized_current_saturation(battery_current, battery_limit.current());
-        self.haptic_feedback.update(
+            vescpkg_rs::current_limit_saturation(battery_current, battery_limit.current());
+        let duty_solid_threshold = Ratio::clamped(
+            self.runtime_duty_pushback_threshold().as_ratio()
+                + config.haptic().duty_solid_offset().as_ratio(),
+        );
+        update_haptic_feedback(
+            &mut self.haptic_feedback,
             config.haptic(),
             HapticFeedbackInput {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
                 setpoint_adjustment: ride_state.setpoint_adjustment(),
                 duty_cycle: payloads.duty_cycle().magnitude(),
-                duty_solid_threshold: Ratio::clamped(
-                    self.runtime_duty_pushback_threshold().as_ratio()
-                        + config.haptic().duty_solid_offset().as_ratio(),
-                ),
+                duty_solid_threshold,
                 speed: payloads.vehicle_speed().speed(),
-                current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
+                current_saturation: motor_saturation.max(battery_saturation),
                 fatal_error: self.alert_tracker.fatal_error(),
             },
             motor,

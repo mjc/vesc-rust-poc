@@ -101,7 +101,7 @@ fn unified_remote_move_drives_the_ready_motor_path_through_typed_torque() {
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
-    let expected_current = 6.01 / state.motor_torque_constant.newton_meters_per_amp();
+    let expected_current = 6.01 / state.motor_torque_constant().as_newton_meters_per_amp();
     assert!(state.apply_requested_motor_current(firmware.motor()));
 
     // Cutoff defaults a zero configured move limit to 5 km/h for command input.
@@ -111,7 +111,7 @@ fn unified_remote_move_drives_the_ready_motor_path_through_typed_torque() {
         (firmware.commanded_current().current().as_amps() - expected_current).abs() < 0.0001,
         "actual={:?} expected={expected_current} torque_constant={} vehicle_speed={}",
         firmware.commanded_current(),
-        state.motor_torque_constant.newton_meters_per_amp(),
+        state.motor_torque_constant().as_newton_meters_per_amp(),
         state
             .all_data_payloads()
             .base()

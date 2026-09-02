@@ -1,5 +1,5 @@
 use super::loop_io::{LoopConfig, LoopInput};
-use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use crate::motor_torque::{MotorTorque, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::Rpm;
 use vescpkg_rs::prelude::{AngleDegrees, ElectricalSpeed, MotorCurrent};
 
@@ -41,7 +41,7 @@ impl Branch {
                 config.brkbooster_ramp,
             ),
         };
-        let mut torque = MotorTorqueConstant::REFLOAT_COMPAT.torque_from_motor_current(current);
+        let mut torque = REFLOAT_COMPAT_TORQUE_CONSTANT.torque_from_motor_current(current);
         let stiffness = ((motor_erpm.rpm().abs() - Rpm::from_revolutions_per_minute(3000.0))
             / Rpm::from_revolutions_per_minute(10000.0))
         .clamp(0.0, 1.0);

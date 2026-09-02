@@ -2,6 +2,7 @@ use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
 };
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use vescpkg_rs::DirectionalCurrentLimits;
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, IntegralCurrentGain,
     MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
@@ -46,8 +47,7 @@ pub(crate) struct LoopInput {
     pub(crate) gyro_yaw: AngularVelocity,
     pub(crate) motor_erpm: ElectricalSpeed,
     pub(crate) motor_current: MotorCurrent,
-    pub(crate) motor_current_max: MotorCurrentLimit,
-    pub(crate) motor_current_min: MotorCurrentLimit,
+    pub(crate) motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
     pub(crate) mode: FloatOutBoyMode,
     pub(crate) darkride: FloatOutBoyDarkRideState,
     pub(crate) traction_control: bool,

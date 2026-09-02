@@ -1,17 +1,17 @@
-use super::smooth_setpoint::{
-    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
-};
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
     FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use crate::motor_torque::{MotorTorque, REFLOAT_COMPAT_TORQUE_CONSTANT};
 use vescpkg_rs::WrappedAngleMotion;
 #[cfg(test)]
 use vescpkg_rs::prelude::Current;
 use vescpkg_rs::prelude::{
     AngleDegrees, AngularVelocity, Frequency, MotorCurrent, PidScale, Rpm, SampleRate, VescSeconds,
+};
+use vescpkg_rs::{
+    SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
 
 const LOOP_HERTZ_COMPAT: f32 = 720.0;
@@ -64,7 +64,7 @@ fn atr_transition_multiplier(
         } else {
             1.0
         };
-    SmoothSetpointMultiplier::from_factor(factor)
+    SmoothSetpointMultiplier::from_factor(factor).unwrap_or(SmoothSetpointMultiplier::ONE)
 }
 
 fn motor_direction(erpm: Rpm, torque: MotorTorque) -> SmoothSetpointDirection {
@@ -114,9 +114,8 @@ fn torque_target(
     } else {
         config.torque_tilt_strength().value()
     };
-    let strength =
-        configured_strength / MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
-    let start_torque = MotorTorqueConstant::REFLOAT_COMPAT
+    let strength = configured_strength / REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
+    let start_torque = REFLOAT_COMPAT_TORQUE_CONSTANT
         .torque_from_current(config.torque_tilt_start_current().current());
     AngleDegrees::from_degrees(
         ((torque.abs().as_newton_meters() - start_torque.as_newton_meters()).max(0.0) * strength)
@@ -128,7 +127,7 @@ fn torque_target(
 fn atr_expected_acceleration(torque: MotorTorque, erpm: Rpm, configured_ratio: PidScale) -> f32 {
     let torque = torque.as_newton_meters();
     let abs_torque = torque.abs();
-    let compatibility_constant = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp();
+    let compatibility_constant = REFLOAT_COMPAT_TORQUE_CONSTANT.as_newton_meters_per_amp();
     let torque_offset = 8.0 * compatibility_constant;
     let factor = configured_ratio.value() * compatibility_constant;
     if abs_torque < 15.0 {
@@ -307,13 +306,19 @@ impl RideModifierState {
         if input.darkride {
             return;
         }
+        let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
+            if input.wheelslip == FloatOutBoyWheelSlipState::Detected {
+                self.wind_down_for_wheelslip();
+            }
+            return;
+        };
+        let balance = config.balance();
+        self.configure_smooth_setpoints(balance, frequency);
         if input.wheelslip == FloatOutBoyWheelSlipState::Detected {
-            self.configure_smooth_setpoints(config.balance(), elapsed);
             self.wind_down_for_wheelslip();
             return;
         }
 
-        let balance = config.balance();
         let motor = ModifierMotorState::from_input(input);
         self.update_nose(config, input.motor_erpm, elapsed);
         self.update_turn(balance, motor, elapsed);
@@ -368,7 +373,6 @@ impl RideModifierState {
         motor: ModifierMotorState,
         elapsed: VescSeconds,
     ) {
-        self.configure_torque_setpoint(config, elapsed);
         self.torque.update(
             torque_target(config, torque, motor.braking),
             motor.direction,
@@ -387,7 +391,6 @@ impl RideModifierState {
         let Some(update_rate) = smooth_setpoint_frequency(elapsed) else {
             return;
         };
-        self.configure_atr_setpoint(config, elapsed);
         let ratio = if motor.braking {
             config.atr_amps_decel_ratio()
         } else {
@@ -469,7 +472,6 @@ impl RideModifierState {
         motor: ModifierMotorState,
         elapsed: VescSeconds,
     ) {
-        self.configure_brake_setpoint(config, elapsed);
         let strength = config.brake_tilt_strength().value();
         let factor = if strength == 0.0 {
             0.0
@@ -513,7 +515,6 @@ impl RideModifierState {
         if config.turn_tilt_strength().value() == 0.0 {
             return;
         }
-        self.configure_turn_setpoint(config, elapsed);
         // C map: turn target gates, boosts, direction, and ramp mirror
         // `src/turn_tilt.c` at the pinned Refloat cutoff.
         let target = turn_target(&self.turn, config, motor.erpm);
@@ -525,116 +526,47 @@ impl RideModifierState {
         );
     }
 
-    fn configure_turn_setpoint(
+    fn configure_smooth_setpoints(
         &mut self,
         config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        elapsed: VescSeconds,
+        frequency: SampleRate,
     ) {
-        let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
-            return;
-        };
+        let winddown_time_constant = VescSeconds::from_seconds(0.2);
         let time_constant = config.turn_tilt_filter_time_constant();
         let speed_time_constant = VescSeconds::from_seconds(time_constant.as_seconds() * 0.5);
+        let turn_speed = AngularVelocity::from_degrees_per_second(20.0);
         self.turn.angle.configure(
-            SmoothSetpointConfig {
+            SmoothSetpointConfig::symmetric(
                 time_constant,
-                on_speed_time_constant: speed_time_constant,
-                off_speed_time_constant: speed_time_constant,
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: AngularVelocity::from_degrees_per_second(20.0),
-                off_speed_up: AngularVelocity::from_degrees_per_second(20.0),
-                on_speed_down: AngularVelocity::from_degrees_per_second(20.0),
-                off_speed_down: AngularVelocity::from_degrees_per_second(20.0),
-            },
+                speed_time_constant,
+                speed_time_constant,
+                winddown_time_constant,
+                turn_speed,
+                turn_speed,
+            ),
             frequency,
         );
-    }
-
-    fn configure_torque_setpoint(
-        &mut self,
-        config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        elapsed: VescSeconds,
-    ) {
-        let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
-            return;
-        };
-        let filter = config.torque_tilt_filter();
         self.torque.configure(
-            SmoothSetpointConfig {
-                time_constant: filter.time_constant(),
-                on_speed_time_constant: filter.on_speed_time_constant(),
-                off_speed_time_constant: filter.off_speed_time_constant(),
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: filter.on_speed_limit(),
-                off_speed_up: filter.off_speed_limit(),
-                on_speed_down: filter.on_speed_limit(),
-                off_speed_down: filter.off_speed_limit(),
-            },
+            config
+                .torque_tilt_filter()
+                .smooth_setpoint_config(winddown_time_constant),
             frequency,
         );
-    }
-
-    fn configure_atr_setpoint(
-        &mut self,
-        config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        elapsed: VescSeconds,
-    ) {
-        let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
-            return;
-        };
         let filter = config.atr_filter();
         self.atr.angle.configure(
-            SmoothSetpointConfig {
-                time_constant: filter.time_constant(),
-                on_speed_time_constant: filter.on_speed_time_constant(),
-                off_speed_time_constant: filter.off_speed_time_constant(),
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: filter.on_speed_limit(),
-                off_speed_up: filter.off_speed_limit(),
-                on_speed_down: filter.on_speed_limit(),
-                off_speed_down: filter.off_speed_limit(),
-            },
+            filter.smooth_setpoint_config(winddown_time_constant),
             frequency,
         );
-    }
-
-    fn configure_brake_setpoint(
-        &mut self,
-        config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        elapsed: VescSeconds,
-    ) {
-        let Some(frequency) = smooth_setpoint_frequency(elapsed) else {
-            return;
-        };
-        let filter = config.atr_filter();
         let off_speed = AngularVelocity::from_degrees_per_second(
             filter.on_speed_limit().as_degrees_per_second()
                 / config.brake_tilt_lingering().value().max(1.0),
         );
         self.brake.configure(
-            SmoothSetpointConfig {
-                time_constant: filter.time_constant(),
-                on_speed_time_constant: filter.on_speed_time_constant(),
-                off_speed_time_constant: filter.off_speed_time_constant(),
-                winddown_time_constant: VescSeconds::from_seconds(0.2),
-                on_speed_up: filter.on_speed_limit(),
-                off_speed_up: off_speed,
-                on_speed_down: filter.on_speed_limit(),
-                off_speed_down: off_speed,
-            },
+            filter
+                .smooth_setpoint_config(winddown_time_constant)
+                .with_off_speed(off_speed),
             frequency,
         );
-    }
-
-    fn configure_smooth_setpoints(
-        &mut self,
-        config: crate::config::FloatOutBoyBalanceConfig<'_>,
-        elapsed: VescSeconds,
-    ) {
-        self.configure_turn_setpoint(config, elapsed);
-        self.configure_torque_setpoint(config, elapsed);
-        self.configure_atr_setpoint(config, elapsed);
-        self.configure_brake_setpoint(config, elapsed);
     }
 
     pub(super) const fn atr_accel_diff(self) -> f32 {
