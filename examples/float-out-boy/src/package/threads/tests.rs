@@ -18,7 +18,7 @@ fn float_out_boy_runtime_threads_reserve_their_measured_rust_working_areas() {
     // The persisted-config call chain measured 1976 bytes before ChibiOS's
     // thread metadata, saved contexts, and interrupt reserve. The aux LED
     // reconfiguration chain measures 1948 bytes.
-    let working_area = super::float_out_boy_working_area().expect("valid working area");
+    let working_area = super::FLOAT_OUT_BOY_WORKING_AREA.expect("valid working area");
     assert_eq!(working_area.usable_stack_bytes(), 2_656);
 }
 
@@ -44,7 +44,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
 
     super::run_float_out_boy_main_thread_with(threads, || {
         state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
-        state.configured_loop_time_us()
+        FloatOutBoyPackageState::configured_loop_time_us()
     });
 
     let payloads = state.all_data_payloads();

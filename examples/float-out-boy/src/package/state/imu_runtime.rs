@@ -10,7 +10,7 @@ use super::limits::{
     MOVING_FAULT_ROLL, REMOTE_SETPOINT_FAULT_ANGLE, darkride, push_start, quick_stop, traction_loss,
 };
 use super::{
-    AngleRadians, BatteryCellCount, Current, FloatOutBoyAllDataPayloads, FloatOutBoyBeeperAlert,
+    AngleRadians, Current, FloatOutBoyAllDataPayloads, FloatOutBoyBeeperAlert,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyPackageState, FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeRuntimeSetpoint,
@@ -19,11 +19,11 @@ use super::{
     FloatOutBoyWheelSlipState, Imu, MotorCurrent, RideModifierInput, Rpm, TimestampTicks,
     float_out_boy_first_stop_event, float_out_boy_state_transition,
 };
-use crate::bms::FloatOutBoyBmsFaults;
+use crate::bms::FloatOutBoyBmsFaults as BmsFaults;
 use crate::domain::{FloatOutBoyBeepReason, FloatOutBoyRideState};
 use crate::wire::saturating_trunc_f32_to_u8;
 use vescpkg_rs::prelude::{
-    AngleDegrees, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
+    AngleDegrees, BatteryCellCount, DutyCycle, SignedRatio, Temperature, VescSeconds, Voltage,
 };
 use vescpkg_rs::{ImuPitch, ImuRoll};
 
@@ -367,7 +367,7 @@ fn evaluate_transition_phase(
     if startup_became_ready {
         let warning_threshold = pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
-            state.battery_cell_count,
+            state.motor_config.battery_cell_count,
         ) + Voltage::from_volts(5.0);
         let battery_voltage = payloads.motor_battery_voltage().voltage();
         if battery_voltage < warning_threshold {
@@ -598,76 +598,69 @@ struct ProtectionSignals {
     high_voltage_threshold: Voltage,
     low_voltage_threshold: Voltage,
     battery_voltage: Voltage,
-    bms_cell_over_voltage: bool,
-    bms_connection_fault: bool,
-    bms_cell_under_voltage: bool,
+    bms_faults: BmsFaults,
     bms_temperature_reason: Option<FloatOutBoyBeepReason>,
     motor_temperature_warning: Option<(FloatOutBoyBeepReason, bool)>,
+}
+
+impl ProtectionSignals {
+    const fn has_bms_fault(&self, fault: BmsFaults) -> bool {
+        self.bms_faults.contains(fault)
+    }
 }
 
 fn protection_signals(
     state: &FloatOutBoyPackageState,
     payloads: &FloatOutBoyAllDataPayloads,
 ) -> ProtectionSignals {
-    let bms_cell_over_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_OVER_VOLTAGE);
+    use FloatOutBoyBeepReason as Reason;
+
+    let bms_faults = state.bms.faults();
     #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_cell_over_voltage = false;
-    let bms_connection_fault = state.bms.contains(FloatOutBoyBmsFaults::CONNECTION);
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_connection_fault = false;
-    let bms_temperature_reason = if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::CELL_OVER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::CellOverTemperature)
-    } else if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::CELL_UNDER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::CellUnderTemperature)
-    } else if state
-        .bms
-        .contains(FloatOutBoyBmsFaults::BMS_OVER_TEMPERATURE)
-    {
-        Some(FloatOutBoyBeepReason::BmsOverTemperature)
-    } else {
-        None
-    };
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_temperature_reason = None;
-    let bms_cell_under_voltage = state.bms.contains(FloatOutBoyBmsFaults::CELL_UNDER_VOLTAGE);
-    #[cfg(not(any(test, target_arch = "arm")))]
-    let bms_cell_under_voltage = false;
+    let bms_faults = BmsFaults::empty();
+    let bms_temperature_reason = [
+        (
+            BmsFaults::CELL_OVER_TEMPERATURE,
+            Reason::CellOverTemperature,
+        ),
+        (
+            BmsFaults::CELL_UNDER_TEMPERATURE,
+            Reason::CellUnderTemperature,
+        ),
+        (BmsFaults::BMS_OVER_TEMPERATURE, Reason::BmsOverTemperature),
+    ]
+    .into_iter()
+    .find_map(|(fault, reason)| bms_faults.contains(fault).then_some(reason));
     let warning_margin = Temperature::from_degrees_celsius(3.0);
     let tiltback_margin = Temperature::from_degrees_celsius(1.0);
-    let mosfet_threshold = state.mosfet_temperature_limit_start.temperature() - warning_margin;
-    let motor_threshold = state.motor_temperature_limit_start.temperature() - warning_margin;
-    let motor_temperature_warning = if state.mosfet_temperature.temperature() > mosfet_threshold {
-        Some((
-            FloatOutBoyBeepReason::MosfetTemperature,
-            state.mosfet_temperature.temperature() > mosfet_threshold + tiltback_margin,
-        ))
-    } else if state.motor_temperature.temperature() > motor_threshold {
-        Some((
-            FloatOutBoyBeepReason::MotorTemperature,
-            state.motor_temperature.temperature() > motor_threshold + tiltback_margin,
-        ))
-    } else {
-        None
-    };
+    let motor_config = state.motor_config;
+    let motor_temperature_warning = [
+        (
+            state.mosfet_temperature.temperature(),
+            motor_config.mosfet_temperature_limit_start.temperature() - warning_margin,
+            Reason::MosfetTemperature,
+        ),
+        (
+            state.motor_temperature.temperature(),
+            motor_config.motor_temperature_limit_start.temperature() - warning_margin,
+            Reason::MotorTemperature,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(temperature, threshold, reason)| {
+        (temperature > threshold).then_some((reason, temperature > threshold + tiltback_margin))
+    });
     ProtectionSignals {
         high_voltage_threshold: pack_voltage_threshold(
             state.serialized_config.high_voltage_threshold(),
-            state.battery_cell_count,
+            motor_config.battery_cell_count,
         ),
         low_voltage_threshold: pack_voltage_threshold(
             state.serialized_config.low_voltage_threshold(),
-            state.battery_cell_count,
+            motor_config.battery_cell_count,
         ),
         battery_voltage: payloads.motor_battery_voltage().voltage(),
-        bms_cell_over_voltage,
-        bms_connection_fault,
-        bms_cell_under_voltage,
+        bms_faults,
         bms_temperature_reason,
         motor_temperature_warning,
     }
@@ -708,9 +701,9 @@ fn apply_protective_setpoint(
     }
     if duty > 0.05
         && (signals.battery_voltage > signals.high_voltage_threshold
-            || signals.bms_cell_over_voltage)
+            || signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE))
     {
-        phase.beep_reason = if signals.bms_cell_over_voltage {
+        phase.beep_reason = if signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE) {
             FloatOutBoyBeepReason::CellHighVoltage
         } else {
             FloatOutBoyBeepReason::HighVoltage
@@ -720,7 +713,7 @@ fn apply_protective_setpoint(
             .high_voltage_ticks
             .older_than(system_time_ticks, VescSeconds::from_seconds(0.5))
             || signals.battery_voltage > signals.high_voltage_threshold + Voltage::from_volts(1.0)
-            || signals.bms_cell_over_voltage;
+            || signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE);
         phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackHighVoltage
         } else {
@@ -734,7 +727,7 @@ fn apply_protective_setpoint(
         }
         return;
     }
-    if signals.bms_connection_fault {
+    if signals.has_bms_fault(BmsFaults::CONNECTION) {
         phase.beep_reason = FloatOutBoyBeepReason::BmsConnection;
         phase.beeper_alert = Some(FloatOutBoyBeeperAlert::Long(3));
         phase.set_adjustment(FloatOutBoySetpointAdjustment::PushbackError);
@@ -771,10 +764,10 @@ fn apply_protective_setpoint(
         return;
     }
     if duty > 0.05
-        && (signals.bms_cell_under_voltage
+        && (signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE)
             || signals.battery_voltage < signals.low_voltage_threshold)
     {
-        phase.beep_reason = if signals.bms_cell_under_voltage {
+        phase.beep_reason = if signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE) {
             FloatOutBoyBeepReason::CellLowVoltage
         } else {
             FloatOutBoyBeepReason::LowVoltage
@@ -785,7 +778,7 @@ fn apply_protective_setpoint(
         let tiltback = voltage_delta > Voltage::from_volts(2.0)
             || motor_current < Current::from_amps(5.0)
             || voltage_delta.as_volts() * 20.0 / motor_current.as_amps() > 1.0
-            || signals.bms_cell_under_voltage;
+            || signals.has_bms_fault(BmsFaults::CELL_UNDER_VOLTAGE);
         phase.set_adjustment(if tiltback {
             FloatOutBoySetpointAdjustment::PushbackLowVoltage
         } else {
@@ -843,10 +836,13 @@ fn advance_running_control(
     elapsed: VescSeconds,
 ) {
     let signals = protection_signals(state, payloads);
-    if signals.battery_voltage < signals.high_voltage_threshold && !signals.bms_cell_over_voltage {
+    if signals.battery_voltage < signals.high_voltage_threshold
+        && !signals.has_bms_fault(BmsFaults::CELL_OVER_VOLTAGE)
+    {
         state.high_voltage_ticks.restart(system_time_ticks);
     }
-    let above_duty_limit = payloads.duty_cycle().magnitude() > state.duty_max_with_margin.ratio();
+    let above_duty_limit =
+        payloads.duty_cycle().magnitude() > state.motor_config.duty_max_with_margin.ratio();
     let mut board_setpoint = state.runtime_board_setpoint;
     if phase.reverse_stop_entry_pending {
         phase.set_adjustment(FloatOutBoySetpointAdjustment::ReverseStop);
@@ -855,7 +851,7 @@ fn advance_running_control(
     let wheelslip_branch = if phase.traction_loss_detected {
         state.wheelslip_ticks.restart(system_time_ticks);
         if phase.darkride_active {
-            state.ride_flags.traction_control = true;
+            state.traction_control = true;
         }
         true
     } else if phase.ride_state.wheelslip() == FloatOutBoyWheelSlipState::Detected
@@ -865,7 +861,7 @@ fn advance_running_control(
             .is_centering_or_reverse_stop()
     {
         if phase.motor_acceleration.abs() < traction_loss::ACCELERATION_CLEAR {
-            state.ride_flags.traction_control = false;
+            state.traction_control = false;
         }
         if above_duty_limit {
             state.wheelslip_ticks.restart(system_time_ticks);
@@ -874,7 +870,7 @@ fn advance_running_control(
             .older_than(system_time_ticks, traction_loss::CLEAR_DELAY)
             && state.motor_duty_raw < traction_loss::RAW_DUTY_CLEAR
         {
-            state.ride_flags.traction_control = false;
+            state.traction_control = false;
             phase.ride_state = phase
                 .ride_state
                 .with_wheelslip(FloatOutBoyWheelSlipState::None);
@@ -989,10 +985,10 @@ fn advance_running_control(
                 gyro_yaw: gyro.yaw(),
                 motor_erpm: payloads.electrical_speed(),
                 motor_current: payloads.motor_current(),
-                motor_current_limits: state.motor_current_limits,
+                motor_current_limits: state.motor_config.motor_current_limits,
                 mode: phase.ride_state.mode(),
                 darkride: phase.ride_state.darkride(),
-                traction_control: state.ride_flags.traction_control,
+                traction_control: state.traction_control,
                 motor_torque_constant: state.motor_torque_constant(),
             },
             elapsed,
@@ -1034,7 +1030,7 @@ pub(super) fn refresh(
         state.reverse_stop.reset(state.motor_distance_meters);
         state.motor_kinematics.0.reset_acceleration();
         state.motor_current_filter.reset();
-        state.ride_flags.traction_control = false;
+        state.traction_control = false;
         state.remote_control.reset_runtime_vars();
         state.ride_modifiers.reset();
         let balance_pitch = phase.balance_pitch.angle_degrees();

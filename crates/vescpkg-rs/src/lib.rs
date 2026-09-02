@@ -94,6 +94,7 @@ mod advanced_foc;
 mod ahrs;
 mod audio;
 mod bindings;
+mod bms;
 mod capabilities;
 mod data_recorder;
 mod eeprom;
@@ -108,6 +109,7 @@ mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
+mod motor_control;
 mod numeric;
 mod nvm;
 mod packet;
@@ -281,6 +283,7 @@ pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
+pub use motor_control::{MotorControl, MotorControlRunState, ParkingBrakeMode};
 #[cfg(feature = "math")]
 pub use numeric::BiquadLowPass;
 #[cfg(feature = "math")]
@@ -301,6 +304,7 @@ pub mod __macro_support;
 #[cfg(feature = "math")]
 pub use ahrs::{Ahrs, AhrsParameterError, AxisMahony, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
+pub use bms::{BmsFaults, BmsMonitor, BmsSample, BmsStartupGrace, BmsTemperature, BmsThresholds};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
     FirmwareEffects, MAX_APP_DATA_PAYLOAD_LEN, StatefulCallbackContext,

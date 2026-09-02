@@ -409,19 +409,19 @@ fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
         AngleDegrees::from_degrees(5.0)
     );
     assert_eq!(
-        config.balance().atr_filter().on_speed_limit(),
+        config.balance().atr_filter_on_speed_limit(),
         AngularVelocity::from_degrees_per_second(6.0)
     );
     assert_eq!(
-        config.balance().atr_filter().off_speed_limit(),
+        config.balance().atr_filter_off_speed_limit(),
         AngularVelocity::from_degrees_per_second(12.0)
     );
     assert_eq!(
-        config.balance().torque_tilt_filter().on_speed_limit(),
+        config.balance().torque_tilt_filter_on_speed_limit(),
         AngularVelocity::from_degrees_per_second(6.0)
     );
     assert_eq!(
-        config.balance().torque_tilt_filter().off_speed_limit(),
+        config.balance().torque_tilt_filter_off_speed_limit(),
         AngularVelocity::from_degrees_per_second(9.0)
     );
 }
@@ -458,14 +458,14 @@ fn runtime_tune_zero_speed_fields_preserve_existing_atr_filter_limits() {
             &packet,
         ));
 
-        let atr = state.serialized_config.balance().atr_filter();
+        let atr = state.serialized_config.balance();
         assert_eq!(
-            atr.on_speed_limit(),
+            atr.atr_filter_on_speed_limit(),
             AngularVelocity::from_degrees_per_second(8.0),
             "extended speeds {optional_extended_speeds:?}",
         );
         assert_eq!(
-            atr.off_speed_limit(),
+            atr.atr_filter_off_speed_limit(),
             AngularVelocity::from_degrees_per_second(10.0),
             "extended speeds {optional_extended_speeds:?}",
         );
@@ -668,12 +668,12 @@ fn tune_other_applies_cutoff_secondary_flags() {
     let firmware = FirmwareTest::new();
 
     for (flags, moving_faults_disabled, foot_beep_enabled, parking_brake_mode) in [
-        (0b0000, false, false, FloatOutBoyParkingBrakeMode::Always),
-        (0b0001, true, false, FloatOutBoyParkingBrakeMode::Always),
-        (0b0010, false, true, FloatOutBoyParkingBrakeMode::Always),
-        (0b0100, false, false, FloatOutBoyParkingBrakeMode::Idle),
-        (0b1000, false, false, FloatOutBoyParkingBrakeMode::Never),
-        (0b1111, true, true, FloatOutBoyParkingBrakeMode::Unknown(3)),
+        (0b0000, false, false, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0001, true, false, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0010, false, true, FloatOutBoyParkingBrakeMode::ALWAYS),
+        (0b0100, false, false, FloatOutBoyParkingBrakeMode::IDLE),
+        (0b1000, false, false, FloatOutBoyParkingBrakeMode::NEVER),
+        (0b1111, true, true, FloatOutBoyParkingBrakeMode::from(3)),
     ] {
         let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         let mut packet = OTHER_TUNE_PACKET.to_vec();

@@ -13,15 +13,17 @@ const CURRENT_FILTER_Q: f32 = 0.707;
 const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
 const MOTOR_DATA_EMA_CUTOFF: Frequency = Frequency::from_hertz(1.0);
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(in crate::package) struct MotorConfigSnapshot {
-    duty_max_with_margin: DutyCycleLimit,
-    motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
-    battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
-    mosfet_temperature_limit_start: TemperatureLimitStart,
-    motor_temperature_limit_start: TemperatureLimitStart,
-    battery_cell_count: Option<BatteryCellCount>,
-    motor_torque_constant: crate::motor_torque::MotorTorqueConstant,
+    pub(super) duty_max_with_margin: DutyCycleLimit,
+    pub(super) motor_current_limits: DirectionalCurrentLimits<MotorCurrentLimit>,
+    pub(super) battery_current_limits: DirectionalCurrentLimits<InputCurrent>,
+    pub(super) mosfet_temperature_limit_start: TemperatureLimitStart,
+    pub(super) motor_temperature_limit_start: TemperatureLimitStart,
+    pub(super) battery_cell_count: Option<BatteryCellCount>,
+    pub(super) motor_torque_constant: Option<crate::motor_torque::MotorTorqueConstant>,
+    #[cfg(test)]
+    pub(super) initialized: bool,
 }
 
 pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
@@ -51,21 +53,19 @@ pub(in crate::package) fn snapshot_motor_config(
         mosfet_temperature_limit_start: telemetry.mosfet_temperature_limit_start(),
         motor_temperature_limit_start: telemetry.motor_temperature_limit_start(),
         battery_cell_count: telemetry.battery_cell_count(),
-        motor_torque_constant: crate::motor_torque::motor_torque_constant_from_firmware_config(
-            settings.foc_motor_flux_linkage(),
-            settings.motor_pole_count().ok(),
+        motor_torque_constant: Some(
+            crate::motor_torque::motor_torque_constant_from_firmware_config(
+                settings.foc_motor_flux_linkage(),
+                settings.motor_pole_count().ok(),
+            ),
         ),
+        #[cfg(test)]
+        initialized: true,
     }
 }
 
 pub(super) fn apply_motor_config(state: &mut FloatOutBoyPackageState, config: MotorConfigSnapshot) {
-    state.duty_max_with_margin = config.duty_max_with_margin;
-    state.motor_current_limits = config.motor_current_limits;
-    state.battery_current_limits = config.battery_current_limits;
-    state.mosfet_temperature_limit_start = config.mosfet_temperature_limit_start;
-    state.motor_temperature_limit_start = config.motor_temperature_limit_start;
-    state.battery_cell_count = config.battery_cell_count;
-    state.motor_torque_constant = Some(config.motor_torque_constant);
+    state.motor_config = config;
 }
 
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
