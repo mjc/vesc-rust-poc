@@ -407,7 +407,7 @@ fn effectful_app_data_commands_use_the_real_phased_callback_context() {
 }
 
 #[test]
-fn tune_preparation_releases_the_control_state_lock() {
+fn tune_application_uses_one_state_phase() {
     let _state_lock = super::super::custom_config::lock_test_float_out_boy_config_state();
     let firmware = FirmwareTest::new();
     let packets = [
@@ -497,7 +497,7 @@ fn tune_preparation_releases_the_control_state_lock() {
             vescpkg_rs::test_support::invoke_stateful_app_data_handler_with_phase_count::<
                 FloatOutBoyAppData,
             >(packet),
-            Some(2)
+            Some(1)
         );
     }
     drop(installed);

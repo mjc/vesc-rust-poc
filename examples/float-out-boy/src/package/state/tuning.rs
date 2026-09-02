@@ -1,7 +1,4 @@
-use super::{
-    FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyPackageState,
-    float_out_boy_command_payload,
-};
+use super::{FloatOutBoyAppDataCommand, FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
 use crate::config::{
     FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyBalanceConfig as B, FloatOutBoyConfigEditor,
     FloatOutBoyConfigImage as C, FloatOutBoyFaultConfig as F, FloatOutBoyFilterConfig as H,
@@ -84,23 +81,6 @@ fn tune_angular_velocity(value: WireByte, offset: f32) -> AngularVelocity {
     value.scaled(1.0, offset, AngularVelocity::from_degrees_per_second)
 }
 
-fn update_active_config(
-    state: &mut FloatOutBoyPackageState,
-    reconfigure: bool,
-    update: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>) -> bool,
-) -> bool {
-    let mut config = state.serialized_config;
-    let updated = update(&mut config.editor());
-    if updated {
-        if reconfigure {
-            state.replace_active_config(&config);
-        } else {
-            state.serialized_config = config;
-        }
-    }
-    updated
-}
-
 use vescpkg_rs::set_custom_config_fields as write_fields;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,12 +158,6 @@ fn edit_primary_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: 
     updated && speeds_updated
 }
 
-fn apply_primary_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
-    update_active_config(state, false, |config| {
-        edit_primary_runtime_tune(config, payload)
-    })
-}
-
 fn edit_torque_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> bool {
     let Some([threshold, torque, torque_limits, torque_speeds]) = payload.get(12..16) else {
         return true;
@@ -207,12 +181,6 @@ fn edit_torque_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &
             B::TORQUE_TILT_FILTER_ON_SPEED_LIMIT_FIELD => torque_on,
             B::TORQUE_TILT_FILTER_OFF_SPEED_LIMIT_FIELD => torque_off.scaled(1.0, 3.0, AngularVelocity::from_degrees_per_second),
     )
-}
-
-fn apply_torque_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
-    update_active_config(state, false, |config| {
-        edit_torque_runtime_tune(config, payload)
-    })
 }
 
 fn edit_extended_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> bool {
@@ -248,12 +216,6 @@ fn edit_extended_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload:
     updated
 }
 
-fn apply_extended_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
-    update_active_config(state, false, |config| {
-        edit_extended_runtime_tune(config, payload)
-    })
-}
-
 fn edit_brake_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> bool {
     let Some(brake) = payload.get(16) else {
         return true;
@@ -263,39 +225,6 @@ fn edit_brake_runtime_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[
             B::KP_BRAKE_FIELD => tune_brake_gain(brake_low),
             B::KP2_BRAKE_FIELD => brake_high.divided(10.0, 0.0, PidScale::new),
     )
-}
-
-fn apply_brake_runtime_tune(state: &mut FloatOutBoyPackageState, payload: &[u8]) -> bool {
-    let updated = update_active_config(state, false, |config| {
-        edit_brake_runtime_tune(config, payload)
-    });
-    if updated {
-        state.alert_beeper(FloatOutBoyBeeperAlert::Long(1));
-    }
-    updated
-}
-
-pub(super) fn handle_runtime_tune_packet(
-    state: &mut FloatOutBoyPackageState,
-    now: &mut impl FnMut() -> TimestampTicks,
-    bytes: &[u8],
-) -> bool {
-    let Some(payload) =
-        float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RuntimeTune)
-    else {
-        return false;
-    };
-
-    let updated = apply_primary_runtime_tune(state, payload)
-        && apply_torque_runtime_tune(state, payload)
-        && apply_brake_runtime_tune(state, payload)
-        && apply_extended_runtime_tune(state, payload);
-    if !updated {
-        return false;
-    }
-    state.reconfigure_active_config();
-    state.refresh_idle_epoch(now());
-    true
 }
 
 fn edit_tilt_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> bool {
@@ -333,19 +262,6 @@ fn edit_tilt_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> b
             C::SPEED_PUSHBACK_THRESHOLD_FIELD,
             WireByte::new(*speed_pushback),
         );
-    }
-    updated
-}
-
-pub(super) fn handle_tilt_tune_packet(state: &mut FloatOutBoyPackageState, bytes: &[u8]) -> bool {
-    let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::TuneTilt)
-    else {
-        return false;
-    };
-
-    let updated = update_active_config(state, true, |config| edit_tilt_tune(config, payload));
-    if updated {
-        state.alert_beeper(FloatOutBoyBeeperAlert::Short(3));
     }
     updated
 }
@@ -434,23 +350,6 @@ fn edit_other_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> 
     updated
 }
 
-pub(super) fn handle_other_tune_packet(
-    state: &mut FloatOutBoyPackageState,
-    now: &mut impl FnMut() -> TimestampTicks,
-    bytes: &[u8],
-) -> bool {
-    let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::TuneOther)
-    else {
-        return false;
-    };
-    let updated = update_active_config(state, true, |config| edit_other_tune(config, payload));
-    if !updated {
-        return false;
-    }
-    state.refresh_idle_epoch(now());
-    true
-}
-
 fn edit_booster_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -> bool {
     let [
         booster,
@@ -477,18 +376,6 @@ fn edit_booster_tune(config: &mut FloatOutBoyConfigEditor<'_>, payload: &[u8]) -
             B::BRAKE_BOOSTER_RAMP_FIELD => tune_angle_from(brake_ramp, AngleDegrees::from_degrees(2.0)),
             B::BRAKE_BOOSTER_CURRENT_FIELD => tune_booster_current(brake_current),
     )
-}
-
-pub(super) fn handle_booster_packet(state: &mut FloatOutBoyPackageState, bytes: &[u8]) -> bool {
-    let Some(payload) = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Booster)
-    else {
-        return false;
-    };
-    let updated = update_active_config(state, true, |config| edit_booster_tune(config, payload));
-    if updated {
-        state.alert_beeper(FloatOutBoyBeeperAlert::Short(1));
-    }
-    updated
 }
 
 impl FloatOutBoyPackageState {

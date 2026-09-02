@@ -282,8 +282,7 @@ impl<S: FixedRecordStorage, const RECORD_SIZE: usize> DecimatedRecordRing<S, REC
             .checked_div(sample_count)
             .unwrap_or(0)
             .max(1);
-        let [decimation, ..] = value.to_le_bytes();
-        self.decimation = decimation;
+        self.decimation = u8::try_from(value).unwrap_or(u8::MAX);
     }
 
     /// Return the full-capacity recording duration in centiseconds.
@@ -704,5 +703,14 @@ mod tests {
         records.configure_sample_rate(SampleRate::from_hertz(24.0), None);
         assert_eq!(records.decimation(), 20);
         assert_eq!(records.recording_duration_centiseconds(), 100);
+    }
+
+    #[test]
+    fn decimation_factor_saturates_instead_of_wrapping() {
+        let mut records = DecimatedRecordRing::<[u8; 1], 1>::new([0; 1], 256);
+
+        records.recalculate_decimation(1);
+
+        assert_eq!(records.decimation(), u8::MAX);
     }
 }

@@ -1012,9 +1012,12 @@ impl FloatOutBoyPackageState {
         if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
             return handled;
         }
+        #[cfg(test)]
+        if let Some(handled) = self.handle_tune_packet_for_test(now, bytes) {
+            return handled;
+        }
         self.handle_control_packet(now, bytes)
             || self.handle_config_packet(now, bytes)
-            || self.handle_tuning_packet(now, bytes)
             || self.handle_query_packet(telemetry, now, reply, bytes)
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
     }
@@ -1120,6 +1123,35 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    #[cfg(test)]
+    fn handle_tune_packet_for_test(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> Option<bool> {
+        let [package_id, command_id, ..] = bytes else {
+            return None;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
+            return None;
+        }
+        let command = FloatOutBoyAppDataCommand::try_from(*command_id).ok()?;
+        if !matches!(
+            command,
+            FloatOutBoyAppDataCommand::RuntimeTune
+                | FloatOutBoyAppDataCommand::TuneTilt
+                | FloatOutBoyAppDataCommand::TuneOther
+                | FloatOutBoyAppDataCommand::Booster
+        ) {
+            return None;
+        }
+        let payload = float_out_boy_command_payload(bytes, command)?;
+        let mut config = *self.serialized_config.as_bytes();
+        let commit = Self::prepare_tune_config(&mut config, command, payload)?;
+        self.commit_prepared_tune(&config, commit, now());
+        Some(true)
+    }
+
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn handle_control_packet(
         &mut self,
@@ -1138,18 +1170,6 @@ impl FloatOutBoyPackageState {
         bytes: &[u8],
     ) -> bool {
         self.handle_config_command(bytes, now)
-    }
-
-    #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_tuning_packet(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> bool {
-        tuning::handle_runtime_tune_packet(self, now, bytes)
-            || tuning::handle_tilt_tune_packet(self, bytes)
-            || tuning::handle_other_tune_packet(self, now, bytes)
-            || tuning::handle_booster_packet(self, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

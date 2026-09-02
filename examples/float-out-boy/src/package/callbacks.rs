@@ -109,15 +109,16 @@ fn handle_phased_tune_packet(
     Some(
         reply
             .with_scratch::<{ crate::config::FLOAT_OUT_BOY_CONFIG_LEN }, _>(|config| {
-                context.with_state(|state| config.copy_from_slice(state.serialized_config()));
-                let Some(commit) =
-                    FloatOutBoyPackageState::prepare_tune_config(config, command, payload)
-                else {
-                    return false;
-                };
-                let applied_at = now();
-                context.with_state(|state| state.commit_prepared_tune(config, commit, applied_at));
-                true
+                context.with_state(|state| {
+                    config.copy_from_slice(state.serialized_config());
+                    let Some(commit) =
+                        FloatOutBoyPackageState::prepare_tune_config(config, command, payload)
+                    else {
+                        return false;
+                    };
+                    state.commit_prepared_tune(config, commit, now());
+                    true
+                })
             })
             .unwrap_or(false),
     )
