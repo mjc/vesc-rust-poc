@@ -278,7 +278,7 @@ fn unavailable_recorder_fails_closed_across_commands_flags_and_capability() {
         &request(FloatOutBoyAppDataCommand::DataRecordRequest, &[1, 1, 1]),
     );
     assert!(handled);
-    assert_eq!(recorder_response, [vec![101, 41, 0, 0b110, 1, 0, 3]]);
+    assert!(recorder_response.is_empty());
 
     let (_, realtime_response) = handle(
         &mut state,

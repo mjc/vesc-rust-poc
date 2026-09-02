@@ -244,8 +244,7 @@ impl FloatOutBoyPackageState {
         else {
             return false;
         };
-        let control = matches!(payload, [1, _, ..]);
-        if !self.data_recorder.has_capability() && !control {
+        if !self.data_recorder.has_capability() {
             return true;
         }
 
