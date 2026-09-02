@@ -58,7 +58,7 @@ fn app_data_callback_logs_exact_truncated_header_lengths_before_dispatch() {
         ),
         (
             [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID].as_slice(),
-            b"Received command data too short: 1 bytes.".as_slice(),
+            b"Received command data too short: 1 byte.".as_slice(),
         ),
         (
             [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID - 1, 0].as_slice(),
@@ -116,12 +116,11 @@ fn app_data_callback_dispatches_legacy_realtime_data_like_float_out_boy() {
     let telemetry = FirmwareTest::new();
     let imu = telemetry.imu();
     let payloads = sample_all_data_payloads();
-    let expected =
-        vesc_float_out_boy_protocol::encode_float_out_boy_get_realtime_data_response_with_remote(
-            &payloads,
-            FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
-            0.0,
-        );
+    let expected = crate::protocol::encode_float_out_boy_get_realtime_data_response_with_remote(
+        &payloads,
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+        0.0,
+    );
     let mut state = FloatOutBoyPackageState::new(payloads);
     let request = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
@@ -405,4 +404,102 @@ fn effectful_app_data_commands_use_the_real_phased_callback_context() {
     assert_real_lock_context();
     assert_real_handtest_restore_context();
     assert_real_flywheel_restore_context();
+}
+
+#[test]
+fn tune_application_uses_one_state_phase() {
+    let _state_lock = super::super::custom_config::lock_test_float_out_boy_config_state();
+    let firmware = FirmwareTest::new();
+    let packets = [
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::TuneDefaults.id(),
+        ][..],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RuntimeTune.id(),
+            0xA3,
+            0x21,
+            0xA3,
+            0x54,
+            0xB9,
+            0x20,
+            0x71,
+            0xD4,
+            0xA5,
+            0x43,
+            0x21,
+            0xFF,
+            0x86,
+            0xA5,
+            0x47,
+            0x63,
+            0x82,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::TuneTilt.id(),
+            1,
+            15,
+            85,
+            25,
+            30,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::TuneOther.id(),
+            0xFE,
+            25,
+            20,
+            15,
+            25,
+            7,
+            110,
+            30,
+            20,
+            25,
+            35,
+            40,
+            50,
+            8,
+        ],
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::Booster.id(),
+            0xA3,
+            0x04,
+            0x21,
+            0xF2,
+        ],
+    ];
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    let mut expected = state;
+    let mut sent = Vec::new();
+    for packet in packets {
+        assert!(handle_packet(
+            &mut expected,
+            TimestampTicks::from_ticks(0),
+            &mut sent,
+            firmware.telemetry(),
+            firmware.imu(),
+            AppDataPacket::from_bytes(packet),
+        ));
+    }
+    let installed =
+        super::super::custom_config::install_test_float_out_boy_runtime_state(&mut state);
+    assert!(installed.is_some());
+
+    for packet in packets {
+        assert_eq!(
+            vescpkg_rs::test_support::invoke_stateful_app_data_handler_with_phase_count::<
+                FloatOutBoyAppData,
+            >(packet),
+            Some(1)
+        );
+    }
+    drop(installed);
+    assert_eq!(state, expected);
 }

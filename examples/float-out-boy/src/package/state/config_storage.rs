@@ -7,6 +7,11 @@ use crate::domain::{
 };
 use vescpkg_rs::{FirmwareEffects, TimestampTicks};
 
+#[cfg(test)]
+std::thread_local! {
+    static CONFIG_RECONFIGURE_COUNT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -188,10 +193,22 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn reconfigure_active_config(&mut self) {
+    pub(super) fn reconfigure_active_config(&mut self) {
+        #[cfg(test)]
+        CONFIG_RECONFIGURE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
         self.refresh_balance_filter_config();
         self.refresh_led_config_runtime_state();
         self.refresh_config_runtime_state();
+    }
+
+    #[cfg(test)]
+    pub(super) fn reset_config_reconfigure_count_for_test() {
+        CONFIG_RECONFIGURE_COUNT.with(|count| count.set(0));
+    }
+
+    #[cfg(test)]
+    pub(super) fn config_reconfigure_count_for_test() -> u8 {
+        CONFIG_RECONFIGURE_COUNT.with(std::cell::Cell::get)
     }
 
     pub(in crate::package) fn apply_persisted_config(

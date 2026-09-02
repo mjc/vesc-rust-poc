@@ -252,28 +252,36 @@ fn auxiliary_tick_refreshes_only_motor_config_after_strict_half_second() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let initial_electrical_speed = state.all_data_payloads.base().motor().electrical_speed();
     state.initialize_aux_odometer(OdometerMeters::from_meters(0));
-    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+    let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(0),
         TimestampTicks::from_ticks(5_000),
         0.5,
         |_| {},
-        || true,
+    );
+    assert!(!backup_due);
+    state.refresh_aux_motor_config_runtime_state(
+        firmware.telemetry(),
+        TimestampTicks::from_ticks(5_000),
     );
     assert_eq!(
         state.motor_current_max,
         MotorCurrentLimit::new(Current::ZERO)
     );
 
-    let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
+    let backup_due = crate::package::threads::prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(0),
         TimestampTicks::from_ticks(5_001),
         0.501,
         |_| {},
-        || true,
+    );
+    assert!(!backup_due);
+    state.refresh_aux_motor_config_runtime_state(
+        firmware.telemetry(),
+        TimestampTicks::from_ticks(5_001),
     );
     assert_eq!(
         state.motor_current_max,

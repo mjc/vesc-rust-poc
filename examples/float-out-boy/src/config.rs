@@ -257,17 +257,11 @@ impl FloatOutBoyConfigImage {
     }
 
     pub(crate) fn reset_tune_defaults(&mut self) {
-        let mut bytes = *self.as_bytes();
-        for (index, (byte, default)) in bytes
-            .iter_mut()
-            .zip(FLOAT_OUT_BOY_DEFAULT_CONFIG.iter())
-            .enumerate()
-        {
-            if is_tune_default_byte(index) {
-                *byte = *default;
-            }
-        }
-        self.0 = CustomConfigImage::new(bytes);
+        reset_tune_defaults(self.0.as_mut_bytes());
+    }
+
+    pub(crate) fn copy_from_bytes(&mut self, bytes: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) {
+        self.0.as_mut_bytes().copy_from_slice(bytes);
     }
 
     pub(crate) fn led_configs(
@@ -443,6 +437,18 @@ fn decode_led_strip(cursor: &mut CustomConfigCursor<'_>) -> Option<FloatOutBoyLe
 
 pub(crate) struct FloatOutBoyConfigEditor<'a>(CustomConfigEditor<'a, FLOAT_OUT_BOY_CONFIG_LEN>);
 
+pub(crate) fn reset_tune_defaults(bytes: &mut [u8; FLOAT_OUT_BOY_CONFIG_LEN]) {
+    for (index, (byte, default)) in bytes
+        .iter_mut()
+        .zip(FLOAT_OUT_BOY_DEFAULT_CONFIG.iter())
+        .enumerate()
+    {
+        if is_tune_default_byte(index) {
+            *byte = *default;
+        }
+    }
+}
+
 impl<'a> core::ops::Deref for FloatOutBoyConfigEditor<'a> {
     type Target = CustomConfigEditor<'a, FLOAT_OUT_BOY_CONFIG_LEN>;
 
@@ -457,7 +463,11 @@ impl core::ops::DerefMut for FloatOutBoyConfigEditor<'_> {
     }
 }
 
-impl FloatOutBoyConfigEditor<'_> {
+impl<'a> FloatOutBoyConfigEditor<'a> {
+    pub(crate) fn from_bytes(bytes: &'a mut [u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> Self {
+        Self(CustomConfigEditor::from_bytes(bytes))
+    }
+
     pub(crate) fn clear_meta_is_default(&mut self) {
         // C map: `set_cfg` always clears `meta.is_default` after a write at
         // `third_party/float-out-boy/src/main.c:2375-2377`.

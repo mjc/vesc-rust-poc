@@ -1,4 +1,4 @@
-#![expect(missing_docs, reason = "compact FOB LED data construction API")]
+#![expect(missing_docs, reason = "compact Float Out Boy LED construction API")]
 
 #[cfg(any(test, feature = "test-support"))]
 use super::FloatOutBoyLedStatusUpdate;

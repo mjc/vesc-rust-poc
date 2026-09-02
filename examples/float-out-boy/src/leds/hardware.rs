@@ -1,4 +1,4 @@
-//! Float Out Boy hardware LED configuration.
+//! Hardware LED configuration owned by Float Out Boy.
 //!
 //! C map: defaults mirror the hardware LED settings in
 //! `third_party/float-out-boy/src/conf/settings.xml:3560-3863`. Float Out Boy treats the
@@ -6,7 +6,7 @@
 //! `third_party/float-out-boy/src/leds.c:795-830` and
 //! `third_party/float-out-boy/src/lcm.c:27-28`.
 
-use crate::{
+use super::{
     FloatOutBoyLedMode, FloatOutBoyLedPin, FloatOutBoyLedPinConfig, FloatOutBoyLedStripConfig,
 };
 

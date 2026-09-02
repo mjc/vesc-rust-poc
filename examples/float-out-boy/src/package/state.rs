@@ -81,6 +81,10 @@ use flywheel::FloatOutBoyFlywheelRuntime;
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
 #[cfg(test)]
 use internal_leds::FloatOutBoyInternalLedRuntime;
+#[cfg(test)]
+type InternalLedRuntime = FloatOutBoyInternalLedRuntime;
+#[cfg(target_arch = "arm")]
+type InternalLedRuntime = internal_leds::RuntimeAllocation;
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
@@ -160,6 +164,7 @@ impl Default for KonamiRuntime {
 }
 
 /// Float Out Boy package state.
+#[pin_init::pin_init]
 #[derive(Debug, Default)]
 #[cfg_attr(not(target_arch = "arm"), derive(Clone, Copy, PartialEq))]
 pub struct FloatOutBoyPackageState {
@@ -185,6 +190,7 @@ pub struct FloatOutBoyPackageState {
     frequency_trackers: frequency_tracker::FrequencyTrackers,
     reverse_stop: ReverseStop,
     motor_distance_meters: f32,
+    #[pin]
     motor_kinematics: MotorKinematicsTracker,
     motor_current_filter: vescpkg_rs::BiquadLowPass,
     motor_torque_constant: MotorTorqueConstant,
@@ -216,21 +222,87 @@ pub struct FloatOutBoyPackageState {
     mosfet_temperature_limit_start: TemperatureLimitStart,
     motor_temperature_limit_start: TemperatureLimitStart,
     battery_cell_count: Option<BatteryCellCount>,
-    #[cfg(test)]
     motor_config_initialized: bool,
     aux_odometer: OdometerMeters,
     aux_backup_failures: u32,
     aux_motor_config_refresh_ticks: WrappingTimer,
-    #[cfg(test)]
-    internal_leds: Option<FloatOutBoyInternalLedRuntime>,
-    #[cfg(target_arch = "arm")]
-    internal_leds: Option<internal_leds::RuntimeAllocation>,
+    internal_leds: Option<InternalLedRuntime>,
     internal_led_refresh_pending: bool,
     internal_led_confirmation_pending: Option<TimestampTicks>,
     firmware_version: Option<FirmwareVersion>,
 }
 
 impl FloatOutBoyPackageState {
+    #[expect(
+        clippy::default_trait_access,
+        reason = "the in-place initializer infers every field type without duplicating the state declaration"
+    )]
+    pub(crate) fn default_in_place() -> impl pin_init::Init<Self, core::convert::Infallible> {
+        pin_init::init_pin!(FloatOutBoyPackageState {
+            all_data_payloads: Default::default(),
+            serialized_config: Default::default(),
+            config_load_outcome: Default::default(),
+            startup_configured: Default::default(),
+            firmware_imu_migration: Default::default(),
+            data_recorder: Default::default(),
+            alert_tracker: Default::default(),
+            lcm: Default::default(),
+            led_runtime_overrides: Default::default(),
+            konami: Default::default(),
+            haptic_feedback: Default::default(),
+            beeper: Default::default(),
+            beeper_flags: Default::default(),
+            bms: Default::default(),
+            flywheel: Default::default(),
+            ride_flags: Default::default(),
+            motor_control: Default::default(),
+            balance_filter: Default::default(),
+            balance_loop: Default::default(),
+            frequency_trackers: Default::default(),
+            reverse_stop: Default::default(),
+            motor_distance_meters: Default::default(),
+            motor_kinematics: MotorKinematicsTracker::default_in_place(),
+            motor_current_filter: Default::default(),
+            motor_torque_constant: Default::default(),
+            remote_control: Default::default(),
+            runtime_board_setpoint: Default::default(),
+            ride_modifiers: Default::default(),
+            charging_ticks: Default::default(),
+            engage_ticks: Default::default(),
+            disengage_ticks: Default::default(),
+            idle_ticks: Default::default(),
+            nag_ticks: Default::default(),
+            idle_voltage: Default::default(),
+            fault_switch_ticks: Default::default(),
+            fault_switch_half_ticks: Default::default(),
+            fault_angle_pitch_ticks: Default::default(),
+            fault_angle_roll_ticks: Default::default(),
+            high_voltage_ticks: Default::default(),
+            wheelslip_ticks: Default::default(),
+            upside_down_fault_ticks: Default::default(),
+            upside_down_flags: Default::default(),
+            motor_duty_raw: Default::default(),
+            duty_max_with_margin: Default::default(),
+            motor_current_max: Default::default(),
+            motor_current_min: Default::default(),
+            battery_current_max: Default::default(),
+            battery_current_min: Default::default(),
+            mosfet_temperature: Default::default(),
+            motor_temperature: Default::default(),
+            mosfet_temperature_limit_start: Default::default(),
+            motor_temperature_limit_start: Default::default(),
+            battery_cell_count: Default::default(),
+            motor_config_initialized: Default::default(),
+            aux_odometer: Default::default(),
+            aux_backup_failures: Default::default(),
+            aux_motor_config_refresh_ticks: Default::default(),
+            internal_leds: Default::default(),
+            internal_led_refresh_pending: Default::default(),
+            internal_led_confirmation_pending: Default::default(),
+            firmware_version: Default::default(),
+        })
+    }
+
     fn realtime_live_values(&self) -> FloatOutBoyRealtimeLiveValues {
         FloatOutBoyRealtimeLiveValues::new(
             FloatOutBoyRealtimeControlPeriod::new(self.frequency_trackers.imu.elapsed()),
@@ -321,14 +393,12 @@ impl FloatOutBoyPackageState {
                     .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
-    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
-    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
-        self.aux_odometer = odometer;
-    }
-
-    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
-    pub(crate) fn record_aux_backup_failure(&mut self) {
-        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+    pub(crate) fn record_aux_backup_result(&mut self, odometer: OdometerMeters, stored: bool) {
+        if stored {
+            self.aux_odometer = odometer;
+        } else {
+            self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
+        }
     }
 
     pub(crate) fn refresh_aux_motor_config_runtime_state(
@@ -570,19 +640,29 @@ impl FloatOutBoyPackageState {
         self.frequency_trackers.main = frequency_tracker::FrequencyTracker::new(
             self.serialized_config.startup().sample_rate(),
             now,
+            frequency_tracker::TRACKING_POLICY,
         );
         self.frequency_trackers.imu = frequency_tracker::FrequencyTracker::new(
             frequency_tracker::imu_start_frequency(imu_frequency),
             now,
+            frequency_tracker::TRACKING_POLICY,
         );
         self.initialize_data_recorder_sample_rate(imu_frequency);
     }
 
     pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
-        if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
+        if let Some(frequency) =
+            self.frequency_trackers
+                .main
+                .check(running, now, frequency_tracker::TRACKING_POLICY)
+        {
             motor_runtime::reconfigure_filters(self, frequency);
         }
-        if let Some(frequency) = self.frequency_trackers.imu.check(running, now) {
+        if let Some(frequency) =
+            self.frequency_trackers
+                .imu
+                .check(running, now, frequency_tracker::TRACKING_POLICY)
+        {
             self.refresh_data_recorder_sample_rate(frequency);
         }
     }
@@ -932,9 +1012,12 @@ impl FloatOutBoyPackageState {
         if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
             return handled;
         }
+        #[cfg(test)]
+        if let Some(handled) = self.handle_tune_packet_for_test(now, bytes) {
+            return handled;
+        }
         self.handle_control_packet(now, bytes)
             || self.handle_config_packet(now, bytes)
-            || self.handle_tuning_packet(now, bytes)
             || self.handle_query_packet(telemetry, now, reply, bytes)
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
     }
@@ -1040,6 +1123,35 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    #[cfg(test)]
+    fn handle_tune_packet_for_test(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> Option<bool> {
+        let [package_id, command_id, ..] = bytes else {
+            return None;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
+            return None;
+        }
+        let command = FloatOutBoyAppDataCommand::try_from(*command_id).ok()?;
+        if !matches!(
+            command,
+            FloatOutBoyAppDataCommand::RuntimeTune
+                | FloatOutBoyAppDataCommand::TuneTilt
+                | FloatOutBoyAppDataCommand::TuneOther
+                | FloatOutBoyAppDataCommand::Booster
+        ) {
+            return None;
+        }
+        let payload = float_out_boy_command_payload(bytes, command)?;
+        let mut config = *self.serialized_config.as_bytes();
+        let commit = Self::prepare_tune_config(&mut config, command, payload)?;
+        self.commit_prepared_tune(&config, commit, now());
+        Some(true)
+    }
+
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn handle_control_packet(
         &mut self,
@@ -1058,18 +1170,6 @@ impl FloatOutBoyPackageState {
         bytes: &[u8],
     ) -> bool {
         self.handle_config_command(bytes, now)
-    }
-
-    #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_tuning_packet(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> bool {
-        tuning::handle_runtime_tune_packet(self, now, bytes)
-            || tuning::handle_tilt_tune_packet(self, bytes)
-            || tuning::handle_other_tune_packet(self, now, bytes)
-            || tuning::handle_booster_packet(self, bytes)
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]

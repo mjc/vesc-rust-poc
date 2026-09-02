@@ -1,5 +1,5 @@
 use super::super::state::FloatOutBoyPackageState;
-use super::tick_float_out_boy_aux_thread_with;
+use super::prepare_float_out_boy_aux_thread_tick;
 use crate::beeper::FloatOutBoyBeeperAlert;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
@@ -508,16 +508,16 @@ fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
 fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    state.record_aux_backup_failure();
+    state.record_aux_backup_result(OdometerMeters::from_meters(1_201), false);
 
     assert_eq!(state.aux_backup_failures(), 1);
     assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
-    state.record_aux_backup(OdometerMeters::from_meters(1_201));
+    state.record_aux_backup_result(OdometerMeters::from_meters(1_201), true);
     assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
 }
 
 #[test]
-fn aux_tick_stores_after_strict_distance_threshold() {
+fn aux_tick_reports_backup_due_without_running_the_firmware_effect() {
     let firmware = FirmwareTest::new().with_motor_current_limits(
         MotorCurrentLimit::new(Current::from_amps(42.0)),
         MotorCurrentLimit::new(Current::from_amps(17.0)),
@@ -527,23 +527,16 @@ fn aux_tick_stores_after_strict_distance_threshold() {
         FloatOutBoyMode::Normal,
     ));
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    let mut stores = 0;
-
-    let result = tick_float_out_boy_aux_thread_with(
+    let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(1_201),
         TimestampTicks::from_ticks(0),
         0.0,
         |_| {},
-        || {
-            stores += 1;
-            true
-        },
     );
 
-    assert_eq!(result, Some(true));
-    assert_eq!(stores, 1);
+    assert!(backup_due);
 }
 
 #[test]
@@ -580,7 +573,7 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
     let mut paints = 0;
     let mut painted = [0; 4];
 
-    let result = tick_float_out_boy_aux_thread_with(
+    let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(0),
@@ -594,10 +587,9 @@ fn aux_tick_renders_and_paints_one_internal_led_frame() {
                 .map(crate::leds::FloatOutBoyLedPixel::channels)
                 .unwrap_or_default();
         },
-        || true,
     );
 
-    assert_eq!(result, None);
+    assert!(!backup_due);
     assert_eq!(paints, 1);
     assert_eq!(painted, [0, 0, 0x1a, 0]);
 }
@@ -609,20 +601,19 @@ fn aux_tick_does_not_touch_backup_before_threshold() {
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
     let mut stores = 0;
 
-    let result = tick_float_out_boy_aux_thread_with(
+    let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(1_200),
         TimestampTicks::from_ticks(0),
         0.0,
         |_| {},
-        || {
-            stores += 1;
-            true
-        },
     );
+    if backup_due {
+        stores += 1;
+    }
 
-    assert_eq!(result, None);
+    assert!(!backup_due);
     assert_eq!(stores, 0);
 }
 
@@ -635,17 +626,17 @@ fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
     ));
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
 
-    let result = tick_float_out_boy_aux_thread_with(
+    let backup_due = prepare_float_out_boy_aux_thread_tick(
         &mut state,
         firmware.telemetry(),
         OdometerMeters::from_meters(1_201),
         TimestampTicks::from_ticks(0),
         0.0,
         |_| {},
-        || false,
     );
+    state.record_aux_backup_result(OdometerMeters::from_meters(1_201), false);
 
-    assert_eq!(result, Some(false));
+    assert!(backup_due);
     assert_eq!(state.aux_backup_failures(), 1);
     assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
 }

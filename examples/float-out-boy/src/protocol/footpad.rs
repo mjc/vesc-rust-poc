@@ -1,4 +1,4 @@
-//! Float Out Boy footpad protocol support types.
+//! Footpad protocol types owned by Float Out Boy.
 //!
 //! These types model the decoded footpad sensor state and sample values.
 //! Raw ADC interpretation stays at the footpad/runtime boundary.

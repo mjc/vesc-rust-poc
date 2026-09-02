@@ -5,7 +5,6 @@
 
 use super::state::FloatOutBoyPackageState;
 use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
-use core::fmt::Write;
 use vescpkg_rs::{Imu, MotorTelemetry};
 
 pub(crate) fn handle_float_out_boy_app_data_packet(
@@ -47,14 +46,34 @@ fn log_float_out_boy_command_header_error(
     error: FloatOutBoyCommandHeaderError,
 ) {
     let mut log = vescpkg_rs::FirmwareLog::<64>::new();
-    let _ = match error {
-        FloatOutBoyCommandHeaderError::Truncated(length) => {
-            write!(log, "Received command data too short: {length} bytes.")
+    match error {
+        FloatOutBoyCommandHeaderError::Truncated(0) => {
+            log.write_bytes(b"Received command data too short: 0 bytes.");
+        }
+        FloatOutBoyCommandHeaderError::Truncated(_) => {
+            log.write_bytes(b"Received command data too short: 1 byte.");
         }
         FloatOutBoyCommandHeaderError::InvalidPackageId(package_id) => {
-            write!(log, "Invalid Package ID: {package_id}")
+            log.write_bytes(b"Invalid Package ID: ");
+            let digit = |value| {
+                b"0123456789"
+                    .get(usize::from(value))
+                    .copied()
+                    .unwrap_or(b'0')
+            };
+            let digits = [
+                digit(package_id / 100),
+                digit(package_id / 10 % 10),
+                digit(package_id % 10),
+            ];
+            let first = match package_id {
+                0..=9 => 2,
+                10..=99 => 1,
+                _ => 0,
+            };
+            log.write_bytes(digits.get(first..).unwrap_or_default());
         }
-    };
+    }
     let _ = log.flush(effects);
 }
 
@@ -66,6 +85,43 @@ fn finish_restored_config(
         let migration = context.with_effects(super::state::migrate_legacy_firmware_imu_settings);
         context.with_state(|state| state.finish_configure_active(migration));
     }
+}
+
+#[cfg_attr(target_arch = "arm", inline(never))]
+fn handle_phased_tune_packet(
+    context: &mut vescpkg_rs::StatefulCallbackContext<'_, FloatOutBoyPackageState>,
+    reply: &mut vescpkg_rs::AppDataReply<'_>,
+    command: FloatOutBoyAppDataCommand,
+    payload: &[u8],
+    now: &mut impl FnMut() -> vescpkg_rs::TimestampTicks,
+) -> Option<bool> {
+    if !matches!(
+        command,
+        FloatOutBoyAppDataCommand::TuneDefaults
+            | FloatOutBoyAppDataCommand::RuntimeTune
+            | FloatOutBoyAppDataCommand::TuneTilt
+            | FloatOutBoyAppDataCommand::TuneOther
+            | FloatOutBoyAppDataCommand::Booster
+    ) {
+        return None;
+    }
+
+    Some(
+        reply
+            .with_scratch::<{ crate::config::FLOAT_OUT_BOY_CONFIG_LEN }, _>(|config| {
+                context.with_state(|state| {
+                    config.copy_from_slice(state.serialized_config());
+                    let Some(commit) =
+                        FloatOutBoyPackageState::prepare_tune_config(config, command, payload)
+                    else {
+                        return false;
+                    };
+                    state.commit_prepared_tune(config, commit, now());
+                    true
+                })
+            })
+            .unwrap_or(false),
+    )
 }
 
 #[cfg_attr(target_arch = "arm", inline(never))]
@@ -162,7 +218,6 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         // `third_party/float-out-boy/src/main.c:2143-2225`.
         let firmware = vescpkg_rs::Firmware::new();
         let mut now = || firmware.clock().now();
-        let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
         let bytes = packet.as_bytes();
         let (command, payload) = match float_out_boy_command(bytes) {
             Ok(Some(command)) => command,
@@ -179,6 +234,10 @@ impl vescpkg_rs::AppDataHandler for FloatOutBoyAppData {
         {
             return;
         }
+        if handle_phased_tune_packet(context, reply, command, payload, &mut now).is_some() {
+            return;
+        }
+        let mut write_reply = |bytes: &[u8]| reply.write(bytes).is_ok();
         let _ = context.with_state(|state| {
             handle_float_out_boy_app_data_packet(
                 state,

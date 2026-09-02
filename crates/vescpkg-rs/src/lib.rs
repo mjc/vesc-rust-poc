@@ -116,6 +116,7 @@ mod pwm;
 #[cfg(feature = "math")]
 pub use math::{asin, atan2, cos, floor, pow, remainder, round, sin, sqrt, tan};
 mod runtime;
+mod sample_rate_tracker;
 /// Explicitly unsafe STM32 pad/port access, separate from leased abstract GPIO.
 pub mod stm32;
 mod sync;
@@ -234,7 +235,7 @@ pub use capabilities::{
     FirmwareCapabilities, FirmwareFloatSetting, FirmwareIntSetting, FirmwareSettings, SettingsError,
 };
 pub use data_recorder::{
-    FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
+    DecimatedRecordRing, FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
     FirmwareDataRecorderDescriptorError, FirmwareDataRecorderVersion, FixedRecordRing,
     FixedRecordStorage, RingCursor,
 };
@@ -315,6 +316,7 @@ pub use plot::{Plot, PlotError};
 pub use runtime::{
     PackageRuntimeState, PackageStateAccess, PackageStateStore, PackageStopDisposition,
 };
+pub use sample_rate_tracker::{SampleRateTracker, SampleRateTrackingPolicy};
 pub use sync::{FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, SemaphoreWaitOutcome};
 pub use terminal::{Terminal, TerminalArgs, TerminalError, TerminalHandler, TerminalRegistration};
 pub use thread::{

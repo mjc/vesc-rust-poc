@@ -1,8 +1,8 @@
-use super::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
-use crate::{
+use super::super::{
     FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
     FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
 };
+use super::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode};
 
 #[test]
 fn float_out_boy_led_mode_matches_upstream_flag_ids() {
