@@ -67,8 +67,18 @@ pub(crate) const FLOAT_OUT_BOY_CONFIG_LEN: usize = FLOAT_OUT_BOY_DEFAULT_CONFIG.
 pub(crate) const FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE: SampleRate = SampleRate::from_hertz(500.0);
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_LIGHTS_OFF_WHEN_LIFTED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[184] != 0;
+
+const fn default_hardware_led_mode() -> FloatOutBoyLedMode {
+    match FLOAT_OUT_BOY_DEFAULT_CONFIG[232] {
+        1 => FloatOutBoyLedMode::Internal,
+        2 => FloatOutBoyLedMode::External,
+        3 => FloatOutBoyLedMode::Both,
+        _ => FloatOutBoyLedMode::Off,
+    }
+}
+
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE: FloatOutBoyLedMode =
-    FloatOutBoyLedMode::Off;
+    default_hardware_led_mode();
 pub(crate) const FLOAT_OUT_BOY_DEFAULT_BEEPER_ENABLED: bool =
     FLOAT_OUT_BOY_DEFAULT_CONFIG[248] != 0;
 

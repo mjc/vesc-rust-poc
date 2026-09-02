@@ -135,6 +135,51 @@ fn running_config_save_defers_without_eeprom_writes() {
 }
 
 #[test]
+fn eeprom_read_and_write_phases_are_mutually_exclusive() {
+    let now = TimestampTicks::from_ticks(0);
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Disabled,
+        FloatOutBoyMode::Normal,
+    ));
+
+    assert!(state.begin_config_eeprom_read());
+    assert!(state.begin_active_config_persistence(now).is_none());
+    state.finish_config_eeprom_read();
+
+    let config = state
+        .begin_active_config_persistence(now)
+        .expect("a stopped state can begin a write");
+    assert!(!state.begin_config_eeprom_read());
+    state.finish_config_persistence(&config, true, now);
+
+    assert!(state.begin_config_eeprom_read());
+    state.finish_config_eeprom_read();
+}
+
+#[test]
+fn config_restore_is_skipped_while_an_eeprom_write_is_in_progress() {
+    let now = TimestampTicks::from_ticks(0);
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Disabled,
+        FloatOutBoyMode::Normal,
+    ));
+    let config = state
+        .begin_active_config_persistence(now)
+        .expect("a stopped state can begin a write");
+    let active = state.active_config_image();
+
+    assert!(handle_config_command(
+        &FirmwareTest::new(),
+        &mut state,
+        FloatOutBoyAppDataCommand::ConfigRestore,
+        &[],
+    ));
+    assert_eq!(state.active_config_image(), active);
+
+    state.finish_config_persistence(&config, true, now);
+}
+
+#[test]
 fn failed_deferred_config_waits_for_another_ride_before_retrying() {
     let firmware = FirmwareTest::new();
     let one_second = u32::try_from(SYSTEM_TICK_RATE_HZ).expect("system tick rate fits u32");

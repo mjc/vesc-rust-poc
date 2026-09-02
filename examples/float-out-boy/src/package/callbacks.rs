@@ -151,9 +151,16 @@ fn handle_effectful_float_out_boy_packet(
             Some(true)
         }
         FloatOutBoyAppDataCommand::ConfigRestore => {
+            if !context.with_state(super::state::FloatOutBoyPackageState::begin_config_eeprom_read)
+            {
+                return Some(true);
+            }
             let loaded = context.with_effects(super::state::load_persisted_config);
             let restored_at = now();
-            context.with_state(|state| state.begin_restore_persisted_config(&loaded, restored_at));
+            context.with_state(|state| {
+                state.begin_restore_persisted_config(&loaded, restored_at);
+                state.finish_config_eeprom_read();
+            });
             finish_restored_config(context, true);
             Some(true)
         }
@@ -161,12 +168,16 @@ fn handle_effectful_float_out_boy_packet(
             let Some(disabled) = payload.first() else {
                 return Some(false);
             };
-            if !context.with_state(|state| state.is_running()) {
+            let can_read =
+                context.with_state(|state| !state.is_running() && state.begin_config_eeprom_read());
+            if can_read {
                 let loaded = context.with_effects(super::state::load_persisted_config);
                 let restored_at = now();
                 let config = context.with_state(|state| {
                     state.apply_lock_from_persisted(&loaded, *disabled != 0, restored_at)
                 });
+                context
+                    .with_state(super::state::FloatOutBoyPackageState::finish_config_eeprom_read);
                 if let Some(config) = config {
                     let stored = context.with_effects(|effects| {
                         super::state::store_persisted_config(effects, &config)
@@ -191,6 +202,8 @@ fn handle_effectful_float_out_boy_packet(
                 let restored_at = now();
                 let committed =
                     context.with_state(|state| state.commit_handtest_restore(&loaded, restored_at));
+                context
+                    .with_state(super::state::FloatOutBoyPackageState::finish_config_eeprom_read);
                 finish_restored_config(context, committed);
             }
             Some(true)
@@ -204,6 +217,8 @@ fn handle_effectful_float_out_boy_packet(
                 let loaded = context.with_effects(super::state::load_persisted_config);
                 let restored_at = now();
                 context.with_state(|state| state.commit_flywheel_restore(&loaded, restored_at));
+                context
+                    .with_state(super::state::FloatOutBoyPackageState::finish_config_eeprom_read);
                 finish_restored_config(context, true);
             }
             Some(true)

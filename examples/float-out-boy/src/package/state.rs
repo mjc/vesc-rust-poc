@@ -72,7 +72,7 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
-use config_storage::DeferredConfigPersistence;
+use config_storage::{ConfigEepromReadState, DeferredConfigPersistence};
 pub(in crate::package) use config_storage::{
     FirmwareImuMigration, FloatOutBoyConfigLoadOutcome, migrate_legacy_firmware_imu_settings,
     store_persisted_config,
@@ -173,6 +173,7 @@ pub struct FloatOutBoyPackageState {
     serialized_config: FloatOutBoyConfigImage,
     config_load_outcome: FloatOutBoyConfigLoadOutcome,
     deferred_config_persistence: DeferredConfigPersistence,
+    config_eeprom_read_state: ConfigEepromReadState,
     startup_configured: bool,
     firmware_imu_migration: FirmwareImuMigration,
     data_recorder: DataRecorderState,
@@ -245,6 +246,7 @@ impl FloatOutBoyPackageState {
             serialized_config: Default::default(),
             config_load_outcome: Default::default(),
             deferred_config_persistence: Default::default(),
+            config_eeprom_read_state: Default::default(),
             startup_configured: Default::default(),
             firmware_imu_migration: Default::default(),
             data_recorder: Default::default(),
@@ -1041,8 +1043,12 @@ impl FloatOutBoyPackageState {
                 Some(true)
             }
             FloatOutBoyAppDataCommand::ConfigRestore => {
+                if !self.begin_config_eeprom_read() {
+                    return Some(true);
+                }
                 let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
                 self.begin_restore_persisted_config(&loaded, now());
+                self.finish_config_eeprom_read();
                 let migration = vescpkg_rs::test_support::with_firmware_effects(
                     migrate_legacy_firmware_imu_settings,
                 );
@@ -1053,12 +1059,13 @@ impl FloatOutBoyPackageState {
                 let Some(disabled) = payload.first() else {
                     return Some(false);
                 };
-                if !self.is_running() {
+                if !self.is_running() && self.begin_config_eeprom_read() {
                     let loaded =
                         vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
                     if let Some(config) =
                         self.apply_lock_from_persisted(&loaded, *disabled != 0, now())
                     {
+                        self.finish_config_eeprom_read();
                         let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
                             store_persisted_config(effects, &config)
                         });
@@ -1069,6 +1076,8 @@ impl FloatOutBoyPackageState {
                             migrate_legacy_firmware_imu_settings,
                         );
                         self.finish_configure_active(migration);
+                    } else {
+                        self.finish_config_eeprom_read();
                     }
                 }
                 Some(true)
@@ -1103,6 +1112,7 @@ impl FloatOutBoyPackageState {
                         &loaded,
                         vescpkg_rs::FirmwareClock::current_timestamp(),
                     );
+                    self.finish_config_eeprom_read();
                     let migration = vescpkg_rs::test_support::with_firmware_effects(
                         migrate_legacy_firmware_imu_settings,
                     );

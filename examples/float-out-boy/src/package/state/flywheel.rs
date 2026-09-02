@@ -164,7 +164,15 @@ impl FloatOutBoyFlywheelRequest {
 
 impl FloatOutBoyPackageState {
     pub(in crate::package) fn prepare_flywheel_command(&mut self, payload: &[u8]) -> Option<bool> {
-        FloatOutBoyFlywheelRequest::from_payload(payload).map(|request| request.apply_to(self))
+        let request = FloatOutBoyFlywheelRequest::from_payload(payload)?;
+        if self.config_eeprom_operation_in_progress() {
+            return None;
+        }
+        let restore = request.apply_to(self);
+        if restore {
+            debug_assert!(self.begin_config_eeprom_read());
+        }
+        Some(restore)
     }
 
     #[cfg(test)]
@@ -182,6 +190,7 @@ impl FloatOutBoyPackageState {
             let loaded =
                 vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
             self.commit_flywheel_restore(&loaded, vescpkg_rs::FirmwareClock::current_timestamp());
+            self.finish_config_eeprom_read();
             let migration = vescpkg_rs::test_support::with_firmware_effects(
                 super::migrate_legacy_firmware_imu_settings,
             );

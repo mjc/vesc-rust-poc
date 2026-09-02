@@ -18,6 +18,10 @@ fn decodes_pinned_refloat_cutoff_default_led_config() {
         .expect("generated default LED fields are valid");
 
     assert_eq!(hardware.mode(), FloatOutBoyLedMode::Off);
+    assert_eq!(
+        super::FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE,
+        hardware.mode()
+    );
     assert_eq!(hardware.pin(), FloatOutBoyLedPin::B7);
     assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::PullupTo5v);
     assert_eq!(

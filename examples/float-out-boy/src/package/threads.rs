@@ -209,6 +209,7 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
         let loaded =
             vescpkg_rs::test_support::with_firmware_effects(super::state::load_persisted_config);
         state.commit_flywheel_restore(&loaded, system_time_ticks);
+        state.finish_config_eeprom_read();
         let migration = vescpkg_rs::test_support::with_firmware_effects(
             super::state::migrate_legacy_firmware_imu_settings,
         );
@@ -379,7 +380,10 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             {
                 let loaded = ctx.with_effects(super::state::load_persisted_config);
                 let now = ctx.firmware().clock().now();
-                let _ = ctx.with_state_mut(|state| state.commit_flywheel_restore(&loaded, now));
+                let _ = ctx.with_state_mut(|state| {
+                    state.commit_flywheel_restore(&loaded, now);
+                    state.finish_config_eeprom_read();
+                });
                 let migration =
                     ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
                 let _ = ctx.with_state_mut(|state| state.finish_configure_active(migration));

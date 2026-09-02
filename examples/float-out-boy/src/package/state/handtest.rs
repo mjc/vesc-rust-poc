@@ -85,7 +85,15 @@ impl FloatOutBoyPackageState {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Float Out Boy C dispatches it at `third_party/float-out-boy/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/float-out-boy/src/main.c:1421-1430`.
-        FloatOutBoyHandtestRequest::from_payload(payload).map(|request| request.apply_to(self))
+        let request = FloatOutBoyHandtestRequest::from_payload(payload)?;
+        if self.config_eeprom_operation_in_progress() {
+            return None;
+        }
+        let restore = request.apply_to(self);
+        if restore {
+            debug_assert!(self.begin_config_eeprom_read());
+        }
+        Some(restore)
     }
 
     #[cfg(test)]
@@ -104,10 +112,13 @@ impl FloatOutBoyPackageState {
                 vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
             let now = vescpkg_rs::FirmwareClock::current_timestamp();
             if self.commit_handtest_restore(&loaded, now) {
+                self.finish_config_eeprom_read();
                 let migration = vescpkg_rs::test_support::with_firmware_effects(
                     super::migrate_legacy_firmware_imu_settings,
                 );
                 self.finish_configure_active(migration);
+            } else {
+                self.finish_config_eeprom_read();
             }
         }
         true

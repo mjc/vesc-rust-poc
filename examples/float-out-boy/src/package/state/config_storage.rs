@@ -22,6 +22,13 @@ pub(super) enum DeferredConfigPersistence {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConfigEepromReadState {
+    #[default]
+    Idle,
+    Reading,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
     #[default]
     NotAttempted,
@@ -200,7 +207,7 @@ impl FloatOutBoyPackageState {
     }
 
     fn queue_config_persistence(&mut self, config: &FloatOutBoyConfigImage) {
-        // ponytail: one owned snapshot is enough; each later AppUI apply replaces it.
+        // Keep one queued snapshot; each later AppUI apply replaces it.
         self.deferred_config_persistence = match self.deferred_config_persistence {
             DeferredConfigPersistence::Writing(_) => {
                 DeferredConfigPersistence::Writing(Some(*config))
@@ -215,6 +222,7 @@ impl FloatOutBoyPackageState {
     ) -> Option<FloatOutBoyConfigImage> {
         let config = self.active_config_image();
         if self.config_can_persist_now(now)
+            && matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
             && !matches!(
                 self.deferred_config_persistence,
                 DeferredConfigPersistence::Writing(_)
@@ -232,7 +240,9 @@ impl FloatOutBoyPackageState {
         &mut self,
         now: TimestampTicks,
     ) -> Option<FloatOutBoyConfigImage> {
-        if !self.config_can_persist_now(now) {
+        if !self.config_can_persist_now(now)
+            || !matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
+        {
             return None;
         }
         let DeferredConfigPersistence::Pending(config) = self.deferred_config_persistence else {
@@ -266,6 +276,23 @@ impl FloatOutBoyPackageState {
             self.deferred_config_persistence,
             DeferredConfigPersistence::Writing(_)
         )
+    }
+
+    pub(super) const fn config_eeprom_operation_in_progress(&self) -> bool {
+        !matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
+            || self.config_persistence_blocks_engagement()
+    }
+
+    pub(in crate::package) fn begin_config_eeprom_read(&mut self) -> bool {
+        if self.config_eeprom_operation_in_progress() {
+            return false;
+        }
+        self.config_eeprom_read_state = ConfigEepromReadState::Reading;
+        true
+    }
+
+    pub(in crate::package) fn finish_config_eeprom_read(&mut self) {
+        self.config_eeprom_read_state = ConfigEepromReadState::Idle;
     }
 
     pub(super) fn retry_failed_config_persistence_after_ride(&mut self) {
