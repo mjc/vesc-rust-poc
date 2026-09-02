@@ -210,6 +210,7 @@ static BACKUP_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static NVM_AVAILABLE: AtomicBool = AtomicBool::new(true);
 static TIMEOUT_OCCURRED: AtomicBool = AtomicBool::new(true);
 static DISTANCE_ABS: AtomicU32 = AtomicU32::new(0);
+static SIGNED_DISTANCE: AtomicU32 = AtomicU32::new(0);
 static TACHOMETER_VALUE: AtomicI32 = AtomicI32::new(1234);
 static TACHOMETER_ABS_VALUE: AtomicI32 = AtomicI32::new(5678);
 static SELECTED_MOTOR: AtomicI32 = AtomicI32::new(1);
@@ -468,6 +469,7 @@ fn reset_motor_state() {
     NVM_AVAILABLE.store(true, Ordering::Relaxed);
     TIMEOUT_OCCURRED.store(true, Ordering::Relaxed);
     DISTANCE_ABS.store(0.0_f32.to_bits(), Ordering::Relaxed);
+    SIGNED_DISTANCE.store(0.0_f32.to_bits(), Ordering::Relaxed);
     TACHOMETER_VALUE.store(1234, Ordering::Relaxed);
     TACHOMETER_ABS_VALUE.store(5678, Ordering::Relaxed);
     SELECTED_MOTOR.store(1, Ordering::Relaxed);
@@ -1282,6 +1284,10 @@ pub(crate) fn set_distance_abs(distance: TripDistance) {
     store(&DISTANCE_ABS, distance.distance().as_meters());
 }
 
+pub(crate) fn set_signed_distance(distance: crate::SignedTripDistance) {
+    store(&SIGNED_DISTANCE, distance.distance().as_meters());
+}
+
 pub(crate) fn set_temperatures(mosfet: MosfetTemperature, motor: MotorTemperature) {
     store(
         &MOSFET_TEMPERATURE,
@@ -2086,7 +2092,7 @@ pub unsafe fn mc_get_distance_abs() -> f32 {
 }
 
 pub unsafe fn mc_get_distance() -> f32 {
-    -3.5
+    load(&SIGNED_DISTANCE)
 }
 
 pub unsafe fn mc_get_pid_pos_set() -> f32 {

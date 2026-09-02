@@ -1,7 +1,8 @@
 use super::state::FloatOutBoyPackageState;
 use crate::balance::BalanceFilter;
-use crate::config::{FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
+use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
 use crate::domain::*;
+use crate::ema::EmaAlpha;
 use vescpkg_rs::prelude::*;
 
 pub(crate) fn assert_motor_current_near(actual: MotorCurrent, expected: MotorCurrent) {
@@ -17,9 +18,8 @@ pub(crate) fn refloat_main_filtered_balance_current(
     sample_rate: SampleRate,
 ) -> MotorCurrent {
     const CUTOFF: Frequency = Frequency::from_hertz(25.0);
-    let omega = (2.0 * core::f32::consts::PI * CUTOFF.as_hertz() / sample_rate.as_hertz()).min(0.5);
-    let alpha = Ratio::clamped(omega - 0.5 * omega * omega);
-    previous + (requested - previous) * alpha.as_ratio()
+    let alpha = EmaAlpha::from_sample_rate(CUTOFF, sample_rate);
+    previous + (requested - previous) * alpha.factor()
 }
 
 static FLOAT_OUT_BOY_RUNTIME_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -135,7 +135,7 @@ pub(super) fn balance_filter_with_pitch(pitch: AngleRadians) -> BalanceFilter {
     ))
 }
 
-pub(super) fn default_float_out_boy_config_bytes() -> [u8; 276] {
+pub(super) fn default_float_out_boy_config_bytes() -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     *include_bytes!("../../conf/default_config.dat")
 }
 
@@ -157,7 +157,7 @@ pub(super) trait FloatOutBoyConfigTestBytes {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>));
 }
 
-impl FloatOutBoyConfigTestBytes for [u8; 276] {
+impl FloatOutBoyConfigTestBytes for [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>)) {
         let mut config =
             FloatOutBoyConfigImage::from_serialized(self).expect("valid Float Out Boy config");

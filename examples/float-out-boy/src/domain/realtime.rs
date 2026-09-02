@@ -72,8 +72,8 @@ realtime_data_items! {
         ImuPitch => "imu.pitch",
         ImuBalancePitch => "imu.balance_pitch",
         ImuRoll => "imu.roll",
-        FootpadAdc1 => "footpad.adc1",
-        FootpadAdc2 => "footpad.adc2",
+        FootpadAdcLeft => "footpad.adc_left",
+        FootpadAdcRight => "footpad.adc_right",
         RemoteInput => "remote.input",
     }
     runtime {

@@ -23,7 +23,7 @@ impl FloatOutBoyMainThreadTick {
 }
 
 #[inline]
-pub(super) fn tick_float_out_boy_main_thread_with(
+pub(crate) fn tick_float_out_boy_main_thread_with(
     state: &mut FloatOutBoyPackageState,
     telemetry: &impl MotorTelemetry,
     imu: &impl Imu,
@@ -32,14 +32,17 @@ pub(super) fn tick_float_out_boy_main_thread_with(
     footpad_adc2: AdcVoltage,
     system_time_ticks: TimestampTicks,
 ) -> FloatOutBoyMainThreadTick {
+    let elapsed = VescSeconds::from_seconds(
+        f32::from(u16::try_from(state.configured_loop_time_us()).unwrap_or(u16::MAX)) / 1_000_000.0,
+    );
     let prepared = prepare_float_out_boy_main_thread_tick(
         state,
         telemetry,
         imu,
         motor,
-        footpad_adc1,
-        footpad_adc2,
+        (footpad_adc1, footpad_adc2),
         system_time_ticks,
+        elapsed,
     );
     if prepared.restore_flywheel_config {
         let loaded = vescpkg_rs::test_support::with_firmware_effects(

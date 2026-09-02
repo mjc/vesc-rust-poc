@@ -14,9 +14,17 @@ use vescpkg_rs::PackageStart;
 fn allocate_float_out_boy_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    start.install_runtime_state(FloatOutBoyPackageState::default())?;
+    start.install_default_runtime_state::<FloatOutBoyPackageState>()?;
     #[cfg(target_arch = "arm")]
     {
+        let history_allocated = start
+            .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
+                state.allocate_motor_kinematics_history()
+            })
+            .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)?;
+        if !history_allocated {
+            return Err(vescpkg_rs::PackageStartError::AllocationFailed);
+        }
         let buffer = start.take_data_recorder_buffer();
         start
             .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {

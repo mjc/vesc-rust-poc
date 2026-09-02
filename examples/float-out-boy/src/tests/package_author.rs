@@ -352,8 +352,8 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "imu.pitch",
             "imu.balance_pitch",
             "imu.roll",
-            "footpad.adc1",
-            "footpad.adc2",
+            "footpad.adc_left",
+            "footpad.adc_right",
             "remote.input",
         ]
     );

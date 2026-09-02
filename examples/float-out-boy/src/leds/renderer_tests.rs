@@ -80,6 +80,8 @@ fn ride_only(ride: super::FloatOutBoyLedUpdate) -> super::FloatOutBoyLedFrameUpd
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 0.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: true,
         },
     )
@@ -768,6 +770,19 @@ fn footpad_and_status_progress_pixels_match_refloat() {
         ]
     );
 
+    let mut low_battery = super::FloatOutBoyLedStripFrame::new(config);
+    low_battery.render_battery_status(0.1, false, 0.0, overlay);
+    assert_eq!(
+        strip_channels(&low_battery),
+        [
+            [0x26, 0x0c, 0x08, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+        ]
+    );
+
     let mut duty_reversed = super::FloatOutBoyLedStripFrame::new(config);
     duty_reversed.render_status_progress(
         0.8,
@@ -786,6 +801,37 @@ fn footpad_and_status_progress_pixels_match_refloat() {
             [0xff, 0xb0, 0x30, 0],
         ]
     );
+}
+
+#[test]
+fn current_saturation_progress_pixels_match_refloat() {
+    let config = super::FloatOutBoyLedStripConfig::new(
+        super::FloatOutBoyLedStripOrder::First,
+        5,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let overlay = super::FloatOutBoyLedOverlay {
+        strip_brightness: Ratio::from_ratio_const(1.0),
+        on_off_fade: Ratio::from_ratio_const(1.0),
+        blend: Ratio::from_ratio_const(1.0),
+    };
+
+    for (kind, value, expected) in [
+        (
+            super::FloatOutBoyStatusProgress::MotorCurrent,
+            0.4,
+            [0xff, 0x50, 0x90, 0],
+        ),
+        (
+            super::FloatOutBoyStatusProgress::BatteryCurrent,
+            0.2,
+            [0, 0xff, 0x80, 0],
+        ),
+    ] {
+        let mut frame = super::FloatOutBoyLedStripFrame::new(config);
+        frame.render_status_progress(value, kind, Ratio::from_ratio_const(0.0), false, overlay);
+        assert_eq!(strip_channels::<1>(&frame)[0], expected);
+    }
 }
 
 #[test]
@@ -986,6 +1032,69 @@ fn front_rear_renderer_composes_headlight_and_direction_transitions() {
 
 #[test]
 fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
+    let (hardware, config) = composed_status_fixture();
+    let input = composed_status_input;
+    let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+    for tick in 1..=10 {
+        renderer.update(
+            config,
+            input(crate::FloatOutBoyFootpadState::None, 0.0, 0.0, 0.0),
+            f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+        );
+    }
+    assert_eq!(
+        strip_channels(renderer.status()),
+        [
+            [0x90, 0x90, 0x90, 0],
+            [0x90, 0x90, 0x90, 0],
+            [0x19, 0x19, 0x19, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+        ]
+    );
+
+    for tick in 11..=17 {
+        renderer.update(
+            config,
+            input(crate::FloatOutBoyFootpadState::None, 0.9, 0.0, 0.0),
+            f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+        );
+    }
+    assert_eq!(
+        strip_channels(renderer.status()),
+        [
+            [0xff, 0xb0, 0x30, 0],
+            [0xff, 0xb0, 0x30, 0],
+            [0xff, 0xb0, 0x30, 0],
+            [0xff, 0x38, 0x28, 0],
+            [0xff, 0x38, 0x28, 0],
+        ]
+    );
+
+    renderer.start_confirmation(17.0 / 30.0);
+    renderer.update(
+        config,
+        input(crate::FloatOutBoyFootpadState::Both, 0.0, 0.0, 0.0),
+        17.0 / 30.0 + 0.4,
+    );
+    assert_eq!(
+        strip_channels(renderer.status()),
+        [
+            [0, 0, 0, 0],
+            [0x4e, 0x1f, 0x7d, 0],
+            [0xa0, 0x40, 0xff, 0],
+            [0x4e, 0x1f, 0x7d, 0],
+            [0, 0, 0, 0],
+        ]
+    );
+
+    assert_current_saturation_layers(hardware, config);
+}
+
+fn composed_status_fixture() -> (
+    crate::lcm::FloatOutBoyHardwareLedsConfig,
+    super::FloatOutBoyLedsConfig,
+) {
     let config = super::FloatOutBoyLedsConfig::new(
         solid_bar(FloatOutBoyLedColor::WhiteRgb),
         solid_bar(FloatOutBoyLedColor::Red),
@@ -1009,74 +1118,73 @@ fn composed_status_frame_layers_battery_duty_footpads_and_confirmation() {
     let hardware =
         crate::lcm::FloatOutBoyHardwareLedsConfig::new(crate::lcm::FloatOutBoyLedMode::Internal)
             .with_status_strip(strip);
-    let input = |footpad, duty| {
-        super::FloatOutBoyLedFrameUpdate::new(
-            super::FloatOutBoyLedUpdate {
-                run_state: crate::FloatOutBoyRunState::Running,
-                mode: crate::FloatOutBoyMode::Normal,
-                darkride: false,
-                footpad,
-                pitch_degrees: 0.0,
-                distance: 0.0,
-            },
-            super::FloatOutBoyLedStatusUpdate {
-                battery_level: 0.45,
-                duty_cycle: duty,
-                moving: true,
-            },
-        )
-    };
-    let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+    (hardware, config)
+}
+
+fn composed_status_input(
+    footpad: crate::FloatOutBoyFootpadState,
+    duty_cycle: f32,
+    motor_current_saturation: f32,
+    battery_current_saturation: f32,
+) -> super::FloatOutBoyLedFrameUpdate {
+    super::FloatOutBoyLedFrameUpdate::new(
+        super::FloatOutBoyLedUpdate {
+            run_state: crate::FloatOutBoyRunState::Running,
+            mode: crate::FloatOutBoyMode::Normal,
+            darkride: false,
+            footpad,
+            pitch_degrees: 0.0,
+            distance: 0.0,
+        },
+        super::FloatOutBoyLedStatusUpdate {
+            battery_level: 0.45,
+            duty_cycle,
+            motor_current_saturation,
+            battery_current_saturation,
+            moving: true,
+        },
+    )
+}
+
+fn assert_current_saturation_layers(
+    hardware: crate::lcm::FloatOutBoyHardwareLedsConfig,
+    config: super::FloatOutBoyLedsConfig,
+) {
+    let mut motor_current = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
     for tick in 1..=10 {
-        renderer.update(
+        motor_current.update(
             config,
-            input(crate::FloatOutBoyFootpadState::None, 0.0),
-            f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+            composed_status_input(crate::FloatOutBoyFootpadState::None, 0.7, 1.0, 0.9),
+            1.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
         );
     }
     assert_eq!(
-        strip_channels(renderer.status()),
+        strip_channels(motor_current.status()),
         [
-            [0x90, 0x90, 0x90, 0],
-            [0x90, 0x90, 0x90, 0],
-            [0x19, 0x19, 0x19, 0],
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-        ]
-    );
-
-    for tick in 11..=17 {
-        renderer.update(
-            config,
-            input(crate::FloatOutBoyFootpadState::None, 0.9),
-            f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
-        );
-    }
-    assert_eq!(
-        strip_channels(renderer.status()),
-        [
-            [0xff, 0xb0, 0x30, 0],
-            [0xff, 0xb0, 0x30, 0],
-            [0xff, 0xb0, 0x30, 0],
+            [0xff, 0x50, 0x90, 0],
+            [0xff, 0x50, 0x90, 0],
+            [0xff, 0x50, 0x90, 0],
             [0xff, 0x38, 0x28, 0],
             [0xff, 0x38, 0x28, 0],
         ]
     );
 
-    renderer.start_confirmation(17.0 / 30.0);
-    renderer.update(
-        config,
-        input(crate::FloatOutBoyFootpadState::Both, 0.0),
-        17.0 / 30.0 + 0.4,
-    );
+    let mut battery_current = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
+    for tick in 1..=10 {
+        battery_current.update(
+            config,
+            composed_status_input(crate::FloatOutBoyFootpadState::None, 0.7, 0.9, 1.0),
+            2.0 + f32::from(u16::try_from(tick).unwrap_or_default()) / 30.0,
+        );
+    }
     assert_eq!(
-        strip_channels(renderer.status()),
+        strip_channels(battery_current.status()),
         [
-            [0, 0, 0, 0],
-            [0x4e, 0x1f, 0x7d, 0],
-            [0xa0, 0x40, 0xff, 0],
-            [0x4e, 0x1f, 0x7d, 0],
-            [0, 0, 0, 0],
+            [0, 0xff, 0x80, 0],
+            [0, 0xff, 0x80, 0],
+            [0, 0xff, 0x80, 0],
+            [0xff, 0x38, 0x28, 0],
+            [0xff, 0x38, 0x28, 0],
         ]
     );
 }
@@ -1118,13 +1226,16 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
         super::FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,
             duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
             moving: false,
         },
     );
     let mut renderer = super::FloatOutBoyLedRenderer::new(hardware, config, 0.0);
 
     renderer.update(config, frame, 1.0);
-    assert_eq!(strip_channels::<1>(renderer.status())[0], [1, 1, 1, 0]);
+    // Refloat treats a full one-pixel bar as its low-battery blink threshold.
+    assert_eq!(strip_channels::<1>(renderer.status())[0], [0, 0, 0, 0]);
 
     for tick in 1..=40 {
         renderer.update(
@@ -1157,7 +1268,7 @@ fn composed_status_idle_and_sensor_fade_follow_source_order() {
     renderer.update(config, frame, 1.0 + 44.0 / 30.0);
     assert_eq!(
         strip_channels::<1>(renderer.status())[0],
-        [0x1c, 0x3b, 0x45, 0]
+        [0x32, 0x2e, 0x33, 0]
     );
 }
 
@@ -1182,7 +1293,7 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
     .status_on_front_when_lifted();
     let strip = super::FloatOutBoyLedStripConfig::new(
         super::FloatOutBoyLedStripOrder::First,
-        1,
+        2,
         FloatOutBoyLedColorOrder::Grb,
     );
     let hardware =
@@ -1202,6 +1313,8 @@ fn lifted_status_blends_onto_front_then_idles_and_restores_bars() {
             super::FloatOutBoyLedStatusUpdate {
                 battery_level: 1.0,
                 duty_cycle: 0.0,
+                motor_current_saturation: 0.0,
+                battery_current_saturation: 0.0,
                 moving: false,
             },
         )

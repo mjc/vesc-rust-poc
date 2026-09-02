@@ -2,7 +2,11 @@ use super::booster::Branch;
 use super::loop_io::LoopInput;
 use super::loop_io::LoopState;
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyTractionControlState};
-use vescpkg_rs::prelude::{Current, Frequency, MotorCurrent, MotorCurrentLimit, Ratio, SampleRate};
+use crate::ema::EmaAlpha;
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
+use vescpkg_rs::prelude::{
+    Current, Frequency, MotorCurrent, MotorCurrentLimit, SampleRate, VescSeconds,
+};
 
 // C map: upstream chooses these scalar current limits and ramp values inside
 // `third_party/float-out-boy/src/main.c:924-954`.
@@ -13,90 +17,83 @@ const BALANCE_CURRENT_FILTER_CUTOFF: Frequency = Frequency::from_hertz(25.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
-struct BalanceCurrentEmaAlpha(Ratio);
-
-impl BalanceCurrentEmaAlpha {
-    #[must_use]
-    #[inline]
-    fn from_sample_rate(sample_rate: SampleRate) -> Self {
-        // C map: Refloat main at caff10a configures this 25 Hz filter in
-        // `src/main.c:168-175` and uses the bounded second-order approximation of
-        // `1 - e^-omega` from `src/filters/ema.c:24-30`.
-        let omega =
-            (core::f32::consts::TAU * (BALANCE_CURRENT_FILTER_CUTOFF / sample_rate)).min(0.5);
-        Self(Ratio::clamped(omega - 0.5 * omega * omega))
-    }
-
-    #[must_use]
-    #[inline]
-    fn update(self, previous: MotorCurrent, target: MotorCurrent) -> MotorCurrent {
-        previous + (target - previous) * self.0.as_ratio()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(transparent)]
-struct PitchBasedDemand(MotorCurrent);
+struct PitchBasedDemand(MotorTorque);
 
 impl PitchBasedDemand {
     #[inline]
-    fn from_terms(rate_p: MotorCurrent, booster: MotorCurrent) -> Self {
+    fn from_torques(rate_damping: MotorTorque, booster: MotorTorque) -> Self {
         // C map: `third_party/float-out-boy/src/main.c:926-930` adds the rate-P and
         // booster terms before soft-start and current limiting.
-        Self(rate_p + booster)
+        Self(rate_damping.add(booster))
     }
 
     #[inline]
     fn with_softstart(
         self,
-        softstart_pid_limit: MotorCurrent,
+        motor_torque_constant: MotorTorqueConstant,
+        softstart_pid_limit: MotorCurrentLimit,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        softstart_increment: Current,
     ) -> PitchBasedCurrent {
+        let current = motor_torque_constant.motor_current_from_torque(self.0);
         if softstart_pid_limit.current() < motor_current_max.current() {
             PitchBasedCurrent {
                 // C map: `third_party/float-out-boy/src/main.c:927-929` clamps only
                 // magnitude; sign remains the requested direction.
-                current: MotorCurrentLimit::new(softstart_pid_limit.current()).clamp(self.0),
+                current: softstart_pid_limit.clamp(current),
                 // C map: `third_party/float-out-boy/src/main.c:927-929` advances the
                 // soft-start current limit at 100 A/s.
-                softstart_pid_limit: softstart_pid_limit
-                    + MotorCurrent::new(Current::from_amps(
-                        SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND / hertz.as_hertz().max(1.0),
-                    )),
+                softstart_pid_limit: MotorCurrentLimit::new(
+                    softstart_pid_limit.current() + softstart_increment,
+                ),
             }
         } else {
             PitchBasedCurrent {
-                current: self.0,
+                current,
                 softstart_pid_limit,
             }
         }
     }
 }
 
+fn valid_elapsed_seconds(elapsed: VescSeconds) -> f32 {
+    let seconds = elapsed.as_seconds();
+    if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct PitchBasedCurrent {
     pub(super) current: MotorCurrent,
-    pub(super) softstart_pid_limit: MotorCurrent,
+    pub(super) softstart_pid_limit: MotorCurrentLimit,
 }
 
 impl PitchBasedCurrent {
     /// Source map: upstream soft-start clamps pitch-based current at
     /// `third_party/float-out-boy/src/main.c:924-930`.
     #[inline]
-    pub(super) fn from_rate_and_booster(
-        rate_p: MotorCurrent,
-        booster: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
+    pub(super) fn from_torques(
+        rate_damping: MotorTorque,
+        booster: MotorTorque,
+        motor_torque_constant: MotorTorqueConstant,
+        softstart_pid_limit: MotorCurrentLimit,
         motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        softstart_increment: Current,
     ) -> Self {
-        PitchBasedDemand::from_terms(rate_p, booster).with_softstart(
+        PitchBasedDemand::from_torques(rate_damping, booster).with_softstart(
+            motor_torque_constant,
             softstart_pid_limit,
             motor_current_max,
-            hertz,
+            softstart_increment,
         )
     }
+}
+
+pub(super) fn softstart_increment(elapsed: VescSeconds) -> Current {
+    Current::from_amps(SOFTSTART_CURRENT_RAMP_AMPS_PER_SECOND * valid_elapsed_seconds(elapsed))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -125,18 +122,19 @@ impl RequestedCurrent {
     pub(super) fn filtered_from(
         self,
         previous: MotorCurrent,
-        sample_rate: SampleRate,
         traction_control: FloatOutBoyTractionControlState,
+        filter_rate: SampleRate,
     ) -> MotorCurrent {
         match traction_control {
-            // C map: Refloat main at caff10a resets the EMA to zero while its
+            // C map: current Refloat upstream/main resets the EMA to zero while its
             // darkride traction recovery is freewheeling (`src/main.c:723-728`).
             FloatOutBoyTractionControlState::Freewheeling => MotorCurrent::new(Current::ZERO),
             FloatOutBoyTractionControlState::FilteringCurrent => {
-                // C map: Refloat main at caff10a updates the EMA as
+                // C map: current Refloat upstream/main updates the EMA as
                 // `previous += alpha * (target - previous)` in
                 // `src/main.c:723-728` and `src/filters/ema.h:37-38`.
-                BalanceCurrentEmaAlpha::from_sample_rate(sample_rate).update(previous, self.0)
+                let alpha = EmaAlpha::from_sample_rate(BALANCE_CURRENT_FILTER_CUTOFF, filter_rate);
+                previous + (self.0 - previous) * alpha.factor()
             }
         }
     }
@@ -162,13 +160,13 @@ impl LoopInput {
 
 impl LoopState {
     #[inline]
-    pub(super) fn with_booster_current_and_softstart_limit(
+    pub(super) fn with_booster_torque_and_softstart_limit(
         self,
-        booster_current: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
+        booster_torque: MotorTorque,
+        softstart_pid_limit: MotorCurrentLimit,
     ) -> Self {
         Self {
-            booster_current,
+            booster_torque,
             softstart_pid_limit,
             ..self
         }

@@ -159,7 +159,7 @@ fn running_limits_normal_current_from_motor_config_like_float_out_boy_loop() {
         let expected_current = refloat_main_filtered_balance_current(
             MotorCurrent::new(Current::ZERO),
             MotorCurrent::new(Current::from_amps(limited_current)),
-            state.serialized_config.startup().sample_rate(),
+            state.frequency_trackers.imu.filter_frequency(),
         );
 
         assert!(tick_float_out_boy_state_and_handle_packet(

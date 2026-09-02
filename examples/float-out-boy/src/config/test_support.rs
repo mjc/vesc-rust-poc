@@ -14,8 +14,6 @@ impl FloatOutBoyConfigEditor<'_> {
         self.set_flag(FloatOutBoyMetadataConfig::IS_DEFAULT_FIELD, is_default)
     }
 
-    generated_config_setters! { set_hertz(sample_rate: SampleRate) => FloatOutBoyStartupConfig::HERTZ_FIELD; }
-
     pub(crate) fn set_moving_faults_disabled(&mut self, disabled: bool) -> bool {
         self.set_flag(
             FloatOutBoyFaultConfig::MOVING_FAULT_DISABLED_FIELD,
@@ -29,9 +27,9 @@ impl FloatOutBoyConfigEditor<'_> {
         set_switch_full_delay(delay: VescSeconds) => FloatOutBoyFaultConfig::DELAY_SWITCH_FULL_FIELD;
     }
 
-    generated_config_setters! { set_remote_throttle_current_max(current: MotorCurrent) => FloatOutBoyRemoteThrottleConfig::CURRENT_MAX_FIELD; }
+    generated_config_setters! { set_remote_max_move_speed(speed: vescpkg_rs::WireByte) => FloatOutBoyRemoteConfig::MAX_MOVE_SPEED_FIELD; }
 
-    generated_config_setters! { set_remote_throttle_grace_period(duration: VescSeconds) => FloatOutBoyRemoteThrottleConfig::GRACE_PERIOD_FIELD; }
+    generated_config_setters! { set_remote_grace_period(duration: VescSeconds) => FloatOutBoyRemoteConfig::GRACE_PERIOD_FIELD; }
 
     generated_config_setters! { set_speed_pushback_threshold(speed: vescpkg_rs::WireByte) => FloatOutBoyConfigImage::SPEED_PUSHBACK_THRESHOLD_FIELD; }
 

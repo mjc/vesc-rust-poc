@@ -117,7 +117,7 @@ fn float_out_boy_main_thread_tick_refreshes_runtime_state_and_sleeps_like_float_
     assert_eq!(telemetry.thread_sleep_count(), 1);
     assert_eq!(
         telemetry.thread_sleep_durations(),
-        [Duration::from_micros(1201), Duration::ZERO]
+        [Duration::from_millis(2), Duration::ZERO]
     );
 }
 
@@ -218,18 +218,18 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[242] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     state.refresh_runtime_state(telemetry.telemetry(), imu, TimestampTicks::from_ticks(0));
     state.alert_beeper(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
     let mut changes = std::vec::Vec::new();
 
-    for tick in 1..=160 {
+    for tick in 1..=42 {
         let result = tick_with_footpad_voltage(
             &mut state,
             &telemetry,
             Voltage::ZERO,
-            TimestampTicks::from_ticks(0),
+            TimestampTicks::from_ticks(tick * 100),
         );
         if let Some(level) = result.beeper_level() {
             changes.push((tick, level));
@@ -240,8 +240,13 @@ fn float_out_boy_main_thread_drives_typed_ppm_beeper_levels_like_float_out_boy_l
         changes,
         [
             (1, DigitalOutputLevel::Low),
-            (80, DigitalOutputLevel::Low),
-            (160, DigitalOutputLevel::High),
+            (6, DigitalOutputLevel::Low),
+            (12, DigitalOutputLevel::High),
+            (18, DigitalOutputLevel::Low),
+            (24, DigitalOutputLevel::High),
+            (30, DigitalOutputLevel::Low),
+            (36, DigitalOutputLevel::High),
+            (42, DigitalOutputLevel::Low),
         ]
     );
 }
@@ -251,7 +256,7 @@ fn main_thread_consumes_beeper_pin_setup_when_a_level_wins_the_same_tick() {
     let telemetry = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[242] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     state.force_beeper_on();
 
@@ -271,8 +276,8 @@ fn beeper_pin_setup_preserves_disabled_ppm_input_like_refloat_startup() {
     for (remote_type, expected) in [(0, true), (1, true), (2, false)] {
         let mut state = FloatOutBoyPackageState::default();
         let mut config = default_float_out_boy_config_bytes();
-        config[79] = remote_type;
-        config[242] = 0;
+        config[99] = remote_type;
+        config[248] = 0;
         assert!(state.store_serialized_config(&config));
 
         assert_eq!(
@@ -289,12 +294,12 @@ fn enabling_the_beeper_after_startup_acquires_ppm_instead_of_reproducing_refloat
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut config = default_float_out_boy_config_bytes();
-    config[79] = 2;
-    config[242] = 0;
+    config[99] = 2;
+    config[248] = 0;
     assert!(state.store_serialized_config(&config));
     assert!(!state.take_beeper_configuration_request());
 
-    config[242] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
 
     assert!(state.take_beeper_configuration_request());
@@ -313,7 +318,7 @@ fn float_out_boy_main_thread_forces_footpad_warning_on_and_off_like_float_out_bo
     firmware.set_imu_ready(true);
     let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
-    config[242] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     for _ in 0..=240 {
         let _ = state.tick_beeper();
@@ -355,8 +360,8 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
     firmware.set_imu_ready(true);
     let mut state = state_in(FloatOutBoyRunState::Running);
     let mut config = default_float_out_boy_config_bytes();
-    config[50] = 1;
-    config[242] = 1;
+    config[70] = 1;
+    config[248] = 1;
     assert!(state.store_serialized_config(&config));
     for _ in 0..=240 {
         let _ = state.tick_beeper();
@@ -408,7 +413,7 @@ fn float_out_boy_main_thread_holds_duty_warning_for_duty_pushback_like_float_out
 }
 
 #[test]
-fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy_loop() {
+fn float_out_boy_main_thread_sleeps_with_fixed_loop_time_like_refloat() {
     let firmware = FirmwareTest::new();
     firmware.terminate_threads_after_checks(2);
     let threads = firmware.threads();
@@ -416,9 +421,7 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
 
     super::run_float_out_boy_main_thread_with(threads, || {
         tick_calls += 1;
-        // Upstream `configure(d)` stores `d->loop_time_us` from
-        // `d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`, then
-        // `float_out_boy_thd` sleeps that configured value at `third_party/float-out-boy/src/main.c:1080`.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz.
         2000
     });
 
@@ -428,6 +431,31 @@ fn float_out_boy_main_thread_sleeps_with_configured_loop_time_like_float_out_boy
     assert_eq!(
         firmware.thread_sleep_durations(),
         [Duration::from_millis(2), Duration::ZERO]
+    );
+}
+
+#[test]
+fn refloat_main_loop_timing_uses_system_ticks_and_compensates_work() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(832.0));
+
+    assert_eq!(timing.nominal_sleep(), Duration::from_micros(1_200));
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.000_31)),
+        Duration::from_micros(900),
+    );
+}
+
+#[test]
+fn refloat_main_loop_timing_keeps_one_tick_after_a_delayed_iteration() {
+    let timing = super::FloatOutBoyMainLoopTiming::from_sample_rate(SampleRate::from_hertz(500.0));
+
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(0.025)),
+        Duration::from_micros(100),
+    );
+    assert_eq!(
+        timing.sleep_after_work(VescSeconds::from_seconds(f32::NAN)),
+        timing.nominal_sleep(),
     );
 }
 
@@ -486,15 +514,129 @@ fn float_out_boy_aux_backup_threshold_matches_source_and_run_state() {
 }
 
 #[test]
-fn failed_aux_backup_is_diagnosable_and_does_not_advance_threshold() {
-    let mut state = FloatOutBoyPackageState::default();
+fn aux_backup_claim_rechecks_running_state() {
+    let mut state = state_in(FloatOutBoyRunState::Running);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
-    state.record_aux_backup_failure();
+    let mut stores = 0;
+
+    let result = super::store_aux_backup_if_due(
+        &mut state,
+        OdometerMeters::from_meters(1_201),
+        TimestampTicks::from_ticks(0),
+        || {
+            stores += 1;
+            true
+        },
+    );
+
+    assert_eq!(result, None);
+    assert_eq!(stores, 0);
+}
+
+#[test]
+fn aux_backup_claim_blocks_a_second_claim_until_the_effect_finishes() {
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+
+    assert!(state.begin_aux_backup(odometer));
+    assert!(!state.begin_aux_backup(odometer));
+    assert!(!state.aux_backup_due(odometer));
+
+    let completed_at = TimestampTicks::from_ticks(10);
+    state.finish_aux_backup(odometer, true, completed_at);
+
+    assert!(!state.aux_backup_due(odometer));
+    assert!(!state.aux_backup_allows_engagement(completed_at));
+    assert!(
+        state.aux_backup_allows_engagement(TimestampTicks::from_ticks(
+            completed_at
+                .as_ticks()
+                .saturating_add(
+                    u32::try_from(5 * SYSTEM_TICK_RATE_HZ).expect("five seconds fits in ticks"),
+                )
+                .saturating_add(1),
+        ))
+    );
+}
+
+#[test]
+fn failed_aux_backup_is_diagnosable_and_advances_threshold_like_refloat() {
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+    assert!(state.begin_aux_backup(odometer));
+    state.finish_aux_backup(odometer, false, TimestampTicks::from_ticks(0));
 
     assert_eq!(state.aux_backup_failures(), 1);
-    assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
-    state.record_aux_backup(OdometerMeters::from_meters(1_201));
-    assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    assert!(!state.aux_backup_due(odometer));
+}
+
+#[test]
+fn aux_backup_write_and_cooldown_block_ready_engagement() {
+    let firmware = FirmwareTest::new();
+    firmware.set_imu_ready(true);
+    let mut state = state_in(FloatOutBoyRunState::Ready);
+    state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
+    let odometer = OdometerMeters::from_meters(1_201);
+    assert!(state.begin_aux_backup(odometer));
+
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(1),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Ready
+    );
+
+    let completed_at = TimestampTicks::from_ticks(2);
+    state.finish_aux_backup(odometer, true, completed_at);
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(3),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Ready
+    );
+
+    tick_with_footpad_voltage(
+        &mut state,
+        &firmware,
+        Voltage::from_volts(3.0),
+        TimestampTicks::from_ticks(
+            completed_at
+                .as_ticks()
+                .saturating_add(
+                    u32::try_from(5 * SYSTEM_TICK_RATE_HZ).expect("five seconds fits in ticks"),
+                )
+                .saturating_add(1),
+        ),
+    );
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .run_state(),
+        FloatOutBoyRunState::Running
+    );
 }
 
 #[test]
@@ -602,7 +744,7 @@ fn aux_tick_does_not_touch_backup_before_threshold() {
 }
 
 #[test]
-fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
+fn aux_tick_records_a_rejected_backup_without_retrying_the_same_distance() {
     let firmware = FirmwareTest::new();
     let mut state = state_in(FloatOutBoyRunState::Ready);
     state.initialize_aux_odometer(OdometerMeters::from_meters(1_000));
@@ -619,5 +761,5 @@ fn aux_tick_retries_a_rejected_backup_without_advancing_threshold() {
 
     assert_eq!(result, Some(false));
     assert_eq!(state.aux_backup_failures(), 1);
-    assert!(state.aux_backup_due(OdometerMeters::from_meters(1_201)));
+    assert!(!state.aux_backup_due(OdometerMeters::from_meters(1_201)));
 }

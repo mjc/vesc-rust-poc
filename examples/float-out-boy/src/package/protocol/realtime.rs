@@ -56,8 +56,8 @@ pub(in crate::package) fn encode_float_out_boy_get_realtime_data_response_with_r
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
     packet.push((switch_state & 0x0f) | (base.status().beep_reason().id() << 4));
-    packet.push_float32_auto(footpad.adc1_volts());
-    packet.push_float32_auto(footpad.adc2_volts());
+    packet.push_float32_auto(footpad.left_voltage().as_volts());
+    packet.push_float32_auto(footpad.right_voltage().as_volts());
 
     [
         setpoints.board(),
@@ -201,8 +201,8 @@ pub(in crate::package) fn realtime_value(
             float_out_boy_degrees(attitude.balance_pitch().angle())
         }
         FloatOutBoyRealtimeDataItem::ImuRoll => float_out_boy_degrees(attitude.roll().angle()),
-        FloatOutBoyRealtimeDataItem::FootpadAdc1 => base.footpad().adc1_volts(),
-        FloatOutBoyRealtimeDataItem::FootpadAdc2 => base.footpad().adc2_volts(),
+        FloatOutBoyRealtimeDataItem::FootpadAdcLeft => base.footpad().left_voltage().as_volts(),
+        FloatOutBoyRealtimeDataItem::FootpadAdcRight => base.footpad().right_voltage().as_volts(),
         // C map: `RT_DATA_ITEMS` includes `remote.input` at
         // `third_party/float-out-boy/src/rt_data.h:38-54`.
         FloatOutBoyRealtimeDataItem::RemoteInput => remote_input.ratio().as_ratio(),

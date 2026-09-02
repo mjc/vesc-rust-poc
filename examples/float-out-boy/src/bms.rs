@@ -29,7 +29,7 @@ vescpkg_rs::typed_fields! {
         cell_low_temperature: FloatOutBoyBmsTemperature => cell_low_temperature,
         cell_high_temperature: FloatOutBoyBmsTemperature => cell_high_temperature,
         bms_high_temperature: FloatOutBoyBmsTemperature => bms_high_temperature,
-        message_age: VescSeconds => message_age,
+        message_age: VescSeconds => message_age => with_message_age,
     }
 }
 
@@ -158,13 +158,13 @@ impl FloatOutBoyBmsFaults {
             return Self::NONE;
         };
 
-        if sample.message_age > VescSeconds::from_seconds(5.0)
-            && matches!(
-                connection_monitoring,
-                FloatOutBoyBmsConnectionMonitoring::Armed
-            )
-        {
-            return Self::from_fault(FloatOutBoyBmsFault::Connection);
+        if sample.message_age > VescSeconds::from_seconds(5.0) {
+            return match connection_monitoring {
+                FloatOutBoyBmsConnectionMonitoring::Armed => {
+                    Self::from_fault(FloatOutBoyBmsFault::Connection)
+                }
+                FloatOutBoyBmsConnectionMonitoring::Deferred => Self::NONE,
+            };
         }
 
         let zero_temperature = FloatOutBoyBmsTemperature::from_degrees_celsius(0);

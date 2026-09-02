@@ -45,7 +45,9 @@ fn inputs_expose_output_disable_and_explicit_backup_store() {
     let inputs = firmware.inputs();
 
     assert!(!inputs.output_disabled().expect("output state capability"));
-    inputs.store_backup().expect("backup store capability");
+    firmware
+        .with_effects(|effects| inputs.store_backup(effects))
+        .expect("backup store capability");
 }
 
 #[test]
@@ -54,7 +56,7 @@ fn backup_store_reports_absent_optional_slot() {
     firmware.set_backup_available(false);
 
     assert!(matches!(
-        firmware.inputs().store_backup(),
+        firmware.with_effects(|effects| firmware.inputs().store_backup(effects)),
         Err(InputError::Unsupported)
     ));
 }

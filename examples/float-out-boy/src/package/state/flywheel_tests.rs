@@ -390,9 +390,9 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         assert_eq!(
             changes,
             [
-                (80, FloatOutBoyBeeperLevel::Low),
-                (160, FloatOutBoyBeeperLevel::High),
-                (240, FloatOutBoyBeeperLevel::Low),
+                (6, FloatOutBoyBeeperLevel::Low),
+                (12, FloatOutBoyBeeperLevel::High),
+                (18, FloatOutBoyBeeperLevel::Low),
             ],
         );
     }
@@ -586,7 +586,7 @@ fn flywheel_applies_duty_pushback_without_exposing_pushback_status() {
         DutyCycle::new(SignedRatio::from_ratio_const(0.2)),
     );
     let initial_board_setpoint = state.all_data_payloads().base().setpoints().board().angle();
-    let duty_step = AngleDegrees::from_degrees(5.0 / 832.0);
+    let duty_step = AngleDegrees::from_degrees(5.0 / 500.0);
 
     state.refresh_imu_runtime_state(firmware.imu(), TimestampTicks::from_ticks(1));
 
@@ -871,7 +871,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     let mut state = FloatOutBoyPackageState::new(ready_at(AngleDegrees::ZERO, AngleDegrees::ZERO));
     set_footpad(&mut state, FloatOutBoyFootpadState::None);
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
     assert!(state.serialized_config.headlights_enabled());
 
@@ -983,7 +983,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let expected = refloat_main_filtered_balance_current(
         MotorCurrent::new(Current::ZERO),
         MotorCurrent::new(Current::from_amps(error * 8.0)),
-        state.serialized_config.startup().sample_rate(),
+        state.frequency_trackers.imu.filter_frequency(),
     );
     let actual = firmware.commanded_current();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.

@@ -37,6 +37,9 @@
     )
 )]
 
+#[cfg(target_arch = "arm")]
+extern crate alloc;
+
 #[cfg(any(test, not(target_arch = "arm")))]
 extern crate std;
 
@@ -95,6 +98,8 @@ mod config;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod domain;
 #[cfg(any(test, target_arch = "arm"))]
+mod ema;
+#[cfg(any(test, target_arch = "arm"))]
 pub mod extensions;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod footpad;
@@ -108,6 +113,8 @@ pub mod lcm;
 pub mod leds;
 #[cfg(any(test, target_arch = "arm"))]
 mod motor_control;
+#[cfg(any(test, target_arch = "arm"))]
+mod motor_torque;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod package;
 #[cfg(any(test, target_arch = "arm"))]

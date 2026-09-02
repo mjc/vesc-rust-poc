@@ -1,10 +1,10 @@
 use super::current::{PitchBasedCurrent, RequestedCurrent};
 use super::loop_io::{LoopConfig, LoopInput, LoopState, PidState};
 use crate::domain::{FloatOutBoyDarkRideState, FloatOutBoyRealtimeRuntimeSetpoint};
-use vescpkg_rs::prelude::SampleRate;
-use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, MotorCurrent, MotorCurrentLimit,
-};
+use crate::ema::EmaAlpha;
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant, MotorTorqueLimit};
+use vescpkg_rs::prelude::{AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll};
+use vescpkg_rs::prelude::{SampleRate, VescSeconds};
 use vescpkg_rs::{AngleCurrentGain, IntegralCurrentGain, PidScale, RateCurrentGain, Rpm};
 
 /// Board setpoint error used by Float Out Boy PID P/I terms.
@@ -35,18 +35,21 @@ impl SetpointError {
     }
 
     #[inline]
-    pub(super) fn integral_current(
+    pub(super) fn integral_torque(
         self,
-        integral: MotorCurrent,
+        integral: MotorTorque,
         ki: IntegralCurrentGain,
-        limit: MotorCurrentLimit,
-    ) -> MotorCurrent {
+        limit: MotorTorqueLimit,
+        elapsed: VescSeconds,
+    ) -> MotorTorque {
         // C map: `third_party/float-out-boy/src/pid.c:40-46` integrates `p * ki`, then
         // clamps by a positive `ki_limit` while preserving sign. Zero is the
         // disabled-limit sentinel exposed at
         // `third_party/float-out-boy/src/conf/settings.xml:1679-1707`.
-        let next = integral + self.angle() * ki;
-        if limit.current().is_positive() {
+        let increment = (self.angle() * ki).scaled_by(PidScale::new(720.0 * elapsed.as_seconds()));
+        let next =
+            integral.add(MotorTorqueConstant::REFLOAT_COMPAT.torque_from_motor_current(increment));
+        if limit.torque().is_positive() {
             limit.clamp(next)
         } else {
             next
@@ -54,16 +57,17 @@ impl SetpointError {
     }
 
     #[inline]
-    pub(super) fn angle_proportional_current(
+    pub(super) fn angle_proportional_torque(
         self,
         kp: AngleCurrentGain,
         accel_scale: PidScale,
         brake_scale: PidScale,
-    ) -> MotorCurrent {
+    ) -> MotorTorque {
         // C map: `third_party/float-out-boy/src/pid.c:69` applies KP and selects the
         // accel/brake scale from the sign of the setpoint error.
         let scale = ScaleSide::from_setpoint_error(self).scale(accel_scale, brake_scale);
-        self.angle() * kp.scaled_by(scale)
+        MotorTorqueConstant::REFLOAT_COMPAT
+            .torque_from_motor_current(self.angle() * kp.scaled_by(scale))
     }
 }
 
@@ -104,25 +108,25 @@ impl PitchRate {
     }
 
     #[inline]
-    fn damping_current(self, kp2: RateCurrentGain) -> MotorCurrent {
+    fn damping_torque(self, kp2: RateCurrentGain) -> MotorTorque {
         // C map: `third_party/float-out-boy/src/pid.c:71` negates pitch rate before
         // multiplying by the rate gain.
-        self.rate() * -kp2
+        MotorTorqueConstant::REFLOAT_COMPAT.torque_from_motor_current(self.rate() * -kp2)
     }
 
     #[inline]
-    pub(super) fn rate_proportional_current(
+    pub(super) fn rate_damping_torque(
         self,
         kp2: RateCurrentGain,
         accel_scale: PidScale,
         brake_scale: PidScale,
-    ) -> MotorCurrent {
-        let rate_p = self.damping_current(kp2);
+    ) -> MotorTorque {
+        let rate_damping = self.damping_torque(kp2);
         // C map: `third_party/float-out-boy/src/pid.c:72` picks accel/brake scale
         // from the sign of `rate_p`.
-        let scale = ScaleSide::from_current(rate_p).scale(accel_scale, brake_scale);
+        let scale = ScaleSide::from_torque(rate_damping).scale(accel_scale, brake_scale);
 
-        rate_p.scaled_by(scale)
+        rate_damping.scaled_by(scale.value())
     }
 }
 
@@ -138,10 +142,15 @@ impl RollProjection {
         // C map: `imu_update` uses raw roll radians for the pitch-rate yaw
         // projection at `third_party/float-out-boy/src/imu.c:46-51`.
         let roll_radians = roll.angle().as_radians();
-        Self {
-            sin: sin(roll_radians),
-            cos: cos(roll_radians),
+        if !roll_radians.is_finite() {
+            return Self {
+                sin: f32::NAN,
+                cos: f32::NAN,
+            };
         }
+        let roll_radians = roll_radians.clamp(-core::f32::consts::PI, core::f32::consts::PI);
+        let (sin, cos) = bounded_sin_cos(roll_radians);
+        Self { sin, cos }
     }
 
     #[inline]
@@ -150,6 +159,58 @@ impl RollProjection {
         // on pitch-rate while the board is rolled.
         let Self { sin, cos } = self;
         gyro_pitch * (cos * cos) + gyro_yaw * (sin * cos)
+    }
+}
+
+fn bounded_sin_cos(angle: f32) -> (f32, f32) {
+    let (angle, cosine_sign) = if angle > core::f32::consts::FRAC_PI_2 {
+        (core::f32::consts::PI - angle, -1.0)
+    } else if angle < -core::f32::consts::FRAC_PI_2 {
+        (-core::f32::consts::PI - angle, -1.0)
+    } else {
+        (angle, 1.0)
+    };
+    let squared = angle * angle;
+    let sin = angle
+        * (1.0
+            + squared
+                * (-1.0 / 6.0
+                    + squared * (1.0 / 120.0 + squared * (-1.0 / 5040.0 + squared / 362_880.0))));
+    let cos = cosine_sign
+        * (1.0
+            + squared
+                * (-1.0 / 2.0
+                    + squared * (1.0 / 24.0 + squared * (-1.0 / 720.0 + squared / 40_320.0))));
+    (sin, cos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RollProjection, bounded_sin_cos};
+    use vescpkg_rs::prelude::{AngleRadians, ImuRoll};
+
+    #[test]
+    fn roll_projection_bounds_out_of_contract_firmware_angles_before_trigonometry() {
+        let projection =
+            RollProjection::from_roll(ImuRoll::new(AngleRadians::from_radians(f32::MAX)));
+
+        assert!(projection.sin.is_finite());
+        assert!(projection.cos.is_finite());
+    }
+
+    #[test]
+    fn bounded_projection_matches_refloat_trigonometry_over_valid_rolls() {
+        for angle in [
+            -core::f32::consts::PI,
+            -1.0,
+            0.0,
+            1.0,
+            core::f32::consts::PI,
+        ] {
+            let (sin, cos) = bounded_sin_cos(angle);
+            assert!((sin - vescpkg_rs::sin(angle)).abs() < 0.001);
+            assert!((cos - vescpkg_rs::cos(angle)).abs() < 0.001);
+        }
     }
 }
 
@@ -212,17 +273,17 @@ impl ScalePair {
     }
 
     #[inline]
-    fn smoothed_angle_proportional(self, current: PidScale) -> PidScale {
+    fn smoothed_angle_proportional(self, current: PidScale, alpha: EmaAlpha) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses a 1% target / 99%
         // previous one-pole filter for all PID scale coefficients.
-        current.lerp(self.angle_proportional, 0.01)
+        current.lerp(self.angle_proportional, alpha.factor())
     }
 
     #[inline]
-    fn smoothed_rate_damping(self, current: PidScale) -> PidScale {
+    fn smoothed_rate_damping(self, current: PidScale, alpha: EmaAlpha) -> PidScale {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` uses the same 1% / 99%
         // filter for angle-P and rate-P scale coefficients.
-        current.lerp(self.rate_damping, 0.01)
+        current.lerp(self.rate_damping, alpha.factor())
     }
 }
 
@@ -239,18 +300,23 @@ impl ScaleTargets {
     };
 
     #[inline]
-    fn smoothed_into(self, state: LoopState) -> PidState {
+    fn smoothed_into(self, state: LoopState, filter_rate: SampleRate) -> PidState {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` smooths brake and accel
         // PID scale pairs back into the stored loop state.
+        let alpha = EmaAlpha::from_sample_rate(vescpkg_rs::Frequency::from_hertz(1.0), filter_rate);
         PidState {
             kp_brake_scale: self
                 .brake
-                .smoothed_angle_proportional(state.pid.kp_brake_scale),
-            kp2_brake_scale: self.brake.smoothed_rate_damping(state.pid.kp2_brake_scale),
+                .smoothed_angle_proportional(state.pid.kp_brake_scale, alpha),
+            kp2_brake_scale: self
+                .brake
+                .smoothed_rate_damping(state.pid.kp2_brake_scale, alpha),
             kp_accel_scale: self
                 .accel
-                .smoothed_angle_proportional(state.pid.kp_accel_scale),
-            kp2_accel_scale: self.accel.smoothed_rate_damping(state.pid.kp2_accel_scale),
+                .smoothed_angle_proportional(state.pid.kp_accel_scale, alpha),
+            kp2_accel_scale: self
+                .accel
+                .smoothed_rate_damping(state.pid.kp2_accel_scale, alpha),
             ..state.pid
         }
     }
@@ -275,10 +341,10 @@ impl ScaleSide {
     }
 
     #[inline]
-    fn from_current(current: MotorCurrent) -> Self {
+    fn from_torque(torque: MotorTorque) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:72` picks accel vs brake scale
         // from the sign of the rate-P current contribution.
-        if current.is_positive() {
+        if torque.is_positive() {
             Self::Accel
         } else {
             Self::Brake
@@ -297,27 +363,29 @@ impl ScaleSide {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct Currents {
-    angle_proportional: MotorCurrent,
-    rate_damping: MotorCurrent,
-    integral: MotorCurrent,
+pub(super) struct Torques {
+    angle_proportional: MotorTorque,
+    rate_damping: MotorTorque,
+    integral: MotorTorque,
 }
 
-impl Currents {
+impl Torques {
     #[inline]
     pub(super) fn pitch_based_current(
         self,
-        booster_current: MotorCurrent,
-        softstart_pid_limit: MotorCurrent,
-        motor_current_max: MotorCurrentLimit,
-        hertz: SampleRate,
+        booster_torque: MotorTorque,
+        motor_torque_constant: MotorTorqueConstant,
+        softstart_pid_limit: vescpkg_rs::MotorCurrentLimit,
+        motor_current_max: vescpkg_rs::MotorCurrentLimit,
+        softstart_increment: vescpkg_rs::Current,
     ) -> PitchBasedCurrent {
-        PitchBasedCurrent::from_rate_and_booster(
+        PitchBasedCurrent::from_torques(
             self.rate_damping,
-            booster_current,
+            booster_torque,
+            motor_torque_constant,
             softstart_pid_limit,
             motor_current_max,
-            hertz,
+            softstart_increment,
         )
     }
 
@@ -325,8 +393,13 @@ impl Currents {
     pub(super) fn requested_with_pitch_based(
         self,
         pitch_based: PitchBasedCurrent,
+        motor_torque_constant: MotorTorqueConstant,
     ) -> RequestedCurrent {
-        RequestedCurrent(self.angle_proportional + self.integral + pitch_based.current)
+        RequestedCurrent(
+            motor_torque_constant
+                .motor_current_from_torque(self.angle_proportional.add(self.integral))
+                + pitch_based.current,
+        )
     }
 }
 
@@ -344,12 +417,12 @@ impl SideScale {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CurrentScales {
+struct TorqueScales {
     angle_proportional: SideScale,
     rate_damping: SideScale,
 }
 
-impl CurrentScales {
+impl TorqueScales {
     #[inline]
     const fn from_state(state: LoopState) -> Self {
         // C map: `third_party/float-out-boy/src/pid.c:51-66` keeps separate accel
@@ -361,12 +434,8 @@ impl CurrentScales {
     }
 
     #[inline]
-    fn angle_proportional_current(
-        self,
-        error: SetpointError,
-        kp: AngleCurrentGain,
-    ) -> MotorCurrent {
-        error.angle_proportional_current(
+    fn angle_proportional_torque(self, error: SetpointError, kp: AngleCurrentGain) -> MotorTorque {
+        error.angle_proportional_torque(
             kp,
             self.angle_proportional.accel,
             self.angle_proportional.brake,
@@ -374,8 +443,8 @@ impl CurrentScales {
     }
 
     #[inline]
-    fn rate_damping_current(self, pitch_rate: PitchRate, kp2: RateCurrentGain) -> MotorCurrent {
-        pitch_rate.rate_proportional_current(kp2, self.rate_damping.accel, self.rate_damping.brake)
+    fn rate_damping_torque(self, pitch_rate: PitchRate, kp2: RateCurrentGain) -> MotorTorque {
+        pitch_rate.rate_damping_torque(kp2, self.rate_damping.accel, self.rate_damping.brake)
     }
 }
 
@@ -392,27 +461,36 @@ impl Phase {
     }
 
     #[inline]
-    pub(super) fn update_state(self, state: LoopState) -> (Currents, LoopState) {
+    pub(super) fn update_state(
+        self,
+        state: LoopState,
+        elapsed: VescSeconds,
+        filter_rate: SampleRate,
+    ) -> (Torques, LoopState) {
         // C map: `third_party/float-out-boy/src/pid.c:37-73` updates P/I/rate-P before
         // smoothing the accel/brake scale coefficients for the next tick.
         let config = self.config;
-        let current_scales = CurrentScales::from_state(state);
+        let torque_scales = TorqueScales::from_state(state);
         let setpoint_error = self.input.setpoint_error();
         let pitch_rate = self.input.pitch_rate();
-        let currents = Currents {
-            angle_proportional: current_scales
-                .angle_proportional_current(setpoint_error, config.kp),
-            rate_damping: current_scales.rate_damping_current(pitch_rate, config.kp2),
-            integral: setpoint_error.integral_current(
-                state.pid.integral_current,
+        let torques = Torques {
+            angle_proportional: torque_scales.angle_proportional_torque(setpoint_error, config.kp),
+            rate_damping: torque_scales.rate_damping_torque(pitch_rate, config.kp2),
+            integral: setpoint_error.integral_torque(
+                state.pid.integral_torque,
                 config.ki,
                 config.ki_limit,
+                elapsed,
             ),
         };
-        let state =
-            state.with_updated_pid_state(self.config, self.input.motor_erpm, currents.integral);
+        let state = state.with_updated_pid_state_at_rate(
+            self.config,
+            self.input.motor_erpm,
+            torques.integral,
+            filter_rate,
+        );
 
-        (currents, state)
+        (torques, state)
     }
 }
 
@@ -432,21 +510,33 @@ impl LoopState {
     /// Source map: upstream stores integral current and smooths PID scales at
     /// `third_party/float-out-boy/src/pid.c:40-67`.
     #[inline]
+    #[cfg(test)]
     pub(super) fn with_updated_pid_state(
         self,
         config: LoopConfig,
         motor_erpm: ElectricalSpeed,
-        integral: MotorCurrent,
+        integral: MotorTorque,
+        elapsed: VescSeconds,
+    ) -> Self {
+        let filter_rate = SampleRate::from_hertz(1.0 / elapsed.as_seconds());
+        self.with_updated_pid_state_at_rate(config, motor_erpm, integral, filter_rate)
+    }
+
+    pub(super) fn with_updated_pid_state_at_rate(
+        self,
+        config: LoopConfig,
+        motor_erpm: ElectricalSpeed,
+        integral: MotorTorque,
+        filter_rate: SampleRate,
     ) -> Self {
         Self {
             pid: PidState {
-                integral_current: integral,
+                integral_torque: integral,
                 ..ScaleDirection::from_motor_erpm(motor_erpm)
                     .targets(config)
-                    .smoothed_into(self)
+                    .smoothed_into(self, filter_rate)
             },
             ..self
         }
     }
 }
-use vescpkg_rs::{cos, sin};

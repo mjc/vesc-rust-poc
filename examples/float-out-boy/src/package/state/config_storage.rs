@@ -77,7 +77,7 @@ pub(in crate::package) fn migrate_legacy_firmware_imu_settings(
     if gain.value() <= 1.0 {
         return FirmwareImuMigration::NotRequired;
     }
-    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.4) else {
+    let Some(proportional_gain) = vescpkg_rs::ImuMahonyProportionalGain::try_new(0.2) else {
         return FirmwareImuMigration::InvalidTarget;
     };
     let Some(integral_gain) = vescpkg_rs::ImuMahonyIntegralGain::try_new(0.0) else {
@@ -399,7 +399,7 @@ impl FloatOutBoyPackageState {
         self.serialized_config.bms().enabled()
     }
 
-    pub(in crate::package) fn serialized_config(&self) -> &[u8; 276] {
+    pub(in crate::package) fn serialized_config(&self) -> &[u8; FLOAT_OUT_BOY_CONFIG_LEN] {
         // C map: `get_cfg(..., is_default=false)` serializes the current
         // `d->float_conf` image at `third_party/float-out-boy/src/main.c:2335-2356`.
         self.serialized_config.as_bytes()
@@ -413,11 +413,12 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn configured_loop_time_us(&self) -> u32 {
-        // Upstream `configure(d)` stores `1e6 / d->float_conf.hertz` at
-        // `third_party/float-out-boy/src/main.c:190-191`, then `float_out_boy_thd`
-        // sleeps that value at `third_party/float-out-boy/src/main.c:1080`.
-        // Target Rust must not panic if config bytes are corrupt, so keep the
-        // startup default instead of dividing by zero.
+        // Refloat 7c72c6d3 hardcodes the main thread to 500 Hz.
         self.serialized_config.startup().loop_time_us()
+    }
+
+    #[cfg(target_arch = "arm")]
+    pub(crate) fn configured_main_loop_sample_rate(&self) -> vescpkg_rs::prelude::SampleRate {
+        self.serialized_config.startup().sample_rate()
     }
 }

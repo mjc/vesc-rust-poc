@@ -57,6 +57,8 @@ vescpkg_rs::wire_enum! {
     TuneOther = 6,
     /// Idle motor movement.
     RcMove = 7,
+    /// Remote input and READY-state movement control.
+    Remote = 15,
     /// Booster settings.
     Booster = 8,
     /// Print verbose info.

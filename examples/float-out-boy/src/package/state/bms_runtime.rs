@@ -23,6 +23,7 @@ pub(super) struct BmsRuntimeState {
     faults: FloatOutBoyBmsFaults,
     start_ticks: Option<TimestampTicks>,
     alert_ticks: TimestampTicks,
+    last_push_ticks: Option<TimestampTicks>,
 }
 
 impl Default for BmsRuntimeState {
@@ -32,6 +33,7 @@ impl Default for BmsRuntimeState {
             faults: FloatOutBoyBmsFaults::NONE,
             start_ticks: None,
             alert_ticks: TimestampTicks::from_ticks(0),
+            last_push_ticks: None,
         }
     }
 }
@@ -39,6 +41,7 @@ impl Default for BmsRuntimeState {
 impl BmsRuntimeState {
     pub(super) fn record_sample(&mut self, sample: FloatOutBoyBmsSample) {
         self.sample = sample;
+        self.last_push_ticks = None;
     }
 
     pub(super) fn initialize_start_epoch(&mut self, now: TimestampTicks) {
@@ -50,6 +53,15 @@ impl BmsRuntimeState {
         integration: FloatOutBoyBmsIntegration,
         system_time_ticks: TimestampTicks,
     ) {
+        let last_push_ticks = *self.last_push_ticks.get_or_insert(system_time_ticks);
+        let message_age = self.sample.message_age()
+            + TimestampTicks::from_ticks(
+                system_time_ticks
+                    .wrapping_duration_since(last_push_ticks)
+                    .as_ticks(),
+            )
+            .as_vesc_seconds();
+        let sample = self.sample.with_message_age(message_age);
         let start_ticks = *self.start_ticks.get_or_insert(system_time_ticks);
         let connection_monitoring = if float_out_boy_ticks_elapsed_seconds(
             system_time_ticks,
@@ -60,8 +72,7 @@ impl BmsRuntimeState {
         } else {
             FloatOutBoyBmsConnectionMonitoring::Deferred
         };
-        self.faults =
-            FloatOutBoyBmsFaults::evaluate(integration, self.sample, connection_monitoring);
+        self.faults = FloatOutBoyBmsFaults::evaluate(integration, sample, connection_monitoring);
     }
 
     pub(super) fn take_ready_alert_fault(

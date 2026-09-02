@@ -54,7 +54,7 @@ fn dispatch_payload(
 fn external_configured_state() -> FloatOutBoyPackageState {
     let mut state = FloatOutBoyPackageState::default();
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::External.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::External.id();
     assert!(state.store_serialized_config(&config));
     state
 }
@@ -225,7 +225,7 @@ fn lights_control_partial_mask_tracks_unoverridden_config_field() {
         [101, 20, 2]
     );
 
-    config[176] = 0;
+    config[181] = 0;
     assert!(state.store_serialized_config(&config));
     assert_eq!(
         dispatch_command(
@@ -267,7 +267,7 @@ fn lights_control_preserves_live_internal_renderer_state_like_refloat() {
         payloads.mode4(),
     );
     let mut config = state.serialized_config.as_bytes().to_vec();
-    config[227] = crate::lcm::FloatOutBoyLedMode::Both.id();
+    config[232] = crate::lcm::FloatOutBoyLedMode::Both.id();
     assert!(state.store_serialized_config(&config));
     let _ = crate::package::threads::tick_float_out_boy_aux_thread_with(
         &mut state,

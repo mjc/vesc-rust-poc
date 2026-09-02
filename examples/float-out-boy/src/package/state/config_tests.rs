@@ -18,7 +18,7 @@ use crate::package::test_support::{
 use std::{vec, vec::Vec};
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
+    AngleDegrees, Current, FirmwareFloatSetting, ImuMahonyIntegralGain, ImuMahonyProportionalGain,
     MahonyPitchGain, MahonyRollGain, MotorCurrent, Ratio, TimestampTicks,
 };
 
@@ -44,7 +44,7 @@ fn config_with_mahony_and_hardware_mode(
     hardware_mode: u8,
 ) -> FloatOutBoyConfigImage {
     let mut bytes = *state.serialized_config();
-    bytes[227] = hardware_mode;
+    bytes[232] = hardware_mode;
     let mut config = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid test config");
     assert!(config.editor().set_mahony_kp(mahony_kp));
     config
@@ -112,22 +112,28 @@ fn assert_live_only_firmware_imu_migration(firmware: &FirmwareTest, float_writes
 }
 
 #[test]
-fn configured_loop_time_uses_float_out_boy_hertz_config() {
+fn current_schema_stores_startup_fields_after_removed_hertz() {
     let _firmware = FirmwareTest::new();
     let mut incoming = default_float_out_boy_config_bytes();
     let mut state = FloatOutBoyPackageState::default();
 
-    assert_eq!(state.configured_loop_time_us(), 1201);
+    assert_eq!(state.configured_loop_time_us(), 2_000);
 
     incoming.edit_float_out_boy_config(|config| {
-        assert!(config.set_hertz(vescpkg_rs::SampleRate::from_hertz(500.0)));
+        assert!(config.set_startup_pitch_tolerance(AngleDegrees::from_degrees(7.0)));
+        assert!(config.set_meta_is_default(false));
     });
+    let expected = incoming;
     assert!(state.store_serialized_config(&incoming));
 
-    // Upstream generated serialization places `hertz` after the first
-    // seven float16 config fields; `configure(d)` then uses it as
-    // `1e6 / d->float_conf.hertz` at `third_party/float-out-boy/src/main.c:190-191`.
-    assert_eq!(state.configured_loop_time_us(), 2000);
+    // Refloat removed the serialized Hertz field in 7c72c6d3. Startup fields
+    // must use their regenerated positions in the shorter image.
+    assert_eq!(state.configured_loop_time_us(), 2_000);
+    assert_eq!(*state.serialized_config.as_bytes(), expected);
+    assert_eq!(
+        state.serialized_config.startup().pitch_tolerance(),
+        AngleDegrees::from_degrees(7.0)
+    );
 }
 
 #[test]
@@ -165,7 +171,7 @@ fn main_thread_configure_alerts_the_persisted_disabled_state_like_refloat() {
         .filter_map(|tick| restarted.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)),);
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)),);
 }
 
 #[test]
@@ -198,7 +204,7 @@ fn accepted_config_replacement_migrates_legacy_firmware_imu_settings_like_refloa
 
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_eq!(
         state.firmware_imu_migration_for_test(),
         FirmwareImuMigration::Applied
@@ -236,7 +242,7 @@ fn repeated_configure_is_idempotent_after_legacy_firmware_imu_migration() {
     firmware.clear_settings_write_observations();
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 0);
     assert_eq!(
         state.firmware_imu_migration_for_test(),
@@ -257,7 +263,7 @@ fn package_reload_keeps_migrated_firmware_imu_settings_live_only() {
     let mut reloaded = FloatOutBoyPackageState::from_persisted_config();
     reloaded.configure_loaded_config_on_main_thread();
 
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 0);
     assert_eq!(
         reloaded.firmware_imu_migration_for_test(),
@@ -282,7 +288,7 @@ fn firmware_imu_migration_does_not_change_package_mahony_gains() {
         state.serialized_config.filter().mahony_kp_roll(),
         MahonyRollGain::new(1.4)
     );
-    assert_firmware_imu_settings(&firmware, 0.4, 0.0, 0.1);
+    assert_firmware_imu_settings(&firmware, 0.2, 0.0, 0.1);
     assert_live_only_firmware_imu_migration(&firmware, 3);
 }
 
@@ -323,7 +329,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         ),
         (
             [true, false, true],
-            [0.4, 0.25, 0.1],
+            [0.2, 0.25, 0.1],
             FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: true,
@@ -332,7 +338,7 @@ fn each_rejected_legacy_firmware_imu_write_has_an_explicit_partial_outcome() {
         ),
         (
             [true, true, false],
-            [0.4, 0.0, 0.8],
+            [0.2, 0.0, 0.8],
             FirmwareImuMigration::UnexpectedRejection {
                 proportional_gain: false,
                 integral_gain: false,
@@ -487,9 +493,9 @@ fn config_save_restore_and_startup_round_trip_custom_eeprom() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -617,7 +623,7 @@ fn successful_config_save_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
@@ -646,13 +652,13 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
     let firmware = FirmwareTest::new();
     let defaults = default_float_out_boy_config_bytes();
     let mut changed = defaults;
-    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+    for range in [4..18, 24..28, 87..95, 97..99, 108..118, 119..135, 143..180] {
         changed[range].fill(0xAA);
     }
-    changed[242] = 0;
-    changed[48] = 0x55;
-    changed[75] = 0x66;
-    changed[118] = 0x77;
+    changed[248] = 0;
+    changed[46] = 0x55;
+    changed[73] = 0x66;
+    changed[135] = 0x77;
     let mut state = FloatOutBoyPackageState::default();
     state.replace_serialized_config_for_test(
         &FloatOutBoyConfigImage::from_serialized(&changed).expect("valid test image"),
@@ -665,13 +671,13 @@ fn tune_defaults_resets_only_the_fields_named_by_float_out_boy() {
         &[],
     ));
     let actual = state.serialized_config.as_bytes();
-    for range in [4..18, 67..75, 77..79, 91..101, 102..118, 130..175] {
+    for range in [4..18, 24..28, 87..95, 97..99, 108..118, 119..135, 143..180] {
         assert_eq!(&actual[range.clone()], &defaults[range]);
     }
-    assert_eq!(actual[242], defaults[242]);
-    assert_eq!(actual[48], 0x55);
-    assert_eq!(actual[75], 0x66);
-    assert_eq!(actual[118], 0x77);
+    assert_eq!(actual[248], defaults[248]);
+    assert_eq!(actual[46], 0x55);
+    assert_eq!(actual[73], 0x66);
+    assert_eq!(actual[135], 0x77);
     assert_eq!(state.tick_beeper(), None);
 }
 
@@ -749,9 +755,9 @@ fn lock_restores_persisted_config_then_disables_and_saves() {
     assert_eq!(
         drain_one_short_beep(&mut state),
         [
-            (80, FloatOutBoyBeeperLevel::Low),
-            (160, FloatOutBoyBeeperLevel::High),
-            (240, FloatOutBoyBeeperLevel::Low),
+            (6, FloatOutBoyBeeperLevel::Low),
+            (12, FloatOutBoyBeeperLevel::High),
+            (18, FloatOutBoyBeeperLevel::Low),
         ],
     );
 
@@ -764,7 +770,7 @@ fn successful_lock_starts_led_confirmation_like_refloat() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     let packet = [
         FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
@@ -895,11 +901,8 @@ fn default_scaled_config_fields_decode_to_semantic_values() {
     assert_f32_eq!(balance.brake_booster_angle().as_degrees(), 8.0);
     assert_f32_eq!(balance.brake_booster_ramp().as_degrees(), 4.0);
     assert_f32_eq!(balance.brake_booster_current().current().as_amps(), 0.0);
-    assert_f32_eq!(
-        config.remote_throttle().current_max().current().as_amps(),
-        0.0
-    );
-    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 10.0);
+    assert_eq!(config.remote().max_move_speed(), vescpkg_rs::Speed::ZERO);
+    assert_f32_eq!(config.remote().grace_period().as_seconds(), 10.0);
 }
 
 #[test]
@@ -909,9 +912,9 @@ fn default_led_runtime_flags_follow_generated_config_image() {
     assert!(config.leds_enabled());
     assert!(config.headlights_enabled());
     assert!(config.lights_off_when_lifted());
-    assert_eq!(config.as_bytes()[175], 1);
-    assert_eq!(config.as_bytes()[176], 1);
-    assert_eq!(config.as_bytes()[179], 1);
+    assert_eq!(config.as_bytes()[180], 1);
+    assert_eq!(config.as_bytes()[181], 1);
+    assert_eq!(config.as_bytes()[184], 1);
 }
 
 #[test]
@@ -923,14 +926,8 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
         assert!(
             config.set_startup_speed(vescpkg_rs::AngularVelocity::from_degrees_per_second(25.0,))
         );
-        assert!(
-            config.set_remote_throttle_current_max(vescpkg_rs::MotorCurrent::new(
-                vescpkg_rs::Current::from_amps(12.0),
-            ))
-        );
-        assert!(
-            config.set_remote_throttle_grace_period(vescpkg_rs::VescSeconds::from_seconds(1.5,))
-        );
+        assert!(config.set_remote_max_move_speed(vescpkg_rs::WireByte::new(12)));
+        assert!(config.set_remote_grace_period(vescpkg_rs::VescSeconds::from_seconds(1.5,)));
         assert!(config.set_kp(vescpkg_rs::AngleCurrentGain::new(15.0)));
         assert!(config.set_kp2(vescpkg_rs::RateCurrentGain::new(0.75)));
         assert!(config.set_ki(vescpkg_rs::IntegralCurrentGain::new(0.004)));
@@ -958,10 +955,10 @@ fn semantic_config_writes_round_trip_through_generated_storage() {
         25.0
     );
     assert_f32_eq!(
-        config.remote_throttle().current_max().current().as_amps(),
+        config.remote().max_move_speed().as_kilometers_per_hour(),
         12.0
     );
-    assert_f32_eq!(config.remote_throttle().grace_period().as_seconds(), 1.5);
+    assert_f32_eq!(config.remote().grace_period().as_seconds(), 1.5);
     assert_f32_eq!(balance.kp().as_amps_per_degree(), 15.0);
     assert_f32_eq!(balance.kp2().as_amps_per_degree_per_second(), 0.75);
     assert_f32_eq!(balance.ki().as_amps_per_degree_per_tick(), 0.004);
@@ -984,7 +981,7 @@ fn parking_brake_mode_field_decodes_known_and_rejects_unknown_values() {
         crate::config::FloatOutBoyParkingBrakeMode::Idle
     );
 
-    bytes[101] = 0xff;
+    bytes[99] = 0xff;
     assert_eq!(
         crate::config::FloatOutBoyParkingBrakeMode::from(0xff),
         crate::config::FloatOutBoyParkingBrakeMode::Unknown(0xff)
@@ -1008,7 +1005,7 @@ fn handtest_safety_overrides_encode_named_semantic_values() {
 
     // These currently unwired tune categories have no domain readers yet;
     // verify their generated float16 storage at the serializer boundary.
-    for offset in [67, 71, 126, 128, 130, 145, 147] {
+    for offset in [87, 91, 139, 141, 143, 156, 158] {
         assert_eq!(&config.as_bytes()[offset..offset + 2], &[0, 0]);
     }
 }
@@ -1019,7 +1016,7 @@ fn float_out_boy_config_image_rejects_short_payload_like_confparser() {
 
     // C map: `third_party/float-out-boy/src/conf/confparser.h:11-12` fixes the serialized config length,
     // so shorter payloads must fail before any typed parsing or state mutation.
-    assert!(FloatOutBoyConfigImage::from_serialized(&bytes[..275]).is_none());
+    assert!(FloatOutBoyConfigImage::from_serialized(&bytes[..273]).is_none());
 }
 
 #[test]
@@ -1039,7 +1036,7 @@ fn store_serialized_config_rejects_short_payload_like_float_out_boy() {
     ));
     let bytes = default_float_out_boy_config_bytes();
 
-    assert!(!state.store_serialized_config(&bytes[..275]));
+    assert!(!state.store_serialized_config(&bytes[..273]));
 
     // C map: upstream rejects truncated custom-config writes before storing them at
     // `third_party/float-out-boy/src/main.c:2360-2368`.
@@ -1117,21 +1114,21 @@ fn config_write_acknowledgement_wins_over_the_following_configure_alert_like_ref
             false,
             FloatOutBoyRunState::Ready,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
         (
             false,
             true,
             FloatOutBoyRunState::Disabled,
             7,
-            (560, FloatOutBoyBeeperLevel::Low),
+            (42, FloatOutBoyBeeperLevel::Low),
         ),
         (
             true,
             true,
             FloatOutBoyRunState::Disabled,
             3,
-            (240, FloatOutBoyBeeperLevel::Low),
+            (18, FloatOutBoyBeeperLevel::Low),
         ),
     ] {
         let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
@@ -1203,7 +1200,7 @@ fn failed_config_write_still_applies_valid_custom_config_like_refloat() {
         .filter_map(|tick| state.tick_beeper().map(|level| (tick, level)))
         .collect();
     assert_eq!(changes.len(), 7);
-    assert_eq!(changes.last(), Some(&(560, FloatOutBoyBeeperLevel::Low)));
+    assert_eq!(changes.last(), Some(&(42, FloatOutBoyBeeperLevel::Low)));
 }
 
 #[test]
@@ -1314,13 +1311,13 @@ fn storing_led_config_defers_internal_renderer_replacement_to_the_aux_thread() {
     let mut bytes = default_float_out_boy_config_bytes();
 
     assert!(state.internal_leds.is_none());
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     assert!(state.internal_leds.is_none());
     state.apply_pending_internal_led_refresh();
     assert!(state.internal_leds.is_some());
 
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Off.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Off.id();
     assert!(state.store_serialized_config(&bytes));
     assert!(state.internal_leds.is_some());
     state.apply_pending_internal_led_refresh();
@@ -1332,7 +1329,7 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&bytes));
     state.apply_pending_internal_led_refresh();
 
@@ -1345,26 +1342,27 @@ fn failed_internal_led_teardown_retains_runtime_for_retry() {
 }
 
 #[test]
-fn storing_internal_led_config_while_both_footpads_are_pressed_skips_setup() {
+fn storing_internal_led_config_while_both_footpads_are_pressed_still_sets_up() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
 
     assert!(state.store_serialized_config(&bytes));
-    assert!(state.internal_leds.is_none());
-    assert!(!state.internal_leds_operational());
+    state.apply_pending_internal_led_refresh();
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }
 
 #[test]
-fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
+fn startup_sets_up_internal_leds_after_the_physical_footpad_sample_even_when_both_are_pressed() {
     let _firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::default();
     let mut bytes = default_float_out_boy_config_bytes();
-    bytes[227] = crate::lcm::FloatOutBoyLedMode::Internal.id();
+    bytes[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     state.serialized_config = editable_config_from_bytes(&bytes);
 
     state.configure_loaded_config_on_main_thread();
@@ -1380,5 +1378,6 @@ fn startup_defers_internal_led_setup_until_after_the_physical_footpad_sample() {
         state.all_data_payloads().base().footpad().state(),
         crate::FloatOutBoyFootpadState::Both,
     );
-    assert!(state.internal_leds.is_none());
+    assert!(state.internal_leds.is_some());
+    assert!(state.internal_leds_operational());
 }

@@ -44,4 +44,6 @@ pub use self::state::{
     FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyTractionControlState,
     FloatOutBoyWheelSlipState,
 };
-pub use crate::footpad::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};
+pub use crate::footpad::{
+    FloatOutBoyFootpadAdcMapping, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
+};

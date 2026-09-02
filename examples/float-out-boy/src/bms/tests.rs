@@ -35,7 +35,7 @@ fn enabled_state() -> FloatOutBoyPackageState {
     let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
     // Generated Float Out Boy v1.2.1 order places `bms.enabled` after the final
     // haptic field and before the BMS thresholds at settings.xml:4076-4082.
-    config[265] = 1;
+    config[271] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
@@ -79,12 +79,12 @@ fn default_bms_thresholds_decode_like_float_out_boy_generated_config() {
 #[test]
 fn bms_thresholds_decode_exact_generated_offsets_and_signed_temperatures() {
     let mut bytes = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    bytes[266..268].copy_from_slice(&[0x0c, 0x1c]);
-    bytes[268..270].copy_from_slice(&[0x10, 0x68]);
-    bytes[270..272].copy_from_slice(&[0x00, 0x96]);
-    bytes[272] = 50;
-    bytes[273] = 0xf6;
-    bytes[274] = 70;
+    bytes[272..274].copy_from_slice(&[0x0c, 0x1c]);
+    bytes[274..276].copy_from_slice(&[0x10, 0x68]);
+    bytes[276..278].copy_from_slice(&[0x00, 0x96]);
+    bytes[278] = 50;
+    bytes[279] = 0xf6;
+    bytes[280] = 70;
     let config =
         FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid Float Out Boy config");
 
@@ -143,6 +143,26 @@ fn stale_bms_during_startup_grace_does_not_report_connection() {
         FloatOutBoyBmsTemperature::from_degrees_celsius(1),
         FloatOutBoyBmsTemperature::from_degrees_celsius(40),
         FloatOutBoyBmsTemperature::from_degrees_celsius(50),
+        VescSeconds::from_seconds(6.0),
+    );
+
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        stale,
+        FloatOutBoyBmsConnectionMonitoring::Deferred,
+    );
+
+    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+}
+
+#[test]
+fn stale_bms_during_startup_grace_suppresses_telemetry_faults() {
+    let stale = FloatOutBoyBmsSample::new(
+        Voltage::from_volts(2.6),
+        Voltage::from_volts(4.4),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(-1),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(46),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(61),
         VescSeconds::from_seconds(6.0),
     );
 
@@ -390,7 +410,7 @@ fn ext_bms_disable_and_reenable_preserve_the_last_sample_like_refloat() {
     );
     assert_eq!(state.bms_sample_for_test(), recorded);
 
-    config[265] = 1;
+    config[271] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
@@ -405,7 +425,7 @@ fn ext_bms_disable_and_reenable_preserve_the_last_sample_like_refloat() {
 fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let mut config = FLOAT_OUT_BOY_DEFAULT_CONFIG;
-    config[265] = 1;
+    config[271] = 1;
     assert!(set_float_out_boy_custom_config_for_test(
         &mut state, &config
     ));
@@ -429,4 +449,31 @@ fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
         state.bms_faults_for_test(),
         FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
     );
+}
+
+#[test]
+fn runtime_bms_sample_age_includes_time_since_last_push() {
+    let mut state = enabled_state();
+    let fresh = FloatOutBoyBmsSample::new(
+        Voltage::from_volts(3.9),
+        Voltage::from_volts(4.0),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(20),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(30),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::from_seconds(0.2),
+    );
+    state.record_bms_sample(fresh);
+
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::NONE);
+
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_001));
+    assert_eq!(
+        state.bms_faults_for_test(),
+        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
+    );
+
+    state.record_bms_sample(fresh);
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_002));
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::NONE);
 }

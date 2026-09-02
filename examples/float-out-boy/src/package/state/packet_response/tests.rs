@@ -309,7 +309,7 @@ fn metadata_packet_response_sends_realtime_ids_directly() {
 
     // C map: QML asks for this packet at `ui.qml.in:704-705`; Float Out Boy C replies
     // from `third_party/float-out-boy/src/main.c:1876-1901`.
-    assert_eq!(packet.len(), 405);
+    assert_eq!(packet.len(), 414);
     assert_eq!(
         &packet[..3],
         &[

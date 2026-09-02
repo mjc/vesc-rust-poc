@@ -1,5 +1,7 @@
 use super::FloatOutBoyPackageState;
-use crate::domain::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};
+use crate::domain::{
+    FloatOutBoyFootpadAdcMapping, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
+};
 use vescpkg_rs::prelude::AdcVoltage;
 
 #[inline]
@@ -9,14 +11,17 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, adc1: AdcVoltage, adc
     let adc1 = adc1.voltage();
     let adc2 = adc2.voltage();
     let faults = state.serialized_config.faults();
+    let mapping = state.serialized_config.footpad_adc_mapping();
+    let (left_voltage, right_voltage) = mapping.logical_voltages(adc1, adc2);
     let sample = FloatOutBoyFootpadSample::new(
-        adc1,
-        adc2,
+        left_voltage,
+        right_voltage,
         sensor_state(
             adc1.as_volts(),
             adc2.as_volts(),
             faults.adc1_voltage().as_volts(),
             faults.adc2_voltage().as_volts(),
+            mapping,
         ),
     );
 
@@ -30,28 +35,25 @@ fn sensor_state(
     adc2_volts: f32,
     fault_adc1: f32,
     fault_adc2: f32,
+    mapping: FloatOutBoyFootpadAdcMapping,
 ) -> FloatOutBoyFootpadState {
-    // C map: Float Out Boy v1.2.1 `footpad_sensor_update` decodes the switch
-    // state from raw ADC volts at `third_party/float-out-boy/src/footpad_sensor.c:28-61`.
-    let mut state = FloatOutBoyFootpadState::None;
-    if fault_adc1 == 0.0 && fault_adc2 == 0.0 {
-        state = FloatOutBoyFootpadState::Both;
-    } else if fault_adc2 == 0.0 {
-        if adc1_volts > fault_adc1 {
-            state = FloatOutBoyFootpadState::Both;
-        }
-    } else if fault_adc1 == 0.0 {
-        if adc2_volts > fault_adc2 {
-            state = FloatOutBoyFootpadState::Both;
-        }
-    } else if adc1_volts > fault_adc1 {
-        state = if adc2_volts > fault_adc2 {
+    let adc1_on = fault_adc1 == 0.0 || adc1_volts > fault_adc1;
+    let adc2_on = fault_adc2 == 0.0 || adc2_volts > fault_adc2;
+
+    if fault_adc1 == 0.0 || fault_adc2 == 0.0 {
+        return if adc1_on && adc2_on {
             FloatOutBoyFootpadState::Both
         } else {
-            FloatOutBoyFootpadState::Left
+            FloatOutBoyFootpadState::None
         };
-    } else if adc2_volts > fault_adc2 {
-        state = FloatOutBoyFootpadState::Right;
     }
-    state
+
+    match (mapping, adc1_on, adc2_on) {
+        (_, true, true) => FloatOutBoyFootpadState::Both,
+        (FloatOutBoyFootpadAdcMapping::Direct, true, false)
+        | (FloatOutBoyFootpadAdcMapping::Swapped, false, true) => FloatOutBoyFootpadState::Left,
+        (FloatOutBoyFootpadAdcMapping::Direct, false, true)
+        | (FloatOutBoyFootpadAdcMapping::Swapped, true, false) => FloatOutBoyFootpadState::Right,
+        (_, false, false) => FloatOutBoyFootpadState::None,
+    }
 }
