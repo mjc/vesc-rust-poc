@@ -1,5 +1,6 @@
 use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
 use crate::beeper::FloatOutBoyBeeperLevel;
+use crate::config::FloatOutBoyParkingBrakeMode;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
 };
@@ -404,6 +405,52 @@ fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
 }
 
 #[test]
+fn runtime_tune_zero_speed_fields_preserve_existing_atr_filter_limits() {
+    let firmware = FirmwareTest::new();
+
+    for optional_extended_speeds in [None, Some(0x03), Some(0x30)] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_atr_on_speed_limit(AngularVelocity::from_degrees_per_second(8.0))
+        );
+        assert!(
+            state
+                .serialized_config
+                .editor()
+                .set_atr_off_speed_limit(AngularVelocity::from_degrees_per_second(10.0))
+        );
+
+        let mut packet = RUNTIME_TUNE_PACKET[..14].to_vec();
+        packet[9] &= 0x0f;
+        if let Some(speeds) = optional_extended_speeds {
+            packet.extend_from_slice(&[0, 0, 0, 0, 0, 0, speeds]);
+        }
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+
+        let atr = state.serialized_config.balance().atr_filter();
+        assert_eq!(
+            atr.on_speed_limit(),
+            AngularVelocity::from_degrees_per_second(8.0),
+            "extended speeds {optional_extended_speeds:?}",
+        );
+        assert_eq!(
+            atr.off_speed_limit(),
+            AngularVelocity::from_degrees_per_second(10.0),
+            "extended speeds {optional_extended_speeds:?}",
+        );
+    }
+}
+
+#[test]
 fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
@@ -494,6 +541,48 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
 }
 
 #[test]
+fn tilt_tune_optional_speed_pushback_threshold_is_cutoff_compatible() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    assert!(
+        state
+            .serialized_config
+            .editor()
+            .set_speed_pushback_threshold(vescpkg_rs::WireByte::new(12))
+    );
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        TILT_TUNE_PACKET,
+    ));
+    assert_f32_eq!(
+        state
+            .serialized_config
+            .speed_pushback_threshold()
+            .as_kilometers_per_hour(),
+        12.0
+    );
+
+    let mut extended = TILT_TUNE_PACKET.to_vec();
+    extended.push(34);
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        &extended,
+    ));
+    assert_f32_eq!(
+        state
+            .serialized_config
+            .speed_pushback_threshold()
+            .as_kilometers_per_hour(),
+        34.0
+    );
+}
+
+#[test]
 fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     let firmware = FirmwareTest::new();
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
@@ -522,6 +611,74 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     assert_eq!(&bytes[119..121], &[0x04, 0xE2]);
     assert_eq!(bytes[248], 1);
     assert_eq!(state.tick_beeper(), None);
+}
+
+#[test]
+fn tune_other_decodes_cutoff_negative_variable_tilt_boundaries() {
+    let firmware = FirmwareTest::new();
+
+    for (encoded, expected_degrees) in [
+        (35, 3.5),
+        (100, 10.0),
+        (101, -0.1),
+        (110, -1.0),
+        (u8::MAX, -10.0),
+    ] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut packet = OTHER_TUNE_PACKET.to_vec();
+        packet[12] = encoded;
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+        assert_f32_eq!(
+            state.serialized_config.tiltback_variable_max().as_degrees(),
+            expected_degrees
+        );
+    }
+}
+
+#[test]
+fn tune_other_applies_cutoff_secondary_flags() {
+    let firmware = FirmwareTest::new();
+
+    for (flags, moving_faults_disabled, foot_beep_enabled, parking_brake_mode) in [
+        (0b0000, false, false, FloatOutBoyParkingBrakeMode::Always),
+        (0b0001, true, false, FloatOutBoyParkingBrakeMode::Always),
+        (0b0010, false, true, FloatOutBoyParkingBrakeMode::Always),
+        (0b0100, false, false, FloatOutBoyParkingBrakeMode::Idle),
+        (0b1000, false, false, FloatOutBoyParkingBrakeMode::Never),
+        (0b1111, true, true, FloatOutBoyParkingBrakeMode::Unknown(3)),
+    ] {
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        let mut packet = OTHER_TUNE_PACKET.to_vec();
+        packet.push(flags);
+
+        assert!(state.handle_packet_with_telemetry(
+            firmware.telemetry(),
+            &mut || TimestampTicks::from_ticks(0),
+            &mut |_| true,
+            &packet,
+        ));
+        assert_eq!(
+            state.serialized_config.faults().moving_faults_disabled(),
+            moving_faults_disabled,
+            "flags {flags:#06b}",
+        );
+        assert_eq!(
+            state.serialized_config.foot_beep_enabled(),
+            foot_beep_enabled,
+            "flags {flags:#06b}",
+        );
+        assert_eq!(
+            state.serialized_config.motor_control().parking_brake_mode(),
+            parking_brake_mode,
+            "flags {flags:#06b}",
+        );
+    }
 }
 
 #[test]

@@ -53,7 +53,9 @@ pub use self::app_data::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
     FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand,
 };
-pub use self::footpad::{FloatOutBoyFootpadSample, FloatOutBoyFootpadState};
+pub use self::footpad::{
+    FloatOutBoyFootpadAdcMapping, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
+};
 pub use self::metadata::{
     FLOAT_OUT_BOY_INFO_RESPONSE_V2_LEN, FLOAT_OUT_BOY_REALTIME_DATA_IDS_RESPONSE_LEN,
     FloatOutBoyInfoResponse, encode_float_out_boy_info_response,

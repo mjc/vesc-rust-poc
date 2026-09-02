@@ -52,8 +52,8 @@ pub fn encode_float_out_boy_get_realtime_data_response_with_remote(
     let switch_state = footpad.state().switch_compat()
         | u8::from(matches!(ride_state.mode(), FloatOutBoyMode::HandTest)) << 3;
     packet.push((switch_state & 0x0f) | (base.status().beep_reason().id() << 4));
-    packet.push_float32_auto(footpad.adc1_volts());
-    packet.push_float32_auto(footpad.adc2_volts());
+    packet.push_float32_auto(footpad.left_voltage().as_volts());
+    packet.push_float32_auto(footpad.right_voltage().as_volts());
 
     [
         setpoints.board(),

@@ -1,4 +1,7 @@
-use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
+use crate::bms::{
+    FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsStartupGrace,
+    FloatOutBoyBmsThresholds,
+};
 use vescpkg_rs::{TimestampTicks, VescSeconds, WrappingTimer, timer_older};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,8 +62,12 @@ impl BmsRuntimeState {
             start_ticks,
             VescSeconds::from_seconds(5.0),
         );
-        self.faults =
-            FloatOutBoyBmsFaults::evaluate(enabled, sample, thresholds, startup_timeout_elapsed);
+        self.faults = FloatOutBoyBmsFaults::evaluate(
+            enabled,
+            sample,
+            thresholds,
+            FloatOutBoyBmsStartupGrace::from_elapsed(startup_timeout_elapsed),
+        );
     }
 
     pub(super) fn take_ready_alert_fault(

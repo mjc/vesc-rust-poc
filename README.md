@@ -6,12 +6,20 @@ This workspace provides a `no_std` package-author API, raw firmware ABI bindings
 
 The project is experimental, its APIs are not stable, and it is not affiliated with or endorsed by the VESC project.
 
-## Quick start
+## Nix development environment
 
-The Nix development shell supplies the Rust toolchain, ARM target, linker tools, and native dependencies:
+Direnv loads the flake's Rust toolchain, ARM target, linker tools, and native
+dependencies:
 
 ```console
-$ nix develop
+$ direnv allow
+```
+
+All commands below assume that environment is active.
+
+## Quick start
+
+```console
 $ make check
 ```
 
@@ -29,8 +37,6 @@ Generated packages are written below `target/vescpkg/`.
 
 ```console
 $ cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
-$ cargo run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
-$ cargo run -p cargo-vescpkg -- build -p vesc-example-float-out-boy
 ```
 
 The command performs the ARM build and final link, checks the resulting image, copies the package assets, and assembles the `.vescpkg` archive without modifying the source tree.
@@ -55,19 +61,20 @@ The command performs the ARM build and final link, checks the resulting image, c
 
 ## Device commands
 
-Build and install a package on a connected VESC:
-
-```console
-$ cargo run -p cargo-vescpkg -- deploy -p vesc-example-loopback
-```
-
-Use `--device <name>` or `--address <address>` when automatic device selection is not appropriate. The CLI also exposes `package-install`, `erase-package`, and `loopback` commands.
+The [`cargo vescpkg` command reference](docs/cargo-vescpkg-command.md) lists
+every device command, BLE selector, controller-side effect, and mutation
+warning. Device operations use the VESC BLE UART transport directly.
 
 ## Development
 
 ```console
-$ make check       # formatting, lints, target checks, tests, and doc tests
-$ make check-full  # make check plus ARM/package gates
+$ make check
+$ make check-full
 ```
 
-More detail is available in the documentation for the [workspace layout](docs/workspace-layout.md), [package build flow](docs/package-flow.md), and [`cargo vescpkg` command](docs/cargo-vescpkg-command.md).
+More detail is available in the documentation for the
+[workspace layout](docs/workspace-layout.md),
+[package build flow](docs/package-flow.md),
+[package UI and assets](docs/package-ui.md),
+[`cargo vescpkg` command](docs/cargo-vescpkg-command.md), and
+[SDK capabilities](docs/sdk-compatibility.md).

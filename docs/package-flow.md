@@ -1,48 +1,69 @@
 # Rust VESC package flow
 
-`cargo-vescpkg` is the user-facing Cargo subcommand. Cargo packages are
-ordinary inputs selected with `-p`; they are not host-side plugins.
+`cargo-vescpkg` is the user-facing Cargo command. Packages are ordinary Cargo
+packages selected with `-p`; no package-specific host adapter participates in
+the build.
 
-## Build
+## Package inputs
 
-```bash
+Each package owns:
+
+- one Rust binary or static-library payload;
+- `[package.metadata.vescpkg]` metadata;
+- a small build script using `vescpkg-build-support`; and
+- a recursive `package/` asset tree.
+
+The reserved `src/package_lib.bin` archive path is always supplied by the
+compiled native payload. Metadata may set the display name and fullscreen-QML
+policy; if `package/pkgdesc.qml` declares the same policy, the values must
+agree.
+
+The [package UI and asset authoring reference](package-ui.md) documents the
+QML, LispBM, description, descriptor, and default-generation contracts.
+
+## Build pipeline
+
+```console
 cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
-cargo run -p cargo-vescpkg -- build -p vesc-example-alloc-smoke
 ```
 
-Each package owns its target library, package metadata, package assets, and
-small build script. Cargo links binary targets into one `thumbv7em-none-eabihf`
-ELF using `examples/vescpkg-link.ld`. The build script copies package assets
-into Cargo's `OUT_DIR` and declares the package directory as its rerun input.
+The command:
 
-`cargo-vescpkg` runs one Cargo build, consumes `compiler-artifact` and
-`build-script-executed` JSON, links static libraries with its embedded VESC
-linker script, converts the final ELF with `rust-objcopy`, and assembles the
-`.vescpkg` archive under Cargo's target directory. It never writes generated
-assets into the source tree and never invokes Make, a nested build, the VESC
-Tool source tree, or a package-specific host adapter.
+1. resolves the selected package with `cargo metadata`;
+2. runs one target Cargo build with JSON diagnostics;
+3. selects exactly one final binary or static-library artifact;
+4. performs the package's final ARM link when the input is a static library;
+5. checks the ELF machine, layout, load range, relocation safety, and size;
+6. converts the linked ELF to the flat native payload;
+7. stages package assets under Cargo's target directory;
+8. assembles the `.vescpkg`; and
+9. decodes the result through the same reader used by installation.
 
-The target directory can be overridden normally:
+The build never writes generated assets into the source tree and never invokes
+Make, VESC Tool, another source checkout, or a package-specific host process.
+Its outputs remain inside the ignored Cargo target tree.
 
-```bash
-CARGO_TARGET_DIR="$PWD/target/custom" \
-  cargo run -p cargo-vescpkg -- build -p vesc-example-loopback
+## Device boundary
+
+`deploy` is build plus install. `package-install` begins at an existing archive.
+Both validate the complete package before opening BLE, then stop LispBM,
+replace package data, restore QML/native assets, and restart the installed
+program. `loopback` and `control-loop` are separate probes of already installed
+packages.
+
+The full command list, selectors, side-effect classifications, and mutation
+warnings live in the
+[`cargo vescpkg` command reference](cargo-vescpkg-command.md).
+
+## Repository checks
+
+```console
+make check
+make check-full
 ```
 
-## Checks
-
-- `make check` runs formatting, strict host checks, target checks,
-  and workspace tests.
-- `make check-full` also builds the package ELF and `.vescpkg`.
-- `cargo nextest run -p cargo-vescpkg --features hil --profile hil -- --ignored` is the
-  hardware lane and requires an attached VESC plus its device selection.
-
-The generated package is decoded by the same package reader used by the install
-path before BLE transport is opened. A successful hardware sign-off still
-requires installing and probing both loopback and alloc-smoke packages.
-
-## Deferred hardware tooling
-
-`cargo-flash`/probe-rs are not part of this build path. Package deployment is
-supported through `cargo-vescpkg deploy` and `package-install` over the bespoke
-VESC transport; loopback verification is a separate command.
+`make check` covers formatting, host and target checks, lints, tests, and
+documentation. `make check-full` adds representative ARM ELF and package
+assembly gates. Hardware-in-the-loop deployment is separate because a green
+host/package build cannot establish BLE, firmware, or physical-controller
+behavior.

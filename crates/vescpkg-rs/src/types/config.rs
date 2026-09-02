@@ -759,6 +759,18 @@ impl<T> CustomConfigEnumField<T> {
     {
         image.0.get(self.0.get()).copied().map(T::from)
     }
+
+    /// Encode the Rust enum into its generated one-byte field.
+    pub fn write<const LEN: usize>(
+        self,
+        editor: &mut CustomConfigEditor<'_, LEN>,
+        value: T,
+    ) -> Option<()>
+    where
+        T: Into<u8>,
+    {
+        editor.set_byte_at(self.0.get(), value.into())
+    }
 }
 
 /// Generated two-byte field that a safety policy resets to zero.
@@ -1737,7 +1749,23 @@ mod tests {
             }
         }
 
+        impl From<Mode> for u8 {
+            fn from(value: Mode) -> Self {
+                match value {
+                    Mode::Known => 1,
+                    Mode::Unknown(value) => value,
+                }
+            }
+        }
+
         let mut image = CustomConfigImage::new([7, 0x12, 0x34]);
+        crate::generated_custom_config_field!(
+            CustomConfigEnumField<Mode>,
+            len: 3,
+            offset: 0
+        )
+        .write(&mut image.editor(), Mode::Known)
+        .expect("valid generated field");
         assert_eq!(
             crate::generated_custom_config_field!(
                 CustomConfigEnumField<Mode>,
@@ -1745,13 +1773,13 @@ mod tests {
                 offset: 0
             )
             .read(&image),
-            Some(Mode::Unknown(7))
+            Some(Mode::Known)
         );
 
         crate::generated_custom_config_field!(CustomConfigResetField, len: 3, offset: 1)
             .clear(&mut image.editor())
             .expect("valid generated field");
-        assert_eq!(image.as_bytes(), &[7, 0, 0]);
+        assert_eq!(image.as_bytes(), &[1, 0, 0]);
     }
 
     #[test]

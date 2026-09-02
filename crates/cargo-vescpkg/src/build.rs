@@ -1007,6 +1007,26 @@ mod tests {
     use std::io::Read;
     use std::path::Path;
 
+    const FLOAT_OUT_BOY_QML: &str = include_str!("../../../examples/float-out-boy/package/ui.qml");
+
+    fn float_out_boy_config_xml() -> String {
+        let compressed =
+            include_bytes!("../../../examples/float-out-boy/src/conf/float_out_boy_config.dat");
+        let mut xml = String::new();
+        ZlibDecoder::new(&compressed[4..])
+            .read_to_string(&mut xml)
+            .expect("Float Out Boy config XML");
+        xml
+    }
+
+    fn xml_parameter<'a>(xml: &'a str, name: &str) -> &'a str {
+        let start_tag = format!("<{name}>");
+        let end_tag = format!("</{name}>");
+        let start = xml.find(&start_tag).expect("config parameter start");
+        let end = xml[start..].find(&end_tag).expect("config parameter end");
+        &xml[start..start + end + end_tag.len()]
+    }
+
     #[test]
     fn package_slug_matches_existing_artifact_names() {
         assert_eq!(package_slug("A minimal package"), "A-minimal-package");
@@ -1014,12 +1034,7 @@ mod tests {
 
     #[test]
     fn float_out_boy_config_xml_has_its_own_identity() {
-        let compressed =
-            include_bytes!("../../../examples/float-out-boy/src/conf/float_out_boy_config.dat");
-        let mut xml = String::new();
-        ZlibDecoder::new(&compressed[4..])
-            .read_to_string(&mut xml)
-            .expect("Float Out Boy config XML");
+        let xml = float_out_boy_config_xml();
 
         assert!(xml.contains("<valString>FloatOutBoyConfig</valString>"));
         assert!(xml.contains("<longName>Float Out Boy Cfg</longName>"));
@@ -1139,26 +1154,166 @@ mod tests {
     }
 
     #[test]
-    fn float_out_boy_qml_migrates_legacy_tune_archive_identity() {
-        let qml = include_str!("../../../examples/float-out-boy/package/ui.qml");
+    fn float_out_boy_config_xml_has_integer_axis_fault_limits() {
+        let xml = float_out_boy_config_xml();
 
-        assert!(qml.contains("[tuneManager.packageName,\"Refloat\"].includes"));
-        assert!(qml.contains("backup.package.name!==packageName"));
+        for name in ["fault_pitch", "fault_roll"] {
+            let parameter = xml_parameter(&xml, name);
+            assert!(parameter.contains("<type>2</type>"));
+            assert!(parameter.contains("<minInt>45</minInt>"));
+            assert!(parameter.contains("<maxInt>90</maxInt>"));
+            assert!(parameter.contains("<stepInt>5</stepInt>"));
+            assert!(parameter.contains("<valInt>60</valInt>"));
+        }
+    }
+
+    #[test]
+    fn float_out_boy_config_xml_has_cutoff_tuning_fields_and_limits() {
+        let xml = float_out_boy_config_xml();
+        let regen = xml_parameter(&xml, "torquetilt_strength_regen");
+
+        assert!(regen.contains("<stepDouble>0.01</stepDouble>"));
+        assert!(xml.contains("<atr.transition_boost>"));
+        assert!(xml.contains("<atr.filter.on_speed_time_constant>"));
+        assert!(xml.contains("<atr.filter.off_speed_time_constant>"));
+        assert!(xml.contains("<torque_tilt.filter.on_speed_limit>"));
+        assert!(xml.contains("<torque_tilt.filter.off_speed_limit>"));
+        assert!(xml.contains("<hardware.swap_footpad_adcs>"));
+        assert!(!xml.contains("<hertz>"));
+        assert!(!xml.contains("<turntilt_speed>"));
+        assert!(!xml.contains("<inputtilt_speed>"));
+        assert!(!xml.contains("<atr_response_boost>"));
+    }
+
+    #[test]
+    fn float_out_boy_config_xml_explains_startup_and_runtime_light_behavior() {
+        let xml = float_out_boy_config_xml();
+        let simple_start = xml_parameter(&xml, "startup_simplestart_enabled");
+        let leds_on = xml_parameter(&xml, "leds.on");
+        let headlights_on = xml_parameter(&xml, "leds.headlights_on");
+
+        assert!(simple_start.contains("still allowing heel-lift dismounts"));
+        assert!(simple_start.contains("disabled for one second from the last disengagement"));
+        assert!(leds_on.contains("can be toggled in runtime"));
+        assert!(leds_on.contains("until the board is restarted"));
+        assert!(headlights_on.contains("LEFT LEFT RIGHT"));
+        assert!(headlights_on.contains("RIGHT RIGHT LEFT"));
+        assert!(headlights_on.contains("until the board is restarted"));
+    }
+
+    #[test]
+    fn float_out_boy_config_xml_has_motor_utilization_status_settings() {
+        let xml = float_out_boy_config_xml();
+        let utilization = xml_parameter(&xml, "leds.status.motor_utilization_threshold");
+
+        assert!(utilization.contains("<valDouble>0.6</valDouble>"));
+        assert!(utilization.contains("maximum of duty cycle, motor current saturation"));
+        assert!(xml.contains("<leds.status.red_bar_percentage>"));
+        assert!(!xml.contains("<leds.status.duty_threshold>"));
+    }
+
+    #[test]
+    fn float_out_boy_qml_migrates_tunes_without_restoring_refloat_backups() {
+        assert!(FLOAT_OUT_BOY_QML.contains("[tuneManager.packageName,\"Refloat\"].includes"));
+        assert!(FLOAT_OUT_BOY_QML.contains("backup.package.name!==packageName"));
         assert!(
-            qml.contains("normalized.package={\"name\":packageName,\"version\":packageVersion}")
+            FLOAT_OUT_BOY_QML
+                .contains("normalized.package={\"name\":packageName,\"version\":packageVersion}")
         );
-        assert!(qml.contains("\"package\":{\"name\":packageName,\"version\":packageVersion}"));
-        assert!(qml.contains("var lines=csv.split(/\\r?\\n/)"));
-        assert!(qml.contains("append({\"tune\":tuneManager.normalizeArchiveTune(tunes[i])})"));
         assert!(
-            qml.contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
+            FLOAT_OUT_BOY_QML
+                .contains("\"package\":{\"name\":packageName,\"version\":packageVersion}")
         );
-        assert!(qml.contains(
+        assert!(FLOAT_OUT_BOY_QML.contains("var lines=csv.split(/\\r?\\n/)"));
+        assert!(
+            FLOAT_OUT_BOY_QML
+                .contains("append({\"tune\":tuneManager.normalizeArchiveTune(tunes[i])})")
+        );
+        assert!(
+            FLOAT_OUT_BOY_QML
+                .contains("if(tuneArchive&&tuneArchive.length>0){downloadedTunesModel.setTunes")
+        );
+        assert!(FLOAT_OUT_BOY_QML.contains(
             "https://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
         ));
-        assert!(!qml.contains(
+        assert!(!FLOAT_OUT_BOY_QML.contains(
             "http://us-central1-mimetic-union-377520.cloudfunctions.net/float_package_tunes_via_http"
         ));
+    }
+
+    #[test]
+    fn float_out_boy_qml_uses_cutoff_command_ids_and_logical_realtime_names() {
+        for declaration in [
+            "c_REMOTE:15",
+            "c_REALTIME_DATA_INTERNAL:31",
+            "c_REALTIME_DATA_INTERNAL_IDS:32",
+            "c_DATA_RECORD:41",
+            "c_DATA_RECORD_HEADER:42",
+            "c_DATA_RECORD_DATA:43",
+        ] {
+            assert!(FLOAT_OUT_BOY_QML.contains(declaration));
+        }
+
+        for name in [
+            "\"adc_left\"",
+            "\"adc_right\"",
+            "\"booster.torque\"",
+            "\"atr.transition_boost\"",
+            "\"control.freq\"",
+            "\"state.sat\"",
+        ] {
+            assert!(FLOAT_OUT_BOY_QML.contains(name));
+        }
+
+        assert!(!FLOAT_OUT_BOY_QML.contains("c_RC_MOVE"));
+        assert!(!FLOAT_OUT_BOY_QML.contains("\"footpad.adc1\""));
+        assert!(!FLOAT_OUT_BOY_QML.contains("\"footpad.adc2\""));
+        assert!(!FLOAT_OUT_BOY_QML.contains("\"booster.current\""));
+    }
+
+    #[test]
+    fn float_out_boy_qml_downloads_records_by_offset_not_timestamp() {
+        assert!(FLOAT_OUT_BOY_QML.contains(
+            "if(offset!==undefined){if(offset!==data.length){return;}}else if(lastTime===sampleTime){return;}"
+        ));
+        assert!(FLOAT_OUT_BOY_QML.contains("Math.round(decimationSlider.value)"));
+        assert!(FLOAT_OUT_BOY_QML.contains("recMenu.recordDuration*decimationSlider.value"));
+        assert!(FLOAT_OUT_BOY_QML.contains("c_DATA_RECORD_DATA"));
+    }
+
+    #[test]
+    fn float_out_boy_qml_has_grouped_nan_safe_clipped_plots() {
+        assert!(FLOAT_OUT_BOY_QML.contains("\"scalingGroup\":\"current\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("\"scalingGroup\":\"pitch\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("function getMinMaxKey(seriesMd,index)"));
+        assert!(FLOAT_OUT_BOY_QML.contains("if(!Number.isNaN(y))"));
+        assert!(FLOAT_OUT_BOY_QML.contains("component TapSlider:Item"));
+        assert!(FLOAT_OUT_BOY_QML.contains("component CloseToolButton:FloatingToolButton"));
+        assert!(FLOAT_OUT_BOY_QML.contains("var yBoundsTop=-yMax-0.001"));
+        assert!(FLOAT_OUT_BOY_QML.contains("var yBoundsBottom=-yMin+0.001"));
+        assert!(FLOAT_OUT_BOY_QML.contains("var yInBounds=y>=yBoundsTop&&y<=yBoundsBottom"));
+    }
+
+    #[test]
+    fn float_out_boy_qml_has_one_remote_command_and_fullscreen_overlay() {
+        assert!(FLOAT_OUT_BOY_QML.contains("function sendRemote(value)"));
+        assert!(FLOAT_OUT_BOY_QML.contains("var data=createData(3,c_REMOTE)"));
+        assert!(FLOAT_OUT_BOY_QML.contains("Popup{id:remoteOverlay"));
+        assert!(FLOAT_OUT_BOY_QML.contains("text:\"Fullscreen Remote\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("commands.sendRemote(remoteOverlay.value)"));
+        assert!(!FLOAT_OUT_BOY_QML.contains("sendRcMove"));
+    }
+
+    #[test]
+    fn float_out_boy_qml_has_cutoff_defaults_tips_and_led_status() {
+        assert!(FLOAT_OUT_BOY_QML.contains("standardButton(Dialog.Close).text=\"Keep Defaults\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("value:6"));
+        assert!(FLOAT_OUT_BOY_QML.contains("Glow{anchors.fill:uiHintRect"));
+        assert!(FLOAT_OUT_BOY_QML.contains("\"persistent_fatal_error\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("leds.status.motor_utilization_threshold"));
+        assert!(FLOAT_OUT_BOY_QML.contains("property string tabTitle:\"Float Out Boy\""));
+        assert!(FLOAT_OUT_BOY_QML.contains("text:\"Float Out Boy 0.1.0\""));
+        assert!(!FLOAT_OUT_BOY_QML.contains("text:\"Refloat"));
     }
 
     #[test]

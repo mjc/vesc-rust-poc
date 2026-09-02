@@ -40,7 +40,17 @@ extern crate std;
 fn main() {}
 
 mod app_data;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod config;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod custom_data;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod display;
 pub mod extensions;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod sync;
+#[cfg(any(test, target_arch = "arm"))]
+pub mod threads;
 
 pub use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
 
@@ -62,6 +72,7 @@ pub(crate) fn start(
     start: &mut vescpkg_rs::PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
     start.install_runtime_state(LoopbackState)?;
+    threads::register(start)?;
     app_data::register(start)?;
     if !start
         .register_extensions(extensions::package_extension_descriptors())?

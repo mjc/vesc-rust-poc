@@ -4,6 +4,8 @@
 
 use crate::balance::LoopConfig;
 use crate::bms::{FloatOutBoyBmsTemperature, FloatOutBoyBmsThresholds};
+#[cfg(any(test, target_arch = "arm"))]
+use crate::domain::FloatOutBoyFootpadAdcMapping;
 use crate::{
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
@@ -43,7 +45,7 @@ pub(crate) use flywheel::FloatOutBoyFlywheelConfig;
 // `third_party/float-out-boy/src/main.c:2388-2396`.
 vescpkg_rs::firmware_section_static!(
     ".text.float_out_boy_config_xml",
-    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 25_763] = *include_bytes!("conf/float_out_boy_config.dat")
+    pub(crate) static FLOAT_OUT_BOY_CONFIG_XML: [u8; 27_514] = *include_bytes!("conf/float_out_boy_config.dat")
 );
 
 // Pinned Refloat cutoff generated serialized default custom config. Upstream
@@ -205,6 +207,8 @@ impl FloatOutBoyConfigImage {
         INPUT_TILT_REMOTE_TYPE_FIELD: CustomConfigWireByteField => input_tilt_remote_type -> u8, offset: 99, map: WireByte::as_u8;
         INPUT_TILT_INVERT_FIELD: CustomConfigFlagField => input_tilt_inverted -> bool, offset: 102;
         INPUT_TILT_DEADBAND_FIELD: CustomConfigRatioField => input_tilt_deadband -> Ratio, offset: 103, scale: 10000.0;
+        #[cfg(any(test, target_arch = "arm"))]
+        FOOTPAD_ADC_SWAP_FIELD: CustomConfigFlagField => footpad_adc_swapped -> bool, offset: 247;
         SPEED_PUSHBACK_THRESHOLD_FIELD: CustomConfigWireByteField => speed_pushback_threshold -> Speed, offset: 83, map: |value: WireByte| value.scaled(1.0, 0.0, Speed::from_kilometers_per_hour);
         HARDWARE_LED_MODE_FIELD: CustomConfigEnumField<FloatOutBoyHardwareLedMode> => hardware_led_mode_id -> u8, offset: 232, map: WireByte::as_u8;
     }
@@ -322,6 +326,11 @@ impl FloatOutBoyConfigImage {
 
     pub(crate) fn editor(&mut self) -> FloatOutBoyConfigEditor<'_> {
         FloatOutBoyConfigEditor(self.0.editor())
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(crate) fn footpad_adc_mapping(&self) -> FloatOutBoyFootpadAdcMapping {
+        FloatOutBoyFootpadAdcMapping::from_swapped(self.footpad_adc_swapped())
     }
 }
 
@@ -663,6 +672,17 @@ impl From<u8> for FloatOutBoyParkingBrakeMode {
             1 => Self::Idle,
             2 => Self::Never,
             value => Self::Unknown(value),
+        }
+    }
+}
+
+impl From<FloatOutBoyParkingBrakeMode> for u8 {
+    fn from(value: FloatOutBoyParkingBrakeMode) -> Self {
+        match value {
+            FloatOutBoyParkingBrakeMode::Always => 0,
+            FloatOutBoyParkingBrakeMode::Idle => 1,
+            FloatOutBoyParkingBrakeMode::Never => 2,
+            FloatOutBoyParkingBrakeMode::Unknown(value) => value,
         }
     }
 }

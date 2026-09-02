@@ -12,6 +12,7 @@ import Vedder.vesc.configparams 1.0
 import Vedder.vesc.utility 1.0
 import QtQuick.Controls.Material 2.2
 Item{id:mainItem
+property string tabTitle:"Float Out Boy"
 property Commands vescCommands:VescIf.commands()
 function round(num){if(num!=num){return"--";}
 return Math.round(num);}
@@ -40,19 +41,17 @@ onTriggered:{state.pkgState=state.s_Disconnected;}}
 Timer{running:true
 repeat:true
 interval:100
-onTriggered:{vescCommands.getValuesSetup();if(state.commsState===state.comms_Info){commands.sendGetInfo();}else if(state.commsState===state.comms_RTDataIDs){commands.sendGetRtDataIds();}else{commands.sendGetRtData();}
-if(moveSlider.value!=0){commands.sendRcMove(moveSlider.value);}
-if(tiltEnabled.checked){vescCommands.lispSendReplCmd("(set-remote-state "+tiltSlider.value+" 0 0 0 0)");}}}
+onTriggered:{vescCommands.getValuesSetup();if(state.commsState===state.comms_Info){commands.sendGetInfo();}else if(state.commsState===state.comms_RTDataIDs){commands.sendGetRtDataIds();}else{commands.sendGetRtData();}}}
 Timer{running:lights.enabled
 repeat:true
 interval:250
 triggeredOnStart:true
 onTriggered:{commands.sendLightsControl();}}
-Timer{running:true
+Timer{running:state.capDataRecord
 repeat:true
-interval:10
-onTriggered:{if(!moveSlider.pressed){var stepSize=0.05;if(moveSlider.value>0){if(moveSlider.value<stepSize){moveSlider.value=0;}else{moveSlider.value-=stepSize;}}else if(moveSlider.value<0){if(moveSlider.value>-stepSize){moveSlider.value=0;}else{moveSlider.value+=stepSize;}}}
-if(!tiltSlider.pressed){var stepSize=0.05;if(tiltSlider.value>0){if(tiltSlider.value<stepSize){tiltSlider.value=0;}else{tiltSlider.value-=stepSize;}}else if(tiltSlider.value<0){if(tiltSlider.value>-stepSize){tiltSlider.value=0;}else{tiltSlider.value+=stepSize;}}}}}
+interval:500
+triggeredOnStart:true
+onTriggered:{commands.sendDataRecordStatus();}}
 QtObject{id:board
 function getId(){return VescIf.getLastBleAddr();}
 function getName(){var name=VescIf.getBleName(VescIf.getLastBleAddr());if(!name){return null;}
@@ -110,7 +109,7 @@ function getParamType(name){if(pkgConfig.isParamDouble(name)){return"Double";}el
 return null;}
 function getDisplayName(name){return pkgConfig.getLongName(name);}
 function getEnumNames(name){return pkgConfig.getParamEnumNames(name);}
-function paramIsTune(name){var tuneBlacklist=["tiltback_return_speed","tiltback_duty","tiltback_duty_angle","tiltback_duty_speed","is_dutybeep_enabled","tiltback_hv_angle","tiltback_hv_speed","tiltback_lv_angle","tiltback_lv_speed","disabled","fault_adc1","fault_adc2","hertz","inputtilt_remote_type","inputtilt_deadband","is_footbeep_enabled","is_beeper_enabled","tiltback_hv","tiltback_lv","tiltback_speed",];return!name.startsWith("haptic.")&&!name.startsWith("hardware.")&&!tuneBlacklist.includes(name);}
+function paramIsTune(name){var tuneBlacklist=["tiltback_return_speed","tiltback_duty","tiltback_duty_angle","tiltback_duty_speed","is_dutybeep_enabled","tiltback_hv_angle","tiltback_hv_speed","tiltback_lv_angle","tiltback_lv_speed","persistent_fatal_error","disabled","fault_adc1","fault_adc2","hertz","inputtilt_remote_type","inputtilt_deadband","is_footbeep_enabled","is_beeper_enabled","tiltback_hv","tiltback_lv","tiltback_speed",];return!name.startsWith("haptic.")&&!name.startsWith("hardware.")&&!tuneBlacklist.includes(name);}
 function fetchConfig(tuneOnly){if(!checkConfig())return null;var settings={};for(let subGroup of pkgConfig.getParamSubgroups("General")){for(let param of pkgConfig.getParamsFromSubgroup("General",subGroup)){if(tuneOnly&&!paramIsTune(param)){continue;}
 var value=getParamValue(param);if(value!==null){settings[param]=getParamValue(param);}}}
 return settings;}
@@ -128,15 +127,15 @@ function setInputTiltRemoteType(type){if(!checkConfig())return;if(pkgConfig.getP
 Connections{id:commands
 target:vescCommands
 readonly property int c_INFO:0
-readonly property int c_RC_MOVE:7
 readonly property int c_HANDTEST:13
+readonly property int c_REMOTE:15
 readonly property int c_LIGHTS_CONTROL:20
 readonly property int c_FLYWHEEL:22
-readonly property int c_REALTIME_DATA:31
-readonly property int c_REALTIME_DATA_IDS:32
+readonly property int c_REALTIME_DATA_INTERNAL:31
+readonly property int c_REALTIME_DATA_INTERNAL_IDS:32
 readonly property int c_ALERTS_LIST:35
 readonly property int c_ALERTS_CONTROL:36
-readonly property int c_DATA_RECORD_REQUEST:41
+readonly property int c_DATA_RECORD:41
 readonly property int c_DATA_RECORD_HEADER:42
 readonly property int c_DATA_RECORD_DATA:43
 function getFloat16(dataView,ind){var x=dataView.getUint16(ind);var e=(x&0x7C00)>>10;var m16=x&0x03FF;var m=m16<<13;var v=m16>0?140+Math.floor(Math.log2(m16)):0;var r=(x&0x8000)<<16|(e!=0)*((e+112)<<23|m)|((e==0)&(m!=0))*((v-37)<<23|((m<<(150-v))&0x007FE000));return new Float32Array(new Uint32Array([r]).buffer)[0];}
@@ -146,33 +145,36 @@ function getStrings(dataView,ind){var num=dataView.getUint8(ind++);var strs=[];f
 return[strs,ind];}
 function createData(size,command){var data=new DataView(new ArrayBuffer(size));var ind=0;data.setUint8(ind++,101);data.setUint8(ind++,command);return data;}
 function sendGetInfo(){var data=createData(4,c_INFO);data.setUint8(2,2);vescCommands.sendCustomAppData(data.buffer);}
-function sendGetRtData(){vescCommands.sendCustomAppData(createData(2,c_REALTIME_DATA).buffer);}
-function sendGetRtDataIds(){vescCommands.sendCustomAppData(createData(2,c_REALTIME_DATA_IDS).buffer);}
+function sendGetRtData(){vescCommands.sendCustomAppData(createData(2,c_REALTIME_DATA_INTERNAL).buffer);}
+function sendGetRtDataIds(){vescCommands.sendCustomAppData(createData(2,c_REALTIME_DATA_INTERNAL_IDS).buffer);}
 function sendLightsControl(on,headlightsOn){var data=createData(7,c_LIGHTS_CONTROL);var mask=0;var value=0;if(on!==undefined){mask|=0b01;if(on){value|=0b01;}}
 if(headlightsOn!==undefined){mask|=0b10;if(headlightsOn){value|=0b10;}}
 data.setUint32(2,mask);data.setUint8(6,value);vescCommands.sendCustomAppData(data.buffer);}
 function sendAlertsList(startTime){var data=createData(6,c_ALERTS_LIST);if(startTime!==undefined&&startTime!==null){data.setUint32(2,startTime);}
 vescCommands.sendCustomAppData(data.buffer);}
 function sendAlertsClearFatal(){var data=createData(3,c_ALERTS_CONTROL);data.setUint8(2,0x1);vescCommands.sendCustomAppData(data.buffer);}
-function sendRcMove(value){var data=createData(6,c_RC_MOVE);var current=Math.abs(Math.round(value*70))+10;data.setUint8(2,value>0?1:0);data.setUint8(3,current);data.setUint8(4,1);data.setUint8(5,current+1);vescCommands.sendCustomAppData(data.buffer);}
+function sendRemote(value){var data=createData(3,c_REMOTE);data.setUint8(2,value*127);vescCommands.sendCustomAppData(data.buffer);}
 function sendHandtest(on){var data=createData(3,c_HANDTEST);data.setUint8(2,on);vescCommands.sendCustomAppData(data.buffer);}
 function sendFlywheel(on){var data=createData(9,c_FLYWHEEL);data.setUint8(2,on?130:128);if(on){data.setUint8(3,0);data.setUint8(4,0);data.setUint8(5,0);data.setUint8(6,0);data.setUint8(7,1);data.setUint8(8,0);}
 vescCommands.sendCustomAppData(data.buffer);}
+readonly property int dr_STATUS:0
 readonly property int dr_RECORD:1
 readonly property int dr_AUTOSTART:2
 readonly property int dr_AUTOSTOP:3
-function sendDataRecordControl(key,value){var data=createData(5,c_DATA_RECORD_REQUEST);data.setUint8(2,1);data.setUint8(3,key);data.setUint8(4,value);vescCommands.sendCustomAppData(data.buffer);}
-function sendDataRecordRequest(header,offset){if(header){var data=createData(4,c_DATA_RECORD_REQUEST);data.setUint8(2,2);data.setUint8(3,1);}else{var data=createData(8,c_DATA_RECORD_REQUEST);data.setUint8(2,2);data.setUint8(3,2);data.setUint32(4,offset);}
+readonly property int dr_DECIMATION:4
+function sendDataRecordControl(key,value){var data=createData(5,c_DATA_RECORD);data.setUint8(2,1);data.setUint8(3,key);data.setUint8(4,value);vescCommands.sendCustomAppData(data.buffer);}
+function sendDataRecordStatus(){var data=createData(4,c_DATA_RECORD);data.setUint8(2,1);data.setUint8(3,dr_STATUS);vescCommands.sendCustomAppData(data.buffer);}
+function sendDataRecordRequest(header,offset){if(header){var data=createData(4,c_DATA_RECORD);data.setUint8(2,2);data.setUint8(3,1);}else{var data=createData(8,c_DATA_RECORD);data.setUint8(2,2);data.setUint8(3,2);data.setUint32(4,offset);}
 vescCommands.sendCustomAppData(data.buffer);}
 function onValuesSetupReceived(values,mask){batteryBar.value=values.battery_level*100;odometer.value=values.odometer*0.001*vescConfig.imperialFactor;tachometer.value=values.tachometer_abs*0.001*vescConfig.imperialFactor;var speed=Math.abs(values.speed*3.6*vescConfig.imperialFactor);consumption.add(Math.max(Math.min(values.current_in*values.v_in/Math.max(speed,1e-6),60),-60));}
 function onCustomAppDataReceived(data){var dv=new DataView(data,0);var ind=0;var packageId=dv.getUint8(ind++);if(packageId!==101){return;}
-var msgtype=dv.getUint8(ind++);if(msgtype==c_INFO){ind+=1;var flags=dv.getUint8(ind++);ind+=47;state.ticksPerSecond=dv.getUint32(ind);ind+=4;var capabilities=dv.getUint32(ind);ind+=4;state.setCapabilities(capabilities);var extraFlags=dv.getUint8(ind++);state.commsState=state.comms_RTDataIDs;}else if(msgtype==c_LIGHTS_CONTROL){var values=dv.getUint8(ind++);lights.on=values&0b01;lights.headlightsOn=values&0b10;}else if(msgtype===c_ALERTS_LIST){alerts.receiveAlertsList(dv,ind);}else if(msgtype===c_REALTIME_DATA){if(state.commsState!==state.comms_Initialized){return;}
-var mask=dv.getUint8(ind++);var hasRuntime=!!(mask&0x1);var hasCharging=!!(mask&0x2);var hasAlerts=!!(mask&0x4);var extraFlags=dv.getUint8(ind++);state.extraRecording=extraFlags&0x1;state.extraRecAutostart=extraFlags&0x2;state.extraRecAutostop=extraFlags&0x4;state.fatalError=extraFlags&0x8;var time=dv.getUint32(ind);ind+=4;state.setTimeReference(time);var modeAndState=dv.getUint8(ind++);state.pkgMode=modeAndState>>4;var pkgState=modeAndState&0xF;state.pkgState=pkgState;var sensorAndFlags=dv.getUint8(ind++);var fpState=sensorAndFlags>>6;state.fpState=fpState;var wheelslip=sensorAndFlags&0b00000001;state.wheelslip=wheelslip;state.darkride=sensorAndFlags&0b00000010;state.charging=sensorAndFlags&0b00100000;var setpointAndStop=dv.getUint8(ind++);var sat=setpointAndStop>>4;state.setpointAdjustmentType=sat;state.stopCondition=setpointAndStop&0xF;state.beepReason=dv.getUint8(ind++);var rtDataIdleIts=state.rtDataIdleItems;var rtDataAllIts=state.rtDataAllItems;var newRt=Array(rtDataAllIts.length).fill(NaN);var i=0;for(;i<rtDataIdleIts.length;i++){newRt[i]=getFloat16(dv,ind);ind+=2;}
+var msgtype=dv.getUint8(ind++);if(msgtype==c_INFO){ind+=1;var flags=dv.getUint8(ind++);ind+=47;state.ticksPerSecond=dv.getUint32(ind);ind+=4;var capabilities=dv.getUint32(ind);ind+=4;state.setCapabilities(capabilities);var extraFlags=dv.getUint8(ind++);state.commsState=state.comms_RTDataIDs;}else if(msgtype==c_LIGHTS_CONTROL){var values=dv.getUint8(ind++);lights.on=values&0b01;lights.headlightsOn=values&0b10;}else if(msgtype===c_ALERTS_LIST){alerts.receiveAlertsList(dv,ind);}else if(msgtype===c_REALTIME_DATA_INTERNAL){if(state.commsState!==state.comms_Initialized){return;}
+var mask=dv.getUint8(ind++);var hasRuntime=!!(mask&0x1);var hasCharging=!!(mask&0x2);var hasAlerts=!!(mask&0x4);var extraFlags=dv.getUint8(ind++);state.extraRecording=extraFlags&0x1;var time=dv.getUint32(ind);ind+=4;state.setTimeReference(time);var stateFlags=dv.getUint32(ind);ind+=4;state.pkgMode=(stateFlags>>28)&0b11;state.pkgState=(stateFlags>>24)&0b11;var fpState=(stateFlags>>22)&0b11;state.fpState=fpState;var flags=(stateFlags>>16)&0b111111;var wheelslip=flags&0b000001;state.wheelslip=wheelslip;state.darkride=flags&0b000010;state.charging=flags&0b100000;state.fatalError=flags&0b010000;var sat=(stateFlags>>12)&0xF;state.setpointAdjustmentType=sat;state.stopCondition=(stateFlags>>8)&0xF;state.beepReason=stateFlags&0xFF;var rtDataIdleIts=state.rtDataIdleItems;var rtDataAllIts=state.rtDataAllItems;var newRt=Array(rtDataAllIts.length).fill(NaN);var i=0;for(;i<rtDataIdleIts.length;i++){newRt[i]=getFloat16(dv,ind);ind+=2;}
 if(hasRuntime){for(;i<rtDataAllIts.length;i++){newRt[i]=getFloat16(dv,ind);ind+=2;}}
 state.rtData=state.newRtData(newRt);if(hasCharging){chargingInfo.current=getFloat16(dv,ind);ind+=2;chargingInfo.voltage=getFloat16(dv,ind);ind+=2;}
 if(hasAlerts){ind+=9;}
-var running=+(state.pkgState===state.s_Running);rtPlotData.addSample([time,running,wheelslip,sat,fpState].concat(newRt));rtPlotData.makeReady();}else if(msgtype===c_REALTIME_DATA_IDS){if(state.commsState!==state.comms_RTDataIDs){return;}
-[state.rtDataIdleItems,ind]=getStrings(dv,ind);[state.rtDataRuntimeItems,ind]=getStrings(dv,ind);state.rtDataAllItems=state.rtDataIdleItems.concat(state.rtDataRuntimeItems);state.commsState=state.comms_Initialized;}else if(msgtype===c_DATA_RECORD_HEADER){recordedPlotData.receiveHeader(dv,ind);}else if(msgtype===c_DATA_RECORD_DATA){recordedPlotData.receiveData(dv,ind);}
+var running=+(state.pkgState===state.s_Running);rtPlotData.addSample([time,running,wheelslip,sat,fpState].concat(newRt));rtPlotData.makeReady();}else if(msgtype===c_REALTIME_DATA_INTERNAL_IDS){if(state.commsState!==state.comms_RTDataIDs){return;}
+[state.rtDataIdleItems,ind]=getStrings(dv,ind);[state.rtDataRuntimeItems,ind]=getStrings(dv,ind);state.rtDataAllItems=state.rtDataIdleItems.concat(state.rtDataRuntimeItems);state.commsState=state.comms_Initialized;}else if(msgtype===c_DATA_RECORD){var enabled=dv.getUint8(ind++);var flags=dv.getUint8(ind++);state.extraRecording=flags&0x1;state.extraRecAutostart=flags&0x2;state.extraRecAutostop=flags&0x4;state.extraRecDecimation=dv.getUint8(ind++);state.extraRecDuration=dv.getUint16(ind)/100;ind+=2;}else if(msgtype===c_DATA_RECORD_HEADER){recordedPlotData.receiveHeader(dv,ind);}else if(msgtype===c_DATA_RECORD_DATA){recordedPlotData.receiveData(dv,ind);}
 packageConnectionWatchdog.restart();}}
 Settings{id:preferences
 category:"preferences"
@@ -203,23 +205,25 @@ var pus=persistentData.packageUpdateSnooze;if(pus&&now-pus<30*oneDayMs){return;}
 var version=packageLoader.getPackageVersion(pkgName);if(!version){print("Float Out Boy: Failed to retrieve package version");return;}
 if(cmpVersion(parseVersion(version),parseVersion(pkgVersion))==1){newPackageVersionDialog.show(version);}}}
 component UIHint:Item{id:hint
+visible:SwipeView.view?(SwipeView.isCurrentItem||SwipeView.isPreviousItem||SwipeView.isNextItem):false
+x:SwipeView.view?SwipeView.index*SwipeView.view.width:0
 property var target
 property real targetX
 property real targetY
 property real targetWidth
 property real targetHeight
 property Settings settings
-property string settingName
+property string hintId
 property bool shown
-function updateTarget(){if(target!==null){var p=mapFromItem(target,0,0);targetX=p.x;targetY=p.y;}}
+function updateTarget(){if(target!==null){var ref=SwipeView.view||hint;var p=ref.mapFromItem(target,0,0);targetX=p.x;targetY=p.y;}}
 onTargetChanged:{targetWidth=target.width;targetHeight=target.height;updateTarget();}
 Connections{target:hint.target
 function onXChanged(){hint.updateTarget();}
 function onYChanged(){hint.updateTarget();}
 function onWidthChanged(){hint.targetWidth=target.width;hint.updateTarget();}
 function onHeightChanged(){hint.targetHeight=target.height;hint.updateTarget();}}
-Component.onCompleted:{shown=settings[settingName];}
-onShownChanged:{settings[settingName]=shown;}
+Component.onCompleted:{shown=settings[hintId];}
+onShownChanged:{settings[hintId]=shown;}
 MouseArea{z:10
 anchors.fill:parent}}
 component UIHintText:NText{anchors.margins:50
@@ -227,19 +231,37 @@ width:parent.width-50
 font.pointSize:15
 horizontalAlignment:TextInput.AlignHCenter
 wrapMode:Text.WordWrap}
-component UIHintFrame:Rectangle{anchors.fill:parent
-anchors.margins:-5
+component UIHintFrame:Item{anchors.fill:parent
+anchors.margins:-3
+Rectangle{id:uiHintRect
+anchors.fill:parent
 color:"transparent"
 border.color:Utility.getAppHexColor("lightAccent")
-border.width:1
+border.width:2
 radius:8
 opacity:0.7}
-component UIHintUnderline:Rectangle{anchors.left:parent.left
+Glow{anchors.fill:uiHintRect
+radius:4
+samples:radius*8+1
+opacity:0.4
+color:Utility.getAppHexColor("lightAccent")
+source:uiHintRect
+spread:0.9}}
+component UIHintUnderline:Item{anchors.left:parent.left
 anchors.top:parent.top
-width:unit*0.8
-height:3
+width:toolButtonSize
+height:2
+Rectangle{id:uiHintUnderline
+anchors.fill:parent
 color:Utility.getAppHexColor("lightAccent")
 opacity:0.7}
+Glow{anchors.fill:uiHintUnderline
+radius:8
+samples:radius*8+1
+opacity:0.4
+color:Utility.getAppHexColor("lightAccent")
+source:uiHintUnderline
+spread:0.8}}
 property var gState:state
 Component{id:statusTextComp
 UIHint{target:statusText
@@ -255,7 +277,6 @@ anchors.bottom:statusTextSubject.top
 text:"Tap the state text to show more board state details like Stop Condition, Last Beep Reason, errors and faults."}}}
 Component{id:plotComp
 UIHint{target:rtPlot
-property int stage:settingName==="plotCursor"?0:settingName==="drGeneral"?1:settingName==="drStartStop"?2:3
 Plot{id:subject
 x:parent.targetX
 y:parent.targetY
@@ -265,47 +286,56 @@ showRecordDownload:gState.capDataRecord
 dotsEnabled:false
 plotData:PlotData{id:pd
 seriesMetaData:plotSeriesMetaData}
-Component.onCompleted:{pd.init(["motor.current"],1);subject.init(1);pd.addSample([0,0,0,0,0,10],0);pd.addSample([2,0,0,0,0,22],1);pd.addSample([4,0,0,0,0,15],2);pd.addSample([9,0,0,0,0,30],3);pd.makeReady();if(stage===0){subject.spawnCursor(4);}}
-UIHintFrame{}
-UIHintUnderline{anchors.topMargin:unit
-anchors.leftMargin:unit
-width:unit*1.7
-visible:stage===1}
-UIHintUnderline{anchors.topMargin:unit
-anchors.leftMargin:1.9*unit
-visible:stage===2}
-UIHintUnderline{anchors.topMargin:unit
-anchors.leftMargin:unit
-visible:stage===3}}
+Component.onCompleted:{if(hintId!=="statusText"){bottomStackTabs.currentIndex=2;}
+pd.init(["current"],1);subject.init(1);pd.addSample([0,0,0,0,0,10],0);pd.addSample([2,0,0,0,0,22],1);pd.addSample([4,0,0,0,0,15],2);pd.addSample([9,0,0,0,0,30],3);pd.makeReady();if(hintId==="plotCursor"){subject.spawnCursor(4);}else if(hintId==="plotScaling"){subject.showMenu();subject.selectSeries("current");scalingPanelHintFrame.createObject(subject.getMenuFrame());}}
+onVisibleChanged:{if(hintId!=="statusText"){bottomStackTabs.currentIndex=2;}
+if(hintId==="plotScaling"){subject.showMenu();subject.selectSeries("current");}}
+UIHintFrame{visible:hintId!=="plotScaling"}
+Component{id:scalingPanelHintFrame
+UIHintFrame{anchors.margins:-1}}
+UIHintUnderline{anchors.topMargin:toolButtonSize*1.2
+anchors.leftMargin:toolButtonSize*1.2
+width:toolButtonSize*2.1
+visible:hintId==="drGeneral"}
+UIHintUnderline{anchors.topMargin:toolButtonSize*1.2
+anchors.leftMargin:toolButtonSize*2.3
+visible:hintId==="drStartStop"}
+UIHintUnderline{anchors.topMargin:toolButtonSize*1.2
+anchors.leftMargin:toolButtonSize*1.2
+visible:hintId==="drDownload"}}
 UIHintText{anchors.horizontalCenter:subject.horizontalCenter
 anchors.bottom:subject.top
 text:"View a plot of realtime data (log) from the package on the Data tab.\n\nLong press anywhere in the plot area to spawn a cursor.\n\nYou can dismiss the cursor by a swipe up gesture on it."
-visible:stage===0}
+visible:hintId==="plotCursor"}
 UIHintText{anchors.horizontalCenter:subject.horizontalCenter
 anchors.bottom:subject.top
-text:"Congratulations, you have the Data Record firmware installed. You are now part of the secret Data Recording society.\n\nYour board has the ability to store a short detailed data \"log\" by itself, you don't need to be connected.\n\nIt's controlled by these two buttons."
-visible:stage===1}
+text:"Use the plot series (hamburger) menu to toggle series visibility.\n\nLong press on a series to open the scaling panel.\n\nUse the \"A\" checkbox to toggle automatic scaling.\n\nThe slider can then be used to zoom in on the data."
+visible:hintId==="plotScaling"}
 UIHintText{anchors.horizontalCenter:subject.horizontalCenter
 anchors.bottom:subject.top
-text:"This button indicates whether the board is recording. You can use it to start and stop the recording manually.\n\nThe board automatically starts recording when engaged and stops recording on disengage. You can disable the autostart and autostop functionality by long-pressing the button.\n\nIf you nosedive, check the recording before engaging again!"
-visible:stage==2}
+text:"You have the Data Record firmware installed.\n\nYour board has the ability to store a short detailed data \"log\" by itself, you don't need to be connected.\n\nIt's controlled by these two buttons."
+visible:hintId==="drGeneral"}
+UIHintText{anchors.horizontalCenter:subject.horizontalCenter
+anchors.bottom:subject.top
+text:"This button indicates whether the board is recording. You can use it to start and stop the recording manually.\n\nThe board automatically starts recording when engaged and stops recording on disengage. Control this and the recording duration by long-pressing the button.\n\nIf you nosedive, check the recording before engaging again!"
+visible:hintId==="drStartStop"}
 UIHintText{anchors.horizontalCenter:subject.horizontalCenter
 anchors.bottom:subject.top
 text:"You can download the stored data using this button. It automatically stops recording. Do not start it while you're downloading, or you'll corrupt your data."
-visible:stage==3}}}
+visible:hintId==="drDownload"}}}
 QtObject{id:uiHints
 property Settings uiHintsSettings:Settings{id:uiHintsSettings
 category:"uiHints"
 property bool statusText
 property bool plotCursor
+property bool plotScaling
 property bool drGeneral
 property bool drStartStop
 property bool drDownload}
-readonly property var hints:new Map([["statusText",statusTextComp],["plotCursor",plotComp],])
+readonly property var hints:new Map([["statusText",statusTextComp],["plotCursor",plotComp],["plotScaling",plotComp],])
 readonly property var dataRecordHints:new Map([["drGeneral",plotComp],["drStartStop",plotComp],["drDownload",plotComp],])
-function fill(container){for(let[key,value]of hints){if(!uiHintsSettings[key]){if(key=="plotCursor"){bottomStackTabs.currentIndex=2;}
-value.createObject(container,{settings:uiHintsSettings,settingName:key});}}}
-function fillDataRecord(container){if(state.capDataRecord){for(let[key,value]of dataRecordHints){if(!uiHintsSettings[key]){bottomStackTabs.currentIndex=2;value.createObject(container,{settings:uiHintsSettings,settingName:key});}}}}
+function fill(container){for(let[key,value]of hints){if(!uiHintsSettings[key]){value.createObject(container,{settings:uiHintsSettings,hintId:key});}}}
+function fillDataRecord(container){if(state.capDataRecord){for(let[key,value]of dataRecordHints){if(!uiHintsSettings[key]){value.createObject(container,{settings:uiHintsSettings,hintId:key});}}}}
 function reset(container){for(let key of hints.keys()){uiHintsSettings[key]=false;}
 if(state.capDataRecord){for(let key of dataRecordHints.keys()){uiHintsSettings[key]=false;}}}}
 Connections{id:tuneManager
@@ -314,21 +344,22 @@ readonly property int formatVersionMajor:1
 readonly property int formatVersionMinor:0
 readonly property string formatVersion:"%1.%2".arg(formatVersionMajor).arg(formatVersionMinor)
 readonly property string packageName:"Float Out Boy"
-readonly property string packageVersion:"0.1.0"
+readonly property string packageVersion:"1.3.0"
 readonly property int maxTunes:6
 signal idBackupFinished(var backup)
 signal autoBackupFinished(var backup)
 property var tuneStorage:Settings{id:tuneStorage
-category:"float-out-boy-configs"
+category:"configs"
 property var tuneArchive
 property var tuneArchiveDownloadDate
 property var fullBackup}
 property var tunes:{var tunes={}
 for(var slot=1;slot<=maxTunes;slot++){var tune=loadTune(slot);if(tune){tunes[slot]=tune;}}
 return tunes;}
+function replaceProperty(tune,oldName,newName){if(tune.settings.hasOwnProperty(oldName)){tune.settings[newName]=tune.settings[oldName];delete tune.settings[oldName];}}
 property var migrations:{"1.1":function(tune){var[fwMajor,fwMinor]=board.getFwVersion();if(fwMajor>6||(fwMajor==6&&fwMinor>=5)&&motorConfig.batteryCells>0){if(tune.settings["tiltback_hv"]>10){tune.settings["tiltback_hv"]/=motorConfig.batteryCells;}
 if(tune.settings["tiltback_lv"]>10){tune.settings["tiltback_lv"]/=motorConfig.batteryCells;}}
-return[tune,[1,2]];},}
+return[tune,[1,2]];},"1.2":function(tune){replaceProperty(tune,"leds.status.duty_threshold","leds.status.motor_utilization_threshold");return[tune,[1,3]];},}
 function onUpdate(){triggerAutoRestore();tunes=tunes;}
 property alias fullBackup:tuneStorage.fullBackup
 function convertToOldFormat(tune){if(Array.isArray(tune.settings)){return tune;}
@@ -367,7 +398,7 @@ saveBackup("auto_backup_"+board.getId(),backup);autoBackupFinished(backup);}
 function autoRestore(){var backup=loadBackup("auto_backup_"+board.getId());if(!backup){return;}
 applyConfigDialog.show(backup,false,false);}
 function triggerAutoRestore(){if(!packageConfig.checkConfig()){return;}
-if(packageConfig.isDefault()){var backup=loadBackup("auto_backup_"+board.getId());if(backup){print("Float Out Boy: Automatic backup restore.");applyConfigDialog.show(backup,true,false);}else{print("Float Out Boy: No automatic backup to restore.");}}else{print("Float Out Boy: Automatic config backup.");autoBackup();}}
+if(packageConfig.isDefault()){var backup=loadBackup("auto_backup_"+board.getId());if(!backup){print("Float Out Boy: No automatic backup to restore.");}else if(packageConfig.diffConfig(backup).differs.length===0){print("Float Out Boy: Automatic backup matches defaults, skipping.");}else{print("Float Out Boy: Automatic backup restore.");applyConfigDialog.show(backup,true,false);}}else{print("Float Out Boy: Automatic config backup.");autoBackup();}}
 function saveTune(slot,tune){var id=tuneId(slot);tuneStorage.setValue(id,JSON.stringify(convertToOldFormat(tune)));tunes[slot]=tune;tunes=tunes;}
 function loadTune(slot){var tune=tuneStorage.value(tuneId(slot));if(tune){if(typeof tune==="string"){tune=JSON.parse(tune);}
 return migrateTune(convertFromOldFormat(tune));}
@@ -398,6 +429,8 @@ onCommsStateChanged:{if(commsState==comms_Initialized){commsInitialized();}}
 property bool extraRecording:false
 property bool extraRecAutostart:false
 property bool extraRecAutostop:false
+property int extraRecDecimation:1
+property real extraRecDuration:0
 property int ticksPerSecond
 readonly property int cap_Lights:1
 readonly property int cap_LightsExternal:2
@@ -515,16 +548,17 @@ property real fontSizeBig:0.4*unit
 property real fontSizeNormal:0.35*unit
 property real fontSizeSmall:0.3*unit
 property real fontSizeSuperSmall:0.25*unit
-property var plotSeriesMetaData:[["motor.erpm",{"name":"ERPM","color":"#469138","visible":true}],["motor.duty_cycle",{"name":"Duty Cycle","color":"#e3ac34","visible":true}],["motor.current",{"name":"Motor Current","color":"#e33421","visible":true}],["motor.dir_current",{"name":"Directional Current","color":"#cc686b","visible":false}],["motor.filt_current",{"name":"Filtered Current","color":"#734828","visible":false}],["imu.pitch",{"name":"Pitch","color":"#b1b277","visible":true}],["imu.balance_pitch",{"name":"Balance Pitch","color":"#53b3bf","visible":true}],["torque_tilt.setpoint",{"name":"Torque Tilt Setpoint","color":"#df4a98","visible":true}],["atr.setpoint",{"name":"ATR Setpoint","color":"#7640d6","visible":true}],["brake_tilt.setpoint",{"name":"Brake Tilt Setpoint","color":"#b29ad7","visible":false}],["turn_tilt.setpoint",{"name":"Turn Tilt Setpoint","color":"#e095af","visible":false}],["remote.setpoint",{"name":"Remote Setpoint","color":"#803a4d","visible":false}],["setpoint",{"name":"Setpoint","color":"#e57e20","visible":true}],["motor.speed",{"name":"Speed","color":"#3f9469","visible":false}],["motor.batt_voltage",{"name":"Battery Voltage","color":"#6e6ee0","visible":false}],["motor.batt_current",{"name":"Battery Current","color":"#cf44cd","visible":false}],["motor.mosfet_temp",{"name":"Controller Temp","color":"#ddae68","visible":false}],["motor.motor_temp",{"name":"Motor Temp","color":"#88bb93","visible":false}],["imu.roll",{"name":"Roll","color":"#c68f7e","visible":false}],["footpad.adc1",{"name":"ADC1 Voltage","color":"#69aad7","visible":false}],["footpad.adc2",{"name":"ADC2 Voltage","color":"#4a8772","visible":false}],["balance_current",{"name":"Balance Current","color":"#36738b","visible":false}],["booster.current",{"name":"Booster Current","color":"#8f2f26","visible":false}],["atr.accel_diff",{"name":"ATR Accel Diff","color":"#4f5984","visible":false}],["atr.speed_boost",{"name":"ATR Speed Boost","color":"#34633c","visible":false}],["remote.input",{"name":"Remote Throttle","color":"#525023","visible":false}],["state.running",{"name":"Running","color":"#3f6620","visible":false}],["state.wheelslip",{"name":"Wheelslip","color":"#893075","visible":false}],["footpad.state",{"name":"Footpad State","color":"#584f99","visible":false}],["state.sat",{"name":"Setpoint Adjustment Type","color":"#c08959","visible":false}],]
-property var plotSeriesExtraColors:["#5e88d8","#b1ba38","#e7865d","#7134a3","#51c66c","#a2678e","#4bc6af","#a15622","#254f3a","#827029","#e95314","#69c180","#ce77d2","#859b3b","#dd4044","#b58527","#ce542e","#788554","#cd3763","#63c339",]
+property var plotSeriesMetaData:[["erpm",{"name":"ERPM","color":"#469138","visible":true}],["duty_cycle",{"name":"Duty Cycle","color":"#e3ac34","visible":true}],["current",{"name":"Motor Current","color":"#e33421","visible":true,"scalingGroup":"current"}],["dir_current",{"name":"Directional Current","color":"#cc686b","visible":false,"scalingGroup":"current"}],["filt_current",{"name":"Filtered Current","color":"#734828","visible":false,"scalingGroup":"current"}],["pitch",{"name":"Pitch","color":"#b1b277","visible":true,"scalingGroup":"pitch"}],["balance_pitch",{"name":"Balance Pitch","color":"#53b3bf","visible":true,"scalingGroup":"pitch"}],["torque_tilt.setpoint",{"name":"Torque Tilt Setpoint","color":"#df4a98","visible":true,"scalingGroup":"pitch"}],["atr.setpoint",{"name":"ATR Setpoint","color":"#7640d6","visible":true,"scalingGroup":"pitch"}],["brake_tilt.setpoint",{"name":"Brake Tilt Setpoint","color":"#b29ad7","visible":false,"scalingGroup":"pitch"}],["turn_tilt.setpoint",{"name":"Turn Tilt Setpoint","color":"#e095af","visible":false,"scalingGroup":"pitch"}],["remote.setpoint",{"name":"Remote Setpoint","color":"#803a4d","visible":false,"scalingGroup":"pitch"}],["setpoint",{"name":"Setpoint","color":"#e57e20","visible":true,"scalingGroup":"pitch"}],["speed",{"name":"Speed","color":"#3f9469","visible":false}],["batt_voltage",{"name":"Battery Voltage","color":"#6e6ee0","visible":false}],["batt_current",{"name":"Battery Current","color":"#cf44cd","visible":false}],["mosfet_temp",{"name":"Controller Temp","color":"#ddae68","visible":false}],["motor_temp",{"name":"Motor Temp","color":"#88bb93","visible":false}],["roll",{"name":"Roll","color":"#c68f7e","visible":false}],["adc_left",{"name":"Left ADC Voltage","color":"#69aad7","visible":false}],["adc_right",{"name":"Right ADC Voltage","color":"#4a8772","visible":false}],["balance_current",{"name":"Balance Current","color":"#36738b","visible":false,"scalingGroup":"current"}],["booster.torque",{"name":"Booster Torque","color":"#8f2f26","visible":false}],["atr.accel_diff",{"name":"ATR Accel Diff","color":"#4f5984","visible":false}],["atr.speed_boost",{"name":"ATR Speed Boost","color":"#34633c","visible":false}],["atr.transition_boost",{"name":"ATR Transition Boost","color":"#827029","visible":false}],["remote.input",{"name":"Remote Throttle","color":"#525023","visible":false}],["control.dt",{"name":"Control Loop dt","color":"#e95314","visible":false}],["control.freq",{"name":"Control Loop Frequency","color":"#69c180","visible":false}],["state.running",{"name":"Running","color":"#3f6620","visible":false}],["state.wheelslip",{"name":"Wheelslip","color":"#893075","visible":false}],["footpad.state",{"name":"Footpad State","color":"#584f99","visible":false}],["state.sat",{"name":"Setpoint Adjustment Type","color":"#c08959","visible":false}],]
+property var plotSeriesExtraColors:["#5e88d8","#b1ba38","#e7865d","#7134a3","#51c66c","#a2678e","#4bc6af","#a15622","#254f3a","#ce77d2","#859b3b","#dd4044","#b58527","#ce542e","#788554","#cd3763","#63c339",]
 anchors.fill:parent
 component NText:Text{color:Utility.getAppHexColor("normalText")}
 component LText:Text{color:Utility.getAppHexColor("lightText")}
 component DText:Text{color:Utility.getAppHexColor("disabledText")}
+property real toolButtonSize:36
 component FloatingToolButton:RoundButton{id:button
-anchors.margins:4
-width:unit
-height:unit
+anchors.margins:toolButtonSize/10
+width:size
+height:size
 padding:0
 leftInset:0
 rightInset:0
@@ -532,7 +566,8 @@ topInset:0
 bottomInset:0
 property Path iconPath
 property Path fillIconPath
-property real iconSize:width*0.7
+property real size:toolButtonSize
+property real iconSize:size*0.7
 property color strokeColor:Utility.getAppHexColor("normalText")
 property color fillColor:Utility.getAppHexColor("normalText")
 property color bgColor:Utility.getAppHexColor("darkBackground")
@@ -565,6 +600,7 @@ property Path falseFillIconPath
 iconPath:value?trueIconPath:falseIconPath
 fillIconPath:value?trueFillIconPath:falseFillIconPath
 onClicked:{if(autonomous){value=!value;}}}
+component CloseToolButton:FloatingToolButton{iconPath:Path{PathSvg{path:"M 15 15 L 35 35 M 15 35 L 35 15"}}}
 component Dial:Item{id:dial
 property real lineWidth:width*0.075
 property real maxValue
@@ -666,9 +702,12 @@ property var seriesSorted:[]
 property var data:[]
 property int ticksPerSecond
 property real timeOffset:0
-property var mins:[]
-property var maxs:[]
 property var scales:[]
+property var minMaxes:({})
+property var customScaling:({})
+property real minScaleRange:0.001
+property real smallValueThreshold:1
+function getMinMaxKey(seriesMd,index){return seriesMd.scalingGroup??index;}
 property real timeStart
 property real timeEnd
 property real timeRange
@@ -683,28 +722,35 @@ property var seriesExtraColors
 property var extraFlags:["state.running","state.wheelslip","state.sat","footpad.state",]
 function reset(){sampleNr=0;data=[];initialized=false;dataReady=false;}
 function init(seriesIds,ticksPerSec){ticksPerSecond=ticksPerSec;initSeries(seriesIds,false);}
-function initSeries(ids,allVisible){var smplSize=ids.length+extraFlags.length;sampleSize=smplSize;mins=Array(smplSize).fill(0);maxs=Array(smplSize).fill(0);scales=Array(smplSize).fill(1);if(arraysEqual(ids,seriesIds)){initialized=true;return;}
+function initSeries(ids,allVisible){var smplSize=ids.length+extraFlags.length;sampleSize=smplSize;scales=Array(smplSize).fill(1);minMaxes={};if(arraysEqual(ids,seriesIds)){initialized=true;return;}
 seriesIds=ids;var seriesMeta=seriesMetaData;var tmpMd={};for(var i=0;i<seriesMeta.length;i++){var sm=seriesMeta[i];var smDataCopy=Object.assign({},sm[1]);tmpMd[sm[0]]=smDataCopy;smDataCopy.sortOrder=i+100;}
 var srs=[];var srsSorted=[];var extrasOrder=0;var push_series=function(id,i,visible){var seriesMd=tmpMd[id]??{"name":id,"color":seriesExtraColors[extrasOrder],"sortOrder":extrasOrder++,"visible":true,};if(visible){seriesMd.visible=visible;}
-seriesMd.dataOrder=i;srs.push(seriesMd);srsSorted.push(seriesMd);}
+seriesMd.id=id;seriesMd.dataOrder=i;srs.push(seriesMd);srsSorted.push(seriesMd);}
 for(var i=0;i<extraFlags.length;i++){push_series(extraFlags[i],i,false);}
 for(var i=0;i<ids.length;i++){push_series(ids[i],i+extraFlags.length,!!allVisible);}
 srsSorted.sort((a,b)=>a.sortOrder-b.sortOrder);series=srs;seriesSorted=srsSorted;initialized=true;}
-function addSample(sample,offset){var sampleTime=sample[0]+timeOffset;var lastTime=data.length>0?data[data.length-1][0]:undefined;if((offset!==undefined&&offset!==data.length)||lastTime===sampleTime){return;}
+function addSample(sample,offset){var sampleTime=sample[0]+timeOffset;var lastTime=data.length>0?data[data.length-1][0]:undefined;if(offset!==undefined){if(offset!==data.length){return;}}else if(lastTime===sampleTime){return;}
 if(sampleTime<lastTime){if(lastTime-sampleTime>2**31){timeOffset=timeOffset+2**32;}else{timeOffset+=lastTime+10*ticksPerSecond;}}
 if(timeOffset>0){sample[0]+=timeOffset;}
-data.push(sample);for(var i=0;i<sampleSize;i++){if(sample[i+1]>maxs[i]){maxs[i]=sample[i+1];}
-if(sample[i+1]<mins[i]){mins[i]=sample[i+1];}}
+data.push(sample);var mm=minMaxes;var mmChanged=false;for(var i=0;i<sampleSize;i++){var val=sample[i+1];if(val!==val){continue;}
+var add=(key)=>{var m=mm[key];if(!m){mm[key]={min:val,max:val};mmChanged=true;}else{if(val<m.min){m.min=val;mmChanged=true;}
+if(val>m.max){m.max=val;mmChanged=true;}}}
+var ser=series[i];if(ser.scalingGroup){add(ser.scalingGroup);}
+add(i);}
+if(mmChanged){minMaxes=mm;}
 sampleNr=data.length;}
 function makeReady(){calculateRanges();dataReady=true;dataUpdate();}
 function calculateRanges(){if(data.length==0){return;}
-var lowestRatio=1;var highestRatio=0;var lMins=mins;var lMaxs=maxs;var srs=series;for(var i=0;i<sampleSize;i++){if(!srs[i].visible){continue;}
-if(lMaxs[i]>1||lMins[i]<-1){var ratio=clamp(lMaxs[i]/(lMaxs[i]-lMins[i]),0,1);lowestRatio=Math.min(lowestRatio,ratio);highestRatio=Math.max(highestRatio,ratio);}}
-var newRatio;if(lowestRatio<0.5){if(highestRatio>0.5){newRatio=0.5;}else{newRatio=highestRatio;}}else{newRatio=lowestRatio;}
-positiveRatio=clamp(newRatio,0.15,0.85);var setScale=function(i,s){if(s!=scales[i]){scalesUpdate();}
-scales[i]=s;}
-var newScale;for(var i=0;i<sampleSize;i++){var minRatio=(1-positiveRatio)/lMins[i];var maxRatio=positiveRatio/lMaxs[i];if(lMaxs[i]>0){if(lMins[i]<0){newScale=Math.min(maxRatio,-minRatio);}else{newScale=isFinite(maxRatio)?maxRatio:1;}}else{newScale=isFinite(minRatio)?-minRatio:1;}
-var rns=Math.min(newScale,srs[i].maxScale??1);setScale(i,rns);}
+var srs=series;var cs=customScaling;var mm=minMaxes;var minRange=minScaleRange;var smallValThr=smallValueThreshold;var hasRatioContrib=false;var lowestRatio=1;var highestRatio=0;var smallLowestRatio=1;var smallHighestRatio=0;var groupMm={};for(var i=0;i<sampleSize;i++){if(!srs[i].visible){continue;}
+var m=mm[i];if(m){var group=srs[i].scalingGroup;if(group){var gm=groupMm[group];if(!gm){groupMm[group]={min:m.min,max:m.max};}else{gm.min=Math.min(gm.min,m.min);gm.max=Math.max(gm.max,m.max);}}
+var eMax=m.max;var eMin=m.min;var key=getMinMaxKey(srs[i],i);var bound=cs[key];if(bound!==undefined&&m.max>0&&m.min<0){eMax=Math.min(eMax,bound);eMin=Math.max(eMin,-bound);}
+if(m.max>=smallValThr||m.min<=-smallValThr){hasRatioContrib=true;var ratio=clamp(eMax/(eMax-eMin),0,1);lowestRatio=Math.min(lowestRatio,ratio);highestRatio=Math.max(highestRatio,ratio);}else if(bound!==undefined&&eMax>0&&eMin<0){var ratio=clamp(bound/(bound-eMin),0,1);lowestRatio=Math.min(lowestRatio,ratio);highestRatio=Math.max(highestRatio,ratio);var dataRatio=clamp(m.max/(m.max-m.min),0,1);smallLowestRatio=Math.min(smallLowestRatio,dataRatio);smallHighestRatio=Math.max(smallHighestRatio,dataRatio);}else if(eMax>0||eMin<0){var ratio=clamp(eMax/(eMax-eMin),0,1);smallLowestRatio=Math.min(smallLowestRatio,ratio);smallHighestRatio=Math.max(smallHighestRatio,ratio);}}}
+if(!hasRatioContrib&&smallLowestRatio<=smallHighestRatio){lowestRatio=smallLowestRatio;highestRatio=smallHighestRatio;hasRatioContrib=true;}
+var newRatio;if(!hasRatioContrib){newRatio=0.5;}else if(lowestRatio<=0.5){newRatio=Math.min(highestRatio,0.5);}else{newRatio=lowestRatio;}
+positiveRatio=clamp(newRatio,0.15,0.85);var scalesChanged=false;for(var i=0;i<sampleSize;i++){if(!srs[i].visible){continue;}
+var key=getMinMaxKey(srs[i],i);var m=(srs[i].scalingGroup?groupMm[srs[i].scalingGroup]:mm[i])??{min:0,max:0};var scale;var bound=cs[key]!==undefined?Math.max(cs[key],minRange):null;if(bound!==null){scale=(m.max>-m.min?positiveRatio:(1-positiveRatio))/bound;}else{var minRatio=(1-positiveRatio)/Math.max(-m.min,smallValThr);var maxRatio=positiveRatio/Math.max(m.max,smallValThr);if(m.max>0&&m.min<0){var posScale=Math.min(maxRatio,(1-positiveRatio)/-m.min);var negScale=Math.min(minRatio,positiveRatio/m.max);scale=Math.max(posScale,negScale);}else if(m.min<0){scale=minRatio;}else{scale=maxRatio;}}
+if(scale!==scales[i]){scales[i]=scale;scalesChanged=true;}}
+if(scalesChanged){scalesUpdate();}
 timeStart=data[0][0];timeEnd=data[data.length-1][0];timeRange=timeEnd-timeStart;}}
 component RecordedPlotData:PlotData{id:recPlotData
 property bool noData:false
@@ -724,13 +770,68 @@ initSeries(ids,true);if(sampleCount===0){noData=true;}else{requestPlot();}}
 function receiveData(dv,ind){receiveTimeout.stop();var offset=dv.getUint32(ind);ind+=4;var getFloat16=commands.getFloat16;while(ind<dv.byteLength){var time=dv.getUint32(ind);ind+=4;var flags=dv.getUint8(ind++);var sat=flags>>4;var fp_state=(flags&0b1100)>>2;var wheelslip=(flags&0b10)>>1;var running=flags&0b1;var data=[time,running,wheelslip,sat,fp_state];var remainingSampleSize=sampleSize-extraFlags.length;for(var i=0;i<remainingSampleSize;i++){data.push(getFloat16(dv,ind));ind+=2;}
 addSample(data,offset++);}
 if(sampleNr<sampleCount){requestPlot();}else{makeReady();}}}
+component TapSlider:Item{id:tapSlider
+property int orientation:Qt.Horizontal
+property real from:0
+property real to:1
+property real value:0
+property real stepSize:0
+property bool sliderEnabled:true
+signal moved()
+onValueChanged:if(slider.value!==value)slider.value=value
+Slider{id:slider
+anchors.fill:parent
+orientation:tapSlider.orientation
+from:tapSlider.from
+to:tapSlider.to
+stepSize:tapSlider.stepSize
+enabled:tapSlider.sliderEnabled
+onMoved:tapSlider.moved()
+onValueChanged:if(tapSlider.value!==value)tapSlider.value=value
+onToChanged:if(value!==tapSlider.value)value=tapSlider.value}
+MouseArea{anchors.fill:parent
+preventStealing:true
+function valueFromPos(mouseX,mouseY){var handleSize=slider.handle?(tapSlider.orientation===Qt.Vertical?slider.handle.height:slider.handle.width):0;var padding=handleSize/2;var trackSize=(tapSlider.orientation===Qt.Vertical?height:width)-2*padding;var pos=tapSlider.orientation===Qt.Vertical?(height-padding-mouseY)/trackSize:(mouseX-padding)/trackSize;pos=clamp(pos,0,1);var val=tapSlider.from+pos*(tapSlider.to-tapSlider.from);if(tapSlider.stepSize>0)
+val=Math.round(val/tapSlider.stepSize)*tapSlider.stepSize;return clamp(val,tapSlider.from,tapSlider.to);}
+function applyValue(mouseX,mouseY){tapSlider.value=valueFromPos(mouseX,mouseY);tapSlider.moved();}
+onPressed:(mouse)=>{applyValue(mouse.x,mouse.y);}
+onPositionChanged:(mouse)=>{applyValue(mouse.x,mouse.y);}}}
+component MenuCheckBox:CheckBox{id:cb
+property string markerText
+property real size
+width:size
+height:size
+indicator:Rectangle{implicitHeight:cb.height*0.9
+implicitWidth:implicitHeight
+y:cb.height/2-height/2
+radius:2
+color:"transparent"
+border.color:cb.enabled?cb.checked?getDarkThemeColor("lightText"):getDarkThemeColor("normalText"):getDarkThemeColor("disabledText")
+Rectangle{height:parent.height*0.5
+width:height
+x:parent.width/2-width/2
+y:parent.height/2-height/2
+radius:1
+color:parent.border.color
+visible:cb.checked&&!cb.markerText}
+Text{height:parent.height
+width:height
+x:parent.width/2-width/2
+y:parent.height/2-height/2
+text:cb.markerText
+color:parent.border.color
+font.bold:true
+fontSizeMode:Text.Fit
+horizontalAlignment:TextInput.AlignHCenter
+verticalAlignment:TextInput.AlignVCenter
+visible:cb.checked&&cb.markerText}}}
 component Plot:Rectangle{id:plot
 color:"#0b0b0b"
 property var plotData
 property int ticksPerSecond
 property bool followEnd:false
 property real startWindow:10
-property real toolbarOffset:0
+property int toolbarOffset:0
 property bool showRecordDownload:false
 property int maxWindowMinutes
 property bool dotsEnabled:true
@@ -738,26 +839,27 @@ function init(ticksPerSec){ticksPerSecond=ticksPerSec;reset();plotData=plotData;
 function reset(){plotCanvas.reset();}
 function spawnCursor(cursorPos){plotCanvas.spawnCursor(cursorPos);}
 function hideCursor(){plotCanvas.fadeCursor();}
-onVisibleChanged:{if(!visible){menu.visible=false;}}
-Row{anchors.left:parent.left
+function showMenu(){menu.visible=true;}
+function hideMenu(){menu.visible=false;menu.deselectSeries();}
+function selectSeries(seriesId){for(var i=0;i<plotData.series.length;i++){var s=plotData.series[i];if(s.id===seriesId){menu.selectedSeries=s;menu.selectedIndex=s.dataOrder;return;}}}
+function getMenuFrame(){return menu;}
+onVisibleChanged:{if(!visible){hideMenu();}}
+Row{id:toolbar
+anchors.left:parent.left
 anchors.top:parent.top
-anchors.leftMargin:toolbarOffset*unit+0.1*unit
-anchors.topMargin:0.1*unit
-spacing:0.1*unit
+anchors.leftMargin:toolbarOffset*(menuButton.size+spacing)+spacing
+anchors.topMargin:spacing
+spacing:toolButtonSize/10
+height:menuButton.size+2*spacing
 z:parent.z+5
-FloatingToolButton{width:0.8*unit
-height:0.8*unit
+FloatingToolButton{id:menuButton
 visible:plotData.initialized
 iconPath:Path{PathSvg{path:"M 10 15 L 40 15 M 10 25 L 40 25 M 10 35 L 40 35"}}
-onClicked:{menu.visible=!menu.visible;}}
-FloatingToolButton{width:0.8*unit
-height:0.8*unit
-visible:plot.showRecordDownload
+onClicked:{if(menu.visible){hideMenu();}else{showMenu();}}}
+FloatingToolButton{visible:plot.showRecordDownload
 iconPath:Path{PathSvg{path:"M 8 38 L 42 38 M 25 10 L 25 38 M 14 23 L 25 38 M 36 23 L 25 38"}}
 onClicked:{recordedPlot.show();}}
-ToggleFloatingToolButton{width:0.8*unit
-height:0.8*unit
-visible:plot.showRecordDownload
+ToggleFloatingToolButton{visible:plot.showRecordDownload
 autonomous:false
 value:mainItem.state.extraRecording
 customBgColor:value?Utility.getAppHexColor("red"):Utility.getAppHexColor("normalBackground")
@@ -767,6 +869,8 @@ falseFillIconPath:Path{PathAngleArc{centerX:25;centerY:25;radiusX:12;radiusY:12;
 onClicked:{commands.sendDataRecordControl(commands.dr_RECORD,!value);}
 onPressAndHold:{recMenu.visible=true;}
 Menu{id:recMenu
+property real recordDuration
+onVisibleChanged:{if(visible){recordDuration=mainItem.state.extraRecDuration;}}
 CheckBox{text:"Autostart"
 checkable:true
 checked:mainItem.state.extraRecAutostart
@@ -774,7 +878,22 @@ onClicked:{commands.sendDataRecordControl(commands.dr_AUTOSTART,checked);}}
 CheckBox{text:"Autostop"
 checkable:true
 checked:mainItem.state.extraRecAutostop
-onClicked:{commands.sendDataRecordControl(commands.dr_AUTOSTOP,checked);}}}}}
+onClicked:{commands.sendDataRecordControl(commands.dr_AUTOSTOP,checked);}}
+ColumnLayout{NText{Layout.fillWidth:true
+horizontalAlignment:TextInput.AlignHCenter
+text:"Decimation"}
+LText{Layout.fillWidth:true
+Layout.topMargin:2
+Layout.bottomMargin:-5
+horizontalAlignment:TextInput.AlignHCenter
+text:Math.round(decimationSlider.value)+" ("+(recMenu.recordDuration*decimationSlider.value).toFixed(1)+"s)"}
+Slider{id:decimationSlider
+from:1
+to:recMenu.recordDuration>0?Math.max(1,Math.floor(120/recMenu.recordDuration)):100
+value:mainItem.state.extraRecDecimation
+stepSize:1
+snapMode:Slider.SnapAlways
+onMoved:{commands.sendDataRecordControl(commands.dr_DECIMATION,value);}}}}}}
 Rectangle{id:menu
 z:parent.z+10
 anchors.top:parent.top
@@ -782,13 +901,21 @@ anchors.left:parent.left
 anchors.topMargin:topMargin
 anchors.leftMargin:sideMargin
 height:menuScrollView.height
-width:menuScrollView.width
+width:menuScrollView.width+(selectedSeries?scalingPanel.width+4:0)
 visible:false
-property real topMargin:unit
-property real sideMargin:0.2*unit
+color:getDarkThemeColor("darkBackground");property real topMargin:toolbar.height
+property real sideMargin:toolbar.spacing
 property real hPadding:8
 property real vPadding:4
-color:getDarkThemeColor("darkBackground");ScrollView{id:menuScrollView
+property var selectedSeries:null
+property int selectedIndex:-1
+function deselectSeries(){selectedSeries=null;selectedIndex=-1;}
+MouseArea{anchors.fill:parent
+z:-1
+preventStealing:true
+onClicked:function(mouse){mouse.accepted=true;}
+onPressed:function(mouse){mouse.accepted=true;}}
+ScrollView{id:menuScrollView
 anchors.top:parent.top
 anchors.left:parent.left
 height:Math.min(contentHeight,plot.height-parent.topMargin-parent.sideMargin)
@@ -804,38 +931,79 @@ spacing:0
 Repeater{model:plotData.seriesSorted
 Item{width:menuRow.width
 height:label.height+2*menu.vPadding
+Rectangle{anchors.left:parent.left
+anchors.top:parent.top
+anchors.bottom:parent.bottom
+width:menuColumn.width
+color:{var sel=menu.selectedSeries;if(!sel){return"transparent";}
+var match=sel.scalingGroup?sel.scalingGroup===modelData.scalingGroup:sel.dataOrder===modelData.dataOrder;return match?getDarkThemeColor("normalBackground"):"transparent";}}
 MouseArea{anchors.top:parent.top
 anchors.left:parent.left
 width:menuColumn.width
 height:parent.height
-onClicked:itemCheckBox.toggle()}
+onClicked:{itemCheckBox.toggle();menu.deselectSeries();}
+onPressAndHold:{menu.selectedSeries=modelData;menu.selectedIndex=modelData.dataOrder;}}
 Row{id:menuRow
 anchors.left:parent.left
 anchors.verticalCenter:parent.verticalCenter
 anchors.leftMargin:menu.hPadding
 spacing:4
-CheckBox{id:itemCheckBox
-height:label.height
-width:height
+MenuCheckBox{id:itemCheckBox
+size:label.height
 checked:modelData.visible
-onCheckedChanged:{plot.plotData.seriesSorted[index].visible=checked;plot.plotData.calculateRanges();plotCanvas.requestPaint();}
-indicator:Rectangle{implicitHeight:parent.height*0.9
-implicitWidth:implicitHeight
-y:parent.height/2-height/2
-radius:2
-color:"transparent"
-border.color:parent.checked?getDarkThemeColor("lightText"):getDarkThemeColor("normalText")
-Rectangle{height:parent.height*0.5
-width:height
-x:parent.width/2-width/2
-y:parent.height/2-height/2
-radius:1
-color:parent.border.color
-visible:parent.parent.checked}}}
+onCheckedChanged:{plot.plotData.seriesSorted[index].visible=checked;plot.plotData.calculateRanges();plotCanvas.requestPaint();}}
 Text{id:label
 text:modelData.name
 font.pointSize:16
-color:modelData.color}}}}}}}
+color:modelData.color}}}}}}
+Rectangle{id:scalingPanel
+visible:menu.selectedSeries!==null
+anchors.left:menuScrollView.right
+anchors.top:parent.top
+anchors.bottom:parent.bottom
+width:50
+color:getDarkThemeColor("darkBackground")
+property var seriesKey:menu.selectedSeries?plot.plotData.getMinMaxKey(menu.selectedSeries,menu.selectedIndex):null
+property var customBound:seriesKey!==null?plot.plotData.customScaling[seriesKey]:undefined
+property bool isAuto:customBound===undefined
+property bool hasData:seriesKey!==null&&plot.plotData.minMaxes[seriesKey]!==undefined
+property real maxBound:{if(!hasData)return plot.plotData.smallValueThreshold;var mm=plot.plotData.minMaxes[seriesKey];return Math.max(Math.abs(mm.max),Math.abs(mm.min),plot.plotData.smallValueThreshold);}
+Column{id:scalingColumn
+anchors.fill:parent
+anchors.topMargin:8
+anchors.bottomMargin:8
+spacing:6
+Text{id:boundLabel
+width:parent.width
+horizontalAlignment:Text.AlignHCenter
+color:!autoCheckBox.checked?getDarkThemeColor("lightText"):getDarkThemeColor("disabledText")
+fontSizeMode:Text.HorizontalFit
+minimumPointSize:8
+font.pointSize:16
+text:scaleSlider.realValue.toFixed(scaleSlider.realValue<10?scaleSlider.realValue<1?3:2:1)}
+TapSlider{id:scaleSlider
+property real realValue:Math.exp(value)
+orientation:Qt.Vertical
+width:parent.width
+height:scalingColumn.height-boundLabel.height-autoCheckBox.height-2*scalingColumn.spacing
+from:Math.log(plot.plotData.minScaleRange)
+to:Math.log(Math.ceil(scalingPanel.maxBound/plot.plotData.minScaleRange)*plot.plotData.minScaleRange)
+sliderEnabled:!autoCheckBox.checked
+Connections{target:scalingPanel
+function onSeriesKeyChanged(){scaleSlider.resetValue();}
+function onIsAutoChanged(){scaleSlider.resetValue();}
+function onMaxBoundChanged(){if(scalingPanel.isAuto)scaleSlider.resetValue();}}
+function resetValue(){var bound=scalingPanel.customBound;if(bound!==undefined){value=Math.log(bound);}else{value=to;}}
+onMoved:{var cs=plot.plotData.customScaling;cs[scalingPanel.seriesKey]=realValue;plot.plotData.customScaling=cs;plot.plotData.calculateRanges();}}
+MenuCheckBox{id:autoCheckBox
+size:20
+anchors.horizontalCenter:parent.horizontalCenter
+checkable:false
+checked:scalingPanel.isAuto
+enabled:scalingPanel.hasData||!checked
+markerText:"A"
+onClicked:{var cs=plot.plotData.customScaling;if(scalingPanel.isAuto){cs[scalingPanel.seriesKey]=scaleSlider.realValue;}else{delete cs[scalingPanel.seriesKey];}
+plot.plotData.customScaling=cs;plot.plotData.calculateRanges();}}}}}
 PinchArea{anchors.fill:parent
 property real initialPlotWindow
 property real initialX
@@ -858,7 +1026,7 @@ function dist2d(event){var dx=initialX-x(event);var dy=initialY-event.y;return M
 function release(){moving=false;holdCursor=false;moveCursor=false;cancelAction=false;plotCanvas.fadeCursor(1);plotMover.flick();}
 onWheel:{if(!plotMover.grabbed){plotMover.grab();}
 plotMover.zoomAnimated(Math.max(0.75,1+wheel.angleDelta.y/120*0.25),x(wheel));}
-onPressed:{menu.visible=false;initialX=x(mouse);initialY=mouse.y;var cursorPos=plotCanvas.getCursorPosIfCan();if(plotMover.rolling){moving=true;}else if(cursorPos!==null&&dist(initialX,cursorPos)<snap){holdCursor=true;return;}
+onPressed:{hideMenu();initialX=x(mouse);initialY=mouse.y;var cursorPos=plotCanvas.getCursorPosIfCan();if(plotMover.rolling){moving=true;}else if(cursorPos!==null&&dist(initialX,cursorPos)<snap){holdCursor=true;return;}
 plotMover.grab();}
 onPositionChanged:{if(cancelAction){return;}
 var d=initialX-x(mouse);if(holdCursor){if(moveCursor){plotCanvas.spawnCursorCoord(x(mouse));}else{var yd=initialY-mouse.y;var dist=Math.sqrt(yd*yd+d*d);var angle=Math.acos(yd/dist);if(angle>0.2618&&dist>snap){if(yd>30){cancelAction=true;}else{moveCursor=true;}
@@ -877,7 +1045,7 @@ contextType:"2d"
 property real position:NaN
 property real window
 property int padding:8
-property int toolbarHeight:unit
+property int toolbarHeight:toolbar.height
 property int bottomHeight:20
 property real length:width
 property real xLength:width-2*padding
@@ -997,7 +1165,7 @@ var vals=[];for(var n=0;n<pd.sampleSize;n++){if(!series[n].visible){continue;}
 var y=pointYCoord(cursor,n);if(!Number.isNaN(y)){vals.push([y,series[n].sortOrder,n]);}}
 vals.sort((a,b)=>b[0]!==a[0]?b[0]-a[0]:a[1]-b[1]);ctx.strokeStyle="#000000";ctx.lineWidth=3;for(var i=0;i<vals.length;i++){var p=vals[i];var n=p[2];ctx.fillStyle=series[n].color;var str=textFormat.arg(Number(cursor[n+1].toPrecision(4))).arg(series[n].name);var textY=Math.min(p[0]+yOffset,topLimit);textY=Math.max(bottomLimit+(vals.length-i-1)*labelHeight,textY);topLimit=textY-labelHeight;ctx.strokeText(str,textX,-textY);ctx.fillText(str,textX,-textY);}
 ctx.globalAlpha=originalAlpha;}
-function paintSeries(ctx,yMax,yMin){var lineWidth=1;ctx.lineWidth=lineWidth;var pd=plotData;var data=pd.data;var scales=pd.scales;var sampleSize=pd.sampleSize;var yLen=yLength;var pos=position;var win=window;var xLen=xLength;var dotsEnbld=plot.dotsEnabled;var start=0;var end=data.length;var winNotChangedFactor=Math.abs(win-hystWindow)<0.0001?2:1;hystWindow=win;var pixelsPerTimeUnit=xLen/win;var prevTime=null;var paintDots=true;var dotsThreshold=20/(paintDotsHyst?1:(0.8/winNotChangedFactor));var distanceSum=0;var minDistance=1e10;var windowSize=4;var lastFour=[];for(var i=start;i<end;i++){var t=data[i][0];if(t<pos){start=i;}else{if(t>pos+win){end=Math.min(i+1,data.length);break;}
+function paintSeries(ctx,yMax,yMin){var lineWidth=1;ctx.lineWidth=lineWidth;var pd=plotData;var data=pd.data;var scales=pd.scales;var sampleSize=pd.sampleSize;var yLen=yLength;var pos=position;var win=window;var xLen=xLength;var dotsEnbld=plot.dotsEnabled;var yBoundsTop=-yMax-0.001;var yBoundsBottom=-yMin+0.001;var start=0;var end=data.length;var winNotChangedFactor=Math.abs(win-hystWindow)<0.0001?2:1;hystWindow=win;var pixelsPerTimeUnit=xLen/win;var prevTime=null;var paintDots=true;var dotsThreshold=20/(paintDotsHyst?1:(0.8/winNotChangedFactor));var distanceSum=0;var minDistance=1e10;var windowSize=4;var lastFour=[];for(var i=start;i<end;i++){var t=data[i][0];if(t<pos){start=i;}else{if(t>pos+win){end=Math.min(i+1,data.length);break;}
 if(prevTime!==null){var distance=(t-prevTime)*pixelsPerTimeUnit;distanceSum+=distance;lastFour.push(distance);if(lastFour.length>4){distanceSum-=lastFour.shift();}
 if(lastFour.length===4){if(distanceSum/4<dotsThreshold){paintDots=false;}
 minDistance=Math.min(minDistance,distanceSum);}}
@@ -1008,12 +1176,15 @@ ctx.beginPath();var color=series.color;ctx.strokeStyle=color;ctx.fillStyle=color
 var y=-nPoint*yLen*nScale;var origX=x;if(i===start&&x<0){var nextPoint=data[i+1];var nextX=(nextPoint[0]-pos)/win*xLen;var nextY=-nextPoint[n+1]*yLen*nScale;y+=(nextY-y)*x/(x-nextX);x=0;}else if(i===end-1&&x>xLen){y-=(y-lastY)*(x-xLen)/(x-lastX);x=xLen;}
 if(i>start&&x-lastX<step){minMaxMode=true;}
 if(minMaxMode){if(x-lastDrawnX>step){var miny=min;var maxy=max;var dist=miny-maxy;if(dist<lineWidth){var offset=(lineWidth-dist)/2;miny+=offset;maxy-=offset;}
-ctx.moveTo(lastX,miny);ctx.lineTo(lastX,maxy);var tmp=min;min=max;max=tmp;lastDrawnX=x;if(x-lastX>step){minMaxMode=false;justOutOfMinMax=true;ctx.moveTo(lastX,lastY);}}
+if(miny>=yBoundsTop&&maxy<=yBoundsBottom){var clampedMiny=Math.min(yBoundsBottom,miny);var clampedMaxy=Math.max(yBoundsTop,maxy);ctx.moveTo(lastX,clampedMiny);ctx.lineTo(lastX,clampedMaxy);}
+var tmp=min;min=max;max=tmp;lastDrawnX=x;if(x-lastX>step){minMaxMode=false;justOutOfMinMax=true;ctx.moveTo(lastX,lastY);}}
 min=y>min?y:min;max=y<max?y:max;}
-if(!minMaxMode){if(dotsEnbld&&origX-lastX>halfASecondPixels){ctx.moveTo(x,y);}else{ctx.lineTo(x,y);}
+var yInBounds=y>=yBoundsTop&&y<=yBoundsBottom;var lastYInBounds=lastY>=yBoundsTop&&lastY<=yBoundsBottom;if(!minMaxMode){var shouldGap=dotsEnbld&&origX-lastX>halfASecondPixels;if((yInBounds||lastYInBounds)||(lastY<yBoundsTop)!==(y<yBoundsTop)){var drawY=yInBounds?y:(y<yBoundsTop?yBoundsTop:yBoundsBottom);var drawX=yInBounds?x:lastX+(drawY-lastY)/(y-lastY)*(x-lastX);if(!lastYInBounds&&!shouldGap){var startY=lastY<yBoundsTop?yBoundsTop:yBoundsBottom;var startX=lastX+(startY-lastY)/(y-lastY)*(x-lastX);ctx.moveTo(startX,startY);}
+if(shouldGap){ctx.moveTo(drawX,drawY);}else{ctx.lineTo(drawX,drawY);}}
+if(!yInBounds){ctx.moveTo(x,y);}
 min=y;max=y;lastDrawnX=x;justOutOfMinMax=false;}
-if(dotsEnbld&&i>start&&origX>=0&&(paintDots||x-lastSampleX>dotDistThreshold||origX-lastSampleX>halfASecondPixels)){ctx.stroke();ctx.beginPath();if(!drawnLastDot&&lastX>=0){ctx.arc(lastX,lastY,2.5,0,2*Math.PI,false);}
-if(origX<=xLen+0.001){ctx.arc(x,y,2.5,0,2*Math.PI,false);}
+if(dotsEnbld&&i>start&&origX>=0&&(paintDots||x-lastSampleX>dotDistThreshold||origX-lastSampleX>halfASecondPixels)){ctx.stroke();ctx.beginPath();if(!drawnLastDot&&lastX>=0&&lastYInBounds){ctx.arc(lastX,lastY,2.5,0,2*Math.PI,false);}
+if(origX<=xLen+0.001&&yInBounds){ctx.arc(x,y,2.5,0,2*Math.PI,false);}
 ctx.fill();ctx.beginPath();if(justOutOfMinMax){ctx.moveTo(lastX,lastY);}else{ctx.moveTo(x,y);}
 drawnLastDot=true;}else{ctx.moveTo(x,y);drawnLastDot=false;}
 lastX=origX;lastSampleX=origX;lastY=y;}
@@ -1029,12 +1200,9 @@ z:100
 visible:false
 property bool vertical:parent.height>parent.width
 showRecordDownload:parent.state.capDataRecord
-toolbarOffset:0.9
-FloatingToolButton{anchors.top:parent.top
+toolbarOffset:1
+CloseToolButton{anchors.top:parent.top
 anchors.left:parent.left
-width:0.8*unit
-height:0.8*unit
-iconPath:Path{PathSvg{path:"M 15 15 L 35 35 M 15 35 L 35 15"}}
 onClicked:{parent.visible=false;}}}
 component StatusText:Item{property var globState
 MouseArea{anchors.fill:parent
@@ -1280,7 +1448,7 @@ Slider{id:prefTuneSlotCount
 Layout.fillWidth:true
 from:2
 to:tuneManager.maxTunes
-value:4
+value:6
 stepSize:1}
 LText{text:prefTuneSlotCount.value
 font.pointSize:16}}
@@ -1601,10 +1769,14 @@ property var description:config&&config.description?config.description:""
 property var diff:config?packageConfig.diffConfig(config).differs:[]
 onDiffChanged:{applyConfigDiff.setModel(diff);}
 function show(cfg,auto,tune){config=cfg;automatic=!!auto;isTune=!!tune;applyConfigDiff.reset();applyConfigDiff.isTune=isTune;if(!applyConfigDiff.isEmpty&&!isTune){standardButton(Dialog.Apply).text="Restore";}
+if(automatic){standardButton(Dialog.Close).text="Keep Defaults";standardButton(Dialog.Discard).text="Skip";}
 open();}
-footer:DialogButtonBox{standardButtons:applyConfigDiff.isEmpty?Dialog.Close:Dialog.Apply|Dialog.Close}
+footer:DialogButtonBox{standardButtons:(applyConfigDiff.isEmpty?0:Dialog.Apply)|(applyConfigDialog.automatic?Dialog.Discard:0)|Dialog.Close}
 function set(cfg){config=cfg;}
 onApplied:{packageConfig.applyConfig(config);close();tuneArchiveDialog.close();}
+onRejected:{if(automatic){packageConfig.writeConfig();}
+close();}
+onDiscarded:{close();}
 ColumnLayout{width:applyConfigDialog.availableWidth
 LText{Layout.fillWidth:true
 Layout.bottomMargin:16
@@ -1732,6 +1904,61 @@ color:timeout?Utility.getAppHexColor("red"):getDarkThemeColor("lightText")
 font.pixelSize:fontSizeNormal
 horizontalAlignment:Text.AlignHCenter
 text:timeout?"timeout":recordedPlotData.noData?"no plot data":recordedPlotData.initialized?"loading: %1".arg(recordedPlotData.sampleNr):"loading..."}}
+Popup{id:remoteOverlay
+parent:mainItem
+width:parent.width
+height:parent.height
+modal:true
+closePolicy:Popup.CloseOnEscape
+Overlay.modal:Rectangle{color:"#bb000000"}
+property real value:0
+background:Item{}
+contentItem:Item{Text{anchors.horizontalCenter:parent.horizontalCenter
+y:remoteSliderArea.y/2-paintedHeight/2
+visible:remoteOverlayTimer.running
+font.pixelSize:42
+color:Utility.getAppHexColor("normalText")
+text:{if(state.pkgState===state.s_Running){return toFixed1Zero(state.rtData["remote.setpoint"])+"°";}
+if(state.pkgState===state.s_Ready){return round(Math.abs(state.rtData["speed"])*vescConfig.imperialFactor)+" "+vescConfig.speedUnit;}
+return"";}}
+Item{id:remoteSliderArea
+anchors.centerIn:parent
+width:parent.width*0.5
+height:Math.min(500,parent.height*0.8)
+Rectangle{id:remoteSliderContent
+anchors.fill:parent
+color:"#22bbbbbb"
+visible:false
+Rectangle{width:parent.width
+color:Utility.getAppHexColor("lightAccent")
+opacity:0.5
+y:remoteOverlay.value>=0?parent.height/2-height:parent.height/2
+height:Math.abs(remoteOverlay.value)*parent.height/2}
+Rectangle{anchors.centerIn:parent
+width:parent.width
+height:2
+color:Utility.getAppHexColor("disabledText")}}
+Rectangle{id:remoteSliderMask
+anchors.fill:parent
+radius:10
+visible:false}
+OpacityMask{anchors.fill:parent
+source:remoteSliderContent
+maskSource:remoteSliderMask}
+MouseArea{anchors.fill:parent
+onPressed:function(mouse){remoteOverlay.value=clamp(1-2*mouse.y/height,-1,1);remoteOverlayTimer.running=true;}
+onPositionChanged:function(mouse){remoteOverlay.value=clamp(1-2*mouse.y/height,-1,1);}
+onReleased:{remoteOverlay.value=0;}}}
+CloseToolButton{anchors.top:parent.top
+anchors.right:parent.right
+onClicked:remoteOverlay.close()}}
+Timer{id:remoteOverlayTimer
+repeat:true
+interval:20
+triggeredOnStart:true
+onTriggered:{if(remoteOverlay.value===0){running=false;}
+commands.sendRemote(remoteOverlay.value);}}
+onClosed:value=0}
 ColumnLayout{id:root
 anchors.fill:parent
 anchors.margins:5
@@ -1742,7 +1969,7 @@ Rectangle{id:batteryBar
 Layout.fillWidth:true
 Layout.preferredHeight:0.8*unit
 color:Utility.getAppHexColor("lightBackground")
-property real voltage:state.rtData["motor.batt_voltage"]
+property real voltage:state.rtData["batt_voltage"]
 property int value:0
 Behavior on voltage{NumberAnimation{easing.type:Easing.OutExpo
 duration:200}}
@@ -1811,14 +2038,14 @@ ToolButton{id:editBoardNameButton
 Layout.alignment:Qt.AlignVCenter
 Layout.preferredWidth:0.8*unit
 Layout.preferredHeight:0.8*unit
-height:0.8*unit
+size:0.8*unit
 iconPath:Path{PathSvg{path:"M 10.59 24 L 17.63 32.42 L 6 35 L 10.59 24 M 10.59 24 L 34.39 4 L 41.49 12.42 L 17.69 32.42 M 4 42 L 46 42"}}
 onClicked:{editBoardNameDialog.open();}}
 ToolButton{id:settingsButton
 Layout.alignment:Qt.AlignVCenter
 Layout.preferredWidth:0.8*unit
 Layout.preferredHeight:0.8*unit
-height:0.8*unit
+size:0.8*unit
 iconPath:Path{PathSvg{path:"M 14.25 37.81 L 10.59 39.42 A 3 3 0 0 1 6.98 38.47 22.5 22.5 0 0 1 4.32 33.87 A 3 3 0 0 1 5.30 30.27 L 8.53 27.9 A 3.6 3.6 0 0 0 8.53 22.1 L 5.30 19.73 A 3 3 0 0 1 4.32 16.13 A 22.5 22.5 0 0 1 6.98 11.53 A 3 3 0 0 1 10.59 10.58 L 14.25 12.19 A 3.6 3.6 0 0 0 19.28 9.29 L 19.79 5.31 A 3 3 0 0 1 22.35 2.66 A 22.5 22.5 0 0 1 27.65 2.66 A 3 3 0 0 1 30.28 5.31 L 30.72 9.29 A 3.6 3.6 0 0 0 35.75 12.19 L 39.41 10.58 A 3 3 0 0 1 43.02 11.53 A 22.5 22.5 0 0 1 45.67 16.13 A 3 3 0 0 1 44.7 19.73 L 41.47 22.1 A 3.6 3.6 0 0 0 41.47 27.9 L 44.7 30.27 A 3 3 0 0 1 45.68 33.87 A 22.5 22.5 0 0 1 43.02 38.47 A 3 3 0 0 1 39.41 39.42 L 35.75 37.81 A 3.6 3.6 0 0 0 30.72 40.71 L 30.28 44.69 A 3 3 0 0 1 27.65 47.34 A 22.5 22.5 0 0 1 22.35 47.34 A 3 3 0 0 1 19.72 44.69 L 19.28 40.71 A 3.6 3.6 0 0 0 14.25 37.81"}
 PathAngleArc{centerX:25;centerY:25;radiusX:6.5;radiusY:6.5;sweepAngle:360;}}
 onClicked:{settingsDialog.show();}}}
@@ -1843,8 +2070,8 @@ maxValue:preferences.speedDialMax
 valueUnit:vescConfig.speedUnit
 valueFontSize:width*0.18
 lineWidth:0.25*unit
-value:Math.abs(state.rtData["motor.speed"])*vescConfig.imperialFactor
-property int erpm:Math.abs(state.rtData["motor.erpm"])
+value:Math.abs(state.rtData["speed"])*vescConfig.imperialFactor
+property int erpm:Math.abs(state.rtData["erpm"])
 Behavior on erpm{NumberAnimation{easing.type:Easing.OutCirc
 duration:100}}
 NText{id:speedDialValueErpm
@@ -1894,7 +2121,7 @@ Dial{anchors.bottom:currentDialLabel.top
 anchors.bottomMargin:-0.15*unit
 width:parent.height
 height:width
-value:state.rtData["motor.current"]
+value:state.rtData["current"]
 allowNegative:true
 minValue:motorConfig.currentMin;maxValue:motorConfig.currentMax;valueUnit:"A"}
 NText{id:dutyDialLabel
@@ -1909,7 +2136,7 @@ anchors.bottomMargin:-0.15*unit
 anchors.right:parent.right
 width:parent.height
 height:width
-value:state.rtData["motor.duty_cycle"]*100
+value:state.rtData["duty_cycle"]*100
 maxValue:100
 warnThresholdAbs:80
 valueUnit:"%"}
@@ -1928,7 +2155,7 @@ horizontalAlignment:Text.AlignHCenter
 text:"Wh/%1".arg(vescConfig.distanceUnit)}
 function add(v){value=(1.0-alpha)*value+alpha*v;}}}
 Item{id:batteryCurrent
-property var value:state.rtData["motor.batt_current"]
+property var value:state.rtData["batt_current"]
 property var minValue:preferences.battCurrentLog?-Math.log(-motorConfig.inCurrentMin+1):motorConfig.inCurrentMin
 property var maxValue:preferences.battCurrentLog?Math.log(motorConfig.inCurrentMax+1):motorConfig.inCurrentMax
 property var positiveWidth:value>0?(preferences.battCurrentLog?Math.log(value+1):value)/maxValue:0
@@ -1991,8 +2218,8 @@ anchors.left:parent.left
 anchors.leftMargin:parent.sidePadding
 width:parent.height
 height:width
-property real leftVoltage:state.rtData["footpad.adc1"]
-property real rightVoltage:state.rtData["footpad.adc2"]
+property real leftVoltage:state.rtData["adc_left"]
+property real rightVoltage:state.rtData["adc_right"]
 property real canvasWidth:width*0.85
 property real scale:canvasWidth/footpadPath.width
 Path{id:footpadPath
@@ -2061,7 +2288,7 @@ anchors.right:parent.right
 anchors.rightMargin:parent.sidePadding
 width:parent.height
 height:width
-property real newValue:state.rtData["imu.roll"]
+property real newValue:state.rtData["roll"]
 property real preValue:newValue
 onNewValueChanged:{if(Math.abs(newValue-preValue)>180){rollEasingBehavior.enabled=false;value+=newValue>0?360:-360;rollEasingBehavior.enabled=true;}
 value=newValue;preValue=newValue;}
@@ -2093,8 +2320,8 @@ anchors.topMargin:0.15*unit
 width:parent.width
 height:width*0.83
 property real textWidth:1.4*unit
-property real pitchValue:state.rtData["imu.pitch"]
-property real balancePitchValue:state.rtData["imu.balance_pitch"]
+property real pitchValue:state.rtData["pitch"]
+property real balancePitchValue:state.rtData["balance_pitch"]
 property real setpointValue:state.rtData["setpoint"]
 property real runtimeOpacity:0
 states:State{name:"running";when:state.pkgState===state.s_Running
@@ -2219,12 +2446,12 @@ VerticalValue{id:motorTemp
 labelText:"motor"
 unit:"°C"
 warningThreshold:motorConfig.tempMotorStart-preferences.tempWarningOffset
-value:state.rtData["motor.motor_temp"]}
+value:state.rtData["motor_temp"]}
 VerticalValue{anchors.left:motorTemp.right
 labelText:"controller"
 unit:"°C"
 warningThreshold:motorConfig.tempFetStart-preferences.tempWarningOffset
-value:state.rtData["motor.mosfet_temp"]}
+value:state.rtData["mosfet_temp"]}
 StatusText{id:statusText
 anchors.verticalCenter:parent.verticalCenter
 anchors.horizontalCenter:parent.horizontalCenter
@@ -2332,6 +2559,7 @@ source:buttonBg}}}}
 FloatingToolButton{id:downloadTunesButton
 anchors.right:parent.right
 anchors.top:parent.top
+size:unit
 iconPath:Path{PathSvg{path:"M 43 39 L 16 39 M 38.5 32 L 11.5 32 M 34 25 L 7 25 M 25 2 L 25 18 L 33 11 M 25 18 L 17 11"}}
 onClicked:{tuneArchiveDialog.show();}}}
 ScrollView{Layout.fillHeight:true
@@ -2359,37 +2587,26 @@ Layout.minimumWidth:3*unit
 Layout.alignment:Qt.AlignHCenter
 text:lights.headlightsOn?"Headlights Off":"Headlights On"
 onClicked:{commands.sendLightsControl(undefined,!lights.headlightsOn);}}}
-LText{id:movementControlsHeader
-anchors.horizontalCenter:parent.horizontalCenter
+LText{anchors.horizontalCenter:parent.horizontalCenter
 font.pixelSize:fontSizeBig
-text:"Move"}
-Slider{id:moveSlider
+text:"Remote"}
+Slider{id:remoteSlider
 width:parent.width*0.9
 anchors.horizontalCenter:parent.horizontalCenter
 from:-1
 to:1
-value:0}
-Item{width:parent.width
-implicitHeight:tiltEnabled.implicitHeight
-anchors.horizontalCenter:parent.horizontalCenter
-LText{id:tiltControlsHeader
-anchors.centerIn:parent
-font.pixelSize:fontSizeBig
-text:"Tilt"}
-CheckBox{id:tiltEnabled
-anchors.left:tiltControlsHeader.right
-anchors.leftMargin:0.2*unit
-checked:false
-font.pixelSize:fontSizeNormal
-text:"enable"
-onClicked:{if(checked){packageConfig.setInputTiltRemoteType(1);}}}}
-Slider{id:tiltSlider
-width:parent.width*0.9
-anchors.horizontalCenter:parent.horizontalCenter
-enabled:tiltEnabled.checked
-from:-1
-to:1
-value:0}
+value:0
+onPressedChanged:{if(pressed){remoteTimer.running=true;}}
+Timer{id:remoteTimer
+running:false
+repeat:true
+interval:20
+triggeredOnStart:true
+onTriggered:{if(!remoteSlider.pressed){remoteSlider.value=0;running=false;}
+commands.sendRemote(remoteSlider.value);}}}
+Button{anchors.horizontalCenter:parent.horizontalCenter
+text:"Fullscreen Remote"
+onClicked:{remoteOverlay.open();}}
 LText{anchors.horizontalCenter:parent.horizontalCenter
 font.pixelSize:fontSizeBig
 text:"Magic Flywheel"}
@@ -2409,8 +2626,6 @@ Layout.fillHeight:true
 ToggleFloatingToolButton{id:toggleDataPlotButton
 anchors.top:parent.top
 anchors.right:parent.right
-width:0.8*unit
-height:0.8*unit
 z:1
 value:true
 trueIconPath:Path{PathSvg{path:"M 6 13 L 31 13 M 6 21 L 21 21 M 6 29 L 21 29 M 6 37 L 21 37 M 29 21 L 44 21 M 29 29 L 44 29 M 29 37 L 44 37"}}
@@ -2450,10 +2665,10 @@ Column{width:parent.width/2
 spacing:5
 clip:true
 Value{label:"Requested current";unit:"A";value:toFixed2Zero(state.rtData["balance_current"]);}
-Value{label:"Filtered current";unit:"A";value:toFixed2Zero(state.rtData["motor.filt_current"]);}
+Value{label:"Filtered current";unit:"A";value:toFixed2Zero(state.rtData["filt_current"]);}
 Value{label:"ATR Accel. diff.";value:toFixed2Zero(state.rtData["atr.accel_diff"]);}
 Value{label:"ATR Speed Boost";unit:"%";value:round(state.rtData["atr.speed_boost"]*100);}
-Value{label:"Booster current";unit:"A";value:toFixed2Zero(state.rtData["booster.current"]);}
+Value{label:"Booster torque";unit:"Nm";value:toFixed2Zero(state.rtData["booster.torque"]);}
 Value{label:"Remote input";unit:"%";value:round(state.rtData["remote.input"]*100);}}
 Column{width:parent.width/2
 spacing:5
@@ -2480,4 +2695,4 @@ NText{id:bottomLine
 Layout.fillWidth:true
 font.pixelSize:0.2*unit
 horizontalAlignment:Text.AlignHCenter
-text:"Float Out Boy v0.1.0"}}}
+text:"Float Out Boy 0.1.0"}}}

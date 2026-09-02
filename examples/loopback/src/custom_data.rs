@@ -1,4 +1,6 @@
-//! Usage-shaped port of VESC's `custom_data_comm` wire state.
+//! Usage-shaped port of VESC's official
+//! [`custom_data_comm`](https://github.com/vedderb/vesc_pkg/blob/ddf1e162d5b7d01d848263af317cc7f8f14c0d14/c_libs/examples/custom_data_comm/code.c)
+//! wire state.
 
 use vesc_protocol::buffer::{append_float32_auto, append_i32, read_float32_auto};
 
@@ -11,6 +13,7 @@ pub struct CustomDataCommState {
 
 impl CustomDataCommState {
     /// Construct an empty custom-data state.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             message_count: 0,
@@ -40,11 +43,13 @@ impl CustomDataCommState {
     }
 
     /// Return the number of accepted messages.
+    #[must_use]
     pub const fn message_count(self) -> i32 {
         self.message_count
     }
 
     /// Return the last accepted value.
+    #[must_use]
     pub const fn last_value(self) -> f32 {
         self.last_value
     }
@@ -70,7 +75,7 @@ mod tests {
 
         assert!(state.receive(&incoming));
         assert_eq!(state.message_count(), 1);
-        assert_eq!(state.last_value(), 1.25);
+        assert_eq!(state.last_value().to_bits(), 1.25_f32.to_bits());
 
         let mut response = [0; 8];
         assert_eq!(state.encode_response(&mut response), Some(8));

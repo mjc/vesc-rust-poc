@@ -4,6 +4,12 @@ Float Out Boy is an unofficial Rust port of [Refloat](https://github.com/lukash/
 
 The new name is intentional: this is a separate Rust implementation, and calling it Refloat would make it too easy to confuse the port with the original project, its releases, and its support channels.
 
+## Current behavior baseline
+
+The `0.1.0` package tracks Refloat's post-1.2.1 behavior through the pinned 1.3 beta cutoff. This includes measured-loop timing, smoothed setpoint modifiers, motor-flux torque normalization on supported firmware, distance-driven Reverse Stop, the unified remote command and fullscreen overlay, expanded realtime plotting, data recording, footpad ADC swapping, and bounded LCM handling.
+
+These changes can make an existing tune feel different. Back up the current configuration and review the smoothing and tilt-transition settings after upgrading.
+
 ## Installation and upgrades
 
 Back up your package configuration before upgrading, either with **Backup Configs** on the Start page or by saving the XML from **Float Out Boy Cfg**.
@@ -23,3 +29,4 @@ Float Out Boy follows the behavior and package design of Refloat while porting t
 - [Refloat source](https://github.com/lukash/refloat)
 - [Refloat releases](https://github.com/lukash/refloat/releases)
 - [Refloat 1.2 release notes](https://pev.dev/t/refloat-version-1-2/2795)
+- [Refloat 1.3 release notes](https://pev.dev/t/refloat-version-1-3/2995)
