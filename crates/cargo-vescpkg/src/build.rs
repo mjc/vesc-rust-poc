@@ -1559,11 +1559,11 @@ Symbol table '.symtab' contains 2 entries:\n\
     fn rejects_an_imu_callback_call_chain_larger_than_the_vesc_thread() {
         let report = "\
 00001000 <float_out_boy_imu_read_callback>:\n\
-    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
-    1002:\tb09b      \tsub\tsp, #108\n\
+    1000:\tb5f0     \tpush\t{r4, r5, r6, r7, lr}\n\
+    1002:\tb09b     \tsub\tsp, #108\n\
     1004:\tf000 f801 \tbl\t2000 <helper>\n\
 00002000 <helper>:\n\
-    2000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}\n\
+    2000:\tb5f0     \tpush\t{r4, r5, r6, r7, lr}\n\
     2002:\tf5ad 7d6f \tsub.w\tsp, sp, #956\n";
 
         let error = validate_imu_callback_stack_report(report).expect_err("oversized call chain");

@@ -16,15 +16,6 @@ scalar_unit!(VescSeconds, from_seconds, as_seconds, "VESC float seconds");
 scalar_unit!(Frequency, from_hertz, as_hertz, "hertz");
 scalar_unit!(SampleRate, from_hertz, as_hertz, "hertz");
 
-impl core::ops::Div<SampleRate> for Frequency {
-    type Output = f32;
-
-    /// Return this frequency as a dimensionless fraction of the sample rate.
-    fn div(self, sample_rate: SampleRate) -> Self::Output {
-        self.as_hertz() / sample_rate.as_hertz()
-    }
-}
-
 impl TimestampTicks {
     /// Return the unsigned wrapping duration since an earlier VESC timestamp.
     #[must_use]
@@ -47,30 +38,6 @@ impl SampleRate {
     pub fn sample_period(self) -> Option<VescSeconds> {
         let seconds = 1.0 / self.as_hertz();
         (seconds.is_finite() && seconds > 0.0).then(|| VescSeconds::from_seconds(seconds))
-    }
-}
-
-impl VescSeconds {
-    /// Convert finite firmware seconds to the corresponding whole system ticks.
-    ///
-    /// Returns `None` for NaN and infinities. Finite values saturate to the
-    /// system tick range using Rust's float-to-integer conversion semantics.
-    #[must_use]
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "Rust's float cast provides the documented saturating whole-tick conversion"
-    )]
-    pub fn to_system_ticks_saturating(self) -> Option<SystemTicks> {
-        let seconds = self.as_seconds();
-        if !seconds.is_finite() {
-            return None;
-        }
-        let tick_rate = u16::try_from(SYSTEM_TICK_RATE_HZ).unwrap_or(u16::MAX);
-        Some(SystemTicks::from_ticks(
-            (seconds * f32::from(tick_rate)) as u32,
-        ))
     }
 }
 

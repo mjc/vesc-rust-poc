@@ -1,5 +1,7 @@
 use super::{FloatOutBoyPackageState, finish_startup, stop, stop_with};
-use crate::package::test_support::default_float_out_boy_config_bytes;
+use crate::{
+    domain::FloatOutBoyAllDataPayloads, package::test_support::default_float_out_boy_config_bytes,
+};
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::timer_older_whole_seconds as float_out_boy_ticks_elapsed;
@@ -66,7 +68,7 @@ fn startup_stops_before_registration_when_required_setup_fails() {
 #[test]
 fn stop_tears_down_internal_led_runtime() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = default_float_out_boy_config_bytes();
     config[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&config));
@@ -81,7 +83,7 @@ fn stop_tears_down_internal_led_runtime() {
 #[test]
 fn stop_retains_state_when_internal_led_dma_cannot_quiesce() {
     let _firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut config = default_float_out_boy_config_bytes();
     config[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
     assert!(state.store_serialized_config(&config));

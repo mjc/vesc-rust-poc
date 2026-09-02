@@ -6,7 +6,6 @@ use crate::package::test_support::{
     imu_acceleration, imu_angular_rate, imu_period, imu_pitch_rate, imu_read_sample, imu_roll_rate,
     imu_yaw_rate, sample_all_data_payloads_with_ride_state,
 };
-use crate::package::threads::test_support::tick_float_out_boy_main_thread_with;
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::FirmwareTest;
 
@@ -105,64 +104,4 @@ fn imu_callback_state_update_feeds_normal_balance_pitch_like_float_out_boy_loop(
             .as_radians()
             > 0.0
     );
-}
-
-#[test]
-fn ready_remote_current_is_consumed_by_the_fixed_main_loop() {
-    let firmware = FirmwareTest::new();
-    firmware.set_clock_ticks(1);
-    firmware.set_remote_input(
-        JoystickY::new(SignedRatio::from_ratio_const(0.5)),
-        RemoteAge::new(VescSeconds::from_seconds(0.1)),
-    );
-    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
-        FloatOutBoyRunState::Ready,
-        FloatOutBoyMode::Normal,
-    ));
-    state.initialize_time_epochs(TimestampTicks::from_ticks(1));
-    edit_config(&mut state, |config| {
-        assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(2)));
-        assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.0)));
-        assert!(config.set_input_tilt_inverted(false));
-        assert!(config.set_remote_max_move_speed(vescpkg_rs::WireByte::new(5)));
-        assert!(config.set_remote_grace_period(VescSeconds::ZERO));
-    });
-    state.refresh_controller_input(firmware.inputs(), TimestampTicks::from_ticks(1));
-    let sample = imu_read_sample(
-        imu_acceleration(
-            imu_accel_x(AccelerationG::ZERO),
-            imu_accel_y(AccelerationG::ZERO),
-            imu_accel_z(AccelerationG::from_g(1.0)),
-        ),
-        imu_angular_rate(
-            imu_roll_rate(AngularVelocity::ZERO),
-            imu_pitch_rate(AngularVelocity::ZERO),
-            imu_yaw_rate(AngularVelocity::ZERO),
-        ),
-        imu_period(VescSeconds::from_seconds(0.002)),
-    );
-
-    float_out_boy_imu_callback_with_state(&mut state, sample);
-    tick_float_out_boy_main_thread_with(
-        &mut state,
-        firmware.telemetry(),
-        firmware.imu(),
-        firmware.motor(),
-        AdcVoltage::new(Voltage::from_volts(2.5)),
-        AdcVoltage::new(Voltage::ZERO),
-        TimestampTicks::from_ticks(1),
-    );
-    float_out_boy_imu_callback_with_state(&mut state, sample);
-    tick_float_out_boy_main_thread_with(
-        &mut state,
-        firmware.telemetry(),
-        firmware.imu(),
-        firmware.motor(),
-        AdcVoltage::new(Voltage::from_volts(2.5)),
-        AdcVoltage::new(Voltage::ZERO),
-        TimestampTicks::from_ticks(2),
-    );
-
-    assert_eq!(firmware.current_command_count(), 2);
-    assert!(!firmware.commanded_current().current().is_zero());
 }

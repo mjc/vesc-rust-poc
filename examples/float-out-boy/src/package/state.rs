@@ -1,32 +1,31 @@
 use crate::balance::{BalanceFilter, LoopConfig, LoopInput, LoopState};
 use crate::beeper::FloatOutBoyBeeperLevel;
-use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount};
+use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert};
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::FloatOutBoyConfigImage;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState, FloatOutBoySetpointAdjustment,
-    FloatOutBoyStopCondition, FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
+    FloatOutBoyRealtimeControlPeriod, FloatOutBoyRealtimeLiveValues,
+    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRunState,
+    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyWheelSlipState,
 };
 use crate::motor_control::FloatOutBoyMotorControl;
 use crate::motor_torque::MotorTorqueConstant;
-use vescpkg_rs::expire_timer_whole_seconds as float_out_boy_expire_timer;
 use vescpkg_rs::prelude::OdometerMeters;
 use vescpkg_rs::prelude::{AdcVoltage, FirmwareVersion};
 use vescpkg_rs::prelude::{
     AngleDegrees, AngleRadians, BatteryCellCount, BatteryVoltage, Current, DutyCycleLimit,
     InputCurrent, MosfetTemperature, MotorCurrent, MotorCurrentLimit, MotorTemperature, Ratio, Rpm,
-    SignedTripDistance, TemperatureLimitStart, TimestampTicks, VescSeconds,
+    TemperatureLimitStart, TimestampTicks,
 };
 use vescpkg_rs::{
-    Imu, MotorOutput, MotorTelemetry, timer_older as float_out_boy_ticks_elapsed_seconds,
-    timer_older_whole_seconds as float_out_boy_ticks_elapsed,
+    Imu, ImuPitch, ImuReadSample, ImuRoll, MotorOutput, MotorTelemetry, WrappingTimer,
 };
-use vescpkg_rs::{ImuPitch, ImuReadSample, ImuRoll};
 
 mod alert_tracker;
 mod alerts;
@@ -64,8 +63,6 @@ mod ride_modifiers;
 #[cfg(test)]
 mod runtime_tests;
 mod smooth_setpoint;
-#[cfg(test)]
-mod test_support;
 mod transition;
 #[cfg(test)]
 mod transition_tests;
@@ -79,7 +76,7 @@ pub(in crate::package) use config_storage::{
     store_persisted_config,
 };
 pub(in crate::package) use config_storage::{FloatOutBoyPersistedConfig, load_persisted_config};
-use data_recorder::{DataRecorderState, DataRecorderTrigger};
+use data_recorder::DataRecorderState;
 use flywheel::FloatOutBoyFlywheelRuntime;
 use haptic_feedback::{HapticFeedbackInput, HapticFeedbackState, normalized_current_saturation};
 #[cfg(test)]
@@ -87,41 +84,17 @@ use internal_leds::FloatOutBoyInternalLedRuntime;
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
-use remote_control::{RemoteControlState, RemotePhysicalInputContext};
+use remote_control::RemoteControlState;
 use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
+use transition::{
+    FloatOutBoyStateTransitionInput, FloatOutBoyStopEvent, float_out_boy_first_stop_event,
+    float_out_boy_state_transition,
+};
 
 // C map: `aux_thd` stores backup data after more than 200 m while not running
 // at `third_party/float-out-boy/src/main.c:1142-1146`.
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
-// VESC 7.00 `conf_general_store_backup_data` first suppresses motor input for
-// 5000 ms. Its motor-release failure path returns truthy `100` without reducing
-// that timeout, so the package cannot infer the shorter successful cooldown.
-const FLOAT_OUT_BOY_AUX_BACKUP_COOLDOWN: VescSeconds = VescSeconds::from_seconds(5.0);
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum AuxBackupPhase {
-    #[default]
-    Idle,
-    Writing,
-    CoolingDown {
-        since: TimestampTicks,
-    },
-}
-
-impl AuxBackupPhase {
-    fn refresh(&mut self, now: TimestampTicks) {
-        if let Self::CoolingDown { since } = *self
-            && float_out_boy_ticks_elapsed_seconds(now, since, FLOAT_OUT_BOY_AUX_BACKUP_COOLDOWN)
-        {
-            *self = Self::Idle;
-        }
-    }
-
-    const fn is_idle(self) -> bool {
-        matches!(self, Self::Idle)
-    }
-}
 
 #[inline]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
@@ -130,22 +103,17 @@ fn float_out_boy_command_payload(
     bytes: &[u8],
     command: FloatOutBoyAppDataCommand,
 ) -> Option<&[u8]> {
-    match bytes {
-        [package_id, command_id, payload @ ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()
-                && *command_id == command.id() =>
-        {
-            Some(payload)
-        }
-        _ => None,
-    }
+    let (actual, payload) = vescpkg_rs::protocol_app_data::parse_app_data_command::<
+        FloatOutBoyAppDataCommand,
+    >(bytes, FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID)?;
+    (actual == command).then_some(payload)
 }
 
 fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
     matches!(
         bytes,
         [package_id, command_id, ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()
+            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
                 && (*command_id == FloatOutBoyAppDataCommand::PrintInfo.id()
                     || *command_id == FloatOutBoyAppDataCommand::Experiment.id())
     )
@@ -159,13 +127,13 @@ struct BeeperRuntimeFlags {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct RideRuntimeFlags {
-    traction_control: FloatOutBoyTractionControlState,
+    traction_control: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct LedRuntimeOverrides {
-    power: Option<crate::leds::FloatOutBoyLedPower>,
-    headlights_power: Option<crate::leds::FloatOutBoyLedPower>,
+    enabled: Option<bool>,
+    headlights_enabled: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -216,26 +184,26 @@ pub struct FloatOutBoyPackageState {
     balance_loop: LoopState,
     frequency_trackers: frequency_tracker::FrequencyTrackers,
     reverse_stop: ReverseStop,
-    motor_distance: SignedTripDistance,
+    motor_distance_meters: f32,
     motor_kinematics: MotorKinematicsTracker,
-    motor_current_filter: motor_runtime::FloatOutBoyMotorCurrentFilter,
+    motor_current_filter: vescpkg_rs::BiquadLowPass,
     motor_torque_constant: MotorTorqueConstant,
     remote_control: RemoteControlState,
     runtime_board_setpoint: vescpkg_rs::prelude::AngleDegrees,
     ride_modifiers: RideModifierState,
-    charging_ticks: TimestampTicks,
-    engage_ticks: TimestampTicks,
-    disengage_ticks: TimestampTicks,
-    idle_ticks: TimestampTicks,
-    nag_ticks: TimestampTicks,
+    charging_ticks: WrappingTimer,
+    engage_ticks: WrappingTimer,
+    disengage_ticks: WrappingTimer,
+    idle_ticks: WrappingTimer,
+    nag_ticks: WrappingTimer,
     idle_voltage: BatteryVoltage,
-    fault_switch_ticks: TimestampTicks,
-    fault_switch_half_ticks: TimestampTicks,
-    fault_angle_pitch_ticks: TimestampTicks,
-    fault_angle_roll_ticks: TimestampTicks,
-    high_voltage_ticks: TimestampTicks,
-    wheelslip_ticks: TimestampTicks,
-    upside_down_fault_ticks: TimestampTicks,
+    fault_switch_ticks: WrappingTimer,
+    fault_switch_half_ticks: WrappingTimer,
+    fault_angle_pitch_ticks: WrappingTimer,
+    fault_angle_roll_ticks: WrappingTimer,
+    high_voltage_ticks: WrappingTimer,
+    wheelslip_ticks: WrappingTimer,
+    upside_down_fault_ticks: WrappingTimer,
     upside_down_flags: UpsideDownRuntimeFlags,
     motor_duty_raw: Ratio,
     duty_max_with_margin: DutyCycleLimit,
@@ -251,21 +219,31 @@ pub struct FloatOutBoyPackageState {
     #[cfg(test)]
     motor_config_initialized: bool,
     aux_odometer: OdometerMeters,
-    aux_backup_phase: AuxBackupPhase,
     aux_backup_failures: u32,
-    aux_motor_config_refresh_ticks: TimestampTicks,
+    aux_motor_config_refresh_ticks: WrappingTimer,
     #[cfg(test)]
     internal_leds: Option<FloatOutBoyInternalLedRuntime>,
     #[cfg(target_arch = "arm")]
     internal_leds: Option<internal_leds::RuntimeAllocation>,
-    #[cfg(target_arch = "arm")]
-    internal_leds_operational: bool,
     internal_led_refresh_pending: bool,
     internal_led_confirmation_pending: Option<TimestampTicks>,
     firmware_version: Option<FirmwareVersion>,
 }
 
 impl FloatOutBoyPackageState {
+    fn realtime_live_values(&self) -> FloatOutBoyRealtimeLiveValues {
+        FloatOutBoyRealtimeLiveValues::new(
+            FloatOutBoyRealtimeControlPeriod::new(self.frequency_trackers.imu.elapsed()),
+            FloatOutBoyRealtimeControlFrequency::new(self.frequency_trackers.imu.frequency()),
+            self.remote_control.input(),
+            FloatOutBoyRealtimeAtrAccelerationDiff::from_erpm_delta(
+                self.ride_modifiers.atr_accel_diff(),
+            ),
+            FloatOutBoyRealtimeAtrSpeedBoost::from_units(self.ride_modifiers.atr_speed_boost()),
+            self.ride_modifiers.atr_transition_boost(),
+        )
+    }
+
     /// Build app-data state from the current all-data payload snapshot.
     #[must_use]
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
@@ -284,11 +262,11 @@ impl FloatOutBoyPackageState {
         input: &vescpkg_rs::FirmwareInputs,
         now: TimestampTicks,
     ) {
-        // C map: current Refloat gives COMMAND_REMOTE priority for 0.5 s,
-        // selects UART/PPM, rejects samples older than 0.5 s, then applies
-        // deadband, move-idle, and inversion at `src/remote.c:61-119`.
+        // C map: cutoff `remote_input` gives command input priority for 0.5 s,
+        // selects UART/PPM, rejects samples at 0.5 s, then applies physical
+        // deadband, move-idle, and tilt-inversion behavior.
         let config = self.serialized_config;
-        let value = match config.input_tilt_remote_type() {
+        let input = match config.input_tilt_remote_type() {
             1 => input.remote().ok().and_then(|remote| {
                 (remote.age().duration() < vescpkg_rs::VescSeconds::from_seconds(0.5))
                     .then(|| remote.joystick_y().ratio())
@@ -299,17 +277,28 @@ impl FloatOutBoyPackageState {
             }),
             _ => None,
         };
-        self.remote_control.refresh_physical_input(
-            value,
-            RemotePhysicalInputContext {
+        self.remote_control
+            .refresh_physical_input(remote_control::PhysicalRemoteInput {
+                raw: input,
                 now,
-                disengage_ticks: self.disengage_ticks,
+                disengage_epoch: self.disengage_ticks.started(),
                 deadband: config.input_tilt_deadband(),
                 inverted: config.input_tilt_inverted(),
                 maximum_move_speed: config.remote().max_move_speed(),
                 move_grace: config.remote().grace_period(),
-            },
-        );
+            });
+    }
+
+    /// Build startup state and apply the config persisted by firmware.
+    ///
+    /// Upstream `data_init` reads EEPROM and falls back to generated defaults
+    /// at `third_party/float-out-boy/src/main.c:1160-1185`.
+    #[cfg(test)]
+    pub(super) fn from_persisted_config(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
+        let mut state = Self::new(all_data_payloads);
+        state.load_persisted_config_on_main_thread(vescpkg_rs::FirmwareClock::current_timestamp());
+        state.configure_loaded_config_on_main_thread();
+        state
     }
 
     /// Seed the auxiliary backup threshold from the firmware odometer at startup.
@@ -319,15 +308,12 @@ impl FloatOutBoyPackageState {
 
     /// Return whether the source-backed auxiliary backup threshold has been crossed.
     pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
-        self.aux_backup_phase.is_idle()
-            && !matches!(
-                self.all_data_payloads
-                    .base()
-                    .status()
-                    .ride_state()
-                    .run_state(),
-                FloatOutBoyRunState::Running
-            )
+        self.all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .run_state()
+            != FloatOutBoyRunState::Running
             && odometer.as_meters()
                 > self
                     .aux_odometer
@@ -335,33 +321,14 @@ impl FloatOutBoyPackageState {
                     .saturating_add(FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS)
     }
 
-    /// Claim one due backup before leaving the package-state critical section.
-    pub(crate) fn begin_aux_backup(&mut self, odometer: OdometerMeters) -> bool {
-        if !self.aux_backup_due(odometer) {
-            return false;
-        }
-        self.aux_backup_phase = AuxBackupPhase::Writing;
-        true
-    }
-
-    /// Return whether VESC's backup effect allows a new ride to engage.
-    pub(crate) fn aux_backup_allows_engagement(&mut self, now: TimestampTicks) -> bool {
-        self.aux_backup_phase.refresh(now);
-        self.aux_backup_phase.is_idle()
-    }
-
-    /// Commit an auxiliary backup result after returning to the state critical section.
-    pub(crate) fn finish_aux_backup(
-        &mut self,
-        odometer: OdometerMeters,
-        stored: bool,
-        now: TimestampTicks,
-    ) {
+    /// Record a successful auxiliary backup so the same distance is not stored repeatedly.
+    pub(crate) fn record_aux_backup(&mut self, odometer: OdometerMeters) {
         self.aux_odometer = odometer;
-        if !stored {
-            self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
-        }
-        self.aux_backup_phase = AuxBackupPhase::CoolingDown { since: now };
+    }
+
+    /// Record an unsuccessful auxiliary backup for diagnostics and retry on the next tick.
+    pub(crate) fn record_aux_backup_failure(&mut self) {
+        self.aux_backup_failures = self.aux_backup_failures.saturating_add(1);
     }
 
     pub(crate) fn refresh_aux_motor_config_runtime_state(
@@ -369,14 +336,18 @@ impl FloatOutBoyPackageState {
         telemetry: &impl MotorTelemetry,
         now: TimestampTicks,
     ) {
-        if float_out_boy_ticks_elapsed_seconds(
-            now,
-            self.aux_motor_config_refresh_ticks,
-            vescpkg_rs::VescSeconds::from_seconds(0.5),
-        ) {
+        if self
+            .aux_motor_config_refresh_ticks
+            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
+        {
             self.refresh_motor_config_runtime_state(telemetry);
-            self.aux_motor_config_refresh_ticks = now;
+            self.aux_motor_config_refresh_ticks.restart(now);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn aux_backup_failures(&self) -> u32 {
+        self.aux_backup_failures
     }
 
     pub(crate) fn record_firmware_version(&mut self, version: FirmwareVersion) {
@@ -392,11 +363,11 @@ impl FloatOutBoyPackageState {
     }
 
     pub(crate) fn force_beeper_on(&mut self) {
-        self.beeper.force_on();
+        self.beeper.on(true);
     }
 
     pub(crate) fn release_beeper(&mut self) {
-        self.beeper.off();
+        self.beeper.off(false);
     }
 
     #[cfg(any(test, target_arch = "arm"))]
@@ -434,13 +405,41 @@ impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(crate) fn refresh_bms_runtime_state(&mut self, system_time_ticks: TimestampTicks) {
         let bms = self.serialized_config.bms();
-        self.bms.refresh(bms.integration(), system_time_ticks);
+        self.bms
+            .refresh(bms.enabled(), bms.thresholds(), system_time_ticks);
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn bms_sample_for_test(&self) -> FloatOutBoyBmsSample {
+        self.bms.sample()
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn bms_faults_for_test(&self) -> crate::bms::FloatOutBoyBmsFaults {
+        self.bms.faults()
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn recorded_firmware_version(&self) -> Option<FirmwareVersion> {
+        self.firmware_version
     }
 
     /// Return the current all-data payload snapshot.
     #[must_use]
     pub const fn all_data_payloads(&self) -> FloatOutBoyAllDataPayloads {
         self.all_data_payloads
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) const fn remote_input_for_test(
+        &self,
+    ) -> crate::domain::FloatOutBoyRealtimeRemoteInput {
+        self.remote_control.input()
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) fn remote_move_target_for_test(&self) -> Option<vescpkg_rs::Speed> {
+        self.remote_control.move_target_for_test()
     }
 
     /// Request a motor current for the next motor-control apply step.
@@ -456,6 +455,12 @@ impl FloatOutBoyPackageState {
             startup.click_current(),
             self.frequency_trackers.imu.filter_frequency(),
         );
+    }
+
+    /// Apply and clear a pending motor-current request.
+    #[cfg(test)]
+    pub fn apply_requested_motor_current(&mut self, motor: &impl MotorOutput) -> bool {
+        self.motor_control.apply_requested_current(motor)
     }
 
     /// Apply motor control for the current run state.
@@ -482,7 +487,8 @@ impl FloatOutBoyPackageState {
         self.frequency_trackers
             .imu
             .update(sample.period().duration());
-        self.balance_filter.update(sample);
+        self.balance_filter
+            .update(sample, Ratio::from_ratio_const(0.1), 0.02);
     }
 
     pub(crate) fn handle_imu_control_sample(
@@ -502,52 +508,37 @@ impl FloatOutBoyPackageState {
             AngleDegrees::from(imu.pitch().angle()),
             AngleDegrees::from(imu.roll().angle()),
         );
-        let balance_pitch = if matches!(ride_state.mode(), FloatOutBoyMode::Flywheel) {
+        let balance_pitch = if ride_state.mode() == FloatOutBoyMode::Flywheel {
             FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from(pitch))
         } else {
-            self.balance_filter.balance_pitch()
+            FloatOutBoyRealtimeBalancePitch::new(self.balance_filter.pitch())
         };
 
-        match ride_state.run_state() {
-            FloatOutBoyRunState::Running => {
-                let angular_rate = sample.angular_rate();
-                let output = self
-                    .balance_loop
-                    .advance_balance_loop_elapsed_with_filter_rate(
-                        self.runtime_balance_loop_config(),
-                        LoopInput {
-                            setpoint: base.setpoints().board(),
-                            brake_tilt_setpoint: base.setpoints().brake_tilt(),
-                            balance_pitch: balance_pitch.angle_degrees(),
-                            raw_pitch: pitch,
-                            roll: ImuRoll::new(AngleRadians::from(roll)),
-                            gyro_pitch: angular_rate.pitch(),
-                            gyro_yaw: angular_rate.yaw(),
-                            motor_erpm: base.motor().electrical_speed(),
-                            motor_current: base.motor().motor_current(),
-                            motor_current_max: self.motor_current_max,
-                            motor_current_min: self.motor_current_min,
-                            mode: ride_state.mode(),
-                            darkride: ride_state.darkride(),
-                            traction_control: self.ride_flags.traction_control,
-                        },
-                        sample.period().duration(),
-                        self.frequency_trackers.imu.filter_frequency(),
-                        self.motor_torque_constant,
-                    );
-                self.balance_loop = output.state;
-                self.request_motor_current(output.requested_current);
-            }
-            FloatOutBoyRunState::Ready => {
-                if let Some(current) = self.remote_control.request_remote_move_current(
-                    base.motor().vehicle_speed().speed(),
-                    sample.period().duration(),
-                    self.motor_torque_constant,
-                ) {
-                    self.request_motor_current(current);
-                }
-            }
-            FloatOutBoyRunState::Disabled | FloatOutBoyRunState::Startup => {}
+        if ride_state.run_state() == FloatOutBoyRunState::Running {
+            let angular_rate = sample.angular_rate();
+            let output = self.balance_loop.advance_balance_loop_elapsed(
+                self.runtime_balance_loop_config(),
+                LoopInput {
+                    setpoint: base.setpoints().board(),
+                    brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                    balance_pitch: balance_pitch.angle_degrees(),
+                    raw_pitch: pitch,
+                    roll: ImuRoll::new(AngleRadians::from(roll)),
+                    gyro_pitch: angular_rate.pitch(),
+                    gyro_yaw: angular_rate.yaw(),
+                    motor_erpm: base.motor().electrical_speed(),
+                    motor_current: base.motor().motor_current(),
+                    motor_current_max: self.motor_current_max,
+                    motor_current_min: self.motor_current_min,
+                    mode: ride_state.mode(),
+                    darkride: ride_state.darkride(),
+                    traction_control: self.ride_flags.traction_control,
+                    motor_torque_constant: self.motor_torque_constant,
+                },
+                sample.period().duration(),
+            );
+            self.balance_loop = output.state;
+            self.request_motor_current(output.requested_current);
         }
 
         let attitude = FloatOutBoyAllDataAttitude::new(
@@ -555,18 +546,14 @@ impl FloatOutBoyPackageState {
             ImuRoll::new(AngleRadians::from(roll)),
             ImuPitch::new(AngleRadians::from(pitch)),
         );
-        let base = FloatOutBoyAllDataBasePayload::new(
-            FloatOutBoyRealtimeBalanceCurrent::new(self.balance_loop.balance_current),
-            attitude,
-            base.status(),
-            base.footpad(),
-            base.setpoints(),
-            FloatOutBoyRealtimeBoosterCurrent::new(
-                self.motor_torque_constant
-                    .motor_current_from_torque(self.balance_loop.booster_torque),
-            ),
-            base.motor(),
-        );
+        let base = base
+            .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
+                self.balance_loop.balance_current,
+            ))
+            .with_attitude(attitude)
+            .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::new(
+                self.balance_loop.booster_torque,
+            ));
         self.all_data_payloads = payloads.with_base(base);
 
         self.apply_motor_control(motor, ride_state.run_state(), now);
@@ -588,18 +575,16 @@ impl FloatOutBoyPackageState {
             frequency_tracker::imu_start_frequency(imu_frequency),
             now,
         );
-    }
-
-    #[cfg(target_arch = "arm")]
-    pub(crate) fn allocate_motor_kinematics_history(&mut self) -> bool {
-        self.motor_kinematics.allocate_history()
+        self.initialize_data_recorder_sample_rate(imu_frequency);
     }
 
     pub(crate) fn check_frequency_tracking(&mut self, running: bool, now: TimestampTicks) {
         if let Some(frequency) = self.frequency_trackers.main.check(running, now) {
             motor_runtime::reconfigure_filters(self, frequency);
         }
-        let _ = self.frequency_trackers.imu.check(running, now);
+        if let Some(frequency) = self.frequency_trackers.imu.check(running, now) {
+            self.refresh_data_recorder_sample_rate(frequency);
+        }
     }
 
     pub(crate) fn initialize_balance_filter(&mut self, orientation: vescpkg_rs::ImuOrientation) {
@@ -608,26 +593,54 @@ impl FloatOutBoyPackageState {
         // `third_party/float-out-boy/src/main.c:1168-1171` and
         // `third_party/float-out-boy/src/balance_filter.c:53-61`.
         self.balance_filter = BalanceFilter::from_orientation(orientation);
+        let filter = self.serialized_config.filter();
         self.balance_filter
-            .configure_from(self.serialized_config.filter());
+            .configure(filter.mahony_kp(), filter.mahony_kp_roll());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_balance_filter_for_test(&mut self, balance_filter: BalanceFilter) {
+        self.balance_filter = balance_filter;
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn configured_mahony_gains_for_test(
+        &self,
+    ) -> (vescpkg_rs::MahonyPitchGain, vescpkg_rs::MahonyRollGain) {
+        self.balance_filter.configured_gains()
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> u8 {
+        self.lcm.hardware_mode()
     }
 
     pub(super) fn refresh_idle_epoch(&mut self, now: TimestampTicks) {
-        self.idle_ticks = now;
+        self.idle_ticks.restart(now);
     }
 
     pub(super) fn refresh_running_epochs(&mut self, now: TimestampTicks) {
-        self.disengage_ticks = now;
+        self.disengage_ticks.restart(now);
         self.refresh_idle_epoch(now);
     }
 
     pub(super) fn initialize_time_epochs(&mut self, now: TimestampTicks) {
         // Refloat fixed its 1.2.1 tick/second mismatch in `f727e1d` so the
         // startup disengage epoch is actually one minute old.
-        self.engage_ticks = now;
-        self.disengage_ticks = float_out_boy_expire_timer(now, 60);
-        self.idle_ticks = now;
+        self.engage_ticks.restart(now);
+        self.disengage_ticks.expire_whole_seconds(now, 60);
+        self.idle_ticks.restart(now);
         self.bms.initialize_start_epoch(now);
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_idle_epoch_for_test(&mut self, now: TimestampTicks) {
+        self.idle_ticks.restart(now);
+    }
+
+    #[cfg(test)]
+    pub(super) const fn idle_epoch_for_test(&self) -> TimestampTicks {
+        self.idle_ticks.started()
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -641,15 +654,16 @@ impl FloatOutBoyPackageState {
     }
 
     fn led_runtime_status(&self) -> crate::leds::FloatOutBoyLedRuntimeStatus {
-        let power = self.led_runtime_overrides.power.unwrap_or(
-            crate::leds::FloatOutBoyLedPower::from_enabled(self.serialized_config.leds_enabled()),
-        );
-        let headlights_power = self.led_runtime_overrides.headlights_power.unwrap_or(
-            crate::leds::FloatOutBoyLedPower::from_enabled(
-                self.serialized_config.headlights_enabled(),
-            ),
-        );
-        crate::leds::FloatOutBoyLedRuntimeStatus::new(power, headlights_power)
+        crate::leds::FloatOutBoyLedRuntimeStatus {
+            enabled: self
+                .led_runtime_overrides
+                .enabled
+                .unwrap_or_else(|| self.serialized_config.leds_enabled()),
+            headlights_enabled: self
+                .led_runtime_overrides
+                .headlights_enabled
+                .unwrap_or_else(|| self.serialized_config.headlights_enabled()),
+        }
     }
 
     fn effective_led_config(
@@ -660,14 +674,25 @@ impl FloatOutBoyPackageState {
     )> {
         self.serialized_config
             .led_configs()
-            .map(|(hardware, config)| (hardware, self.led_runtime_status().apply(config)))
+            .map(|(hardware, mut config)| {
+                let status = self.led_runtime_status();
+                config.on = status.enabled;
+                config.headlights_on = status.headlights_enabled;
+                (hardware, config)
+            })
     }
 
-    fn apply_led_runtime_overrides(&mut self, overrides: LedRuntimeOverrides) {
-        self.led_runtime_overrides.power = overrides.power.or(self.led_runtime_overrides.power);
-        self.led_runtime_overrides.headlights_power = overrides
-            .headlights_power
-            .or(self.led_runtime_overrides.headlights_power);
+    fn set_led_runtime_overrides(
+        &mut self,
+        enabled: Option<bool>,
+        headlights_enabled: Option<bool>,
+    ) {
+        if let Some(enabled) = enabled {
+            self.led_runtime_overrides.enabled = Some(enabled);
+        }
+        if let Some(headlights_enabled) = headlights_enabled {
+            self.led_runtime_overrides.headlights_enabled = Some(headlights_enabled);
+        }
         config_runtime::refresh_led_effects(self);
     }
 
@@ -688,8 +713,33 @@ impl FloatOutBoyPackageState {
         // Device callbacks keep the IMU parameter for one stable packet API;
         // the device's dedicated IMU callback already refreshed state.
         let _ = imu;
-
         self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
+    }
+
+    /// Refresh the source-backed runtime slices that Float Out Boy updates near the
+    /// top of `float_out_boy_thd`.
+    ///
+    /// C map: Float Out Boy v1.2.1 `imu_ref_callback` starts at `third_party/float-out-boy/src/main.c:760`.
+    ///
+    /// Upstream applies `configure(d)` before runtime work at
+    /// `third_party/float-out-boy/src/main.c:184-191`, updates IMU at `third_party/float-out-boy/src/main.c:775`, motor data at
+    /// `third_party/float-out-boy/src/main.c:796`, and performs the `STATE_STARTUP` -> `STATE_READY`
+    /// gate at `third_party/float-out-boy/src/main.c:833-838`.
+    #[cfg(test)]
+    pub(crate) fn refresh_runtime_state(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        imu: &impl Imu,
+        system_time_ticks: TimestampTicks,
+    ) {
+        self.refresh_config_runtime_state();
+        self.refresh_motor_runtime_state(telemetry);
+        self.alert_tracker.update(
+            telemetry.firmware_fault(),
+            system_time_ticks,
+            self.serialized_config.persistent_fatal_error(),
+        );
+        let _ = self.refresh_imu_runtime_state(imu, system_time_ticks);
     }
 
     #[cfg(test)]
@@ -733,7 +783,7 @@ impl FloatOutBoyPackageState {
         self.refresh_config_runtime_state();
         self.refresh_motor_runtime_state_elapsed(telemetry, elapsed);
         self.refresh_haptic_runtime_state(motor, system_time_ticks);
-        self.alert_tracker.update_firmware_fault(
+        self.alert_tracker.update(
             telemetry.firmware_fault(),
             system_time_ticks,
             self.serialized_config.persistent_fatal_error(),
@@ -743,8 +793,8 @@ impl FloatOutBoyPackageState {
             self.refresh_konami_runtime_state(imu.pitch(), system_time_ticks);
         self.refresh_charging_runtime_state(system_time_ticks);
         self.refresh_bms_runtime_state(system_time_ticks);
-        let restored = self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed);
-        restored || restore_flywheel_config
+        self.refresh_imu_runtime_state_elapsed(imu, system_time_ticks, elapsed)
+            || restore_flywheel_config
     }
 
     fn refresh_konami_runtime_state(
@@ -758,59 +808,67 @@ impl FloatOutBoyPackageState {
         // `third_party/float-out-boy/src/main.c:775,947-953`.
         let footpad = base.footpad().state();
 
-        let restore_flywheel_config =
-            if matches!(ride_state.run_state(), FloatOutBoyRunState::Ready)
-                && !matches!(ride_state.mode(), FloatOutBoyMode::Flywheel)
-                && self
-                    .konami
-                    .flywheel
-                    .check_flywheel(current_pitch, footpad, system_time_ticks)
-            {
-                self.start_internal_led_confirmation(system_time_ticks);
-                // C map: `main.c:85-89` and `main.c:945-949`; this is the same
-                // armed default flywheel command used by the native handler.
-                let command = [
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                    FloatOutBoyAppDataCommand::Flywheel.id(),
-                    0x82,
-                    0,
-                    0,
-                    0,
-                    0,
-                    1,
-                ];
-                self.prepare_flywheel_packet(&command).unwrap_or(false)
-            } else {
-                false
-            };
+        let restore_flywheel_config = if ride_state.run_state() == FloatOutBoyRunState::Ready
+            && ride_state.mode() != FloatOutBoyMode::Flywheel
+            && self
+                .konami
+                .flywheel
+                .check_flywheel(current_pitch, footpad, system_time_ticks)
+        {
+            self.start_internal_led_confirmation(system_time_ticks);
+            // C map: `main.c:85-89` and `main.c:945-949`; this is the same
+            // armed default flywheel command used by the native handler.
+            let command = [
+                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+                FloatOutBoyAppDataCommand::Flywheel.id(),
+                0x82,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ];
+            self.prepare_flywheel_packet(&command).unwrap_or(false)
+        } else {
+            false
+        };
 
         if self.serialized_config.hardware_led_mode_id() == 0 {
             return restore_flywheel_config;
         }
         let status = self.led_runtime_status();
-        if !status.are_headlights_on()
-            && self.konami.headlights_on.check(footpad, system_time_ticks)
+        if !status.headlights_enabled && self.konami.headlights_on.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.apply_led_runtime_overrides(LedRuntimeOverrides {
-                headlights_power: Some(crate::leds::FloatOutBoyLedPower::On),
-                ..LedRuntimeOverrides::default()
-            });
+            self.set_led_runtime_overrides(None, Some(true));
         }
-        if status.are_headlights_on()
-            && self.konami.headlights_off.check(footpad, system_time_ticks)
+        if status.headlights_enabled && self.konami.headlights_off.check(footpad, system_time_ticks)
         {
             self.start_internal_led_confirmation(system_time_ticks);
-            self.apply_led_runtime_overrides(LedRuntimeOverrides {
-                headlights_power: Some(crate::leds::FloatOutBoyLedPower::Off),
-                ..LedRuntimeOverrides::default()
-            });
+            self.set_led_runtime_overrides(None, Some(false));
         }
         restore_flywheel_config
     }
 
-    fn handle_rc_move_packet(&mut self, bytes: &[u8]) -> bool {
-        remote_control::handle_packet(self.all_data_payloads, &mut self.remote_control, bytes)
+    fn handle_remote_packet(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> bool {
+        let [package_id, command, ..] = bytes else {
+            return false;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
+            || *command != FloatOutBoyAppDataCommand::Remote.id()
+        {
+            return false;
+        }
+        self.remote_control.handle_packet(
+            now(),
+            self.disengage_ticks.started(),
+            self.serialized_config.remote().max_move_speed(),
+            bytes,
+        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -852,10 +910,7 @@ impl FloatOutBoyPackageState {
                 ),
                 speed: base.motor().vehicle_speed().speed(),
                 current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
-                fatal_error: matches!(
-                    self.alert_tracker.fatal_error(),
-                    crate::domain::FloatOutBoyFatalErrorState::Present
-                ),
+                fatal_error: self.alert_tracker.fatal_error(),
             },
             motor,
             &mut self.motor_control,
@@ -884,6 +939,107 @@ impl FloatOutBoyPackageState {
             || self.reply_to_all_data_packet(telemetry, reply, bytes)
     }
 
+    #[cfg(test)]
+    fn handle_effectful_packet_for_test(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        bytes: &[u8],
+    ) -> Option<bool> {
+        let [package_id, command, payload @ ..] = bytes else {
+            return None;
+        };
+        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
+            return None;
+        }
+        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
+            return None;
+        };
+
+        match command {
+            FloatOutBoyAppDataCommand::ConfigSave => {
+                let config = self.active_config_image();
+                let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                    store_persisted_config(effects, &config)
+                });
+                if stored {
+                    self.acknowledge_command_config_write(now());
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::ConfigRestore => {
+                let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                self.begin_restore_persisted_config(&loaded, now());
+                let migration = vescpkg_rs::test_support::with_firmware_effects(
+                    migrate_legacy_firmware_imu_settings,
+                );
+                self.finish_configure_active(migration);
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::Lock => {
+                let Some(disabled) = payload.first() else {
+                    return Some(false);
+                };
+                if !self.is_running() {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    if let Some(config) =
+                        self.apply_lock_from_persisted(&loaded, *disabled != 0, now())
+                    {
+                        let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                            store_persisted_config(effects, &config)
+                        });
+                        if stored {
+                            self.acknowledge_command_config_write(now());
+                        }
+                        let migration = vescpkg_rs::test_support::with_firmware_effects(
+                            migrate_legacy_firmware_imu_settings,
+                        );
+                        self.finish_configure_active(migration);
+                    }
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::HandTest => {
+                let Some(restore) = self.prepare_handtest_packet(bytes) else {
+                    return Some(false);
+                };
+                if restore {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    if self.commit_handtest_restore(
+                        &loaded,
+                        vescpkg_rs::FirmwareClock::current_timestamp(),
+                    ) {
+                        let migration = vescpkg_rs::test_support::with_firmware_effects(
+                            migrate_legacy_firmware_imu_settings,
+                        );
+                        self.finish_configure_active(migration);
+                    }
+                }
+                Some(true)
+            }
+            FloatOutBoyAppDataCommand::Flywheel => {
+                let Some(restore) = self.prepare_flywheel_packet(bytes) else {
+                    return Some(false);
+                };
+                if restore {
+                    let loaded =
+                        vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
+                    self.commit_flywheel_restore(
+                        &loaded,
+                        vescpkg_rs::FirmwareClock::current_timestamp(),
+                    );
+                    let migration = vescpkg_rs::test_support::with_firmware_effects(
+                        migrate_legacy_firmware_imu_settings,
+                    );
+                    self.finish_configure_active(migration);
+                }
+                Some(true)
+            }
+            _ => None,
+        }
+    }
+
     #[cfg_attr(target_arch = "arm", inline(never))]
     fn handle_control_packet(
         &mut self,
@@ -893,21 +1049,6 @@ impl FloatOutBoyPackageState {
         float_out_boy_source_noop(bytes)
             || self.handle_charging_state_packet(now, bytes)
             || self.handle_remote_packet(now, bytes)
-            || self.handle_rc_move_packet(bytes)
-    }
-
-    fn handle_remote_packet(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> bool {
-        remote_control::handle_remote_packet(
-            &mut self.remote_control,
-            bytes,
-            now(),
-            self.disengage_ticks,
-            self.serialized_config.remote().max_move_speed(),
-        )
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -945,6 +1086,7 @@ impl FloatOutBoyPackageState {
             || self.reply_to_metadata_packet(reply, bytes)
             || self.reply_to_legacy_realtime_data_packet(reply, bytes)
             || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
+            || self.reply_to_realtime_selected_packet(telemetry, now, reply, bytes)
     }
 
     #[cfg(test)]
@@ -1028,7 +1170,7 @@ impl FloatOutBoyPackageState {
         match charging::handle_packet(self.all_data_payloads, bytes) {
             Some(payloads) => {
                 self.all_data_payloads = payloads;
-                self.charging_ticks = now();
+                self.charging_ticks.restart(now());
                 true
             }
             None => false,

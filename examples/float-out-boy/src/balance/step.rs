@@ -1,21 +1,15 @@
 use super::loop_io::{LoopConfig, LoopInput, LoopOutput, LoopState};
-use crate::motor_torque::MotorTorqueConstant;
 use vescpkg_rs::prelude::VescSeconds;
 
-use super::{booster::Phase as BoosterPhase, current::softstart_increment, pid::Phase as PidPhase};
-
 #[cfg(test)]
-use super::{
-    booster::{Branch, Proportional},
-    loop_io::PidState,
-    pid::PitchRate,
-};
+use super::{booster::Branch, loop_io::PidState, pid::PitchRate};
 
 #[cfg(test)]
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyTractionControlState,
 };
+#[cfg(test)]
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 
 #[cfg(test)]
 use vescpkg_rs::prelude::{
@@ -43,68 +37,37 @@ impl LoopState {
     }
 
     #[inline]
-    #[cfg(test)]
     pub(crate) fn advance_balance_loop_elapsed(
         self,
         config: LoopConfig,
         input: LoopInput,
         elapsed: VescSeconds,
     ) -> LoopOutput {
-        self.advance_balance_loop_elapsed_with_torque(
-            config,
-            input,
-            elapsed,
-            MotorTorqueConstant::REFLOAT_COMPAT,
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn advance_balance_loop_elapsed_with_torque(
-        self,
-        config: LoopConfig,
-        input: LoopInput,
-        elapsed: VescSeconds,
-        motor_torque_constant: MotorTorqueConstant,
-    ) -> LoopOutput {
-        self.advance_balance_loop_elapsed_with_filter_rate(
-            config,
-            input,
-            elapsed,
-            config.hertz,
-            motor_torque_constant,
-        )
-    }
-
-    pub(crate) fn advance_balance_loop_elapsed_with_filter_rate(
-        self,
-        config: LoopConfig,
-        input: LoopInput,
-        elapsed: VescSeconds,
-        filter_rate: vescpkg_rs::prelude::SampleRate,
-        motor_torque_constant: MotorTorqueConstant,
-    ) -> LoopOutput {
-        let (pid_torques, state) =
-            PidPhase::from_step(config, input).update_state(self, elapsed, filter_rate);
-        let booster_torque = BoosterPhase::from_step(config, input)
-            .filtered_torque(state.booster_torque, filter_rate);
-        let pitch_based = pid_torques.pitch_based_current(
+        let (pid_torques, state) = self.update_pid(config, input, elapsed);
+        let booster_torque = input.filtered_booster_torque(config, state.booster_torque, elapsed);
+        let pitch_based = super::current::PitchBasedCurrent::from_rate_and_booster(
+            pid_torques.rate_damping,
             booster_torque,
-            motor_torque_constant,
+            input.motor_torque_constant,
             state.softstart_pid_limit,
             input.motor_current_max,
-            softstart_increment(elapsed),
-        );
-        let state = state.with_booster_torque_and_softstart_limit(
-            booster_torque,
-            pitch_based.softstart_pid_limit,
+            elapsed,
         );
 
-        let balance_current = pid_torques
-            .requested_with_pitch_based(pitch_based, motor_torque_constant)
-            .clamped_to(input.current_limit())
-            .adjusted_for_darkride(input.darkride)
-            .filtered_from(state.balance_current, input.traction_control, filter_rate);
-        let state = state.with_balance_current(balance_current);
+        let balance_current = super::current::RequestedCurrent(
+            input.motor_torque_constant.motor_current_from_torque(
+                pid_torques.angle_proportional.plus(pid_torques.integral),
+            ) + pitch_based.current,
+        )
+        .clamped_to(input.current_limit())
+        .adjusted_for_darkride(input.darkride)
+        .filtered_from(state.balance_current, input.traction_control, elapsed);
+        let state = LoopState {
+            balance_current,
+            booster_torque,
+            softstart_pid_limit: pitch_based.softstart_pid_limit,
+            ..state
+        };
 
         LoopOutput {
             requested_current: state.balance_current,

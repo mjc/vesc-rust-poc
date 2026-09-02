@@ -1,16 +1,21 @@
 use super::{FloatOutBoyPackageState, config_storage::FLOAT_OUT_BOY_EEPROM_LEN};
 use crate::beeper::FloatOutBoyBeeperLevel;
-use crate::domain::{FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand};
+use crate::domain::{
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand,
+};
 use std::vec::Vec;
-use vescpkg_rs::prelude::{AngleCurrentGain, AngleDegrees, Current, MotorCurrent, TimestampTicks};
+use vescpkg_rs::prelude::{
+    AngleCurrentGain, AngleDegrees, AngularVelocity, Current, MahonyRollGain, MotorCurrent,
+    TimestampTicks,
+};
 use vescpkg_rs::test_support::FirmwareTest;
 
 const TUNE_DEFAULTS_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneDefaults.id(),
 ];
 const RUNTIME_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::RuntimeTune.id(),
     0xA3,
     0x21,
@@ -31,7 +36,7 @@ const RUNTIME_TUNE_PACKET: &[u8] = &[
     0x82,
 ];
 const TILT_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneTilt.id(),
     1,
     15,
@@ -40,7 +45,7 @@ const TILT_TUNE_PACKET: &[u8] = &[
     30,
 ];
 const OTHER_TUNE_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::TuneOther.id(),
     0xFE,
     25,
@@ -58,7 +63,7 @@ const OTHER_TUNE_PACKET: &[u8] = &[
     8,
 ];
 const BOOSTER_PACKET: &[u8] = &[
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
     FloatOutBoyAppDataCommand::Booster.id(),
     0xA3,
     0x04,
@@ -69,7 +74,7 @@ const BOOSTER_PACKET: &[u8] = &[
 #[test]
 fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(
         state
             .serialized_config
@@ -114,17 +119,17 @@ fn runtime_only_tunes_leave_persisted_config_unchanged_across_restart() {
     }
 
     assert_ne!(state.serialized_config, persisted_config);
-    let restarted = FloatOutBoyPackageState::from_persisted_config();
+    let restarted = FloatOutBoyPackageState::from_persisted_config(
+        FloatOutBoyAllDataPayloads::source_startup(),
+    );
     assert_eq!(restarted.serialized_config, persisted_config);
 }
 
 #[test]
 fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState {
-        idle_ticks: TimestampTicks::from_ticks(7),
-        ..Default::default()
-    };
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    state.idle_ticks.restart(TimestampTicks::from_ticks(7));
     let mut now = || TimestampTicks::from_ticks(42);
 
     assert!(state.handle_packet_with_telemetry(
@@ -132,12 +137,12 @@ fn runtime_tune_refreshes_idle_epoch_like_refloat_reconfigure() {
         &mut now,
         &mut |_| true,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RuntimeTune.id(),
         ],
     ));
 
-    assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+    assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
 }
 
 #[test]
@@ -145,11 +150,11 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
     let firmware = FirmwareTest::new();
     let packets: &[&[u8]] = &[
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneDefaults.id(),
         ],
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             25,
@@ -167,17 +172,15 @@ fn other_reconfigure_commands_refresh_idle_epoch_like_refloat() {
     ];
 
     for packet in packets {
-        let mut state = FloatOutBoyPackageState {
-            idle_ticks: TimestampTicks::from_ticks(7),
-            ..Default::default()
-        };
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
             &mut |_| true,
             packet,
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
     }
 }
 
@@ -186,7 +189,7 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
     let firmware = FirmwareTest::new();
     let packets: &[&[u8]] = &[
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Booster.id(),
             0,
             0,
@@ -194,7 +197,7 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
             0,
         ],
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneTilt.id(),
             0,
             0,
@@ -205,24 +208,22 @@ fn non_reconfigure_tune_commands_preserve_idle_epoch_like_refloat() {
     ];
 
     for packet in packets {
-        let mut state = FloatOutBoyPackageState {
-            idle_ticks: TimestampTicks::from_ticks(7),
-            ..Default::default()
-        };
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(state.handle_packet_with_telemetry(
             firmware.telemetry(),
             &mut || TimestampTicks::from_ticks(42),
             &mut |_| true,
             packet,
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(7));
     }
 }
 
 #[test]
 fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let mut now = || TimestampTicks::from_ticks(0);
@@ -271,7 +272,7 @@ fn booster_command_decodes_nibbles_and_acknowledges_like_float_out_boy() {
 #[test]
 fn booster_command_rejects_wrong_payload_length_without_alerting() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let before = state.serialized_config;
@@ -283,7 +284,7 @@ fn booster_command_rejects_wrong_payload_length_without_alerting() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Booster.id(),
             0xA3,
             0x04,
@@ -297,7 +298,7 @@ fn booster_command_rejects_wrong_payload_length_without_alerting() {
 #[test]
 fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let balance_filter_before_tune = state.balance_filter;
@@ -312,7 +313,8 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
     ));
 
     let mut expected_balance_filter = balance_filter_before_tune;
-    expected_balance_filter.configure_from(state.serialized_config.filter());
+    let filter = state.serialized_config.filter();
+    expected_balance_filter.configure(filter.mahony_kp(), filter.mahony_kp_roll());
     assert_eq!(state.balance_filter, expected_balance_filter);
 
     let bytes = state.serialized_config.as_bytes();
@@ -364,9 +366,47 @@ fn runtime_tune_applies_all_three_float_out_boy_blocks_and_long_acknowledgement(
 }
 
 #[test]
+fn extended_runtime_tune_applies_cutoff_orientation_and_speed_fields() {
+    let firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let mut packet = RUNTIME_TUNE_PACKET.to_vec();
+    packet.extend_from_slice(&[0x54, 0x63]);
+
+    assert!(state.handle_packet_with_telemetry(
+        firmware.telemetry(),
+        &mut || TimestampTicks::from_ticks(0),
+        &mut |_| true,
+        &packet,
+    ));
+
+    let config = state.serialized_config;
+    assert_eq!(config.filter().mahony_kp_roll(), MahonyRollGain::new(1.4));
+    assert_eq!(
+        config.balance().turn_tilt_start_angle(),
+        AngleDegrees::from_degrees(5.0)
+    );
+    assert_eq!(
+        config.balance().atr_filter().on_speed_limit(),
+        AngularVelocity::from_degrees_per_second(6.0)
+    );
+    assert_eq!(
+        config.balance().atr_filter().off_speed_limit(),
+        AngularVelocity::from_degrees_per_second(12.0)
+    );
+    assert_eq!(
+        config.balance().torque_tilt_filter().on_speed_limit(),
+        AngularVelocity::from_degrees_per_second(6.0)
+    );
+    assert_eq!(
+        config.balance().torque_tilt_filter().off_speed_limit(),
+        AngularVelocity::from_degrees_per_second(9.0)
+    );
+}
+
+#[test]
 fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let original = state.serialized_config;
@@ -378,7 +418,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RuntimeTune.id(),
             0x11,
         ],
@@ -386,7 +426,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     assert_eq!(state.serialized_config, original);
 
     let mut block_one = [0_u8; 14];
-    block_one[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
+    block_one[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
     block_one[1] = FloatOutBoyAppDataCommand::RuntimeTune.id();
     block_one[2] = 0x22;
     assert!(state.handle_packet_with_telemetry(
@@ -401,7 +441,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
     );
 
     let mut block_two = [0_u8; 18];
-    block_two[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get();
+    block_two[0] = FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
     block_two[1] = FloatOutBoyAppDataCommand::RuntimeTune.id();
     block_two[14] = 0x22;
     assert!(state.handle_packet_with_telemetry(
@@ -420,7 +460,7 @@ fn runtime_tune_preserves_float_out_boy_progressive_payload_lengths() {
 #[test]
 fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     assert!(state.serialized_config.editor().set_beeper_enabled(true));
     state.refresh_config_runtime_state();
     let mut now = || TimestampTicks::from_ticks(0);
@@ -456,7 +496,7 @@ fn tilt_tune_applies_duty_settings_and_three_short_beeps() {
 #[test]
 fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;
 
@@ -487,8 +527,8 @@ fn tune_other_applies_startup_nose_and_input_settings_without_alerting() {
 #[test]
 fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
     let firmware = FirmwareTest::new();
-    let mut state = FloatOutBoyPackageState::default();
-    let original_nose = state.serialized_config.as_bytes()[87..102].to_vec();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
+    let original_nose = state.serialized_config.as_bytes()[67..84].to_vec();
     let mut now = || TimestampTicks::from_ticks(0);
     let mut reply = |_bytes: &[u8]| true;
 
@@ -497,7 +537,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,
@@ -518,7 +558,7 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,
@@ -534,15 +574,15 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
             10,
         ],
     ));
-    assert_eq!(&state.serialized_config.as_bytes()[87..102], original_nose);
+    assert_eq!(&state.serialized_config.as_bytes()[67..84], original_nose);
 
-    let original_input = state.serialized_config.as_bytes()[77..82].to_vec();
+    let original_input = state.serialized_config.as_bytes()[79..84].to_vec();
     assert!(state.handle_packet_with_telemetry(
         firmware.telemetry(),
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::TuneOther.id(),
             0,
             1,
@@ -560,6 +600,6 @@ fn tune_other_preserves_float_out_boy_payload_and_value_gates() {
             11,
         ],
     ));
-    assert_eq!(&state.serialized_config.as_bytes()[77..82], original_input);
+    assert_eq!(&state.serialized_config.as_bytes()[79..84], original_input);
     assert_eq!(state.tick_beeper(), None);
 }

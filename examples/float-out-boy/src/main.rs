@@ -37,9 +37,6 @@
     )
 )]
 
-#[cfg(target_arch = "arm")]
-extern crate alloc;
-
 #[cfg(any(test, not(target_arch = "arm")))]
 extern crate std;
 
@@ -98,19 +95,13 @@ mod config;
 #[cfg(any(test, target_arch = "arm"))]
 pub mod domain;
 #[cfg(any(test, target_arch = "arm"))]
-mod ema;
-#[cfg(any(test, target_arch = "arm"))]
 pub mod extensions;
 #[cfg(any(test, target_arch = "arm"))]
-pub mod footpad;
-#[cfg(any(test, target_arch = "arm"))]
-pub use domain::{FloatOutBoyMode, FloatOutBoyRunState};
-#[cfg(any(test, target_arch = "arm"))]
-pub use footpad::FloatOutBoyFootpadState;
+pub use domain::{FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState};
 #[cfg(any(test, target_arch = "arm"))]
 pub mod lcm;
 #[cfg(any(test, target_arch = "arm"))]
-pub mod leds;
+pub use vesc_float_out_boy_leds as leds;
 #[cfg(any(test, target_arch = "arm"))]
 mod motor_control;
 #[cfg(any(test, target_arch = "arm"))]

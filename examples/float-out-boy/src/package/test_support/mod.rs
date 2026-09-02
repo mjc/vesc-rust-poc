@@ -1,26 +1,8 @@
 use super::state::FloatOutBoyPackageState;
 use crate::balance::BalanceFilter;
-use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
+use crate::config::{FloatOutBoyConfigEditor, FloatOutBoyConfigImage};
 use crate::domain::*;
-use crate::ema::EmaAlpha;
 use vescpkg_rs::prelude::*;
-
-pub(crate) fn assert_motor_current_near(actual: MotorCurrent, expected: MotorCurrent) {
-    assert!(
-        (actual - expected).abs().current().as_amps() < 0.0001,
-        "actual={actual:?}, expected={expected:?}",
-    );
-}
-
-pub(crate) fn refloat_main_filtered_balance_current(
-    previous: MotorCurrent,
-    requested: MotorCurrent,
-    sample_rate: SampleRate,
-) -> MotorCurrent {
-    const CUTOFF: Frequency = Frequency::from_hertz(25.0);
-    let alpha = EmaAlpha::from_sample_rate(CUTOFF, sample_rate);
-    previous + (requested - previous) * alpha.factor()
-}
 
 static FLOAT_OUT_BOY_RUNTIME_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -81,7 +63,9 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
             FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
             footpad,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(
+                crate::motor_torque::MotorTorque::from_newton_meters(4.0),
+            ),
             FloatOutBoyAllDataMotorPayload::new(
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
@@ -135,7 +119,8 @@ pub(super) fn balance_filter_with_pitch(pitch: AngleRadians) -> BalanceFilter {
     ))
 }
 
-pub(super) fn default_float_out_boy_config_bytes() -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
+pub(super) fn default_float_out_boy_config_bytes() -> [u8; crate::config::FLOAT_OUT_BOY_CONFIG_LEN]
+{
     *include_bytes!("../../conf/default_config.dat")
 }
 
@@ -157,7 +142,7 @@ pub(super) trait FloatOutBoyConfigTestBytes {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>));
 }
 
-impl FloatOutBoyConfigTestBytes for [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
+impl FloatOutBoyConfigTestBytes for [u8; crate::config::FLOAT_OUT_BOY_CONFIG_LEN] {
     fn edit_float_out_boy_config(&mut self, edit: impl FnOnce(&mut FloatOutBoyConfigEditor<'_>)) {
         let mut config =
             FloatOutBoyConfigImage::from_serialized(self).expect("valid Float Out Boy config");

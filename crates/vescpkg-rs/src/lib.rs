@@ -96,10 +96,10 @@ mod audio;
 mod bindings;
 mod capabilities;
 mod data_recorder;
-mod declaration_macros;
 mod eeprom;
 mod encoder;
 mod extension;
+mod fault_history;
 mod firmware;
 mod firmware_str;
 mod gnss;
@@ -108,6 +108,7 @@ mod logging;
 /// Float math entrypoints backed by Rust `libm` on package and host builds.
 #[cfg(feature = "math")]
 mod math;
+mod numeric;
 mod nvm;
 mod packet;
 mod plot;
@@ -234,9 +235,15 @@ pub use capabilities::{
 };
 pub use data_recorder::{
     FirmwareDataRecorderBuffer, FirmwareDataRecorderDescriptor,
-    FirmwareDataRecorderDescriptorError, FixedRecordRing, FixedRecordStorage,
+    FirmwareDataRecorderDescriptorError, FirmwareDataRecorderVersion, FixedRecordRing,
+    FixedRecordStorage, RingCursor,
 };
+pub use vesc_protocol::app_data as protocol_app_data;
 pub use vesc_protocol::buffer as protocol_buffer;
+pub use vesc_protocol::{
+    const_field_builders, const_field_getters, const_forward_getters, typed_field_groups,
+    typed_fields, typed_newtype, typed_newtypes, wire_enum,
+};
 pub use vescpkg_rs_sys::{AbiError, Stm32AbiRevision, VescIfPresence};
 use vescpkg_rs_units as units;
 pub use vescpkg_rs_units::{
@@ -262,12 +269,19 @@ pub use extension::{
     LispList, LispListError, LispMessageError, LispProcess, LispSymbol, LispValue,
     StatefulLbmExtension,
 };
+pub use fault_history::{FirmwareFaultHistory, FirmwareFaultRecord};
 #[allow(deprecated)]
 pub use input::{ControllerInput, RemoteInput};
 pub use inputs::{
     FirmwareInputs, InputError, PpmSnapshot, RemoteInputSnapshot, ShutdownInhibit, TimeoutSnapshot,
 };
 pub use logging::{FirmwareLog, LogError};
+#[cfg(feature = "math")]
+pub use numeric::BiquadLowPass;
+pub use numeric::{
+    FixedRingIndex, MotorKinematics, SmoothAngle, SmoothedAngleSlew, WrappedAngleMotion,
+    angle_step, ema_alpha, slew_toward,
+};
 
 // Exported macros need public implementation hooks after downstream expansion.
 // Keep those hooks in one hidden namespace instead of the package-author root.
@@ -277,7 +291,7 @@ pub use logging::{FirmwareLog, LogError};
 pub mod __macro_support;
 
 #[cfg(feature = "math")]
-pub use ahrs::{Ahrs, AhrsParameterError, Madgwick};
+pub use ahrs::{Ahrs, AhrsParameterError, AxisMahony, Madgwick};
 pub use audio::{FocAudio, FocAudioError, FocAudioSampleTable, FocAudioStopMode};
 pub use firmware::{
     AppDataHandler, AppDataPacket, AppDataReply, AppDataReplyError, ConfigBytes, ConfigXml,
@@ -308,7 +322,9 @@ pub use thread::{
     StatelessThreadContext, ThreadContext, ThreadError, ThreadName, ThreadSpec,
     ThreadWorkingAreaSize, ThreadWorkingAreaSizeError, TimerInstant,
 };
-pub use timer::{expire_timer_whole_seconds, timer_older, timer_older_whole_seconds};
+pub use timer::{
+    WrappingTimer, expire_timer_whole_seconds, timer_older, timer_older_whole_seconds,
+};
 pub use uart::{Uart, UartError, UartSession};
 
 /// CAN transport and status snapshot helpers for package code.
@@ -350,10 +366,10 @@ pub mod prelude {
     pub use crate::types::*;
     pub use crate::units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BoundedUnitError, Charge,
-        Current, Distance, DistancePerEnergy, Energy, EnergyPerDistance, FluxLinkage, Frequency,
-        Height, Inductance, Latitude, Longitude, MagneticFluxDensity, OdometerMeters, Percent,
-        Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate, SignedRatio, Speed,
-        SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
+        Current, DeciampCurrent, Distance, DistancePerEnergy, Energy, EnergyPerDistance,
+        FluxLinkage, Frequency, Height, Inductance, Latitude, Longitude, MagneticFluxDensity,
+        OdometerMeters, Percent, Power, Ratio, Resistance, Rpm, SYSTEM_TICK_RATE_HZ, SampleRate,
+        SignedRatio, Speed, SystemTicks, Temperature, TimestampTicks, VescSeconds, Voltage,
     };
     #[cfg(feature = "math")]
     pub use crate::{Ahrs, Madgwick};
@@ -402,7 +418,6 @@ macro_rules! firmware_section_static {
 
 #[cfg(test)]
 mod tests {
-    use crate::FirmwareStr;
     use crate::types::{
         AdcDecodedLevel, AdcVoltage, AudioChannel, AudioDuration, AudioFrequency, AudioSampleRate,
         AudioVoltage, AveragePower, BatteryCurrent, BatteryVoltage, BaudRate, BrakeCurrentRelative,
@@ -416,19 +431,6 @@ mod tests {
         QVoltage, RemoteAge, SystemDuration, ThreadPriority, TimeoutDuration, TotalMotorCurrent,
         TripDistance, VehicleSpeed, WattHoursDischarged, WheelDiameter,
     };
-
-    #[test]
-    fn firmware_str_hides_its_terminator() {
-        let value = FirmwareStr::from_str_with_nul("encoder\0").unwrap();
-
-        assert_eq!(value.as_str(), "encoder");
-    }
-
-    #[test]
-    fn firmware_str_rejects_missing_or_interior_terminators() {
-        assert!(FirmwareStr::from_str_with_nul("encoder").is_none());
-        assert!(FirmwareStr::from_str_with_nul("bad\0encoder\0").is_none());
-    }
     use vesc_protocol::{Frame as ProtocolFrame, WireCommand, WireVersion};
     use vescpkg_rs_units::{
         AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, Current, Distance, Energy,

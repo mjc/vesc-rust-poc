@@ -186,12 +186,7 @@ impl FirmwareInputs {
     }
 
     /// Persist firmware backup data explicitly.
-    ///
-    /// VESC releases the motor override, suppresses motor commands for five
-    /// seconds, and may block for up to three seconds waiting for motor release.
-    /// Keep this effect outside package-state critical sections and do not
-    /// engage motor control until the firmware suppression window has elapsed.
-    pub fn store_backup(&self, _effects: &crate::FirmwareEffects) -> Result<(), InputError> {
+    pub fn store_backup(&self) -> Result<(), InputError> {
         unsafe { crate::ffi::store_backup_data() }
             .ok_or(InputError::Unsupported)?
             .then_some(())

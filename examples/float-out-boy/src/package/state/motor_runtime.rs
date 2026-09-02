@@ -4,7 +4,6 @@ use crate::domain::{
     FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
     FloatOutBoyRealtimeMotorCurrents,
 };
-use crate::ema::EmaAlpha;
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
     BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
@@ -23,58 +22,6 @@ pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub(super) struct FloatOutBoyMotorCurrentFilter {
-    a0: f32,
-    a1: f32,
-    a2: f32,
-    b1: f32,
-    b2: f32,
-    z1: f32,
-    z2: f32,
-    enabled: bool,
-}
-
-impl FloatOutBoyMotorCurrentFilter {
-    fn configure(&mut self, frequency: Frequency, sample_rate: SampleRate) {
-        self.enabled = frequency.is_positive();
-        if self.enabled {
-            let k = vescpkg_rs::tan(
-                core::f32::consts::PI * frequency.as_hertz() / sample_rate.as_hertz(),
-            );
-            let norm = 1.0 / (1.0 + k / CURRENT_FILTER_Q + k * k);
-            self.a0 = k * k * norm;
-            self.a1 = 2.0 * self.a0;
-            self.a2 = self.a0;
-            self.b1 = 2.0 * (k * k - 1.0) * norm;
-            self.b2 = (1.0 - k / CURRENT_FILTER_Q + k * k) * norm;
-        }
-    }
-
-    fn process(
-        &mut self,
-        current: DirectionalMotorCurrent,
-    ) -> FloatOutBoyRealtimeFilteredMotorCurrent {
-        let input = current.current().as_amps();
-        let output = if self.enabled {
-            let output = input * self.a0 + self.z1;
-            self.z1 = input * self.a1 + self.z2 - self.b1 * output;
-            self.z2 = input * self.a2 - self.b2 * output;
-            output
-        } else {
-            input
-        };
-        FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-            Current::from_amps(output),
-        ))
-    }
-
-    pub(super) fn reset_runtime(&mut self) {
-        self.z1 = 0.0;
-        self.z2 = 0.0;
-    }
-}
-
 pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
     state.duty_max_with_margin = telemetry
         .duty_cycle_limit()
@@ -87,20 +34,10 @@ pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &im
     state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
     state.motor_temperature_limit_start = telemetry.motor_temperature_limit_start();
     state.battery_cell_count = telemetry.battery_cell_count();
-    #[cfg(all(not(test), target_arch = "arm"))]
-    {
-        state.motor_torque_constant =
-            crate::motor_torque::MotorTorqueConstant::from_firmware_config(
-                settings.foc_motor_flux_linkage(),
-                settings.motor_pole_count().ok(),
-            );
-    }
-    #[cfg(any(test, not(target_arch = "arm")))]
-    {
-        // Host fixtures model the legacy compatibility motor; the ARM package
-        // reads the live firmware value above.
-        state.motor_torque_constant = crate::motor_torque::MotorTorqueConstant::REFLOAT_COMPAT;
-    }
+    state.motor_torque_constant = crate::motor_torque::MotorTorqueConstant::from_firmware_config(
+        settings.foc_motor_flux_linkage(),
+        settings.motor_pole_count().ok(),
+    );
 }
 
 pub(super) fn refresh(
@@ -119,20 +56,27 @@ pub(super) fn refresh(
     let next_battery_current = telemetry.battery_current().current();
     let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
-    let smoothing = EmaAlpha::from_sample_rate(
+    let smoothing = vescpkg_rs::ema_alpha(
         MOTOR_DATA_EMA_CUTOFF,
         state.frequency_trackers.main.filter_frequency(),
     );
     state.motor_duty_raw = telemetry.duty_cycle().magnitude();
-    state.motor_distance = telemetry.signed_trip_distance();
+    state.motor_distance_meters = telemetry.signed_trip_distance().distance().as_meters();
     state.mosfet_temperature = telemetry.mosfet_temperature();
     state.motor_temperature = telemetry.motor_temperature();
     state.motor_current_filter.configure(
         current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         state.frequency_trackers.main.filter_frequency(),
+        CURRENT_FILTER_Q,
     );
     let directional_current = telemetry.directional_motor_current();
-    let filtered_current = state.motor_current_filter.process(directional_current);
+    let filtered_current = FloatOutBoyRealtimeFilteredMotorCurrent::new(
+        DirectionalMotorCurrent::new(Current::from_amps(
+            state
+                .motor_current_filter
+                .process(directional_current.current().as_amps()),
+        )),
+    );
     let electrical_speed = telemetry.electrical_speed();
     let motor_erpm = electrical_speed.rpm();
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
@@ -148,11 +92,11 @@ pub(super) fn refresh(
             filtered_current,
             BatteryCurrent::new(
                 previous_battery_current
-                    + (next_battery_current - previous_battery_current) * smoothing.factor(),
+                    + (next_battery_current - previous_battery_current) * smoothing,
             ),
         ),
         DutyCycle::new(SignedRatio::clamped(
-            previous_duty_cycle + smoothing.factor() * (raw_duty_cycle - previous_duty_cycle),
+            previous_duty_cycle + smoothing * (raw_duty_cycle - previous_duty_cycle),
         )),
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.
@@ -167,9 +111,7 @@ pub(super) fn reconfigure_filters(state: &mut FloatOutBoyPackageState, frequency
     state.motor_current_filter.configure(
         current_filter_frequency(state.serialized_config.motor_current_filter_frequency()),
         frequency,
+        CURRENT_FILTER_Q,
     );
     state.motor_kinematics.configure(frequency);
 }
-
-#[cfg(test)]
-mod tests;

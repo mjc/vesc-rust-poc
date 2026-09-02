@@ -40,6 +40,11 @@ pub(crate) struct FloatOutBoyMotorControl {
 }
 
 impl FloatOutBoyMotorControl {
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
     #[inline]
     pub(crate) fn request_current(&mut self, current: MotorCurrent) {
         // Upstream `motor_control_request_current` sets the request flag and
@@ -80,18 +85,15 @@ impl FloatOutBoyMotorControl {
     }
 
     #[inline]
-    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> Option<bool> {
-        self.requested_current.take().map(|current| {
+    pub(crate) fn apply_requested_current(&mut self, motor: &impl MotorOutput) -> bool {
+        self.requested_current.take().is_some_and(|command| {
             // Upstream keeps this sign unchanged: `motor_control_request_current`
             // stores it at `third_party/float-out-boy/src/motor_control.c:44-47`, then
             // `motor_control_apply` passes it to `mc_set_current` at
             // `third_party/float-out-boy/src/motor_control.c:93-99`.
-            if !current.is_finite() {
-                return false;
-            }
             motor.keep_alive();
             motor.set_current_off_delay(CURRENT_OFF_DELAY).is_ok()
-                && motor.set_current(current).is_ok()
+                && motor.set_current(command).is_ok()
         })
     }
 
@@ -112,7 +114,7 @@ impl FloatOutBoyMotorControl {
                 let applied = motor
                     .set_current(MotorCurrent::new(Current::from_amps(0.0)))
                     .is_ok();
-                self.disabled = applied;
+                self.disabled = true;
                 return applied;
             }
             return false;
@@ -125,12 +127,12 @@ impl FloatOutBoyMotorControl {
         let parking_brake_was_active = self.parking_brake_active;
         if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Always)
             || matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Idle)
-                && !matches!(run_state, FloatOutBoyRunState::Running)
+                && run_state != FloatOutBoyRunState::Running
                 && abs_erpm < Rpm::from_revolutions_per_minute(50.0)
         {
             self.parking_brake_active = true;
         } else if matches!(parking_brake_mode, FloatOutBoyParkingBrakeMode::Never)
-            || matches!(run_state, FloatOutBoyRunState::Running)
+            || run_state == FloatOutBoyRunState::Running
         {
             self.parking_brake_active = false;
         }
@@ -164,8 +166,8 @@ impl FloatOutBoyMotorControl {
             }));
         }
 
-        if let Some(applied) = self.apply_requested_current(motor) {
-            return applied;
+        if self.apply_requested_current(motor) {
+            return true;
         }
 
         motor.keep_alive();
@@ -199,7 +201,5 @@ impl FloatOutBoyMotorControl {
     }
 }
 
-#[cfg(test)]
-mod test_support;
 #[cfg(test)]
 mod tests;

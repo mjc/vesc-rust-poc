@@ -37,16 +37,16 @@ pub trait TerminalHandler {
     fn run(args: TerminalArgs<'_>);
 }
 
-/// Scoped terminal argument iterator that reports invalid UTF-8 per argument.
+/// Scoped terminal argument iterator.
 pub struct TerminalArgs<'a> {
     argv: *const *const c_char,
     index: usize,
     length: usize,
-    _lifetime: PhantomData<&'a str>,
+    _lifetime: PhantomData<&'a CStr>,
 }
 
 impl<'a> Iterator for TerminalArgs<'a> {
-    type Item = Result<&'a str, core::str::Utf8Error>;
+    type Item = &'a CStr;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.length || self.argv.is_null() {
@@ -57,7 +57,7 @@ impl<'a> Iterator for TerminalArgs<'a> {
         if pointer.is_null() {
             return None;
         }
-        Some(unsafe { CStr::from_ptr(pointer) }.to_str())
+        Some(unsafe { CStr::from_ptr(pointer) })
     }
 }
 
@@ -68,7 +68,7 @@ pub struct Terminal;
 /// Exclusive terminal callback registration.
 pub struct TerminalRegistration<'a, H: TerminalHandler> {
     _handler: PhantomData<H>,
-    _borrowed_strings: PhantomData<crate::FirmwareStr<'a>>,
+    _borrowed_strings: PhantomData<&'a CStr>,
 }
 
 impl Terminal {
@@ -79,9 +79,9 @@ impl Terminal {
     /// Register one command while retaining its metadata and callback owner.
     pub fn register<'a, H: TerminalHandler>(
         &'a self,
-        command: crate::FirmwareStr<'a>,
-        help: crate::FirmwareStr<'a>,
-        arg_names: crate::FirmwareStr<'a>,
+        command: &'a CStr,
+        help: &'a CStr,
+        arg_names: &'a CStr,
     ) -> Result<TerminalRegistration<'a, H>, TerminalError> {
         if TERMINAL_OWNED
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -127,13 +127,10 @@ unsafe extern "C" fn callback<H: TerminalHandler>(arg_count: i32, argv: *const *
     if arg_count < 0 {
         return;
     }
-    let Ok(length) = usize::try_from(arg_count) else {
-        return;
-    };
     H::run(TerminalArgs {
         argv,
         index: 0,
-        length,
+        length: usize::try_from(arg_count).unwrap_or(0),
         _lifetime: PhantomData,
     });
 }
@@ -158,8 +155,6 @@ impl crate::test_support::FirmwareTest {
 #[cfg(test)]
 mod tests {
     use super::{TERMINAL_ACTIVE, TerminalArgs, TerminalHandler, callback};
-    use core::ffi::c_char;
-    use core::marker::PhantomData;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     static CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -180,24 +175,5 @@ mod tests {
         TERMINAL_ACTIVE.store(false, Ordering::Release);
         unsafe { callback::<Handler>(0, core::ptr::null()) };
         assert_eq!(CALLS.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn invalid_utf8_argument_does_not_hide_later_arguments() {
-        let invalid = [0xff_u8, 0];
-        let valid = b"valid\0";
-        let argument_pointers = [
-            invalid.as_ptr().cast::<c_char>(),
-            valid.as_ptr().cast::<c_char>(),
-        ];
-        let mut terminal_args = TerminalArgs {
-            argv: argument_pointers.as_ptr(),
-            index: 0,
-            length: argument_pointers.len(),
-            _lifetime: PhantomData,
-        };
-
-        assert!(terminal_args.next().unwrap().is_err());
-        assert_eq!(terminal_args.next().unwrap().unwrap(), "valid");
     }
 }

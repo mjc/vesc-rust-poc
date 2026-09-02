@@ -2,12 +2,12 @@ use super::*;
 use crate::domain::{
     FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataStatus,
     FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRideState,
+    FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRideState,
 };
+use crate::motor_torque::MotorTorqueConstant;
 use crate::package::test_support::{
-    assert_motor_current_near, imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
-    refloat_main_filtered_balance_current, sample_all_data_payloads_with_ride_state,
-    tick_float_out_boy_state_and_handle_packet,
+    imu_angular_rate, imu_pitch_rate, imu_roll_rate, imu_yaw_rate,
+    sample_all_data_payloads_with_ride_state, tick_float_out_boy_state_and_handle_packet,
 };
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngleRadians, AngularVelocity, Current, DutyCycle,
@@ -15,6 +15,11 @@ use vescpkg_rs::prelude::{
 };
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{ImuPitch, ImuRoll, ImuYaw, WireByte};
+
+fn output_alpha() -> f32 {
+    let omega = 2.0 * core::f32::consts::PI * 25.0 / 500.0;
+    omega - 0.5 * omega * omega
+}
 
 fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloads {
     let payloads = sample_all_data_payloads_with_ride_state(
@@ -34,7 +39,7 @@ fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloa
             FloatOutBoyAllDataStatus::new(base.status().ride_state(), base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -45,7 +50,7 @@ fn ready_at(pitch: AngleDegrees, roll: AngleDegrees) -> FloatOutBoyAllDataPayloa
 
 fn flywheel_packet(payload: &[u8]) -> std::vec::Vec<u8> {
     let mut packet = std::vec![
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::Flywheel.id(),
     ];
     packet.extend_from_slice(payload);
@@ -72,7 +77,7 @@ fn set_ride_state(state: &mut FloatOutBoyPackageState, run_state: FloatOutBoyRun
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -91,7 +96,7 @@ fn set_footpad(state: &mut FloatOutBoyPackageState, footpad: FloatOutBoyFootpadS
             base.status(),
             FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, footpad),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -141,7 +146,7 @@ fn set_duty_cycle(state: &mut FloatOutBoyPackageState, duty_cycle: DutyCycle) {
             base.status(),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             motor,
         ),
         payloads.mode2(),
@@ -325,7 +330,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
             AngleDegrees::from_degrees(80.0),
             AngleDegrees::ZERO,
         ));
-        state.idle_ticks = TimestampTicks::from_ticks(7);
+        state.idle_ticks.restart(TimestampTicks::from_ticks(7));
         assert!(
             state
                 .serialized_config
@@ -354,7 +359,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
         for _ in 0..900 {
             let _ = state.tick_beeper();
         }
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(7));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(7));
         set_ride_state(&mut state, run_state);
         set_footpad(&mut state, FloatOutBoyFootpadState::None);
         assert!(state.handle_packet_with_telemetry(
@@ -363,7 +368,7 @@ fn flywheel_stop_from_ready_or_running_restores_config_and_runtime_derivations()
             &mut |_bytes| true,
             &flywheel_packet(&[0x80, 0, 0, 0, 0, 0]),
         ));
-        assert_eq!(state.idle_ticks, TimestampTicks::from_ticks(42));
+        assert_eq!(state.idle_ticks.started(), TimestampTicks::from_ticks(42));
 
         assert_eq!(
             state
@@ -433,7 +438,7 @@ fn rejected_forced_recalibration_restores_the_persisted_config() {
             FloatOutBoyAllDataStatus::new(base.status().ride_state(), base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -894,7 +899,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     }
 
     assert!(state.serialized_config.headlights_enabled());
-    assert!(!state.led_runtime_status().are_headlights_on());
+    assert!(!state.led_runtime_status().headlights_enabled());
     assert_eq!(
         state.internal_led_confirmation_start_for_test(),
         Some(0.7505)
@@ -920,7 +925,7 @@ fn headlight_konami_actions_are_temporary_and_start_confirmation() {
     }
 
     assert!(state.serialized_config.headlights_enabled());
-    assert!(state.led_runtime_status().are_headlights_on());
+    assert!(state.led_runtime_status().headlights_enabled());
     assert_eq!(
         state.internal_led_confirmation_start_for_test(),
         Some(1.7505)
@@ -957,7 +962,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
             base.status(),
             base.footpad(),
             base.setpoints(),
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::ZERO)),
+            FloatOutBoyRealtimeBoosterTorque::new(crate::motor_torque::MotorTorque::ZERO),
             base.motor(),
         ),
         payloads.mode2(),
@@ -971,7 +976,7 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
         firmware.telemetry(),
         firmware.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -980,18 +985,22 @@ fn calibrated_flywheel_pitch_commands_the_expected_final_motor_current() {
     let base = state.all_data_payloads().base();
     let error = base.setpoints().board().angle().as_degrees()
         - base.attitude().balance_pitch().angle_degrees().as_degrees();
-    let expected = refloat_main_filtered_balance_current(
-        MotorCurrent::new(Current::ZERO),
-        MotorCurrent::new(Current::from_amps(error * 8.0)),
-        state.frequency_trackers.imu.filter_frequency(),
-    );
-    let actual = firmware.commanded_current();
+    let torque_output_scale = MotorTorqueConstant::REFLOAT_COMPAT.newton_meters_per_amp()
+        / state.motor_torque_constant.newton_meters_per_amp();
+    let expected = error * 8.0 * torque_output_scale * output_alpha();
+    let actual = firmware.commanded_current().current().as_amps();
     // The calibrated 80° reference minus the live 79° pitch produces +1°.
-    // With Kp=8 A/° and zero rate/I/booster terms, Refloat's 25 Hz EMA
-    // smooths the signed setpoint error from rest.
-    assert!(expected.is_negative(), "error={error}");
-    assert!(base.booster_current().current().is_zero());
-    assert_motor_current_near(actual, expected);
+    // With Kp=8 A/°, zero rate/I/booster terms, and Refloat's 25 Hz output
+    // EMA, the final motor command follows the signed setpoint error.
+    assert!(expected < 0.0, "error={error}");
+    assert_eq!(
+        base.booster_torque().torque(),
+        crate::motor_torque::MotorTorque::ZERO
+    );
+    assert!(
+        (actual - expected).abs() < 0.000_1,
+        "actual={actual}, expected={expected}, base={base:?}",
+    );
 }
 
 #[test]

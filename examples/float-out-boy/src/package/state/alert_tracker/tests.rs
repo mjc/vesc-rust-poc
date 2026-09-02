@@ -1,5 +1,6 @@
 use super::*;
 use std::vec::Vec;
+use vescpkg_rs::prelude::{FirmwareFault, FirmwareFaultWireCode, TimestampTicks};
 
 fn fault(code: u8) -> FirmwareFault {
     match code {
@@ -23,10 +24,10 @@ fn records_since(tracker: &AlertTrackerState, since: TimestampTicks) -> Vec<Aler
 fn firmware_fault_records_only_transitions_and_code_changes() {
     let mut tracker = AlertTrackerState::default();
 
-    tracker.update_firmware_fault(fault(5), TimestampTicks::from_ticks(1), true);
-    tracker.update_firmware_fault(fault(5), TimestampTicks::from_ticks(2), true);
-    tracker.update_firmware_fault(fault(6), TimestampTicks::from_ticks(3), true);
-    tracker.update_firmware_fault(fault(0), TimestampTicks::from_ticks(4), true);
+    tracker.update(fault(5), TimestampTicks::from_ticks(1), true);
+    tracker.update(fault(5), TimestampTicks::from_ticks(2), true);
+    tracker.update(fault(6), TimestampTicks::from_ticks(3), true);
+    tracker.update(fault(0), TimestampTicks::from_ticks(4), true);
 
     let records = records_since(&tracker, TimestampTicks::from_ticks(0));
     assert_eq!(records.len(), 3);
@@ -40,16 +41,16 @@ fn firmware_fault_records_only_transitions_and_code_changes() {
 fn persistent_fatal_survives_fault_clear_until_control_clear() {
     let mut tracker = AlertTrackerState::default();
 
-    tracker.update_firmware_fault(fault(5), TimestampTicks::from_ticks(1), true);
-    tracker.update_firmware_fault(fault(0), TimestampTicks::from_ticks(2), true);
-    assert_eq!(tracker.fatal_error(), FloatOutBoyFatalErrorState::Present);
+    tracker.update(fault(5), TimestampTicks::from_ticks(1), true);
+    tracker.update(fault(0), TimestampTicks::from_ticks(2), true);
+    assert!(tracker.fatal_error());
 
     tracker.clear_fatal();
-    assert_eq!(tracker.fatal_error(), FloatOutBoyFatalErrorState::None);
+    assert!(!tracker.fatal_error());
 
-    tracker.update_firmware_fault(fault(5), TimestampTicks::from_ticks(3), false);
-    tracker.update_firmware_fault(fault(0), TimestampTicks::from_ticks(4), false);
-    assert_eq!(tracker.fatal_error(), FloatOutBoyFatalErrorState::None);
+    tracker.update(fault(5), TimestampTicks::from_ticks(3), false);
+    tracker.update(fault(0), TimestampTicks::from_ticks(4), false);
+    assert!(!tracker.fatal_error());
 }
 
 #[test]
@@ -57,7 +58,7 @@ fn record_query_is_strictly_newer_and_keeps_the_latest_twenty() {
     let mut tracker = AlertTrackerState::default();
     for tick in 1..=21 {
         let code = if tick % 2 == 0 { 5 } else { 6 };
-        tracker.update_firmware_fault(fault(code), TimestampTicks::from_ticks(tick), true);
+        tracker.update(fault(code), TimestampTicks::from_ticks(tick), true);
     }
 
     let records = records_since(&tracker, TimestampTicks::from_ticks(1));

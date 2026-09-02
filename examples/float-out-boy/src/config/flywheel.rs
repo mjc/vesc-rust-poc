@@ -1,7 +1,10 @@
 use super::FloatOutBoyConfigEditor;
-use super::FloatOutBoyFaultConfig;
+use super::{
+    FloatOutBoyBalanceConfig as B, FloatOutBoyConfigImage as C, FloatOutBoyFaultConfig as F,
+    FloatOutBoyMotorControlConfig as M, FloatOutBoyStartupConfig as S,
+};
 use vescpkg_rs::prelude::{
-    AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio, WireByte,
+    AngleCurrentGain, AngleDegrees, AngularVelocity, RateCurrentGain, Ratio,
 };
 use vescpkg_rs::prelude::{Current, MotorCurrent};
 
@@ -18,26 +21,23 @@ pub(crate) struct FloatOutBoyFlywheelConfig {
 impl FloatOutBoyConfigEditor<'_> {
     pub(crate) fn apply_flywheel_overrides(&mut self, config: FloatOutBoyFlywheelConfig) -> bool {
         self.apply_handtest_safety_overrides()
-            && self.set_startup_pitch_tolerance(AngleDegrees::from_degrees(0.2))
-            && self.set_startup_roll_tolerance(AngleDegrees::from_degrees(25.0))
-            && FloatOutBoyFaultConfig::PITCH_FIELD
-                .write(self, WireByte::new(6))
-                .is_some()
-            && FloatOutBoyFaultConfig::ROLL_FIELD
-                .write(
-                    self,
-                    WireByte::new(if config.relaxed_roll { 90 } else { 35 }),
-                )
-                .is_some()
-            && self.set_kp(config.kp)
-            && self.set_kp2(config.kp2)
-            && self.set_duty_pushback_angle(config.duty_angle)
-            && self.set_duty_pushback_threshold(config.duty_threshold)
-            && self.set_duty_pushback_speed(config.duty_speed)
-            && self.set_tiltback_return_speed(config.duty_speed)
-            && self.set_brake_current(MotorCurrent::new(Current::ZERO))
-            && self.set_darkride_enabled(false)
-            && self.set_reversestop_enabled(false)
-            && self.set_tiltback_variable_max(AngleDegrees::ZERO)
+            && self.set(S::PITCH_TOLERANCE_FIELD, AngleDegrees::from_degrees(0.2))
+            && self.set(S::ROLL_TOLERANCE_FIELD, AngleDegrees::from_degrees(25.0))
+            && self.set_fault_pitch(AngleDegrees::from_degrees(6.0))
+            && self.set_fault_roll(AngleDegrees::from_degrees(if config.relaxed_roll {
+                90.0
+            } else {
+                35.0
+            }))
+            && self.set(B::KP_FIELD, config.kp)
+            && self.set(B::KP2_FIELD, config.kp2)
+            && self.set(C::DUTY_PUSHBACK_ANGLE_FIELD, config.duty_angle)
+            && self.set(C::DUTY_PUSHBACK_THRESHOLD_FIELD, config.duty_threshold)
+            && self.set(C::DUTY_PUSHBACK_SPEED_FIELD, config.duty_speed)
+            && self.set(C::TILTBACK_RETURN_SPEED_FIELD, config.duty_speed)
+            && self.set(M::BRAKE_CURRENT_FIELD, MotorCurrent::new(Current::ZERO))
+            && self.set(F::DARKRIDE_FIELD, false)
+            && self.set(F::REVERSESTOP_FIELD, false)
+            && self.set(C::TILTBACK_VARIABLE_MAX_FIELD, AngleDegrees::ZERO)
     }
 }

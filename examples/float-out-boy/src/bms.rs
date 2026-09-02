@@ -99,102 +99,65 @@ vescpkg_rs::typed_fields! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub(crate) enum FloatOutBoyBmsFault {
-    Connection = 1 << 0,
-    BmsOverTemperature = 1 << 1,
-    CellOverVoltage = 1 << 2,
-    CellUnderVoltage = 1 << 3,
-    CellOverTemperature = 1 << 4,
-    CellUnderTemperature = 1 << 5,
-    CellBalance = 1 << 6,
-}
-
-impl FloatOutBoyBmsFault {
-    #[expect(
-        clippy::as_conversions,
-        reason = "the repr(u8) discriminant is the fault bit"
-    )]
-    const fn bit(self) -> u8 {
-        self as u8
+bitflags::bitflags! {
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct FloatOutBoyBmsFaults: u8 {
+        const CONNECTION = 1 << 0;
+        const BMS_OVER_TEMPERATURE = 1 << 1;
+        const CELL_OVER_VOLTAGE = 1 << 2;
+        const CELL_UNDER_VOLTAGE = 1 << 3;
+        const CELL_OVER_TEMPERATURE = 1 << 4;
+        const CELL_UNDER_TEMPERATURE = 1 << 5;
+        const CELL_BALANCE = 1 << 6;
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub(crate) struct FloatOutBoyBmsFaults(u8);
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum FloatOutBoyBmsIntegration {
-    Disabled,
-    Enabled(FloatOutBoyBmsThresholds),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FloatOutBoyBmsConnectionMonitoring {
-    Deferred,
-    Armed,
 }
 
 impl FloatOutBoyBmsFaults {
-    pub(crate) const NONE: Self = Self(0);
-
-    pub(crate) const fn from_fault(fault: FloatOutBoyBmsFault) -> Self {
-        Self(fault.bit())
-    }
-
-    pub(crate) const fn contains(self, fault: FloatOutBoyBmsFault) -> bool {
-        self.0 & fault.bit() != 0
-    }
-
-    #[must_use]
     pub(crate) fn evaluate(
-        integration: FloatOutBoyBmsIntegration,
+        enabled: bool,
         sample: FloatOutBoyBmsSample,
-        connection_monitoring: FloatOutBoyBmsConnectionMonitoring,
+        thresholds: FloatOutBoyBmsThresholds,
+        startup_timeout_elapsed: bool,
     ) -> Self {
-        let FloatOutBoyBmsIntegration::Enabled(thresholds) = integration else {
-            return Self::NONE;
-        };
+        if !enabled {
+            return Self::empty();
+        }
 
-        if sample.message_age > VescSeconds::from_seconds(5.0) {
-            return match connection_monitoring {
-                FloatOutBoyBmsConnectionMonitoring::Armed => {
-                    Self::from_fault(FloatOutBoyBmsFault::Connection)
-                }
-                FloatOutBoyBmsConnectionMonitoring::Deferred => Self::NONE,
+        if sample.message_age() > VescSeconds::from_seconds(5.0) {
+            return if startup_timeout_elapsed {
+                Self::CONNECTION
+            } else {
+                Self::empty()
             };
         }
 
+        let mut faults = Self::empty();
+        if sample.cell_low_voltage() < thresholds.cell_low_voltage() {
+            faults.insert(Self::CELL_UNDER_VOLTAGE);
+        }
+        if sample.cell_high_voltage() > thresholds.cell_high_voltage() {
+            faults.insert(Self::CELL_OVER_VOLTAGE);
+        }
         let zero_temperature = FloatOutBoyBmsTemperature::from_degrees_celsius(0);
-        let cell_temperature_faults_enabled = thresholds.cell_high_temperature() > zero_temperature;
-
-        [
-            (sample.cell_low_voltage() < thresholds.cell_low_voltage())
-                .then_some(FloatOutBoyBmsFault::CellUnderVoltage),
-            (sample.cell_high_voltage() > thresholds.cell_high_voltage())
-                .then_some(FloatOutBoyBmsFault::CellOverVoltage),
-            (cell_temperature_faults_enabled
-                && sample.cell_high_temperature() > thresholds.cell_high_temperature())
-            .then_some(FloatOutBoyBmsFault::CellOverTemperature),
-            (cell_temperature_faults_enabled
-                && sample.cell_low_temperature() < thresholds.cell_low_temperature())
-            .then_some(FloatOutBoyBmsFault::CellUnderTemperature),
-            (thresholds.bms_high_temperature() > zero_temperature
-                && sample.bms_high_temperature() > thresholds.bms_high_temperature())
-            .then_some(FloatOutBoyBmsFault::BmsOverTemperature),
-            ((sample.cell_low_voltage() - sample.cell_high_voltage()).abs()
-                > thresholds.cell_balance_voltage())
-            .then_some(FloatOutBoyBmsFault::CellBalance),
-        ]
-        .into_iter()
-        .flatten()
-        .fold(Self::NONE, Self::with_fault)
-    }
-
-    const fn with_fault(self, fault: FloatOutBoyBmsFault) -> Self {
-        Self(self.0 | fault.bit())
+        if thresholds.cell_high_temperature() > zero_temperature {
+            if sample.cell_high_temperature() > thresholds.cell_high_temperature() {
+                faults.insert(Self::CELL_OVER_TEMPERATURE);
+            }
+            if sample.cell_low_temperature() < thresholds.cell_low_temperature() {
+                faults.insert(Self::CELL_UNDER_TEMPERATURE);
+            }
+        }
+        if thresholds.bms_high_temperature() > zero_temperature
+            && sample.bms_high_temperature() > thresholds.bms_high_temperature()
+        {
+            faults.insert(Self::BMS_OVER_TEMPERATURE);
+        }
+        if (sample.cell_low_voltage() - sample.cell_high_voltage()).abs()
+            > thresholds.cell_balance_voltage()
+        {
+            faults.insert(Self::CELL_BALANCE);
+        }
+        faults
     }
 }
 

@@ -1,9 +1,10 @@
 #![cfg(feature = "test-support")]
 //! Integration coverage for encoder callback ownership.
 
+use core::ffi::CStr;
 use vescpkg_rs::{
     AngleDegrees, EncoderHandler, EncoderRegistration, PackageRuntimeState, PackageStateStore,
-    firmware_str, test_support::FirmwareTest,
+    test_support::FirmwareTest,
 };
 
 struct Handler;
@@ -15,8 +16,8 @@ impl EncoderHandler for Handler {
     fn has_fault() -> bool {
         false
     }
-    fn info() -> vescpkg_rs::FirmwareStr<'static> {
-        firmware_str!("SDK encoder")
+    fn info() -> &'static CStr {
+        c"SDK encoder"
     }
 }
 

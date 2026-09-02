@@ -1238,7 +1238,7 @@ fn generated_vesc_if_inventory_matches_pinned_upstream_header() {
     );
     assert_eq!(
         VescIfAbi::SOURCE_COMMIT,
-        "2a8de79a5f573521c4af0f3d98b1c1699d2e5382"
+        "0fc12dab64f2c06c2801bfdebf61256b0989ee06"
     );
     assert_eq!(VescIfAbi::SOURCE_HEADER, "lispBM/c_libs/vesc_c_if.h");
     assert_eq!(c_vesc_if::FIELD_COUNT, 254);

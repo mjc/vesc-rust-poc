@@ -4,8 +4,8 @@ This workspace is an unofficial Rust SDK for controller-resident VESC
 packages. The matrix below records the supported proof paths and the limits of
 the current STM32 package ABI; it is not a firmware-version promise.
 
-The SDK targets the vendored 254-slot package header from the official
-`release_7_00` BLDC revision. The firmware-7.00 `foc_set_fw_override` tail
+The SDK targets the vendored 254-slot firmware-7.00 package header from the
+pinned official BLDC revision. The firmware-7.00 `foc_set_fw_override` tail
 slot is optional at runtime and exposed only through the explicitly unsafe
 `AdvancedFoc` surface. BLDC fault codes 28 through 33 are represented by named
 `FirmwareFaultId` variants.

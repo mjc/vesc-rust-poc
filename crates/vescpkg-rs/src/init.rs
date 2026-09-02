@@ -30,23 +30,6 @@ fn align_state_pointer<T>(
     unsafe { core::ptr::NonNull::new_unchecked(aligned) }
 }
 
-#[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-fn install_owned_runtime_state<T: crate::PackageRuntimeState>(
-    state: &mut T,
-    allocation: core::ptr::NonNull<core::ffi::c_void>,
-) -> bool {
-    #[cfg(not(target_arch = "arm"))]
-    // SAFETY: this allocation owns `state` until package stop.
-    unsafe {
-        T::runtime_store().install_owned(state, allocation)
-    }
-    #[cfg(target_arch = "arm")]
-    // SAFETY: this allocation owns `state` until package stop.
-    unsafe {
-        crate::PackageStateStore::<T>::install_owned(state, allocation)
-    }
-}
-
 #[cfg(all(not(test), target_arch = "arm"))]
 fn align_state_pointer<T>(
     allocation: core::ptr::NonNull<core::ffi::c_void>,
@@ -360,40 +343,18 @@ impl<'info> PackageStart<'info> {
         &mut self,
         state_value: T,
     ) -> Result<(), PackageStartError> {
-        // SAFETY: the initializer writes exactly one `T` before installation.
-        unsafe {
-            self.install_runtime_state_initialized_using(
-                |state: *mut T| {
-                    state.write(state_value);
-                },
-                install_owned_runtime_state::<T>,
-            )
-        }
-    }
-
-    /// Allocate loader-owned package state and default-initialize it in place.
-    ///
-    /// This writes the default value into loader-owned storage. Rust does not guarantee that a
-    /// generic `T::default()` is constructed directly at its destination, so package artifacts
-    /// must still satisfy the native stack validator.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PackageStartError`] when allocation or state installation fails.
-    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-    pub fn install_default_runtime_state<T>(&mut self) -> Result<(), PackageStartError>
-    where
-        T: crate::PackageRuntimeState + Default,
-    {
-        // SAFETY: the initializer writes exactly one `T` before installation.
-        unsafe {
-            self.install_runtime_state_initialized_using(
-                |state: *mut T| {
-                    state.write(T::default());
-                },
-                install_owned_runtime_state::<T>,
-            )
-        }
+        self.install_runtime_state_using(state_value, |state, allocation| {
+            #[cfg(not(target_arch = "arm"))]
+            {
+                // SAFETY: this allocation owns `state` until package stop.
+                unsafe { T::runtime_store().install_owned(state, allocation) }
+            }
+            #[cfg(target_arch = "arm")]
+            {
+                // SAFETY: this allocation owns `state` until package stop.
+                unsafe { crate::PackageStateStore::<T>::install_owned(state, allocation) }
+            }
+        })
     }
 
     /// Allocate loader-owned package state, publish it, then initialize it in place.
@@ -412,27 +373,10 @@ impl<'info> PackageStart<'info> {
             .ok_or(PackageStartError::StateTypeMismatch)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
     fn install_runtime_state_using<T: crate::PackageRuntimeState>(
         &mut self,
         state_value: T,
-        install: impl FnOnce(&mut T, core::ptr::NonNull<core::ffi::c_void>) -> bool,
-    ) -> Result<(), PackageStartError> {
-        // SAFETY: the initializer writes exactly one `T` before installation.
-        unsafe {
-            self.install_runtime_state_initialized_using(
-                |state: *mut T| {
-                    state.write(state_value);
-                },
-                install,
-            )
-        }
-    }
-
-    #[cfg(any(test, feature = "test-support", target_arch = "arm"))]
-    unsafe fn install_runtime_state_initialized_using<T: crate::PackageRuntimeState>(
-        &mut self,
-        initialize: impl FnOnce(*mut T),
         install: impl FnOnce(&mut T, core::ptr::NonNull<core::ffi::c_void>) -> bool,
     ) -> Result<(), PackageStartError> {
         let info = self
@@ -450,7 +394,8 @@ impl<'info> PackageStart<'info> {
             let allocation = core::ptr::NonNull::new(call_vesc_ffi!(vesc_malloc(bytes)))
                 .ok_or(PackageStartError::AllocationFailed)?;
             let state = align_state_pointer::<T>(allocation);
-            initialize(state.as_ptr());
+            // SAFETY: the aligned allocation has space for one `T` and is not initialized yet.
+            unsafe { state.as_ptr().write(state_value) };
             (state, allocation)
         };
         #[cfg(target_arch = "arm")]
@@ -458,12 +403,7 @@ impl<'info> PackageStart<'info> {
         let state = unsafe { state_ptr.as_mut() };
 
         #[cfg(not(target_arch = "arm"))]
-        let mut owned_state = crate::rust_alloc::boxed::Box::<T>::new_uninit();
-        #[cfg(not(target_arch = "arm"))]
-        initialize(owned_state.as_mut_ptr());
-        #[cfg(not(target_arch = "arm"))]
-        // SAFETY: `initialize` initialized exactly one `T` in the box above.
-        let mut owned_state = unsafe { owned_state.assume_init() };
+        let mut owned_state = crate::rust_alloc::boxed::Box::new(state_value);
         #[cfg(not(target_arch = "arm"))]
         let state = owned_state.as_mut();
         #[cfg(not(target_arch = "arm"))]
@@ -1043,12 +983,6 @@ mod tests {
     struct TestImuState;
     struct WrongImuState;
 
-    impl Default for OwnedState {
-        fn default() -> Self {
-            Self(37)
-        }
-    }
-
     mod failing_entrypoint {
         fn start(_: &mut crate::PackageStart<'_>) -> Result<(), crate::PackageStartError> {
             Err(crate::PackageStartError::LoaderUnavailable)
@@ -1260,33 +1194,6 @@ mod tests {
 
         assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 2);
-        assert_eq!(OWNED_STATE.with(|state| state.0), None);
-    }
-
-    #[test]
-    fn package_start_default_initializes_owned_runtime_state() {
-        OWNED_STATE_STOPS.store(0, Ordering::Relaxed);
-        OWNED_STATE_DROPS.store(0, Ordering::Relaxed);
-        let mut info = ffi::LibInfo {
-            stop_fun: None,
-            arg: core::ptr::null_mut(),
-            base_addr: 0,
-        };
-        let mut start = super::PackageStart::from_lib_info(&mut info);
-
-        assert_eq!(start.install_default_runtime_state::<OwnedState>(), Ok(()));
-        assert_eq!(
-            start.with_runtime_state::<OwnedState, _>(|state| state.0),
-            Some(37)
-        );
-
-        let stop = start.raw_info_mut().unwrap().stop_fun.unwrap();
-        let arg = start.raw_info_mut().unwrap().arg;
-        assert!(start.finish_start(true));
-        unsafe { stop(arg) };
-
-        assert_eq!(OWNED_STATE_STOPS.load(Ordering::Relaxed), 1);
-        assert_eq!(OWNED_STATE_DROPS.load(Ordering::Relaxed), 1);
         assert_eq!(OWNED_STATE.with(|state| state.0), None);
     }
 

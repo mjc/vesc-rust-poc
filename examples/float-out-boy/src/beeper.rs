@@ -6,21 +6,8 @@ use vescpkg_rs::{SYSTEM_TICK_RATE_HZ, TimestampTicks};
 /// Source-defined alert sequences used by Float Out Boy's BMS paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FloatOutBoyBeeperAlert {
-    Short(FloatOutBoyBeeperCount),
-    Long(FloatOutBoyBeeperCount),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FloatOutBoyBeeperCount(u8);
-
-impl FloatOutBoyBeeperCount {
-    pub(crate) const ONE: Self = Self(1);
-    pub(crate) const TWO: Self = Self(2);
-    pub(crate) const THREE: Self = Self(3);
-    pub(crate) const FOUR: Self = Self(4);
-    pub(crate) const FIVE: Self = Self(5);
-    pub(crate) const SIX: Self = Self(6);
-    pub(crate) const SEVEN: Self = Self(7);
+    Short(u8),
+    Long(u8),
 }
 
 // Refloat main uses 0.05 and 0.25 seconds after `0274273c`.
@@ -30,14 +17,8 @@ const LONG_BEEP_PERIOD: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RAT
 impl FloatOutBoyBeeperAlert {
     const fn sequence(self) -> (u8, u32) {
         match self {
-            Self::Short(count) => (
-                count.0.saturating_mul(2).saturating_add(1),
-                SHORT_BEEP_PERIOD,
-            ),
-            Self::Long(count) => (
-                count.0.saturating_mul(2).saturating_add(1),
-                LONG_BEEP_PERIOD,
-            ),
+            Self::Short(count) => (count.saturating_mul(2).saturating_add(1), SHORT_BEEP_PERIOD),
+            Self::Long(count) => (count.saturating_mul(2).saturating_add(1), LONG_BEEP_PERIOD),
         }
     }
 }
@@ -90,14 +71,14 @@ impl FloatOutBoyBeeper {
         self.enabled = enabled;
     }
 
-    pub(crate) fn force_on(&mut self) {
-        if self.enabled {
+    pub(crate) fn on(&mut self, force: bool) {
+        if self.enabled && (force || self.transitions == 0) {
             self.pending_level = Some(FloatOutBoyBeeperLevel::High);
         }
     }
 
-    pub(crate) fn off(&mut self) {
-        if self.transitions == 0 {
+    pub(crate) fn off(&mut self, force: bool) {
+        if force || self.transitions == 0 {
             self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
         }
     }
@@ -108,8 +89,6 @@ impl FloatOutBoyBeeper {
 
     pub(crate) fn tick_at(&mut self, now: TimestampTicks) -> Option<FloatOutBoyBeeperLevel> {
         self.now = now;
-        // C map: Refloat's `beeper_update` advances once and refreshes its
-        // timer to `now`; a delayed loop therefore stretches the sequence.
         if self.enabled
             && self.transitions != 0
             && now.wrapping_duration_since(self.timer).as_ticks() > self.period

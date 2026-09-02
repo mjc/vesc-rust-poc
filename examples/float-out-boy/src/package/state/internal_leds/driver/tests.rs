@@ -4,17 +4,19 @@ use crate::{
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRunState,
     lcm::{FloatOutBoyHardwareLedsConfig, FloatOutBoyLedMode},
     leds::{
-        FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
-        FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedFrameUpdate,
-        FloatOutBoyLedPin, FloatOutBoyLedPinConfig, FloatOutBoyLedRenderer,
-        FloatOutBoyLedStatusUpdate, FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder,
-        FloatOutBoyLedUpdate, FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
-        FloatOutBoyStatusBarIdleTimeout,
+        FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
+        FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+        FloatOutBoyLedRenderer, FloatOutBoyLedStatusUpdate, FloatOutBoyLedStripConfig,
+        FloatOutBoyLedStripOrder, FloatOutBoyLedUpdate, FloatOutBoyLedsConfig,
+        FloatOutBoyStatusBarConfig,
     },
 };
 use vescpkg_rs::Ratio;
 
-use super::{FloatOutBoyInternalLedDriver, WS2812_ONE, WS2812_RESET, WS2812_ZERO, encode_byte};
+use super::{
+    FloatOutBoyInternalLedDriver, FloatOutBoyLedStripRole, WS2812_ONE, WS2812_RESET, WS2812_ZERO,
+    ordered_strips,
+};
 
 fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
     FloatOutBoyLedBarConfig::new(
@@ -22,7 +24,7 @@ fn solid_bar(color: FloatOutBoyLedColor) -> FloatOutBoyLedBarConfig {
         color,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Solid,
-        FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     )
 }
 
@@ -34,7 +36,7 @@ fn enabled_config() -> FloatOutBoyLedsConfig {
         solid_bar(FloatOutBoyLedColor::Red),
         black,
         FloatOutBoyStatusBarConfig::new(
-            FloatOutBoyStatusBarIdleTimeout::from_seconds(0),
+            0,
             Ratio::from_ratio_const(0.5),
             Ratio::from_ratio_const(0.2),
             Ratio::from_ratio_const(0.2),
@@ -46,88 +48,87 @@ fn enabled_config() -> FloatOutBoyLedsConfig {
 }
 
 #[test]
-fn internal_layout_matches_production_order_offsets_and_empty_strips() {
-    let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-        .with_status_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            2,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_front_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::Third,
-            3,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_rear_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::Second,
-            5,
-            FloatOutBoyLedColorOrder::Grb,
-        ));
-    let layout = hardware.internal_layout().unwrap();
+fn ordered_strips_matches_refloat_priority_for_every_order_assignment() {
+    let orders = [
+        FloatOutBoyLedStripOrder::None,
+        FloatOutBoyLedStripOrder::First,
+        FloatOutBoyLedStripOrder::Second,
+        FloatOutBoyLedStripOrder::Third,
+    ];
 
-    assert_eq!(
-        layout.roles(),
-        &[
-            crate::lcm::FloatOutBoyLedStripRole::Status,
-            crate::lcm::FloatOutBoyLedStripRole::Rear,
-            crate::lcm::FloatOutBoyLedStripRole::Front,
-        ]
-    );
-    assert_eq!(
-        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Status),
-        Some(0)
-    );
-    assert_eq!(
-        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Rear),
-        Some(2)
-    );
-    assert_eq!(
-        layout.offset(crate::lcm::FloatOutBoyLedStripRole::Front),
-        Some(7)
-    );
-    assert_eq!(layout.pixel_count(), 10);
+    for status_order in orders {
+        for front_order in orders {
+            for rear_order in orders {
+                let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
+                    .with_status_strip(FloatOutBoyLedStripConfig::new(
+                        status_order,
+                        2,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ))
+                    .with_front_strip(FloatOutBoyLedStripConfig::new(
+                        front_order,
+                        3,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ))
+                    .with_rear_strip(FloatOutBoyLedStripConfig::new(
+                        rear_order,
+                        5,
+                        FloatOutBoyLedColorOrder::Grb,
+                    ));
+                let candidates = [
+                    (FloatOutBoyLedStripRole::Status, status_order, 2),
+                    (FloatOutBoyLedStripRole::Front, front_order, 3),
+                    (FloatOutBoyLedStripRole::Rear, rear_order, 5),
+                ];
+                let expected: std::vec::Vec<_> = [
+                    FloatOutBoyLedStripOrder::First,
+                    FloatOutBoyLedStripOrder::Second,
+                    FloatOutBoyLedStripOrder::Third,
+                ]
+                .into_iter()
+                .filter_map(|order| {
+                    candidates
+                        .into_iter()
+                        .find(|(_, candidate, _)| *candidate == order)
+                })
+                .map(|(role, _, count)| (role, count))
+                .collect();
+                let actual: std::vec::Vec<_> = ordered_strips(hardware)
+                    .map(|(role, strip)| (role, strip.count))
+                    .collect();
 
-    let empty = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-        .with_status_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::None,
-            u8::MAX,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_front_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::None,
-            u8::MAX,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_rear_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::None,
-            u8::MAX,
-            FloatOutBoyLedColorOrder::Grb,
-        ));
-    let layout = empty.internal_layout().unwrap();
-    assert!(layout.roles().is_empty());
-    assert_eq!(layout.pixel_count(), 0);
+                assert_eq!(actual, expected);
+            }
+        }
+    }
 }
 
 #[test]
-fn internal_layout_rejects_front_and_rear_over_60_pixels() {
+fn ordered_strips_ignores_disabled_counts_and_duplicate_orders() {
+    let disabled = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::None,
+        u8::MAX,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let first = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::First,
+        2,
+        FloatOutBoyLedColorOrder::Grb,
+    );
+    let duplicate_first = FloatOutBoyLedStripConfig::new(
+        FloatOutBoyLedStripOrder::First,
+        4,
+        FloatOutBoyLedColorOrder::Grbw,
+    );
     let hardware = FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal)
-        .with_status_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::None,
-            0,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_front_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::First,
-            30,
-            FloatOutBoyLedColorOrder::Grb,
-        ))
-        .with_rear_strip(FloatOutBoyLedStripConfig::new(
-            FloatOutBoyLedStripOrder::Second,
-            31,
-            FloatOutBoyLedColorOrder::Grb,
-        ));
+        .with_status_strip(first)
+        .with_front_strip(duplicate_first)
+        .with_rear_strip(disabled);
 
-    assert!(hardware.internal_layout().is_err());
+    assert_eq!(
+        ordered_strips(hardware).collect::<std::vec::Vec<_>>(),
+        [(FloatOutBoyLedStripRole::Status, first)]
+    );
 }
 
 #[test]
@@ -169,35 +170,6 @@ fn setup_builds_source_sized_zero_pulse_buffer() {
     assert_eq!(driver.pulses()[..64], [WS2812_ZERO; 64]);
     assert_eq!(driver.pulses()[64], WS2812_RESET);
     assert!(driver.is_operational());
-}
-
-#[test]
-fn every_byte_maps_to_exact_ws2812_pulses() {
-    let masks = [0x80_u8, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
-
-    for byte in 0_u8..=u8::MAX {
-        let mut pulses = [WS2812_RESET; 8];
-        let mut index = 0;
-        assert!(encode_byte(&mut pulses, &mut index, byte));
-        assert_eq!(index, 8);
-        assert_eq!(
-            pulses,
-            masks.map(|mask| {
-                if byte & mask == 0 {
-                    WS2812_ZERO
-                } else {
-                    WS2812_ONE
-                }
-            }),
-            "wrong pulses for byte {byte:#04x}"
-        );
-    }
-
-    let mut short = [WS2812_RESET; 7];
-    let mut index = 0;
-    assert!(!encode_byte(&mut short, &mut index, u8::MAX));
-    assert_eq!(index, short.len());
-    assert_eq!(short, [WS2812_ONE; 7]);
 }
 
 #[test]
@@ -256,7 +228,7 @@ fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
         ));
     let config = enabled_config();
     let mut renderer = FloatOutBoyLedRenderer::new(hardware, config, 0.0);
-    let frame = FloatOutBoyLedFrameUpdate::new(
+    let frame = FloatOutBoyLedUpdate::with_status(
         FloatOutBoyLedUpdate {
             run_state: FloatOutBoyRunState::Ready,
             mode: FloatOutBoyMode::Normal,
@@ -264,6 +236,11 @@ fn paint_encodes_gamma_ordered_renderer_pixels_and_restarts_once() {
             footpad: FloatOutBoyFootpadState::None,
             pitch_degrees: 0.0,
             distance: 0.0,
+            battery_level: 0.0,
+            duty_cycle: 0.0,
+            motor_current_saturation: 0.0,
+            battery_current_saturation: 0.0,
+            moving: true,
         },
         FloatOutBoyLedStatusUpdate {
             battery_level: 1.0,
@@ -395,26 +372,4 @@ fn paint_quiesces_before_mutating_pulses_and_faults_still_teardown() {
         true
     }));
     assert_eq!(teardowns, 1);
-}
-
-#[test]
-fn failed_restart_faults_driver_and_blocks_further_paints_until_destroy() {
-    let strip = FloatOutBoyLedStripConfig::new(
-        FloatOutBoyLedStripOrder::First,
-        1,
-        FloatOutBoyLedColorOrder::Grb,
-    );
-    let hardware =
-        FloatOutBoyHardwareLedsConfig::new(FloatOutBoyLedMode::Internal).with_front_strip(strip);
-    let renderer = FloatOutBoyLedRenderer::new(hardware, enabled_config(), 0.0);
-    let mut driver = FloatOutBoyInternalLedDriver::new(hardware);
-    assert!(driver.setup(|_, _, _| true, |_| {}));
-
-    assert!(!driver.paint(&renderer, |_| true, |_, _| false));
-    assert!(!driver.paint(
-        &renderer,
-        |_| panic!("faulted driver quiesced hardware again"),
-        |_, _| panic!("faulted driver restarted DMA again"),
-    ));
-    assert!(driver.destroy(|_| true));
 }

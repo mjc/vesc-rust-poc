@@ -2,7 +2,9 @@
 
 use core::ptr::NonNull;
 
-const DATA_RECORDER_MAGIC: u32 = 0xcafe_1111;
+const DATA_RECORDER_MAGIC_BASE: u32 = 0xcafe_1000;
+const DATA_RECORDER_REQUIRED_MAJOR: u8 = 1;
+const DATA_RECORDER_REQUIRED_MINOR: u8 = 1;
 const DATA_RECORDER_RAM_START: u32 = 0x1000_0000;
 const DATA_RECORDER_RAM_END: u32 = 0x1000_f800;
 const DATA_RECORDER_ALIGNMENT: u32 = 4;
@@ -45,6 +47,12 @@ impl RingCursor {
     #[must_use]
     pub fn len(self, capacity: usize) -> usize {
         self.len.min(capacity)
+    }
+
+    /// Return whether no committed slots are available at this capacity.
+    #[must_use]
+    pub fn is_empty(self, capacity: usize) -> bool {
+        self.len(capacity) == 0
     }
 
     /// Resolve an oldest-first logical index to a physical storage slot.
@@ -201,8 +209,30 @@ impl<S: FixedRecordStorage, const RECORD_SIZE: usize> FixedRecordRing<S, RECORD_
 /// A validated recorder-buffer descriptor from Refloat's special VESC 6.05 firmware.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareDataRecorderDescriptor {
+    version: FirmwareDataRecorderVersion,
     start_address: u32,
     len: u32,
+}
+
+/// Recorder-firmware descriptor version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FirmwareDataRecorderVersion {
+    major: u8,
+    minor: u8,
+}
+
+impl FirmwareDataRecorderVersion {
+    /// Return the compatibility-breaking major version.
+    #[must_use]
+    pub const fn major(self) -> u8 {
+        self.major
+    }
+
+    /// Return the backwards-compatible minor version.
+    #[must_use]
+    pub const fn minor(self) -> u8 {
+        self.minor
+    }
 }
 
 impl FirmwareDataRecorderDescriptor {
@@ -214,8 +244,18 @@ impl FirmwareDataRecorderDescriptor {
     pub fn try_from_words(
         [magic, start_address, len]: [u32; 3],
     ) -> Result<Self, FirmwareDataRecorderDescriptorError> {
-        if magic != DATA_RECORDER_MAGIC {
+        if magic & 0xffff_f000 != DATA_RECORDER_MAGIC_BASE {
             return Err(FirmwareDataRecorderDescriptorError::BadMagic);
+        }
+        let [magic_low, ..] = magic.to_le_bytes();
+        let version = FirmwareDataRecorderVersion {
+            major: magic_low >> 4,
+            minor: magic_low & 0x0f,
+        };
+        if version.major != DATA_RECORDER_REQUIRED_MAJOR
+            || version.minor < DATA_RECORDER_REQUIRED_MINOR
+        {
+            return Err(FirmwareDataRecorderDescriptorError::IncompatibleVersion);
         }
         if start_address % DATA_RECORDER_ALIGNMENT != 0 || len % DATA_RECORDER_ALIGNMENT != 0 {
             return Err(FirmwareDataRecorderDescriptorError::Misaligned);
@@ -229,7 +269,17 @@ impl FirmwareDataRecorderDescriptor {
         if start_address < DATA_RECORDER_RAM_START || end > DATA_RECORDER_RAM_END {
             return Err(FirmwareDataRecorderDescriptorError::OutsideRecorderRam);
         }
-        Ok(Self { start_address, len })
+        Ok(Self {
+            version,
+            start_address,
+            len,
+        })
+    }
+
+    /// Return the validated recorder descriptor version.
+    #[must_use]
+    pub const fn version(self) -> FirmwareDataRecorderVersion {
+        self.version
     }
 
     /// Return the validated native start address.
@@ -257,6 +307,8 @@ impl FirmwareDataRecorderDescriptor {
 pub enum FirmwareDataRecorderDescriptorError {
     /// The firmware magic did not identify Refloat's recorder build.
     BadMagic,
+    /// The recorder descriptor major version differs or its minor version is too old.
+    IncompatibleVersion,
     /// The buffer start or length did not preserve ARM word alignment.
     Misaligned,
     /// The buffer cannot hold even one aligned firmware word.
@@ -271,6 +323,7 @@ impl core::fmt::Display for FirmwareDataRecorderDescriptorError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(match self {
             Self::BadMagic => "bad recorder firmware magic",
+            Self::IncompatibleVersion => "incompatible recorder firmware version",
             Self::Misaligned => "misaligned recorder buffer",
             Self::Undersized => "undersized recorder buffer",
             Self::AddressOverflow => "recorder buffer address overflow",
@@ -415,6 +468,33 @@ impl FixedRecordStorage for FirmwareDataRecorderBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_ring_cursor_is_empty() {
+        assert_eq!(RingCursor::default().len(24), 0);
+    }
+
+    #[test]
+    fn ring_cursor_preserves_newest_slots_across_capacities_and_wraps() {
+        for capacity in 0_usize..=32 {
+            for writes in 0..=capacity.saturating_mul(3).saturating_add(1) {
+                let mut ring = RingCursor::default();
+                for _ in 0..writes {
+                    if ring.write_slot(capacity).is_some() {
+                        ring.commit_write(capacity);
+                    }
+                }
+
+                let len = writes.min(capacity);
+                assert_eq!(ring.len(capacity), len);
+                for index in 0..len {
+                    let expected = writes.saturating_sub(len).saturating_add(index) % capacity;
+                    assert_eq!(ring.slot_at(index, capacity), Some(expected));
+                }
+                assert_eq!(ring.slot_at(len, capacity), None);
+            }
+        }
+    }
 
     #[test]
     fn recorder_buffer_reads_and_writes_only_checked_ranges() {

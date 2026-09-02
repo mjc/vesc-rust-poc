@@ -1,18 +1,17 @@
 use super::{FloatOutBoyAppData, handle_float_out_boy_app_data_packet};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAppDataCommand,
-    FloatOutBoyMode, FloatOutBoyRunState,
+    FloatOutBoyMode, FloatOutBoyRealtimeRemoteInput, FloatOutBoyRunState,
 };
 use crate::package::FloatOutBoyPackageState;
-use crate::package::protocol::encode_float_out_boy_get_realtime_data_response;
 use crate::package::test_support::{
     default_float_out_boy_config_bytes, editable_config_from_state, sample_all_data_payloads,
     sample_all_data_payloads_with_ride_state,
 };
 use std::vec::Vec;
 use vescpkg_rs::AppDataPacket;
-use vescpkg_rs::TimestampTicks;
 use vescpkg_rs::test_support::{FirmwareTest, invoke_stateful_app_data_handler};
+use vescpkg_rs::{SignedRatio, TimestampTicks};
 
 fn handle_packet(
     state: &mut FloatOutBoyPackageState,
@@ -57,7 +56,7 @@ fn handler_rejects_empty_and_sends_valid_packets() {
     assert!(sent.is_empty());
 
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         FloatOutBoyAllDataMode::from_source_id(1).source_id(),
     ];
@@ -81,10 +80,15 @@ fn app_data_callback_dispatches_legacy_realtime_data_like_float_out_boy() {
     let telemetry = FirmwareTest::new();
     let imu = telemetry.imu();
     let payloads = sample_all_data_payloads();
-    let expected = encode_float_out_boy_get_realtime_data_response(&payloads);
+    let expected =
+        vesc_float_out_boy_protocol::encode_float_out_boy_get_realtime_data_response_with_remote(
+            &payloads,
+            FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+            0.0,
+        );
     let mut state = FloatOutBoyPackageState::new(payloads);
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetRealtimeData.id(),
     ];
 
@@ -109,7 +113,7 @@ fn app_data_callback_rejects_malformed_legacy_realtime_data_requests() {
 
     for request in [
         &[][..],
-        &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get()][..],
+        &[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID][..],
         &[100, 1][..],
     ] {
         assert!(!handle_packet(
@@ -121,6 +125,47 @@ fn app_data_callback_rejects_malformed_legacy_realtime_data_requests() {
             AppDataPacket::from_bytes(request),
         ));
     }
+    assert!(sent.is_empty());
+}
+
+#[test]
+fn app_data_callback_routes_unified_remote_without_reply_and_rejects_removed_rc_move() {
+    let mut sent = Vec::new();
+    let telemetry = FirmwareTest::new();
+    let imu = telemetry.imu();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Ready,
+        FloatOutBoyMode::Normal,
+    ));
+    let now = TimestampTicks::from_ticks(30_001);
+    let command = [
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        FloatOutBoyAppDataCommand::Remote.id(),
+        127,
+    ];
+
+    assert!(handle_packet(
+        &mut state,
+        now,
+        &mut sent,
+        telemetry.telemetry(),
+        imu,
+        AppDataPacket::from_bytes(&command),
+    ));
+    assert_eq!(
+        state.remote_input_for_test().ratio(),
+        SignedRatio::from_ratio_const(1.0)
+    );
+    assert!(sent.is_empty());
+
+    assert!(!handle_packet(
+        &mut state,
+        now,
+        &mut sent,
+        telemetry.telemetry(),
+        imu,
+        AppDataPacket::from_bytes(&[FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 7, 1, 40, 2, 42]),
+    ));
     assert!(sent.is_empty());
 }
 
@@ -137,7 +182,7 @@ fn app_data_callback_dispatches_without_main_loop_refresh_like_float_out_boy() {
     ));
 
     let request = [
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::RealtimeData.id(),
         0,
     ];
@@ -178,7 +223,7 @@ fn assert_real_config_restore_context() {
     assert!(installed.is_some());
 
     assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::ConfigRestore.id(),
     ]));
     drop(installed);
@@ -196,7 +241,7 @@ fn assert_real_config_save_context(firmware: &FirmwareTest) {
     assert!(installed.is_some());
 
     assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::ConfigSave.id(),
     ]));
     drop(installed);
@@ -218,7 +263,7 @@ fn assert_real_lock_context() {
     assert!(installed.is_some());
 
     assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::Lock.id(),
         1,
     ]));
@@ -242,7 +287,7 @@ fn assert_real_handtest_restore_context() {
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
     assert_eq!(
         state.prepare_handtest_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::HandTest.id(),
             1,
         ]),
@@ -253,7 +298,7 @@ fn assert_real_handtest_restore_context() {
     assert!(installed.is_some());
 
     assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::HandTest.id(),
         0,
     ]));
@@ -277,7 +322,7 @@ fn assert_real_flywheel_restore_context() {
     assert!(state.store_serialized_config(&default_float_out_boy_config_bytes()));
     assert_eq!(
         state.prepare_flywheel_packet(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::Flywheel.id(),
             0x81,
             90,
@@ -293,7 +338,7 @@ fn assert_real_flywheel_restore_context() {
     assert!(installed.is_some());
 
     assert!(invoke_stateful_app_data_handler::<FloatOutBoyAppData>(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::Flywheel.id(),
         0x80,
         0,

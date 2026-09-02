@@ -3,14 +3,14 @@
 
 use vescpkg_rs::{
     PackageRuntimeState, PackageStateStore, TerminalError, TerminalHandler, TerminalRegistration,
-    firmware_str, test_support::FirmwareTest,
+    test_support::FirmwareTest,
 };
 
 struct Handler;
 
 impl TerminalHandler for Handler {
     fn run(mut args: vescpkg_rs::TerminalArgs<'_>) {
-        assert_eq!(args.next().unwrap().unwrap(), "one");
+        assert_eq!(args.next().unwrap().to_bytes(), b"one");
     }
 }
 
@@ -31,18 +31,10 @@ fn terminal_registration_owns_callback_until_drop() {
     let firmware = FirmwareTest::new();
     let terminal = firmware.terminal();
     let registration = terminal
-        .register::<Handler>(
-            firmware_str!("sdk"),
-            firmware_str!("SDK command"),
-            firmware_str!("arg"),
-        )
+        .register::<Handler>(c"sdk", c"SDK command", c"arg")
         .unwrap();
     assert!(matches!(
-        terminal.register::<Handler>(
-            firmware_str!("other"),
-            firmware_str!("Other command"),
-            firmware_str!("arg"),
-        ),
+        terminal.register::<Handler>(c"other", c"Other command", c"arg"),
         Err(TerminalError::Busy)
     ));
     drop(registration);
@@ -54,11 +46,9 @@ fn terminal_registration_reports_absent_optional_slots() {
     firmware.set_terminal_available(false);
 
     assert!(matches!(
-        firmware.terminal().register::<Handler>(
-            firmware_str!("sdk"),
-            firmware_str!("SDK command"),
-            firmware_str!("arg"),
-        ),
+        firmware
+            .terminal()
+            .register::<Handler>(c"sdk", c"SDK command", c"arg"),
         Err(TerminalError::Unavailable)
     ));
 }
@@ -68,11 +58,7 @@ fn package_stop_releases_terminal_state_before_next_registration() {
     let firmware = FirmwareTest::new();
     let terminal: &'static _ = Box::leak(Box::new(firmware.terminal()));
     let registration = terminal
-        .register::<Handler>(
-            firmware_str!("sdk"),
-            firmware_str!("SDK command"),
-            firmware_str!("arg"),
-        )
+        .register::<Handler>(c"sdk", c"SDK command", c"arg")
         .expect("terminal callback");
     let mut info = vescpkg_rs::test_support::LoaderInfo::new();
     let mut start = vescpkg_rs::test_support::package_start(&mut info);
@@ -86,10 +72,6 @@ fn package_stop_releases_terminal_state_before_next_registration() {
 
     let terminal: &'static _ = Box::leak(Box::new(firmware.terminal()));
     terminal
-        .register::<Handler>(
-            firmware_str!("sdk"),
-            firmware_str!("SDK command"),
-            firmware_str!("arg"),
-        )
+        .register::<Handler>(c"sdk", c"SDK command", c"arg")
         .expect("stop released terminal callback");
 }

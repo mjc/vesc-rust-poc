@@ -1,15 +1,16 @@
+use crate::domain::encode_float_out_boy_all_data_fault_response;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FLOAT_OUT_BOY_REALTIME_DATA_ITEMS,
     FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS, FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS,
     FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode,
     FloatOutBoyAllDataMode2Payload, FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload,
     FloatOutBoyAllDataMotorPayload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
-    FloatOutBoyAppDataCommand, FloatOutBoyBeepReason, FloatOutBoyChargingState,
-    FloatOutBoyDarkRideState, FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState,
-    FloatOutBoyFootpadSample, FloatOutBoyFootpadState, FloatOutBoyMode,
-    FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
-    FloatOutBoyRealtimeBoosterCurrent, FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
+    FloatOutBoyAllDataRequestError, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
+    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
+    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyFootpadSample,
+    FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterTorque,
+    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
     FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
     FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRuntimeSetpoint,
     FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRealtimeTail, FloatOutBoyRideState,
@@ -17,10 +18,10 @@ use crate::domain::{
     FloatOutBoyWheelSlipState,
 };
 use crate::leds::{
-    FloatOutBoyLedAnimationMode, FloatOutBoyLedAnimationSpeed, FloatOutBoyLedBarConfig,
-    FloatOutBoyLedColor, FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
+    FloatOutBoyLedAnimationMode, FloatOutBoyLedBarConfig, FloatOutBoyLedColor,
+    FloatOutBoyLedColorOrder, FloatOutBoyLedPin, FloatOutBoyLedPinConfig,
     FloatOutBoyLedStripConfig, FloatOutBoyLedStripOrder, FloatOutBoyLedTransition,
-    FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig, FloatOutBoyStatusBarIdleTimeout,
+    FloatOutBoyLedsConfig, FloatOutBoyStatusBarConfig,
 };
 use vescpkg_rs::prelude::*;
 use vescpkg_rs::test_support::LoaderInfo;
@@ -41,8 +42,9 @@ fn test_package_lib_init_installs_state_without_running_registration_tail() {
 }
 
 #[test]
-fn package_author_encodes_default_all_data_payload() {
-    let payloads = FloatOutBoyAllDataPayloads::default();
+fn package_author_builds_source_startup_all_data_payload() {
+    let payloads = FloatOutBoyAllDataPayloads::source_startup();
+    assert_eq!(payloads, FloatOutBoyAllDataPayloads::source_startup());
     let response = payloads.encode_response(FloatOutBoyAllDataRequest::new(
         FloatOutBoyAllDataMode::from_source_id(4),
     ));
@@ -217,7 +219,6 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (4, FloatOutBoyAppDataCommand::ConfigSave),
         (5, FloatOutBoyAppDataCommand::ConfigRestore),
         (6, FloatOutBoyAppDataCommand::TuneOther),
-        (7, FloatOutBoyAppDataCommand::RcMove),
         (8, FloatOutBoyAppDataCommand::Booster),
         (9, FloatOutBoyAppDataCommand::PrintInfo),
         (10, FloatOutBoyAppDataCommand::GetAllData),
@@ -225,6 +226,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (12, FloatOutBoyAppDataCommand::Lock),
         (13, FloatOutBoyAppDataCommand::HandTest),
         (14, FloatOutBoyAppDataCommand::TuneTilt),
+        (15, FloatOutBoyAppDataCommand::Remote),
         (20, FloatOutBoyAppDataCommand::LightsControl),
         (22, FloatOutBoyAppDataCommand::Flywheel),
         (24, FloatOutBoyAppDataCommand::LcmPoll),
@@ -235,6 +237,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (29, FloatOutBoyAppDataCommand::LcmGetBattery),
         (31, FloatOutBoyAppDataCommand::RealtimeData),
         (32, FloatOutBoyAppDataCommand::RealtimeDataIds),
+        (33, FloatOutBoyAppDataCommand::RealtimeDataSelected),
         (35, FloatOutBoyAppDataCommand::AlertsList),
         (36, FloatOutBoyAppDataCommand::AlertsControl),
         (41, FloatOutBoyAppDataCommand::DataRecordRequest),
@@ -243,7 +246,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
         (99, FloatOutBoyAppDataCommand::LcmDebug),
     ];
 
-    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(), 101);
+    assert_eq!(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, 101);
     assert!(commands.into_iter().all(|(id, command)| {
         FloatOutBoyAppDataCommand::try_from(id)
             .is_ok_and(|parsed| parsed == command && parsed.id() == id)
@@ -258,7 +261,7 @@ fn package_author_parses_float_out_boy_app_data_commands_as_domain_enum() {
 #[test]
 fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     let request = FloatOutBoyAllDataRequest::parse(&[
-        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         FloatOutBoyAppDataCommand::GetAllData.id(),
         4,
     ])
@@ -271,7 +274,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     assert!(request.mode().includes_mode4());
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id()
         ])
         .expect_err("truncated request should be rejected"),
@@ -284,7 +287,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::PrintInfo.id(),
             4
         ])
@@ -293,7 +296,7 @@ fn package_author_parses_all_data_requests_without_raw_packet_checks() {
     );
     assert_eq!(
         FloatOutBoyAllDataRequest::parse(&[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             9
         ])
@@ -327,11 +330,8 @@ fn package_author_builds_realtime_data_header_without_raw_bit_flags() {
 
     assert_eq!(header.timestamp().as_ticks(), 123_456);
     assert_eq!(header.data_mask_compat(), 0b0000_0111);
-    assert_eq!(header.extra_flags_compat(), 0b0000_1101);
-    assert_eq!(header.state_byte_compat(), 0x23);
-    assert_eq!(header.footpad_flags_compat(), 0b1110_0011);
-    assert_eq!(header.stop_setpoint_byte_compat(), 0xB6);
-    assert_eq!(header.beep_reason_compat(), 19);
+    assert_eq!(header.extra_flags_compat(), 1);
+    assert_eq!(header.state_flags_compat(), 0x23f3_b613);
 }
 
 #[test]
@@ -339,21 +339,23 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
     assert_eq!(
         FLOAT_OUT_BOY_REALTIME_DATA_ITEMS.map(FloatOutBoyRealtimeDataItem::id),
         [
-            "motor.speed",
-            "motor.erpm",
-            "motor.current",
-            "motor.dir_current",
-            "motor.filt_current",
-            "motor.duty_cycle",
-            "motor.batt_voltage",
-            "motor.batt_current",
-            "motor.mosfet_temp",
-            "motor.motor_temp",
-            "imu.pitch",
-            "imu.balance_pitch",
-            "imu.roll",
-            "footpad.adc_left",
-            "footpad.adc_right",
+            "control.dt",
+            "control.freq",
+            "speed",
+            "erpm",
+            "current",
+            "dir_current",
+            "filt_current",
+            "duty_cycle",
+            "batt_voltage",
+            "batt_current",
+            "mosfet_temp",
+            "motor_temp",
+            "pitch",
+            "balance_pitch",
+            "roll",
+            "adc_left",
+            "adc_right",
             "remote.input",
         ]
     );
@@ -369,22 +371,26 @@ fn package_author_reads_realtime_data_item_ids_as_typed_contract() {
             "balance_current",
             "atr.accel_diff",
             "atr.speed_boost",
-            "booster.current",
+            "atr.transition_boost",
+            "booster.torque",
         ]
     );
     assert_eq!(
         FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS.map(FloatOutBoyRealtimeDataItem::id),
         [
-            "motor.erpm",
-            "motor.dir_current",
-            "motor.duty_cycle",
-            "motor.batt_voltage",
-            "imu.pitch",
-            "imu.balance_pitch",
+            "control.dt",
+            "control.freq",
+            "erpm",
+            "dir_current",
+            "duty_cycle",
+            "batt_voltage",
+            "pitch",
+            "balance_pitch",
             "setpoint",
             "atr.setpoint",
             "torque_tilt.setpoint",
             "balance_current",
+            "atr.transition_boost",
         ]
     );
 }
@@ -443,21 +449,17 @@ fn package_author_builds_all_data_base_payload_without_raw_values() {
         FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
         footpad,
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(1.25))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(1.25)),
         motor,
     );
 
-    assert_eq!(payload.command(), FloatOutBoyAppDataCommand::GetAllData);
     assert_eq!(payload.status().ride_state().float_state_compat(), 1);
     assert_eq!(payload.status().beep_reason().id(), 1);
     assert_eq!(payload.footpad().state(), FloatOutBoyFootpadState::Both);
     assert_f32_eq!(payload.setpoints().remote().angle().as_degrees(), 2.0);
     assert_f32_eq!(payload.attitude().pitch().angle().as_radians(), 0.04);
     assert_f32_eq!(payload.balance_current().current().current().as_amps(), 9.5);
-    assert_f32_eq!(
-        payload.booster_current().current().current().as_amps(),
-        1.25
-    );
+    assert_f32_eq!(payload.booster_torque().torque().as_newton_meters(), 1.25);
     assert_f32_eq!(
         payload
             .motor()
@@ -551,7 +553,7 @@ fn package_author_encodes_all_data_base_response_like_float_out_boy_v1_2_1() {
         FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
         footpad,
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(4.0)),
         FloatOutBoyAllDataMotorPayload::new(
             BatteryVoltage::new(Voltage::from_volts(72.0)),
             ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
@@ -581,87 +583,9 @@ fn package_author_encodes_all_data_base_response_like_float_out_boy_v1_2_1() {
 #[test]
 fn package_author_encodes_all_data_fault_response_like_float_out_boy_v1_2_1() {
     assert_eq!(
-        FloatOutBoyAllDataResponse::fault(FirmwareFaultWireCode::from_wire_code(5)).as_bytes(),
+        encode_float_out_boy_all_data_fault_response(FirmwareFaultWireCode::from_wire_code(5))
+            .as_bytes(),
         &[101, 10, 69, 5]
-    );
-}
-
-#[test]
-fn package_author_encodes_all_data_mode4_response_like_float_out_boy_v1_2_1() {
-    let ride_state = FloatOutBoyRideState::new(
-        FloatOutBoyRunState::Running,
-        FloatOutBoyMode::Normal,
-        FloatOutBoySetpointAdjustment::None,
-        FloatOutBoyStopCondition::None,
-    );
-    let footpad = FloatOutBoyFootpadSample::new(
-        Voltage::from_volts(0.60),
-        Voltage::from_volts(0.40),
-        FloatOutBoyFootpadState::Both,
-    );
-    let setpoints = FloatOutBoyRealtimeRuntimeSetpoints::new(
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(1.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(0.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-1.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(2.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(-2.0)),
-        FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
-    );
-    let payload = FloatOutBoyAllDataBasePayload::new(
-        FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
-        FloatOutBoyAllDataAttitude::new(
-            FloatOutBoyRealtimeBalancePitch::new(AngleRadians::from_radians(1.2)),
-            ImuRoll::new(AngleRadians::from_radians(-0.5)),
-            ImuPitch::new(AngleRadians::from_radians(2.3)),
-        ),
-        FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
-        footpad,
-        setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
-        FloatOutBoyAllDataMotorPayload::new(
-            BatteryVoltage::new(Voltage::from_volts(72.0)),
-            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
-            VehicleSpeed::new(Speed::from_meters_per_second(3.0)),
-            FloatOutBoyRealtimeMotorCurrents::new(
-                MotorCurrent::new(Current::from_amps(5.0)),
-                DirectionalMotorCurrent::new(Current::from_amps(5.0)),
-                FloatOutBoyRealtimeFilteredMotorCurrent::new(DirectionalMotorCurrent::new(
-                    Current::from_amps(5.0),
-                )),
-                BatteryCurrent::new(Current::from_amps(-2.0)),
-            ),
-            DutyCycle::new(SignedRatio::from_ratio_const(-0.25)),
-            Some(MotorCurrent::new(Current::from_amps(2.0))),
-        ),
-    );
-    let mode2 = FloatOutBoyAllDataMode2Payload::new(
-        TripDistance::new(Distance::from_meters(64.0)),
-        FloatOutBoyRealtimeMotorTemperatures::new(
-            MosfetTemperature::new(Temperature::from_degrees_celsius(44.0)),
-            MotorTemperature::new(Temperature::from_degrees_celsius(51.5)),
-        ),
-        None,
-    );
-    let mode3 = FloatOutBoyAllDataMode3Payload::new(
-        OdometerMeters::from_meters(123_456),
-        AmpHoursDischarged::new(Charge::from_amp_hours(3.2)),
-        AmpHoursCharged::new(Charge::from_amp_hours(0.8)),
-        WattHoursDischarged::new(Energy::from_watt_hours(170.0)),
-        WattHoursCharged::new(Energy::from_watt_hours(18.5)),
-        BatteryLevel::from_fraction(0.72),
-    );
-    let mode4 = FloatOutBoyAllDataMode4Payload::new(
-        BatteryCurrent::new(Current::from_amps(1.2)),
-        BatteryVoltage::new(Voltage::from_volts(82.4)),
-    );
-
-    assert_eq!(
-        payload.encode_mode4_response(mode2, mode3, mode4),
-        [
-            101, 10, 4, 0, 90, 2, 175, 254, 226, 33, 18, 30, 20, 133, 128, 123, 138, 118, 143, 5,
-            37, 132, 2, 208, 4, 176, 0, 30, 0, 50, 255, 236, 103, 6, 66, 128, 0, 0, 88, 103, 0, 0,
-            1, 226, 64, 0, 32, 0, 8, 0, 170, 0, 18, 144, 0, 12, 3, 56,
-        ]
     );
 }
 
@@ -696,7 +620,7 @@ fn sample_all_data_response_payloads() -> FloatOutBoyAllDataPayloads {
             FloatOutBoyAllDataStatus::new(ride_state, FloatOutBoyBeepReason::LowVoltage),
             footpad,
             setpoints,
-            FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(4.0))),
+            FloatOutBoyRealtimeBoosterTorque::new(MotorTorque::from_newton_meters(4.0)),
             FloatOutBoyAllDataMotorPayload::new(
                 BatteryVoltage::new(Voltage::from_volts(72.0)),
                 ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1200.0)),
@@ -795,7 +719,7 @@ fn package_author_reads_led_wiring_config_without_raw_numbers() {
         24,
         FloatOutBoyLedColorOrder::Grbw,
     )
-    .reversed();
+    .with_reverse(true);
 
     assert_eq!(FloatOutBoyLedPin::B6.id(), 0);
     assert_eq!(FloatOutBoyLedPin::B7.id(), 1);
@@ -823,7 +747,7 @@ fn package_author_reads_led_bar_config_without_raw_ids() {
         FloatOutBoyLedColor::Gold,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Pulse,
-        FloatOutBoyLedAnimationSpeed::from_units(1.5),
+        1.5,
     );
 
     let color_ids = [
@@ -897,13 +821,13 @@ fn package_author_reads_led_bar_config_without_raw_ids() {
     assert_eq!(bar.primary_color(), FloatOutBoyLedColor::Gold);
     assert_eq!(bar.secondary_color(), FloatOutBoyLedColor::Black);
     assert_eq!(bar.animation_mode(), FloatOutBoyLedAnimationMode::Pulse);
-    assert!((bar.animation_speed().as_units() - 1.5).abs() < f32::EPSILON);
+    assert!((bar.animation_speed() - 1.5).abs() < f32::EPSILON);
 }
 
 #[test]
 fn package_author_reads_status_bar_config_without_raw_scalars() {
     let status = FloatOutBoyStatusBarConfig::new(
-        FloatOutBoyStatusBarIdleTimeout::from_seconds(30),
+        30,
         Ratio::from_ratio_const(0.12),
         Ratio::from_ratio_const(0.25),
         Ratio::from_ratio_const(0.70),
@@ -911,7 +835,7 @@ fn package_author_reads_status_bar_config_without_raw_scalars() {
     )
     .showing_sensors_while_running();
 
-    assert_eq!(status.idle_timeout().as_seconds(), 30);
+    assert_eq!(status.idle_timeout(), 30);
     assert!((status.duty_threshold().as_ratio() - 0.12).abs() < f32::EPSILON);
     assert!((status.red_bar_percentage().as_ratio() - 0.25).abs() < f32::EPSILON);
     assert!(status.shows_sensors_while_running());
@@ -926,17 +850,17 @@ fn package_author_composes_leds_config_without_raw_flags() {
         FloatOutBoyLedColor::WhiteFull,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Solid,
-        FloatOutBoyLedAnimationSpeed::from_units(1.0),
+        1.0,
     );
     let taillights = FloatOutBoyLedBarConfig::new(
         Ratio::from_ratio_const(0.5),
         FloatOutBoyLedColor::Red,
         FloatOutBoyLedColor::Black,
         FloatOutBoyLedAnimationMode::Pulse,
-        FloatOutBoyLedAnimationSpeed::from_units(1.5),
+        1.5,
     );
     let status = FloatOutBoyStatusBarConfig::new(
-        FloatOutBoyStatusBarIdleTimeout::from_seconds(45),
+        45,
         Ratio::from_ratio_const(0.10),
         Ratio::from_ratio_const(0.20),
         Ratio::from_ratio_const(0.75),
@@ -978,6 +902,6 @@ fn package_author_composes_leds_config_without_raw_flags() {
         leds.rear().animation_mode(),
         FloatOutBoyLedAnimationMode::Pulse
     );
-    assert_eq!(leds.status().idle_timeout().as_seconds(), 45);
+    assert_eq!(leds.status().idle_timeout(), 45);
     assert_eq!(leds.status_idle().primary_color(), FloatOutBoyLedColor::Red);
 }

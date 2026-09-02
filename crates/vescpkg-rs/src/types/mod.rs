@@ -52,15 +52,16 @@ pub use can::{
 pub use config::{
     BatteryCellCount, BatteryCellCountError, BatteryChemistry, CanApplicationMode, CanBaudRate,
     CustomConfigAngleCurrentGainField, CustomConfigAngleField, CustomConfigAngularVelocityField,
-    CustomConfigDurationField, CustomConfigEditor, CustomConfigElectricalSpeedField,
-    CustomConfigEnumField, CustomConfigFlagField, CustomConfigFrequencyField, CustomConfigImage,
-    CustomConfigIntegralCurrentGainField, CustomConfigMahonyPitchGainField,
-    CustomConfigMahonyRollGainField, CustomConfigMotorCurrentField, CustomConfigPidScaleField,
-    CustomConfigRateCurrentGainField, CustomConfigRatioField, CustomConfigResetField,
-    CustomConfigSampleRateField, CustomConfigScaledVoltageField, CustomConfigSecondsField,
-    CustomConfigVoltageField, CustomConfigWireByteField, FocMotorFluxLinkage, FocMotorInductance,
-    FocMotorResistance, GearRatio, GearRatioError, ImuAhrsMode, MotorPoleCount,
-    MotorPoleCountError, ShutdownMode, WheelDiameter, WireByte,
+    CustomConfigCursor, CustomConfigDurationField, CustomConfigEditor,
+    CustomConfigElectricalSpeedField, CustomConfigEnumField, CustomConfigFlagField,
+    CustomConfigFrequencyField, CustomConfigImage, CustomConfigIntegralCurrentGainField,
+    CustomConfigMahonyPitchGainField, CustomConfigMahonyRollGainField,
+    CustomConfigMotorCurrentField, CustomConfigPidScaleField, CustomConfigRateCurrentGainField,
+    CustomConfigRatioField, CustomConfigResetField, CustomConfigSampleRateField,
+    CustomConfigScaledVoltageField, CustomConfigSecondsField, CustomConfigVoltageField,
+    CustomConfigWireByteField, FocMotorFluxLinkage, FocMotorInductance, FocMotorResistance,
+    GearRatio, GearRatioError, ImuAhrsMode, MotorPoleCount, MotorPoleCountError, ShutdownMode,
+    WheelDiameter, WireByte,
 };
 pub use control::{
     AngleCurrentGain, IntegralCurrentGain, MahonyPitchGain, MahonyRollGain, PidScale,
@@ -91,8 +92,8 @@ pub use motor::{
     AudioChannel, AudioChannelError, AudioDuration, AudioFrequency, AudioSampleRate, AudioVoltage,
     AverageMotorCurrent, BrakeCurrent, DCurrent, DVoltage, DirectionalMotorCurrent, FirmwareFault,
     FirmwareFaultId, FirmwareFaultWireCode, HandbrakeCurrent, InputCurrentLimit, MotorCurrent,
-    MotorCurrentLimit, MotorSelection, MotorSelectionError, OpenLoopCurrent, PeakMotorCurrent,
-    PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
+    MotorCurrentLimit, MotorSelection, MotorSelectionError, MotorTorque, MotorTorqueLimit,
+    OpenLoopCurrent, PeakMotorCurrent, PhaseCurrent, QCurrent, QVoltage, TotalMotorCurrent,
 };
 pub use power::{AveragePower, PeakPower};
 pub use ratio::{

@@ -1,8 +1,7 @@
 use crate::domain::{
     FloatOutBoyDarkRideState, FloatOutBoyMode, FloatOutBoyRealtimeRuntimeSetpoint,
-    FloatOutBoyTractionControlState,
 };
-use crate::motor_torque::{MotorTorque, MotorTorqueLimit};
+use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use vescpkg_rs::prelude::{
     AngleCurrentGain, AngleDegrees, AngularVelocity, ElectricalSpeed, ImuRoll, IntegralCurrentGain,
     MotorCurrent, MotorCurrentLimit, PidScale, RateCurrentGain, SampleRate,
@@ -21,13 +20,13 @@ pub(crate) struct LoopConfig {
     pub(crate) ki: IntegralCurrentGain,
     pub(crate) kp_brake: PidScale,
     pub(crate) kp2_brake: PidScale,
-    pub(crate) ki_limit: MotorTorqueLimit,
+    pub(crate) ki_limit: MotorCurrentLimit,
     pub(crate) booster_angle: AngleDegrees,
     pub(crate) booster_ramp: AngleDegrees,
-    pub(crate) booster_torque: MotorTorque,
+    pub(crate) booster_current: MotorCurrent,
     pub(crate) brkbooster_angle: AngleDegrees,
     pub(crate) brkbooster_ramp: AngleDegrees,
-    pub(crate) brkbooster_torque: MotorTorque,
+    pub(crate) brkbooster_current: MotorCurrent,
     pub(crate) hertz: SampleRate,
 }
 
@@ -51,7 +50,8 @@ pub(crate) struct LoopInput {
     pub(crate) motor_current_min: MotorCurrentLimit,
     pub(crate) mode: FloatOutBoyMode,
     pub(crate) darkride: FloatOutBoyDarkRideState,
-    pub(crate) traction_control: FloatOutBoyTractionControlState,
+    pub(crate) traction_control: bool,
+    pub(crate) motor_torque_constant: MotorTorqueConstant,
 }
 
 /// Mutable PID state for one Float Out Boy balance-current step.
@@ -65,6 +65,13 @@ pub(crate) struct PidState {
     pub(crate) kp2_brake_scale: PidScale,
     pub(crate) kp_accel_scale: PidScale,
     pub(crate) kp2_accel_scale: PidScale,
+}
+
+impl PidState {
+    #[cfg(test)]
+    pub(crate) fn source_startup() -> Self {
+        Self::default()
+    }
 }
 
 impl Default for PidState {
@@ -89,13 +96,13 @@ pub(crate) struct LoopState {
     pub(crate) balance_current: MotorCurrent,
     pub(crate) booster_torque: MotorTorque,
     pub(crate) pid: PidState,
-    pub(crate) softstart_pid_limit: MotorCurrentLimit,
+    pub(crate) softstart_pid_limit: MotorCurrent,
 }
 
 impl LoopState {
-    /// Reset all state that must not cross a Float Out Boy ride session.
-    pub(crate) fn reset_runtime(&mut self) {
-        *self = Self::default();
+    /// Reset transient PID state like upstream `pid_init`.
+    pub(crate) fn reset_pid(&mut self) {
+        self.pid = PidState::default();
     }
 }
 

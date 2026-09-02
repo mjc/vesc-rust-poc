@@ -1,370 +1,261 @@
-use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyRunState};
+use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRealtimeRemoteInput};
 use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
-use crate::package::state::float_out_boy_command_payload;
 use crate::package::state::smooth_setpoint::{
     SmoothSetpoint, SmoothSetpointConfig, SmoothSetpointDirection, SmoothSetpointMultiplier,
 };
-#[cfg(test)]
-use vescpkg_rs::prelude::Rpm;
+#[cfg(any(test, target_arch = "arm"))]
+use vescpkg_rs::prelude::Ratio;
 use vescpkg_rs::prelude::{
-    AngleDegrees, AngularVelocity, Current, MotorCurrent, Ratio, SampleRate, Speed, TimestampTicks,
+    AngleDegrees, AngularVelocity, MotorCurrent, SampleRate, SignedRatio, Speed, TimestampTicks,
     VescSeconds,
 };
-use vescpkg_rs::timer_older as float_out_boy_ticks_elapsed_seconds;
 
-#[cfg(test)]
-const REMOTE_CURRENT_FILTER: Ratio = Ratio::from_ratio_const(0.05);
+#[cfg(any(test, target_arch = "arm"))]
 const REMOTE_INPUT_TIMEOUT: VescSeconds = VescSeconds::from_seconds(0.5);
+#[cfg(any(test, target_arch = "arm"))]
 const REMOTE_MOVE_IDLE_TIMEOUT: VescSeconds = VescSeconds::from_seconds(1.0);
 const REMOTE_COMMAND_MOVE_GRACE: VescSeconds = VescSeconds::from_seconds(2.0);
 const REMOTE_COMMAND_DEFAULT_MOVE_SPEED: Speed = Speed::from_kilometers_per_hour(5.0);
-const REMOTE_MOVE_TORQUE_LIMIT: MotorTorque = MotorTorque::from_newton_meters(10.0);
-
-fn parse_remote_command(byte: u8) -> Option<vescpkg_rs::SignedRatio> {
-    let value = i8::from_ne_bytes([byte]);
-    (value != i8::MIN).then(|| vescpkg_rs::SignedRatio::clamped(f32::from(value) / 127.0))
-}
-
-fn remote_move_target(input: vescpkg_rs::SignedRatio, maximum: Speed) -> Speed {
-    Speed::from_kilometers_per_hour(input.as_ratio() * maximum.as_kilometers_per_hour())
-}
-
-fn zero_motor_current() -> MotorCurrent {
-    // C map: `reset_runtime_vars` and the RC-move idle branches clear current
-    // by writing zero at `third_party/float-out-boy/src/main.c:239-252` and
-    // `third_party/float-out-boy/src/main.c:291-298`.
-    MotorCurrent::new(Current::ZERO)
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct RemoteCurrentTarget(i16);
-
-impl RemoteCurrentTarget {
-    const ZERO: Self = Self(0);
-
-    const fn new(deciamps: i16) -> Self {
-        Self(deciamps)
-    }
-
-    #[cfg(test)]
-    fn motor_current(self) -> MotorCurrent {
-        // C map: `cmd_rc_move` stores packet current as deciamps at
-        // `third_party/float-out-boy/src/main.c:1747-1756`; `do_rc_move` requests amps.
-        MotorCurrent::new(Current::from_amps(f32::from(self.0) * 0.1))
-    }
-
-    const fn is_zero(self) -> bool {
-        // C map: `cmd_rc_move` treats zero target current as the idle step.
-        self.0 == 0
-    }
-
-    const fn exceeds_packet_limit(self) -> bool {
-        // C map: `cmd_rc_move` clamps positive targets above 8 A (80 packet
-        // deciamps) before storing the 2 A fallback target.
-        self.0 > 80
-    }
-
-    #[cfg(test)]
-    const fn should_halve_mid_move(self) -> bool {
-        // C map: `do_rc_move` halves targets above 2A after 500 steps.
-        self.0 > 20
-    }
-
-    #[cfg(test)]
-    fn halve(&mut self) {
-        // C map: `do_rc_move` halves large RC moves after 500 steps at
-        // `third_party/float-out-boy/src/main.c:281-284`.
-        self.0 /= 2;
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct RemoteMove {
-    target: RemoteCurrentTarget,
-    duration_steps: u16,
-}
+#[repr(transparent)]
+struct RemoteCommandByte(i8);
 
-impl RemoteMove {
-    const ZERO_CURRENT_STEP: Self = Self {
-        target: RemoteCurrentTarget::ZERO,
-        duration_steps: 1,
-    };
-
-    pub(super) fn from_float_out_boy_command(
-        direction: u8,
-        current: u8,
-        time: u8,
-        sum: u8,
-    ) -> Self {
-        // C map: `cmd_rc_move` treats checksum failure as `current = 0`, then
-        // stores READY-state RC move fields at `third_party/float-out-boy/src/main.c:1735-1758`.
-        let current = if u16::from(sum) == u16::from(time).saturating_add(u16::from(current)) {
-            current
-        } else {
-            0
-        };
-
-        let target = match direction {
-            0 => RemoteCurrentTarget::new(i16::from(current).saturating_neg()),
-            _ => RemoteCurrentTarget::new(i16::from(current)),
-        };
-
-        Self::new(target, time)
+impl RemoteCommandByte {
+    fn parse(byte: u8) -> Option<Self> {
+        let value = i8::from_ne_bytes([byte]);
+        (value != i8::MIN).then_some(Self(value))
     }
 
-    fn new(target: RemoteCurrentTarget, time: u8) -> Self {
-        // C map: `cmd_rc_move` keeps zero requests idle, clamps oversized
-        // targets, and stores duration as `time * 100` at
-        // `third_party/float-out-boy/src/main.c:1735-1758`.
-        match target {
-            target if target.is_zero() => Self::ZERO_CURRENT_STEP,
-            target if target.exceeds_packet_limit() => Self {
-                // C map: oversized positive targets are clamped to 20 deciamps
-                // at `third_party/float-out-boy/src/main.c:1753-1757`.
-                target: RemoteCurrentTarget::new(20),
-                duration_steps: u16::from(time) * 100,
-            },
-            target => Self {
-                target,
-                duration_steps: u16::from(time) * 100,
-            },
-        }
-    }
-}
-
-pub(super) fn handle_packet(
-    all_data_payloads: FloatOutBoyAllDataPayloads,
-    remote_control: &mut RemoteControlState,
-    bytes: &[u8],
-) -> bool {
-    // C map: `on_command_received` dispatches COMMAND_RC_MOVE only for
-    // six-byte packets at `third_party/float-out-boy/src/main.c:2186-2192`; `cmd_rc_move`
-    // mutates RC move state only while READY at `third_party/float-out-boy/src/main.c:1735-1758`.
-    match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::RcMove) {
-        Some([direction, current, time, sum]) => {
-            if all_data_payloads.base().status().ride_state().run_state()
-                == FloatOutBoyRunState::Ready
-            {
-                remote_control.queue_move(RemoteMove::from_float_out_boy_command(
-                    *direction, *current, *time, *sum,
-                ));
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-pub(super) fn handle_remote_packet(
-    remote_control: &mut RemoteControlState,
-    bytes: &[u8],
-    now: TimestampTicks,
-    disengage_ticks: TimestampTicks,
-    maximum_move_speed: Speed,
-) -> bool {
-    match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::Remote) {
-        Some([byte, ..]) => {
-            let Some(input) = parse_remote_command(*byte) else {
-                return true;
-            };
-            remote_control.input = crate::domain::FloatOutBoyRealtimeRemoteInput::new(input);
-            if float_out_boy_ticks_elapsed_seconds(now, disengage_ticks, REMOTE_COMMAND_MOVE_GRACE)
-            {
-                let maximum = if maximum_move_speed > Speed::ZERO {
-                    maximum_move_speed
-                } else {
-                    REMOTE_COMMAND_DEFAULT_MOVE_SPEED
-                };
-                remote_control.move_target = Some(remote_move_target(input, maximum));
-            }
-            remote_control.command_ticks = Some(now);
-            true
-        }
-        Some([]) | None => false,
+    fn input(self) -> FloatOutBoyRealtimeRemoteInput {
+        FloatOutBoyRealtimeRemoteInput::new(SignedRatio::clamped(f32::from(self.0) / 127.0))
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct RemoteControlState {
-    input: crate::domain::FloatOutBoyRealtimeRemoteInput,
-    input_tilt: SmoothSetpoint,
-    current: MotorCurrent,
-    steps: u16,
-    counter: u16,
-    target: RemoteCurrentTarget,
-    command_ticks: Option<TimestampTicks>,
-    move_target: Option<Speed>,
-    move_integral: MotorTorque,
-    move_idle_ticks: Option<TimestampTicks>,
+#[repr(transparent)]
+struct RemoteMoveTarget(Speed);
+
+impl RemoteMoveTarget {
+    #[cfg(any(test, target_arch = "arm"))]
+    const STOPPED: Self = Self(Speed::ZERO);
+
+    fn from_input(input: FloatOutBoyRealtimeRemoteInput, maximum: Speed) -> Self {
+        Self(Speed::from_kilometers_per_hour(
+            input.ratio().as_ratio() * maximum.as_kilometers_per_hour(),
+        ))
+    }
+
+    const fn speed(self) -> Speed {
+        self.0
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct RemotePhysicalInputContext {
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(transparent)]
+struct RemoteMoveIntegral(MotorTorque);
+
+impl RemoteMoveIntegral {
+    const ZERO: Self = Self(MotorTorque::ZERO);
+    const LIMIT_NEWTON_METERS: f32 = 10.0;
+
+    fn advance(&mut self, speed_error_kph: f32, elapsed: VescSeconds) {
+        self.0 = MotorTorque::from_newton_meters(
+            (self.0.as_newton_meters() + speed_error_kph * elapsed.as_seconds())
+                .clamp(-Self::LIMIT_NEWTON_METERS, Self::LIMIT_NEWTON_METERS),
+        );
+    }
+
+    const fn torque(self) -> MotorTorque {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+struct RemoteCommandEpoch(TimestampTicks);
+
+impl RemoteCommandEpoch {
+    #[cfg(any(test, target_arch = "arm"))]
+    fn is_active(self, now: TimestampTicks) -> bool {
+        !vescpkg_rs::timer_older(now, self.0, REMOTE_INPUT_TIMEOUT)
+    }
+}
+
+#[cfg(any(test, target_arch = "arm"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct PhysicalRemoteInput {
+    pub(super) raw: Option<SignedRatio>,
     pub(super) now: TimestampTicks,
-    pub(super) disengage_ticks: TimestampTicks,
+    pub(super) disengage_epoch: TimestampTicks,
     pub(super) deadband: Ratio,
     pub(super) inverted: bool,
     pub(super) maximum_move_speed: Speed,
     pub(super) move_grace: VescSeconds,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct RemoteControlState {
+    input: FloatOutBoyRealtimeRemoteInput,
+    tilt_setpoint: SmoothSetpoint,
+    command_epoch: Option<RemoteCommandEpoch>,
+    move_target: Option<RemoteMoveTarget>,
+    move_integral: RemoteMoveIntegral,
+    move_idle_epoch: Option<TimestampTicks>,
+}
+
 impl Default for RemoteControlState {
     fn default() -> Self {
-        // C map: Float Out Boy resets RC move state and current to zero at
-        // `third_party/float-out-boy/src/main.c:239-252`.
         Self {
-            input: crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-                vescpkg_rs::prelude::SignedRatio::from_ratio_const(0.0),
-            ),
-            input_tilt: SmoothSetpoint::default(),
-            current: zero_motor_current(),
-            steps: 0,
-            counter: 0,
-            target: RemoteCurrentTarget::ZERO,
-            command_ticks: None,
+            input: FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0)),
+            tilt_setpoint: SmoothSetpoint::default(),
+            command_epoch: None,
             move_target: None,
-            move_integral: MotorTorque::ZERO,
-            move_idle_ticks: None,
+            move_integral: RemoteMoveIntegral::ZERO,
+            move_idle_epoch: None,
         }
     }
 }
 
 impl RemoteControlState {
     #[cfg(test)]
-    pub(super) fn set_input(&mut self, input: crate::domain::FloatOutBoyRealtimeRemoteInput) {
-        // C map: `remote_input` stores the connected, deadbanded, optionally
-        // inverted input at `third_party/float-out-boy/src/remote.c:36-68`.
+    pub(super) fn set_input(&mut self, input: FloatOutBoyRealtimeRemoteInput) {
         self.input = input;
     }
 
     pub(super) fn reset_runtime_vars(&mut self) {
-        // C map: `reset_runtime_vars` clears RC move state at
-        // `third_party/float-out-boy/src/main.c:239-252`.
-        self.current = zero_motor_current();
-        self.steps = 0;
-        self.input_tilt.reset();
-        self.command_ticks = None;
+        self.tilt_setpoint.reset();
         self.move_target = None;
-        self.move_integral = MotorTorque::ZERO;
-        self.move_idle_ticks = None;
+        self.move_integral = RemoteMoveIntegral::ZERO;
+        self.move_idle_epoch = None;
     }
 
-    pub(super) fn refresh_physical_input(
+    pub(super) fn handle_packet(
         &mut self,
-        raw: Option<vescpkg_rs::SignedRatio>,
-        context: RemotePhysicalInputContext,
-    ) {
-        let RemotePhysicalInputContext {
+        now: TimestampTicks,
+        disengage_epoch: TimestampTicks,
+        maximum_move_speed: Speed,
+        bytes: &[u8],
+    ) -> bool {
+        let [package_id, command, payload @ ..] = bytes else {
+            return false;
+        };
+        if *package_id != crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
+            || *command != FloatOutBoyAppDataCommand::Remote.id()
+        {
+            return false;
+        }
+        let Some(byte) = payload.first() else {
+            return false;
+        };
+        let Some(command) = RemoteCommandByte::parse(*byte) else {
+            return true;
+        };
+
+        let input = command.input();
+        self.input = input;
+        if vescpkg_rs::timer_older(now, disengage_epoch, REMOTE_COMMAND_MOVE_GRACE) {
+            let maximum = if maximum_move_speed > Speed::ZERO {
+                maximum_move_speed
+            } else {
+                REMOTE_COMMAND_DEFAULT_MOVE_SPEED
+            };
+            self.move_target = Some(RemoteMoveTarget::from_input(input, maximum));
+        }
+        self.command_epoch = Some(RemoteCommandEpoch(now));
+        true
+    }
+
+    #[cfg(any(test, target_arch = "arm"))]
+    pub(super) fn refresh_physical_input(&mut self, sample: PhysicalRemoteInput) {
+        let PhysicalRemoteInput {
+            raw: raw_input,
             now,
-            disengage_ticks,
+            disengage_epoch,
             deadband,
             inverted,
             maximum_move_speed,
             move_grace,
-        } = context;
-        if self.command_ticks.is_some_and(|command| {
-            !float_out_boy_ticks_elapsed_seconds(now, command, REMOTE_INPUT_TIMEOUT)
-        }) {
+        } = sample;
+        if self
+            .command_epoch
+            .is_some_and(|command| command.is_active(now))
+        {
             return;
         }
-        self.command_ticks = None;
+        self.command_epoch = None;
 
-        let Some(raw) = raw else {
-            self.input = crate::domain::FloatOutBoyRealtimeRemoteInput::new(
-                vescpkg_rs::SignedRatio::from_ratio_const(0.0),
-            );
+        let Some(raw_input) = raw_input else {
+            self.input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::from_ratio_const(0.0));
             self.move_target = None;
             return;
         };
-        let raw = raw.as_ratio();
         let deadband = deadband.as_ratio();
+        let raw = raw_input.as_ratio();
         let normalized = if raw.abs() < deadband {
             0.0
         } else {
             raw.signum() * (raw.abs() - deadband) / (1.0 - deadband)
         };
-        let normalized = vescpkg_rs::SignedRatio::clamped(normalized);
-        if normalized.as_ratio() == 0.0 {
+        let move_input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::clamped(normalized));
+        if normalized == 0.0 {
             self.move_target = self
-                .move_idle_ticks
-                .filter(|idle| {
-                    !float_out_boy_ticks_elapsed_seconds(now, *idle, REMOTE_MOVE_IDLE_TIMEOUT)
-                })
-                .map(|_| Speed::ZERO);
+                .move_idle_epoch
+                .filter(|epoch| !vescpkg_rs::timer_older(now, *epoch, REMOTE_MOVE_IDLE_TIMEOUT))
+                .map(|_| RemoteMoveTarget::STOPPED);
         } else if maximum_move_speed > Speed::ZERO
-            && float_out_boy_ticks_elapsed_seconds(now, disengage_ticks, move_grace)
+            && vescpkg_rs::timer_older(now, disengage_epoch, move_grace)
         {
-            self.move_target = Some(remote_move_target(normalized, maximum_move_speed));
-            self.move_idle_ticks = Some(now);
+            self.move_target = Some(RemoteMoveTarget::from_input(move_input, maximum_move_speed));
+            self.move_idle_epoch = Some(now);
         }
-        self.input = crate::domain::FloatOutBoyRealtimeRemoteInput::new(if inverted {
-            vescpkg_rs::SignedRatio::clamped(-normalized.as_ratio())
+        self.input = FloatOutBoyRealtimeRemoteInput::new(SignedRatio::clamped(if inverted {
+            -normalized
         } else {
             normalized
-        });
+        }));
     }
 
     #[cfg(test)]
     pub(super) fn update_input_tilt(
         &mut self,
         angle_limit: AngleDegrees,
+        filter_time_constant: VescSeconds,
         sample_rate: SampleRate,
         darkride: bool,
     ) -> AngleDegrees {
-        // C map: pinned-cutoff `remote_configure` configures SmoothSetpoint and
-        // `remote_update` advances it from the remote target.
         sample_rate
             .sample_period()
-            .map_or(self.input_tilt.value(), |elapsed| {
-                self.update_input_tilt_elapsed(angle_limit, elapsed, darkride)
+            .map_or(self.tilt_setpoint.value(), |period| {
+                self.update_input_tilt_elapsed(angle_limit, filter_time_constant, period, darkride)
             })
     }
 
-    #[cfg(test)]
     pub(super) fn update_input_tilt_elapsed(
         &mut self,
         angle_limit: AngleDegrees,
-        elapsed: VescSeconds,
-        darkride: bool,
-    ) -> AngleDegrees {
-        let frequency = smooth_setpoint_frequency(elapsed);
-        self.update_input_tilt_elapsed_with_filter_rate(
-            angle_limit,
-            elapsed,
-            darkride,
-            VescSeconds::from_seconds(0.2),
-            frequency.unwrap_or(SampleRate::from_hertz(500.0)),
-        )
-    }
-
-    pub(super) fn update_input_tilt_elapsed_with_filter_rate(
-        &mut self,
-        angle_limit: AngleDegrees,
-        elapsed: VescSeconds,
-        darkride: bool,
         filter_time_constant: VescSeconds,
-        filter_rate: SampleRate,
+        elapsed: VescSeconds,
+        darkride: bool,
     ) -> AngleDegrees {
         let seconds = elapsed.as_seconds();
         if !seconds.is_finite() || seconds <= 0.0 {
-            return self.input_tilt.value();
+            return self.tilt_setpoint.value();
         }
-        self.input_tilt.configure(
+        let speed_time_constant =
+            VescSeconds::from_seconds(filter_time_constant.as_seconds() * 0.25);
+        self.tilt_setpoint.configure(
             SmoothSetpointConfig {
                 time_constant: filter_time_constant,
-                on_speed_time_constant: VescSeconds::from_seconds(
-                    filter_time_constant.as_seconds() * 0.25,
-                ),
-                off_speed_time_constant: VescSeconds::from_seconds(
-                    filter_time_constant.as_seconds() * 0.25,
-                ),
+                on_speed_time_constant: speed_time_constant,
+                off_speed_time_constant: speed_time_constant,
                 winddown_time_constant: VescSeconds::from_seconds(0.2),
                 on_speed_up: AngularVelocity::from_degrees_per_second(100.0),
                 off_speed_up: AngularVelocity::from_degrees_per_second(100.0),
                 on_speed_down: AngularVelocity::from_degrees_per_second(100.0),
                 off_speed_down: AngularVelocity::from_degrees_per_second(100.0),
             },
-            filter_rate,
+            SampleRate::from_hertz(1.0 / seconds),
         );
         let upright_target = angle_limit * self.input.ratio().as_ratio();
         let target = if darkride {
@@ -372,97 +263,44 @@ impl RemoteControlState {
         } else {
             upright_target
         };
-        self.input_tilt.update(
+        self.tilt_setpoint.update(
             target,
             SmoothSetpointDirection::Forward,
             SmoothSetpointMultiplier::ONE,
             elapsed,
         );
-        self.input_tilt.value()
+        self.tilt_setpoint.value()
     }
 
-    pub(super) const fn input(self) -> crate::domain::FloatOutBoyRealtimeRemoteInput {
+    pub(super) const fn input(self) -> FloatOutBoyRealtimeRemoteInput {
         self.input
     }
 
-    pub(super) fn queue_move(&mut self, remote_move: RemoteMove) {
-        // C map: RC move setup stores a deciamp target, zeroes the counter, and
-        // converts packet time to 100 Hz steps before `do_rc_move(d)` consumes
-        // it at `third_party/float-out-boy/src/main.c:1735-1758` and
-        // `third_party/float-out-boy/src/main.c:275-286`.
-        self.counter = 0;
-        self.target = remote_move.target;
-        self.steps = remote_move.duration_steps;
-
-        if self.target.is_zero() {
-            self.current = zero_motor_current();
-        }
-    }
-
     #[cfg(test)]
-    fn request_active_move_current(&mut self, motor_erpm: Rpm) -> Option<MotorCurrent> {
-        if self.steps == 0 {
-            return None;
-        }
-
-        // Upstream READY falls through to `do_rc_move(d)` at
-        // `third_party/float-out-boy/src/main.c:1069`, where active RC move steps
-        // filter/request `rc_current` at `third_party/float-out-boy/src/main.c:276-286`.
-        self.filter_current(self.target.motor_current());
-        if motor_erpm.abs() > Rpm::from_revolutions_per_minute(800.0) {
-            self.current = zero_motor_current();
-        }
-        self.steps = self.steps.saturating_sub(1);
-        self.counter = self.counter.saturating_add(1);
-        if self.counter == 500 && self.target.should_halve_mid_move() {
-            self.target.halve();
-        }
-        Some(self.current)
+    pub(super) fn move_target_for_test(self) -> Option<Speed> {
+        self.move_target.map(RemoteMoveTarget::speed)
     }
 
-    #[cfg(test)]
-    fn filter_current(&mut self, target_current: MotorCurrent) -> MotorCurrent {
-        // C map: `do_rc_move` blends the previous RC current with the target
-        // using the same 95/5 smoothing factor at
-        // `third_party/float-out-boy/src/main.c:275-286` and
-        // `third_party/float-out-boy/src/main.c:291-298`.
-        self.current = self.current * REMOTE_CURRENT_FILTER.complement().as_ratio()
-            + target_current * REMOTE_CURRENT_FILTER.as_ratio();
-        self.current
-    }
-
-    pub(super) fn request_remote_move_current(
+    pub(super) fn request_ready_current(
         &mut self,
         vehicle_speed: Speed,
         elapsed: VescSeconds,
         torque_constant: MotorTorqueConstant,
     ) -> Option<MotorCurrent> {
         let Some(target) = self.move_target else {
-            self.move_integral = MotorTorque::ZERO;
+            self.move_integral = RemoteMoveIntegral::ZERO;
             return None;
         };
-        let error = target.as_kilometers_per_hour() - vehicle_speed.as_kilometers_per_hour();
-        self.move_integral = MotorTorque::from_newton_meters(
-            (self.move_integral.as_newton_meters() + error * elapsed.as_seconds()).clamp(
-                -REMOTE_MOVE_TORQUE_LIMIT.as_newton_meters(),
-                REMOTE_MOVE_TORQUE_LIMIT.as_newton_meters(),
-            ),
-        );
+        let error =
+            target.speed().as_kilometers_per_hour() - vehicle_speed.as_kilometers_per_hour();
+        self.move_integral.advance(error, elapsed);
         let torque = MotorTorque::from_newton_meters(
-            (1.2 * error + self.move_integral.as_newton_meters()).clamp(
-                -REMOTE_MOVE_TORQUE_LIMIT.as_newton_meters(),
-                REMOTE_MOVE_TORQUE_LIMIT.as_newton_meters(),
-            ),
+            (1.2 * error + self.move_integral.torque().as_newton_meters()).clamp(-10.0, 10.0),
         );
         Some(torque_constant.motor_current_from_torque(torque))
     }
 }
 
 #[cfg(test)]
-fn smooth_setpoint_frequency(elapsed: VescSeconds) -> Option<SampleRate> {
-    let seconds = elapsed.as_seconds();
-    (seconds.is_finite() && seconds > 0.0).then(|| SampleRate::from_hertz(1.0 / seconds))
-}
-
-#[cfg(test)]
+#[path = "remote_control/tests.rs"]
 mod tests;

@@ -118,6 +118,8 @@ impl EepromWord {
 pub enum EepromError {
     /// A required word was not available to read.
     Missing,
+    /// A signature-committed image did not contain a complete first word.
+    ImageTooShort,
     /// The requested consecutive word address cannot be represented by the ABI.
     AddressOverflow,
     /// Firmware rejected a word write.
@@ -128,6 +130,7 @@ impl core::fmt::Display for EepromError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter.write_str(match self {
             Self::Missing => "custom EEPROM word is unavailable",
+            Self::ImageTooShort => "custom EEPROM image has no complete signature word",
             Self::AddressOverflow => "custom EEPROM address range overflows the ABI",
             Self::FirmwareRejected => "firmware rejected the custom EEPROM write",
         })
@@ -319,6 +322,34 @@ impl CustomEeprom {
         image: &[u8; N],
     ) -> Result<(), EepromError> {
         self.write_image_at(effects, EepromWordOffset::from_index(0), image)
+    }
+
+    /// Store an image whose first word is its validity signature.
+    ///
+    /// The signature is cleared before writing the payload and restored only
+    /// after every payload word succeeds, so interrupted writes remain invalid.
+    pub fn write_signature_committed_image<const N: usize>(
+        self,
+        effects: &crate::FirmwareEffects,
+        image: &[u8; N],
+    ) -> Result<(), EepromError> {
+        let signature = <[u8; EepromWord::BYTE_LEN]>::try_from(
+            image
+                .get(..EepromWord::BYTE_LEN)
+                .ok_or(EepromError::ImageTooShort)?,
+        )
+        .map_err(|_| EepromError::ImageTooShort)?;
+        let payload = image
+            .get(EepromWord::BYTE_LEN..)
+            .ok_or(EepromError::ImageTooShort)?;
+        let signature_offset = EepromWordOffset::from_index(0);
+        self.write_at(effects, signature_offset, EepromWord::from_u32(0))?;
+        self.write_bytes_at_offset(effects, EepromWordOffset::from_index(1), payload)?;
+        self.write_at(
+            effects,
+            signature_offset,
+            EepromWord::from_ne_bytes(signature),
+        )
     }
 
     /// Store an owned fixed-size byte image at a typed word offset.

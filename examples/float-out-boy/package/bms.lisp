@@ -41,7 +41,6 @@
             (setq err-print-time (systime))
             (print (str-merge "[refloat] BMS loop error: " (to-str (second res))))
         })
-
         (sleep 0.2)
     })
 })

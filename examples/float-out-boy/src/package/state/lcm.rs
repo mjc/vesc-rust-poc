@@ -12,7 +12,7 @@
     reason = "LCM wire encoding uses fixed-width protocol offsets"
 )]
 
-use super::{FloatOutBoyPackageState, LedRuntimeOverrides};
+use super::FloatOutBoyPackageState;
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
@@ -34,34 +34,26 @@ fn nul_terminated_prefix(bytes: &[u8]) -> &[u8] {
 }
 
 fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] {
-    if !config.is_enabled() {
+    if !config.on {
         return [0; 3];
     }
 
-    let front = config.front().brightness();
-    let (active, status) = if config.are_headlights_on() {
+    let front = config.front.brightness;
+    let (active, status) = if config.headlights_on {
         (
-            config.headlights().brightness(),
-            config.status().brightness_headlights_on(),
+            config.headlights.brightness,
+            config.status.brightness_headlights_on,
         )
     } else {
-        (front, config.status().brightness_headlights_off())
+        (front, config.status.brightness_headlights_off)
     };
     [active, front, status].map(|ratio| (ratio.as_ratio() * 100.0) as u8)
-}
-
-fn led_power_override(mask: u8, value: u8, bit: u8) -> Option<crate::leds::FloatOutBoyLedPower> {
-    (mask & bit != 0).then_some(crate::leds::FloatOutBoyLedPower::from_enabled(
-        value & bit != 0,
-    ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LcmState {
     hardware_mode: u8,
-    brightness: u8,
-    brightness_idle: u8,
-    status_brightness: u8,
+    brightness: [u8; 3],
     lights_off_when_lifted: bool,
     name: [u8; MAX_LCM_NAME_LENGTH],
     payload: [u8; MAX_LCM_PAYLOAD_LENGTH],
@@ -84,9 +76,7 @@ impl LcmState {
     pub(super) fn new(hardware_mode: u8, lights_off_when_lifted: bool) -> Self {
         Self {
             hardware_mode,
-            brightness: 0,
-            brightness_idle: 0,
-            status_brightness: 0,
+            brightness: [0; 3],
             lights_off_when_lifted,
             name: [0; MAX_LCM_NAME_LENGTH],
             payload: [0; MAX_LCM_PAYLOAD_LENGTH],
@@ -98,17 +88,18 @@ impl LcmState {
         self.hardware_mode = hardware_mode;
     }
 
+    #[cfg(test)]
+    pub(super) const fn hardware_mode(self) -> u8 {
+        self.hardware_mode
+    }
+
     pub(super) fn configure(&mut self, config: crate::leds::FloatOutBoyLedsConfig) {
         if !self.enabled() {
             return;
         }
 
-        [
-            self.brightness,
-            self.brightness_idle,
-            self.status_brightness,
-        ] = configured_brightness(config);
-        self.lights_off_when_lifted = config.turns_lights_off_when_lifted();
+        self.brightness = configured_brightness(config);
+        self.lights_off_when_lifted = config.lifted.lights_off;
     }
 
     const fn enabled(self) -> bool {
@@ -131,9 +122,7 @@ impl LcmState {
             return;
         }
 
-        self.brightness = payload[0];
-        self.brightness_idle = payload[1];
-        self.status_brightness = payload[2];
+        self.brightness.copy_from_slice(&payload[..3]);
         let extra = &payload[3..];
         self.payload_size = extra.len().min(MAX_LCM_PAYLOAD_LENGTH);
         self.payload[..self.payload_size].copy_from_slice(&extra[..self.payload_size]);
@@ -160,7 +149,7 @@ impl LcmState {
         packet.push(state);
         packet.push(firmware_fault_code(telemetry.firmware_fault()));
 
-        let duty_or_pitch = if matches!(ride_state.run_state(), FloatOutBoyRunState::Running) {
+        let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
         } else if self.lights_off_when_lifted {
             degrees(base.attitude().pitch().angle()).abs().min(255.0) as u8
@@ -177,9 +166,7 @@ impl LcmState {
         );
         packet.push_scaled_i16(telemetry.battery_current().current().as_amps(), 1.0);
         packet.push_scaled_i16(telemetry.input_voltage().voltage().as_volts(), 10.0);
-        packet.push(self.brightness);
-        packet.push(self.brightness_idle);
-        packet.push(self.status_brightness);
+        packet.extend(&self.brightness);
         packet.extend(&self.payload[..self.payload_size]);
         self.payload_size = 0;
         packet
@@ -189,9 +176,7 @@ impl LcmState {
         let mut packet = lcm_packet(FloatOutBoyAppDataCommand::LcmLightInfo);
         if self.enabled() {
             packet.push(3);
-            packet.push(self.brightness);
-            packet.push(self.brightness_idle);
-            packet.push(self.status_brightness);
+            packet.extend(&self.brightness);
             // Refloat's Float-specific LED fields are intentionally not sent
             // through this LCM interface.
             for _ in 0..6 {
@@ -220,7 +205,7 @@ impl LcmState {
 
 fn lcm_packet<const N: usize>(command: FloatOutBoyAppDataCommand) -> FloatOutBoyPacket<N> {
     let mut packet = FloatOutBoyPacket::new();
-    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get());
+    packet.push(FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID);
     packet.push(command.id());
     packet
 }
@@ -241,13 +226,10 @@ impl FloatOutBoyPackageState {
     ) -> bool {
         use FloatOutBoyAppDataCommand as Command;
 
-        let [package_id, command_id, payload @ ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get() {
-            return false;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command_id) else {
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
             return false;
         };
 
@@ -270,25 +252,28 @@ impl FloatOutBoyPackageState {
             Command::LightsControl => {
                 if let [_, _, _, mask, value, ..] = payload {
                     if *mask != 0 {
-                        self.apply_led_runtime_overrides(LedRuntimeOverrides {
-                            power: led_power_override(*mask, *value, 1),
-                            headlights_power: led_power_override(*mask, *value, 2),
-                        });
+                        self.set_led_runtime_overrides(
+                            (mask & 1 != 0).then_some(value & 1 != 0),
+                            (mask & 2 != 0).then_some(value & 2 != 0),
+                        );
                     }
                 }
                 let status = self.led_runtime_status();
                 reply(&[
-                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     FloatOutBoyAppDataCommand::LightsControl.id(),
-                    u8::from(status.is_enabled()) | (u8::from(status.are_headlights_on()) << 1),
+                    u8::from(status.enabled) | (u8::from(status.headlights_enabled) << 1),
                 ])
             }
             _ => false,
         }
     }
+
+    #[cfg(test)]
+    pub(super) fn set_lcm_hardware_mode_for_test(&mut self, mode: u8) {
+        self.lcm.set_hardware_mode(mode);
+    }
 }
 
-#[cfg(test)]
-mod test_support;
 #[cfg(test)]
 mod tests;

@@ -3,9 +3,9 @@ use crate::domain::{
     FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus,
     FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
 };
+use vescpkg_rs::WrappingTimer;
 use vescpkg_rs::prelude::TimestampTicks;
 use vescpkg_rs::prelude::{BatteryCurrent, BatteryVoltage, Current, Voltage};
-use vescpkg_rs::timer_older_whole_seconds as float_out_boy_ticks_elapsed;
 
 const CHARGING_WIRE_SCALE: f32 = 10.0;
 
@@ -76,13 +76,13 @@ pub(super) fn handle_packet(
 pub(super) fn timeout(
     payloads: FloatOutBoyAllDataPayloads,
     now: TimestampTicks,
-    last_update: TimestampTicks,
+    last_update: WrappingTimer,
 ) -> FloatOutBoyAllDataPayloads {
     let base = payloads.base();
     let status = base.status();
     let ride_state = status.ride_state();
     if !matches!(ride_state.charging(), FloatOutBoyChargingState::Charging)
-        || !float_out_boy_ticks_elapsed(now, last_update, 5)
+        || !last_update.older_than_secs(now, 5)
     {
         return payloads;
     }

@@ -1,4 +1,5 @@
 use super::FloatOutBoyPackageState;
+use crate::domain::FloatOutBoyAllDataPayloads;
 use vescpkg_rs::PackageStart;
 
 /// Allocate and install source-startup Float Out Boy state through firmware memory.
@@ -14,17 +15,11 @@ use vescpkg_rs::PackageStart;
 fn allocate_float_out_boy_startup_state(
     start: &mut PackageStart,
 ) -> Result<(), vescpkg_rs::PackageStartError> {
-    start.install_default_runtime_state::<FloatOutBoyPackageState>()?;
+    start.install_runtime_state(FloatOutBoyPackageState::new(
+        FloatOutBoyAllDataPayloads::default(),
+    ))?;
     #[cfg(target_arch = "arm")]
     {
-        let history_allocated = start
-            .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
-                state.allocate_motor_kinematics_history()
-            })
-            .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)?;
-        if !history_allocated {
-            return Err(vescpkg_rs::PackageStartError::AllocationFailed);
-        }
         let buffer = start.take_data_recorder_buffer();
         start
             .with_runtime_state::<FloatOutBoyPackageState, _>(|state| {
@@ -32,7 +27,7 @@ fn allocate_float_out_boy_startup_state(
             })
             .ok_or(vescpkg_rs::PackageStartError::StateTypeMismatch)
     }
-    #[cfg(not(target_arch = "arm"))]
+    #[cfg(test)]
     {
         Ok(())
     }

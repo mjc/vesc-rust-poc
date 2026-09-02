@@ -10,40 +10,4 @@
 //! - `third_party/float-out-boy/src/main.c:1876-1901` defines realtime-data ID-list packet layout.
 //! - `third_party/float-out-boy/src/main.c:1190-1205` defines startup `Data` initialization order.
 
-mod all_data;
-mod app_data;
-mod realtime;
-mod ride_state;
-mod state;
-mod wire;
-
-pub use self::all_data::{
-    FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload, FloatOutBoyAllDataMode2Payload,
-    FloatOutBoyAllDataMode3Payload, FloatOutBoyAllDataMode4Payload, FloatOutBoyAllDataMotorPayload,
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataResponse, FloatOutBoyAllDataStatus,
-};
-pub use self::app_data::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataMode, FloatOutBoyAllDataRequest,
-    FloatOutBoyAllDataRequestError, FloatOutBoyAppDataCommand, FloatOutBoyAppDataPackageId,
-};
-pub use self::realtime::{
-    FLOAT_OUT_BOY_REALTIME_DATA_ITEMS, FLOAT_OUT_BOY_REALTIME_RECORDED_ITEMS,
-    FLOAT_OUT_BOY_REALTIME_RUNTIME_ITEMS, FloatOutBoyRealtimeAtrAccelerationDiff,
-    FloatOutBoyRealtimeAtrSpeedBoost, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
-    FloatOutBoyRealtimeDataHeader, FloatOutBoyRealtimeDataItem,
-    FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents,
-    FloatOutBoyRealtimeMotorTemperatures, FloatOutBoyRealtimeRemoteInput,
-    FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints,
-    FloatOutBoyRealtimeTail,
-};
-pub use self::ride_state::FloatOutBoyRideState;
-pub use self::state::{
-    FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyDarkRideState,
-    FloatOutBoyDataRecorderFlags, FloatOutBoyFatalErrorState, FloatOutBoyMode, FloatOutBoyRunState,
-    FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition, FloatOutBoyTractionControlState,
-    FloatOutBoyWheelSlipState,
-};
-pub use crate::footpad::{
-    FloatOutBoyFootpadAdcMapping, FloatOutBoyFootpadSample, FloatOutBoyFootpadState,
-};
+pub use vesc_float_out_boy_protocol::*;

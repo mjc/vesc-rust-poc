@@ -1,3 +1,4 @@
+#[cfg(not(test))]
 use core::ffi::c_char;
 
 /// Borrowed UTF-8 text backed by NUL-terminated storage for firmware calls.
@@ -36,6 +37,7 @@ impl<'a> FirmwareStr<'a> {
         self.0.strip_suffix('\0').unwrap_or(self.0)
     }
 
+    #[cfg(not(test))]
     pub(crate) const fn as_ptr(self) -> *const c_char {
         self.0.as_ptr().cast()
     }

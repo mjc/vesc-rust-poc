@@ -1,8 +1,8 @@
 use super::{
     AccelerationG, AngleDegrees, AngleRadians, AngularVelocity, BatteryCellCount, Charge, Current,
-    Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude, Longitude,
-    Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature, TimestampTicks,
-    VescSeconds, Voltage,
+    DeciampCurrent, Distance, DistancePerEnergy, Energy, EnergyPerDistance, Frequency, Latitude,
+    Longitude, Percent, Power, Ratio, Rpm, SampleRate, Speed, SystemTicks, Temperature,
+    TimestampTicks, VescSeconds, Voltage,
 };
 
 macro_rules! assert_f32_eq {
@@ -56,11 +56,11 @@ fn scalar_units_round_trip_through_named_accessors() {
 }
 
 #[test]
-fn frequency_normalizes_against_a_sample_rate_without_erasing_units_first() {
-    let cutoff = Frequency::from_hertz(25.0);
-    let sample_rate = SampleRate::from_hertz(1_000.0);
+fn signed_deciamp_current_preserves_wire_value_and_converts_to_amps() {
+    let current = DeciampCurrent::from_deciamps(-42);
 
-    assert_f32_eq!(cutoff / sample_rate, 0.025);
+    assert_eq!(current.as_deciamps(), -42);
+    assert_f32_eq!(current.as_current().as_amps(), -4.200_000_3);
 }
 
 #[test]
@@ -403,31 +403,6 @@ fn timestamp_ticks_convert_to_vesc_seconds() {
             .as_seconds(),
         1.5
     );
-}
-
-#[test]
-fn vesc_seconds_convert_to_saturating_system_ticks() {
-    assert_eq!(
-        VescSeconds::from_seconds(2.0)
-            .to_system_ticks_saturating()
-            .expect("finite seconds")
-            .as_ticks(),
-        20_000
-    );
-    assert_eq!(
-        VescSeconds::from_seconds(-1.0)
-            .to_system_ticks_saturating()
-            .expect("finite seconds")
-            .as_ticks(),
-        0
-    );
-    for non_finite in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-        assert!(
-            VescSeconds::from_seconds(non_finite)
-                .to_system_ticks_saturating()
-                .is_none()
-        );
-    }
 }
 
 #[test]

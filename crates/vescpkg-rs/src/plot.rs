@@ -4,7 +4,7 @@
     reason = "error variants document failures"
 )]
 
-use crate::FirmwareStr;
+use core::ffi::CStr;
 
 /// Failure returned by plotting operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,15 +30,15 @@ impl Plot {
         Self
     }
 
-    /// Initialize a named plot and channel.
-    pub fn init(&self, title: FirmwareStr<'_>, channel: FirmwareStr<'_>) -> Result<(), PlotError> {
+    /// Initialize a named plot and channel using NUL-terminated strings.
+    pub fn init(&self, title: &CStr, channel: &CStr) -> Result<(), PlotError> {
         unsafe { crate::ffi::plot_init(title.as_ptr(), channel.as_ptr()) }
             .then_some(())
             .ok_or(PlotError::Unavailable)
     }
 
-    /// Add a named graph.
-    pub fn add_graph(&self, name: FirmwareStr<'_>) -> Result<(), PlotError> {
+    /// Add a named graph using a NUL-terminated string.
+    pub fn add_graph(&self, name: &CStr) -> Result<(), PlotError> {
         unsafe { crate::ffi::plot_add_graph(name.as_ptr()) }
             .then_some(())
             .ok_or(PlotError::Unavailable)

@@ -6,13 +6,6 @@ use crate::config::{
 use vescpkg_rs::PackageStart;
 use vescpkg_rs::{ConfigBytes, ConfigXml};
 
-#[cfg(test)]
-pub(crate) use test_support::set_float_out_boy_custom_config_for_test;
-#[cfg(test)]
-pub(super) use test_support::{
-    install_test_float_out_boy_runtime_state, lock_test_float_out_boy_config_state,
-};
-
 /// Float Out Boy's typed custom-config callback set.
 ///
 /// C map: `get_cfg`, `set_cfg`, and `get_cfg_xml` are implemented at
@@ -90,6 +83,51 @@ pub(super) fn register_float_out_boy_callbacks(
     >()
 }
 
+#[cfg(test)]
+pub(super) fn lock_test_float_out_boy_config_state() -> impl Drop {
+    super::test_support::lock_float_out_boy_runtime_state()
+}
+
+#[cfg(test)]
+pub(super) fn install_test_float_out_boy_runtime_state(
+    state: &mut FloatOutBoyPackageState,
+) -> Option<impl Drop + '_> {
+    vescpkg_rs::test_support::install_state(&crate::__VESCPKG_PACKAGE_STATE, state)
+}
+
+#[cfg(test)]
+fn float_out_boy_set_cfg_payload_with_state(
+    config: ConfigBytes<'_, FLOAT_OUT_BOY_CONFIG_LEN>,
+    state: &mut FloatOutBoyPackageState,
+) -> bool {
+    // Upstream `set_cfg` gates special modes, deserializes, persists, and
+    // reconfigures at `third_party/float-out-boy/src/main.c:2360-2386`; generated
+    // `conf/confparser.c:187-190` rejects bad signatures before field reads.
+    // This test helper mirrors the production state/effect/state sequence
+    // without invoking the unsafe firmware pointer trampoline.
+    let Some(config) = state.prepare_serialized_config(config.as_bytes()) else {
+        return false;
+    };
+    let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+        super::state::store_persisted_config(effects, &config)
+    });
+    let now = vescpkg_rs::FirmwareClock::current_timestamp();
+    state.commit_custom_config(config, stored, now);
+    let migration = vescpkg_rs::test_support::with_firmware_effects(
+        super::state::migrate_legacy_firmware_imu_settings,
+    );
+    state.finish_configure_active(migration);
+    true
+}
+
+#[cfg(test)]
+pub(crate) fn set_float_out_boy_custom_config_for_test(
+    state: &mut FloatOutBoyPackageState,
+    config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN],
+) -> bool {
+    float_out_boy_set_cfg_payload_with_state(ConfigBytes::new(config), state)
+}
+
 #[cfg(all(not(test), target_arch = "arm"))]
 fn runtime_float_out_boy_config_xml() -> ConfigXml<'static> {
     // C map: Float Out Boy returns generated `data_float_out_boy_config_` directly from
@@ -99,12 +137,10 @@ fn runtime_float_out_boy_config_xml() -> ConfigXml<'static> {
     ConfigXml::new(&FLOAT_OUT_BOY_CONFIG_XML)
 }
 
-#[cfg(any(test, not(target_arch = "arm")))]
+#[cfg(test)]
 fn runtime_float_out_boy_config_xml() -> ConfigXml<'static> {
     ConfigXml::new(&FLOAT_OUT_BOY_CONFIG_XML)
 }
 
-#[cfg(test)]
-mod test_support;
 #[cfg(test)]
 mod tests;

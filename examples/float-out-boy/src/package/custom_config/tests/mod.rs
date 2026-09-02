@@ -2,8 +2,8 @@ use super::{
     FloatOutBoyCustomConfig, install_test_float_out_boy_runtime_state,
     lock_test_float_out_boy_config_state, set_float_out_boy_custom_config_for_test,
 };
-use crate::config::FLOAT_OUT_BOY_CONFIG_LEN;
-use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
+use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FLOAT_OUT_BOY_CONFIG_XML};
+use crate::domain::{FloatOutBoyAllDataPayloads, FloatOutBoyMode, FloatOutBoyRunState};
 use crate::package::FloatOutBoyPackageState;
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, default_float_out_boy_config_bytes, editable_config_from_state,
@@ -12,9 +12,10 @@ use crate::package::test_support::{
 use vescpkg_rs::test_support::{FirmwareTest, invoke_stateful_custom_config_handler};
 use vescpkg_rs::{StatefulCustomConfigCallback, TimestampTicks};
 
-fn non_default_float_out_boy_config() -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
+fn nondefault_float_out_boy_config() -> [u8; FLOAT_OUT_BOY_CONFIG_LEN] {
     let mut config = default_float_out_boy_config_bytes();
     config.edit_float_out_boy_config(|config| {
+        assert!(config.set_startup_pitch_tolerance(vescpkg_rs::AngleDegrees::from_degrees(7.0)));
         assert!(config.set_meta_is_default(false));
     });
     config
@@ -35,10 +36,10 @@ fn runtime_set_config(config: &[u8; FLOAT_OUT_BOY_CONFIG_LEN]) -> bool {
 fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
     let bytes = FloatOutBoyCustomConfig::config_xml();
 
-    assert_eq!(bytes.as_bytes().len(), 27_514);
+    assert_eq!(bytes.as_bytes().len(), FLOAT_OUT_BOY_CONFIG_XML.len());
     assert_eq!(
         &bytes.as_bytes()[..6],
-        &[0x00, 0x05, 0x9e, 0xf7, 0x78, 0xda]
+        &[0x00, 0x05, 0x5c, 0xce, 0x78, 0xda]
     );
 }
 
@@ -46,7 +47,7 @@ fn custom_config_xml_callback_returns_float_out_boy_settings_blob() {
 fn custom_config_default_callback_returns_upstream_serialized_defaults() {
     let config = FloatOutBoyCustomConfig::default_config();
 
-    // Float Out Boy's default `get_cfg` allocates a temporary config,
+    // The pinned cutoff default `get_cfg` allocates a temporary config,
     // applies generated defaults, and serializes it at `third_party/float-out-boy/src/main.c:2339-2350`.
     // The generated format comes from `third_party/float-out-boy/src/Makefile:28-31`;
     // generated `conf/confparser.h:11-12` fixes signature/length, and
@@ -95,7 +96,7 @@ fn stateful_custom_config_set_callback_writes_runtime_state() {
     let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
     let runtime_state = install_test_float_out_boy_runtime_state(&mut state);
     assert!(runtime_state.is_some());
-    let incoming = non_default_float_out_boy_config();
+    let incoming = nondefault_float_out_boy_config();
 
     assert!(runtime_set_config(&incoming));
     let persisted = firmware
@@ -111,7 +112,7 @@ fn stateful_custom_config_set_callback_writes_runtime_state() {
 #[test]
 fn stateful_custom_config_set_callback_returns_false_without_runtime_state() {
     let _state_lock = lock_test_float_out_boy_config_state();
-    let incoming = non_default_float_out_boy_config();
+    let incoming = nondefault_float_out_boy_config();
 
     // C map: upstream `set_cfg` needs `Data *` before storing into
     // `d->float_conf` at `third_party/float-out-boy/src/main.c:2368`.
@@ -133,7 +134,7 @@ fn custom_config_current_callback_reads_state_serialized_config() {
 fn custom_config_set_callback_stores_serialized_config_in_state() {
     let firmware = FirmwareTest::new();
     firmware.set_clock_ticks(1_500);
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.replace_idle_epoch_for_test(TimestampTicks::from_ticks(7));
     let mut incoming = default_float_out_boy_config_bytes();
     incoming[232] = crate::lcm::FloatOutBoyLedMode::Internal.id();
@@ -171,6 +172,25 @@ fn custom_config_set_callback_rejects_bad_signature_like_float_out_boy() {
     // C map: `third_party/float-out-boy/src/conf/confparser.c:187-190` rejects bad signatures before
     // any field storage.
     assert_eq!(*current.as_bytes(), default_float_out_boy_config_bytes());
+}
+
+#[test]
+fn custom_config_set_callback_rejects_zero_filter_time_constant_before_persistence() {
+    let _firmware = FirmwareTest::new();
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads());
+    let mut incoming = default_float_out_boy_config_bytes();
+    incoming.edit_float_out_boy_config(|config| {
+        assert!(config.set_atr_filter_time_constant(vescpkg_rs::VescSeconds::ZERO));
+    });
+
+    assert!(!set_float_out_boy_custom_config_for_test(
+        &mut state, &incoming
+    ));
+    assert_ne!(state.configured_loop_time_us(), u32::MAX);
+    assert_eq!(
+        *FloatOutBoyCustomConfig::current_config(&state).as_bytes(),
+        default_float_out_boy_config_bytes()
+    );
 }
 
 #[test]

@@ -1,8 +1,6 @@
 use std::vec::Vec;
 
-use super::{
-    FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel,
-};
+use super::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert, FloatOutBoyBeeperLevel};
 use crate::config::FloatOutBoyConfigImage;
 use vescpkg_rs::TimestampTicks;
 
@@ -10,7 +8,7 @@ use vescpkg_rs::TimestampTicks;
 fn short_alert_transitions_from_elapsed_controller_time() {
     let mut beeper = FloatOutBoyBeeper::new(true);
     assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(100)), None);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    beeper.alert(FloatOutBoyBeeperAlert::Short(1));
 
     assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(600)), None);
     assert_eq!(
@@ -25,35 +23,6 @@ fn short_alert_transitions_from_elapsed_controller_time() {
 }
 
 #[test]
-fn delayed_tick_advances_once_and_refreshes_the_epoch_like_refloat() {
-    let mut beeper = FloatOutBoyBeeper::new(true);
-    assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(100)), None);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
-
-    assert_eq!(
-        beeper.tick_at(TimestampTicks::from_ticks(10_000)),
-        Some(FloatOutBoyBeeperLevel::Low)
-    );
-    assert_eq!(beeper.tick_at(TimestampTicks::from_ticks(10_500)), None);
-    assert_eq!(
-        beeper.tick_at(TimestampTicks::from_ticks(10_501)),
-        Some(FloatOutBoyBeeperLevel::High)
-    );
-}
-
-impl FloatOutBoyBeeper {
-    fn on(&mut self) {
-        if self.enabled && self.transitions == 0 {
-            self.pending_level = Some(FloatOutBoyBeeperLevel::High);
-        }
-    }
-
-    fn force_off(&mut self) {
-        self.pending_level = Some(FloatOutBoyBeeperLevel::Low);
-    }
-}
-
-#[test]
 fn idle_beeper_tick_stays_quiet() {
     let mut beeper = FloatOutBoyBeeper::new(true);
 
@@ -63,7 +32,7 @@ fn idle_beeper_tick_stays_quiet() {
 #[test]
 fn completed_alert_tick_stays_quiet() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    beeper.alert(FloatOutBoyBeeperAlert::Short(1));
     for _ in 0..240 {
         let _ = beeper.tick();
     }
@@ -95,7 +64,7 @@ fn continuous_warning_flags_decode_exact_float_out_boy_generated_offsets() {
 #[test]
 fn three_short_alert_matches_float_out_boy_transition_sequence() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::THREE));
+    beeper.alert(FloatOutBoyBeeperAlert::Short(3));
 
     let changes: Vec<_> = (1..=42)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -118,7 +87,7 @@ fn three_short_alert_matches_float_out_boy_transition_sequence() {
 #[test]
 fn three_long_alert_uses_float_out_boy_long_period() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::THREE));
+    beeper.alert(FloatOutBoyBeeperAlert::Long(3));
 
     let changes: Vec<_> = (1..=182)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -141,7 +110,7 @@ fn three_long_alert_uses_float_out_boy_long_period() {
 #[test]
 fn four_short_alert_uses_float_out_boy_transition_count() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::FOUR));
+    beeper.alert(FloatOutBoyBeeperAlert::Short(4));
 
     let changes: Vec<_> = (1..=54)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -154,7 +123,7 @@ fn four_short_alert_uses_float_out_boy_transition_count() {
 #[test]
 fn seven_long_alert_uses_float_out_boy_capped_transition_count() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Long(FloatOutBoyBeeperCount::SEVEN));
+    beeper.alert(FloatOutBoyBeeperAlert::Long(7));
 
     let changes: Vec<_> = (1..=390)
         .filter_map(|tick| beeper.tick().map(|level| (tick, level)))
@@ -167,11 +136,11 @@ fn seven_long_alert_uses_float_out_boy_capped_transition_count() {
 #[test]
 fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.alert(FloatOutBoyBeeperAlert::Short(FloatOutBoyBeeperCount::ONE));
+    beeper.alert(FloatOutBoyBeeperAlert::Short(1));
 
-    beeper.off();
+    beeper.off(false);
     assert_eq!(beeper.take_level(), None);
-    beeper.force_on();
+    beeper.on(true);
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
 
     let changes: Vec<_> = (1..=18)
@@ -186,9 +155,9 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
         ]
     );
 
-    beeper.on();
+    beeper.on(false);
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
-    beeper.off();
+    beeper.off(false);
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
 }
 
@@ -196,16 +165,16 @@ fn continuous_beeper_respects_alert_guard_and_force_like_float_out_boy() {
 fn disabled_beeper_rejects_on_but_still_allows_forced_off_like_float_out_boy() {
     let mut beeper = FloatOutBoyBeeper::new(false);
 
-    beeper.force_on();
+    beeper.on(true);
     assert_eq!(beeper.take_level(), None);
-    beeper.force_off();
+    beeper.off(true);
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::Low));
 }
 
 #[test]
 fn disabling_an_active_beeper_avoids_refloats_stuck_high_bug() {
     let mut beeper = FloatOutBoyBeeper::new(true);
-    beeper.force_on();
+    beeper.on(true);
     assert_eq!(beeper.take_level(), Some(FloatOutBoyBeeperLevel::High));
 
     beeper.set_enabled(false);

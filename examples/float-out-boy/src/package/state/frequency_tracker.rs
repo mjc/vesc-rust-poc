@@ -1,4 +1,3 @@
-use crate::ema::EmaAlpha;
 use vescpkg_rs::prelude::{Frequency, SampleRate, TimestampTicks, VescSeconds};
 #[cfg(any(test, target_arch = "arm"))]
 use vescpkg_rs::timer_older_whole_seconds;
@@ -8,7 +7,7 @@ pub(super) struct FrequencyTracker {
     elapsed: VescSeconds,
     frequency: SampleRate,
     filter_frequency: SampleRate,
-    alpha: EmaAlpha,
+    alpha: f32,
     filter_last_update: TimestampTicks,
     first: bool,
     running: bool,
@@ -40,7 +39,7 @@ impl FrequencyTracker {
             elapsed: VescSeconds::from_seconds(0.0),
             frequency,
             filter_frequency: frequency,
-            alpha: EmaAlpha::from_sample_rate(Frequency::from_hertz(1.0), frequency),
+            alpha: vescpkg_rs::ema_alpha(Frequency::from_hertz(1.0), frequency),
             filter_last_update: now,
             first: true,
             running: false,
@@ -52,7 +51,7 @@ impl FrequencyTracker {
         self.elapsed = elapsed;
         let target = 1.0 / elapsed.as_seconds();
         self.frequency = SampleRate::from_hertz(
-            self.frequency.as_hertz() + self.alpha.factor() * (target - self.frequency.as_hertz()),
+            self.frequency.as_hertz() + self.alpha * (target - self.frequency.as_hertz()),
         );
     }
 
@@ -69,8 +68,7 @@ impl FrequencyTracker {
             && change > 0.03
         {
             self.filter_frequency = self.frequency;
-            self.alpha =
-                EmaAlpha::from_sample_rate(Frequency::from_hertz(1.0), self.filter_frequency);
+            self.alpha = vescpkg_rs::ema_alpha(Frequency::from_hertz(1.0), self.filter_frequency);
             self.filter_last_update = now;
             self.first = false;
             self.recalculations = self.recalculations.saturating_add(1);
@@ -84,12 +82,10 @@ impl FrequencyTracker {
         self.filter_frequency
     }
 
-    #[cfg(test)]
     pub(super) const fn elapsed(self) -> VescSeconds {
         self.elapsed
     }
 
-    #[cfg(test)]
     pub(super) const fn frequency(self) -> SampleRate {
         self.frequency
     }

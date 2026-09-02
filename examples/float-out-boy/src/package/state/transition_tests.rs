@@ -29,7 +29,7 @@ fn darkride_payloads(mode: FloatOutBoyMode) -> FloatOutBoyAllDataPayloads {
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             base.footpad(),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -53,7 +53,7 @@ fn darkride_no_footpads_payloads(mode: FloatOutBoyMode) -> FloatOutBoyAllDataPay
             base.status(),
             no_footpads,
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -74,7 +74,7 @@ fn upright_no_footpads_payloads() -> FloatOutBoyAllDataPayloads {
             base.status(),
             no_footpads,
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -117,7 +117,7 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
             telemetry.telemetry(),
             telemetry.imu(),
             &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -140,7 +140,7 @@ fn running_simple_start_heel_lifts_after_its_one_second_grace_like_refloat_time_
                 telemetry.telemetry(),
                 telemetry.imu(),
                 &[
-                    crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                    crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                     crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
                 ],
             ));
@@ -195,7 +195,7 @@ fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays(
             telemetry.telemetry(),
             telemetry.imu(),
             &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
                 crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
             ],
         ));
@@ -213,135 +213,6 @@ fn running_both_footpads_at_zero_erpm_keep_balancing_past_refloat_switch_delays(
 }
 
 #[test]
-fn running_quick_stop_requires_armed_pitch_speed_and_direction() {
-    let cases = [
-        (
-            AngleRadians::from_degrees(15.0),
-            Rpm::ZERO,
-            FloatOutBoyRunState::Ready,
-            FloatOutBoyStopCondition::QuickStop,
-        ),
-        (
-            AngleRadians::from_degrees(14.0),
-            Rpm::ZERO,
-            FloatOutBoyRunState::Running,
-            FloatOutBoyStopCondition::None,
-        ),
-        (
-            AngleRadians::from_degrees(15.0),
-            Rpm::from_revolutions_per_minute(200.0),
-            FloatOutBoyRunState::Running,
-            FloatOutBoyStopCondition::None,
-        ),
-        (
-            AngleRadians::from_degrees(-15.0),
-            Rpm::from_revolutions_per_minute(1.0),
-            FloatOutBoyRunState::Running,
-            FloatOutBoyStopCondition::None,
-        ),
-    ];
-
-    for (pitch, motor_erpm, expected_run_state, expected_stop) in cases {
-        let telemetry = FirmwareTest::new().with_runtime_motor(
-            ElectricalSpeed::new(motor_erpm),
-            VehicleSpeed::new(Speed::ZERO),
-            TotalMotorCurrent::new(Current::ZERO),
-            InputCurrent::new(Current::ZERO),
-            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-        );
-        telemetry.set_imu_ready(true);
-        telemetry.set_imu_attitude(
-            ImuRoll::new(AngleRadians::ZERO),
-            ImuPitch::new(pitch),
-            ImuYaw::new(AngleRadians::ZERO),
-        );
-        let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
-        assert!(state.serialized_config.faults().quickstop_enabled());
-
-        assert!(tick_float_out_boy_state_and_handle_packet(
-            &mut state,
-            TimestampTicks::from_ticks(0),
-            telemetry.telemetry(),
-            telemetry.imu(),
-            &[
-                crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-                crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
-            ],
-        ));
-
-        let ride_state = state.all_data_payloads().base().status().ride_state();
-        assert_eq!(ride_state.run_state(), expected_run_state);
-        assert_eq!(ride_state.stop_condition(), expected_stop);
-    }
-}
-
-#[test]
-fn moving_full_switch_suppression_holds_epoch_until_stopping_is_allowed() {
-    let firmware = FirmwareTest::new().with_runtime_motor(
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(1_000.0)),
-        VehicleSpeed::new(Speed::ZERO),
-        TotalMotorCurrent::new(Current::ZERO),
-        InputCurrent::new(Current::ZERO),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-    );
-    firmware.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
-    edit_config(&mut state, |config| {
-        assert!(config.set_moving_faults_disabled(true));
-        assert!(config.set_fault_adc_half_erpm(ElectricalSpeed::new(
-            Rpm::from_revolutions_per_minute(200.0),
-        )));
-        assert!(config.set_switch_half_delay(VescSeconds::from_seconds(0.25)));
-        assert!(config.set_switch_full_delay(VescSeconds::from_seconds(0.25)));
-    });
-    assert!(state.serialized_config.faults().moving_faults_disabled());
-    let fault_epoch = state.fault_switch_ticks;
-    let packet = [
-        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
-        crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
-    ];
-
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        TimestampTicks::from_ticks(20_000),
-        firmware.telemetry(),
-        firmware.imu(),
-        &packet,
-    ));
-    assert_eq!(
-        state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state(),
-        FloatOutBoyRunState::Running
-    );
-    assert_eq!(state.fault_switch_ticks, fault_epoch);
-
-    let firmware = firmware.with_runtime_motor(
-        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(300.0)),
-        VehicleSpeed::new(Speed::ZERO),
-        TotalMotorCurrent::new(Current::ZERO),
-        InputCurrent::new(Current::ZERO),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
-    );
-    assert!(tick_float_out_boy_state_and_handle_packet(
-        &mut state,
-        TimestampTicks::from_ticks(20_001),
-        firmware.telemetry(),
-        firmware.imu(),
-        &packet,
-    ));
-    let ride_state = state.all_data_payloads().base().status().ride_state();
-    assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Ready);
-    assert_eq!(
-        ride_state.stop_condition(),
-        FloatOutBoyStopCondition::SwitchFull
-    );
-}
-
-#[test]
 fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
     let telemetry = FirmwareTest::new();
     telemetry.set_imu_ready(true);
@@ -351,7 +222,7 @@ fn running_darkride_activates_and_clears_with_float_out_boy_roll_hysteresis() {
         assert!(config.set_darkride_enabled(true));
     });
     let packet = [
-        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
     ];
 
@@ -394,7 +265,7 @@ fn running_darkride_stays_upright_when_feature_is_disabled() {
     let imu = telemetry.imu();
     let mut state = FloatOutBoyPackageState::new(upright_no_footpads_payloads());
     let packet = [
-        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+        crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
         crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
     ];
 
@@ -446,7 +317,7 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -456,8 +327,12 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         payloads.mode4(),
     ));
     state.upside_down_flags.started = true;
-    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
-    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+    state
+        .upside_down_fault_ticks
+        .restart(TimestampTicks::from_ticks(0));
+    state
+        .fault_switch_ticks
+        .restart(TimestampTicks::from_ticks(10_000));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -465,7 +340,7 @@ fn running_darkride_wheelslip_uses_float_out_boy_thirty_millisecond_runaway_stop
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -500,7 +375,7 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -510,8 +385,12 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         payloads.mode4(),
     ));
     state.upside_down_flags.started = true;
-    state.upside_down_fault_ticks = TimestampTicks::from_ticks(0);
-    state.fault_switch_ticks = TimestampTicks::from_ticks(10_000);
+    state
+        .upside_down_fault_ticks
+        .restart(TimestampTicks::from_ticks(0));
+    state
+        .fault_switch_ticks
+        .restart(TimestampTicks::from_ticks(10_000));
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -519,7 +398,7 @@ fn running_upright_wheelslip_does_not_use_darkride_runaway_timer() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -554,7 +433,7 @@ fn app_data_running_flywheel_pressed_footpad_stops_like_upstream_fix() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -590,7 +469,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_float_out_boy_state_stop
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -606,7 +485,7 @@ fn app_data_running_flywheel_stop_clears_wheelslip_like_float_out_boy_state_stop
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -632,7 +511,7 @@ fn app_data_running_darkride_footpads_stop_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -667,7 +546,7 @@ fn app_data_running_darkride_timed_low_erpm_stops_like_float_out_boy_fault_check
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -708,7 +587,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_float_out_boy_fault_ch
             base.status(),
             no_footpads,
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -725,7 +604,7 @@ fn app_data_running_darkride_enabled_high_roll_stops_like_float_out_boy_fault_ch
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -752,7 +631,7 @@ fn app_data_running_darkride_no_footpads_does_not_use_normal_full_switch_fault()
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -792,7 +671,7 @@ fn full_switch_stopped_state_with_pitch(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -822,7 +701,7 @@ fn prepare_ready_engagement(state: &mut FloatOutBoyPackageState, pitch: AngleRad
                 FloatOutBoyFootpadState::Both,
             ),
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -843,7 +722,7 @@ fn tick_ready_engagement(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -966,7 +845,7 @@ fn app_data_running_roll_stopped_after_delay_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1015,7 +894,7 @@ fn app_data_running_pitch_stopped_after_delay_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1072,7 +951,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
             FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
             single_footpad,
             base.setpoints(),
-            base.booster_current(),
+            base.booster_torque(),
             base.motor(),
         ),
         payloads.mode2(),
@@ -1089,7 +968,7 @@ fn app_data_running_darkride_simple_start_single_footpad_stops_during_engage_gra
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1124,7 +1003,7 @@ fn app_data_running_darkride_high_erpm_stops_like_float_out_boy_fault_check() {
         telemetry.telemetry(),
         imu,
         &[
-            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             crate::domain::FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

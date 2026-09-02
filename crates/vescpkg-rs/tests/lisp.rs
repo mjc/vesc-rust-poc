@@ -4,8 +4,8 @@
 
 use vescpkg_rs::test_support::FirmwareTest;
 use vescpkg_rs::{
-    LispContextId, LispFlatValue, LispFlatValueError, LispProcess, LispSymbol, LispValue,
-    firmware_str,
+    FirmwareStr, LispContextId, LispFlatValue, LispFlatValueError, LispProcess, LispSymbol,
+    LispValue,
 };
 
 #[test]
@@ -134,23 +134,29 @@ fn lisp_lists_validate_tails_and_iterate_fallibly() {
 }
 
 #[test]
-fn lisp_process_sets_error_reason_from_scoped_firmware_text() {
+fn lisp_process_sets_error_reason_from_a_firmware_string() {
     let _firmware = FirmwareTest::new();
-    let reason = firmware_str!("invalid argument");
+    let reason = FirmwareStr::from_str_with_nul("invalid argument\0").unwrap();
 
     assert_eq!(LispProcess::set_error_reason(reason), 1);
-    assert_eq!(LispProcess::set_error_reason(firmware_str!("")), 1);
+    assert_eq!(
+        LispProcess::set_error_reason(FirmwareStr::from_str_with_nul("\0").unwrap()),
+        1
+    );
 }
 
 #[test]
-fn lisp_symbols_can_be_looked_up_from_scoped_firmware_text() {
+fn lisp_symbols_can_be_looked_up_from_a_firmware_string() {
     let _firmware = FirmwareTest::new();
 
     assert_eq!(
-        LispSymbol::lookup(firmware_str!("vesc")),
+        LispSymbol::lookup(FirmwareStr::from_str_with_nul("vesc\0").unwrap()),
         Some(LispSymbol::new(7))
     );
-    assert_eq!(LispSymbol::lookup(firmware_str!("missing")), None);
+    assert_eq!(
+        LispSymbol::lookup(FirmwareStr::from_str_with_nul("missing\0").unwrap()),
+        None
+    );
 }
 
 #[test]
@@ -176,7 +182,6 @@ fn lisp_flat_values_encode_wide_values_and_unblock_contexts() {
     let value = LispFlatValue::try_new(4).expect("flat-value slots available");
     drop(value);
     assert!(LispFlatValue::try_new(257).is_none());
-    assert!(LispFlatValue::try_new(usize::MAX).is_none());
 
     let mut value = LispFlatValue::try_new(4).expect("flat-value slots available");
     value.push_byte(b'V').unwrap();

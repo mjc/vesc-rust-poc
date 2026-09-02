@@ -1,11 +1,11 @@
 use crate::config::FloatOutBoyHapticConfig;
 use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState, FloatOutBoySetpointAdjustment};
 use crate::motor_control::FloatOutBoyMotorControl;
-use vescpkg_rs::MotorOutput;
 use vescpkg_rs::prelude::{
     AudioChannel, AudioFrequency, AudioVoltage, Current, Ratio, SYSTEM_TICK_RATE_HZ, SampleRate,
     Speed, TimestampTicks, Voltage,
 };
+use vescpkg_rs::{MotorOutput, WrappingTimer};
 
 const TONE_LENGTH_TICKS: u32 = crate::wire::truncating_u64_to_u32(SYSTEM_TICK_RATE_HZ) / 10;
 
@@ -55,7 +55,7 @@ impl HapticFeedbackType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct HapticFeedbackState {
     type_playing: HapticFeedbackType,
-    tone_timer: TimestampTicks,
+    tone_timer: WrappingTimer,
     is_playing: bool,
     can_change_type: bool,
 }
@@ -70,7 +70,7 @@ impl HapticFeedbackState {
     pub(super) const fn new() -> Self {
         Self {
             type_playing: HapticFeedbackType::None,
-            tone_timer: TimestampTicks::from_ticks(0),
+            tone_timer: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
             is_playing: false,
             can_change_type: true,
         }
@@ -88,7 +88,7 @@ impl HapticFeedbackState {
         let type_to_play = feedback_type(config, input);
         if type_to_play != self.type_playing && self.can_change_type {
             self.type_playing = type_to_play;
-            self.tone_timer = now;
+            self.tone_timer.restart(now);
         }
 
         let should_be_playing = if matches!(self.type_playing, HapticFeedbackType::None) {
@@ -101,8 +101,9 @@ impl HapticFeedbackState {
                 true
             } else {
                 let cycle_ticks = TONE_LENGTH_TICKS.saturating_mul(beats);
-                let tone_time = now
-                    .wrapping_duration_since(self.tone_timer)
+                let tone_time = self
+                    .tone_timer
+                    .elapsed(now)
                     .as_ticks()
                     .checked_rem(cycle_ticks)
                     .unwrap_or_default();
@@ -160,7 +161,7 @@ fn feedback_type(
     config: FloatOutBoyHapticConfig<'_>,
     input: HapticFeedbackInput,
 ) -> HapticFeedbackType {
-    if !matches!(input.run_state, FloatOutBoyRunState::Running)
+    if input.run_state != FloatOutBoyRunState::Running
         || matches!(input.mode, FloatOutBoyMode::HandTest)
     {
         return HapticFeedbackType::None;

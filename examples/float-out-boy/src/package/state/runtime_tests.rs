@@ -1,19 +1,15 @@
 use super::FloatOutBoyPackageState;
-use crate::beeper::{FloatOutBoyBeeperCount, FloatOutBoyBeeperLevel};
-use crate::bms::{
-    FloatOutBoyBmsFault, FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsTemperature,
-};
+use crate::beeper::FloatOutBoyBeeperLevel;
+use crate::bms::{FloatOutBoyBmsSample, FloatOutBoyBmsTemperature};
 use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
     FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
     FloatOutBoyBeepReason, FloatOutBoyChargingState, FloatOutBoyFootpadSample,
     FloatOutBoyFootpadState, FloatOutBoyMode, FloatOutBoyRealtimeBalanceCurrent,
-    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterCurrent,
+    FloatOutBoyRealtimeBalancePitch, FloatOutBoyRealtimeBoosterTorque,
     FloatOutBoyRealtimeRuntimeSetpoint, FloatOutBoyRealtimeRuntimeSetpoints, FloatOutBoyRideState,
-    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyStopCondition,
-    FloatOutBoyTractionControlState, FloatOutBoyWheelSlipState,
+    FloatOutBoyRunState, FloatOutBoySetpointAdjustment, FloatOutBoyWheelSlipState,
 };
-use crate::motor_torque::{MotorTorque, MotorTorqueConstant};
 use crate::package::test_support::{
     FloatOutBoyConfigTestBytes, balance_filter_with_pitch, default_float_out_boy_config_bytes,
     edit_config, editable_config_from_state, sample_all_data_payloads_with_ride_state,
@@ -24,67 +20,24 @@ use vescpkg_rs::test_support::FirmwareTest;
 
 use std::vec::Vec;
 
-fn compatibility_torque(current: Current) -> MotorTorque {
-    MotorTorqueConstant::REFLOAT_COMPAT.torque_from_current(current)
-}
-
-fn seed_stale_balance_runtime(state: &mut FloatOutBoyPackageState) {
-    state.balance_loop.pid.integral_torque = compatibility_torque(Current::from_amps(8.0));
-    state.balance_loop.balance_current = MotorCurrent::new(Current::from_amps(6.0));
-    state.balance_loop.booster_torque = compatibility_torque(Current::from_amps(4.0));
-    state.balance_loop.softstart_pid_limit = MotorCurrentLimit::new(Current::from_amps(12.0));
-    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
-    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
-    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
-    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
-}
-
-fn assert_ready_engagement_runtime_reset(state: &FloatOutBoyPackageState) {
-    let base = state.all_data_payloads().base();
-    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
-    assert_eq!(
-        state.balance_loop.balance_current,
-        MotorCurrent::new(Current::ZERO)
-    );
-    assert_eq!(state.balance_loop.booster_torque, MotorTorque::ZERO);
-    assert_eq!(
-        state.balance_loop.softstart_pid_limit,
-        MotorCurrentLimit::new(Current::ZERO)
-    );
-    assert_eq!(state.balance_loop.pid.integral_torque, MotorTorque::ZERO);
-    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
-    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
-    assert_eq!(
-        state.motor_kinematics.average(),
-        super::motor_kinematics::ElectricalAcceleration::ZERO
-    );
-    assert_eq!(
-        base.motor().duty_cycle(),
-        DutyCycle::new(SignedRatio::from_ratio_const(0.0))
-    );
-}
-
 #[test]
 fn startup_expires_disengage_epoch_one_minute_like_fixed_refloat() {
     let now = TimestampTicks::from_ticks(1_000_000);
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     state.initialize_time_epochs(now);
 
-    assert_eq!(state.engage_ticks, now);
+    assert_eq!(state.engage_ticks.started(), now);
     assert_eq!(
-        state.disengage_ticks,
+        state.disengage_ticks.started(),
         TimestampTicks::from_ticks(now.as_ticks().wrapping_sub(600_000))
     );
-    assert_eq!(state.idle_ticks, now);
+    assert_eq!(state.idle_ticks.started(), now);
 }
 
 #[test]
 fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     enable_bms(&mut state);
     state.initialize_time_epochs(TimestampTicks::from_ticks(10_000));
 
@@ -92,7 +45,7 @@ fn startup_epoch_also_controls_bms_connection_grace_like_refloat() {
 
     assert_eq!(
         state.bms_faults_for_test(),
-        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
+        crate::bms::FloatOutBoyBmsFaults::CONNECTION
     );
 }
 
@@ -107,7 +60,7 @@ fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -115,7 +68,7 @@ fn startup_ready_gate_refreshes_imu_attitude_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -138,7 +91,7 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_float_out
         .with_input_voltage(InputVoltage::new(Voltage::from_volts(60.0)))
         .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     telemetry.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     enable_beeper(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -147,7 +100,7 @@ fn startup_ready_above_low_voltage_margin_schedules_one_long_beep_like_float_out
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -173,7 +126,7 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
         .with_input_voltage(InputVoltage::new(Voltage::from_volts(58.0)))
         .with_battery_cell_count(BatteryCellCount::try_new(18).expect("18s battery"));
     telemetry.set_imu_ready(true);
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     enable_beeper(&mut state);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -182,7 +135,7 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -211,15 +164,15 @@ fn startup_ready_below_low_voltage_margin_reports_low_battery_and_beeps_twice() 
 fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_float_out_boy() {
     let warning_threshold = Voltage::from_volts(59.0);
     let cases = [
-        (Voltage::from_volts(60.0), FloatOutBoyBeeperCount::ONE),
-        (Voltage::from_volts(58.9), FloatOutBoyBeeperCount::ONE),
-        (Voltage::from_volts(58.0), FloatOutBoyBeeperCount::TWO),
-        (Voltage::from_volts(57.0), FloatOutBoyBeeperCount::THREE),
-        (Voltage::from_volts(56.0), FloatOutBoyBeeperCount::FOUR),
-        (Voltage::from_volts(55.0), FloatOutBoyBeeperCount::FIVE),
-        (Voltage::from_volts(54.0), FloatOutBoyBeeperCount::SIX),
-        (Voltage::from_volts(53.0), FloatOutBoyBeeperCount::SEVEN),
-        (Voltage::from_volts(40.0), FloatOutBoyBeeperCount::SEVEN),
+        (Voltage::from_volts(60.0), 1),
+        (Voltage::from_volts(58.9), 1),
+        (Voltage::from_volts(58.0), 2),
+        (Voltage::from_volts(57.0), 3),
+        (Voltage::from_volts(56.0), 4),
+        (Voltage::from_volts(55.0), 5),
+        (Voltage::from_volts(54.0), 6),
+        (Voltage::from_volts(53.0), 7),
+        (Voltage::from_volts(40.0), 7),
     ];
 
     for (battery_voltage, expected) in cases {
@@ -233,7 +186,7 @@ fn startup_ready_beep_count_truncates_and_caps_voltage_deficit_like_float_out_bo
 
 #[test]
 fn startup_balance_filter_uses_firmware_orientation_like_float_out_boy_data_init() {
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.initialize_balance_filter(ImuOrientation::from_quaternion(
         ImuQuaternion::from_components(
             ImuQuaternionW::new(0.995_004_2),
@@ -243,7 +196,7 @@ fn startup_balance_filter_uses_firmware_orientation_like_float_out_boy_data_init
         ),
     ));
 
-    assert!((state.balance_filter.balance_pitch().angle().as_radians() - 0.2).abs() < 1.0e-5);
+    assert!((state.balance_filter.pitch().as_radians() - 0.2).abs() < 1.0e-5);
 }
 
 #[test]
@@ -263,7 +216,7 @@ fn startup_ready_gate_does_not_engage_active_footpads_until_next_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -293,9 +246,15 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
         ImuYaw::new(AngleRadians::from_radians(0.0)),
     );
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(1.2)));
-    seed_stale_balance_runtime(&mut state);
+    state.balance_loop.pid.integral_torque = state
+        .motor_torque_constant
+        .torque_from_motor_current(MotorCurrent::new(Current::from_amps(8.0)));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -303,7 +262,7 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -320,17 +279,14 @@ fn startup_ready_resets_runtime_vars_like_float_out_boy() {
     // seeds only the board setpoint from balance pitch at
     // `third_party/float-out-boy/src/main.c:249-252`.
     assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
-    assert_f32_eq!(base.booster_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 0.0);
     assert_eq!(
-        state.balance_loop.balance_current,
-        MotorCurrent::new(Current::ZERO)
+        state
+            .motor_torque_constant
+            .motor_current_from_torque(state.balance_loop.pid.integral_torque)
+            .current(),
+        Current::ZERO
     );
-    assert_eq!(state.balance_loop.booster_torque, MotorTorque::ZERO);
-    assert_eq!(
-        state.balance_loop.softstart_pid_limit,
-        MotorCurrentLimit::new(Current::ZERO)
-    );
-    assert_eq!(state.balance_loop.pid.integral_torque, MotorTorque::ZERO);
     assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
     assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
@@ -360,7 +316,7 @@ fn disabled_config_applies_before_startup_ready_like_float_out_boy() {
     incoming.edit_float_out_boy_config(|config| {
         assert!(config.set_disabled(true));
     });
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     assert!(state.store_serialized_config(&incoming));
     assert!(tick_float_out_boy_state_and_handle_packet(
@@ -369,7 +325,7 @@ fn disabled_config_applies_before_startup_ready_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -423,7 +379,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         base.status(),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -433,7 +389,13 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         payloads.mode4(),
     ));
     state.set_balance_filter_for_test(balance_filter_with_pitch(AngleRadians::from_radians(0.05)));
-    seed_stale_balance_runtime(&mut state);
+    state.balance_loop.pid.integral_torque = state
+        .motor_torque_constant
+        .torque_from_motor_current(MotorCurrent::new(Current::from_amps(8.0)));
+    state.balance_loop.pid.kp_brake_scale = PidScale::new(0.2);
+    state.balance_loop.pid.kp2_brake_scale = PidScale::new(0.3);
+    state.balance_loop.pid.kp_accel_scale = PidScale::new(0.4);
+    state.balance_loop.pid.kp2_accel_scale = PidScale::new(0.5);
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -441,7 +403,7 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -453,6 +415,8 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     // breaks out of the READY branch without running the RUNNING
     // balance-current loop.
     assert_eq!(ride_state.run_state(), FloatOutBoyRunState::Running);
+    assert_f32_eq!(base.balance_current().current().current().as_amps(), 0.0);
+    assert_f32_eq!(base.booster_torque().torque().as_newton_meters(), 0.0);
     let expected_engage_setpoint = AngleRadians::from_radians(0.05).as_degrees();
     assert_f32_eq!(
         base.setpoints().board().angle().as_degrees(),
@@ -467,7 +431,22 @@ fn ready_engage_resets_runtime_vars_like_float_out_boy() {
     ] {
         assert_f32_eq!(setpoint.angle().as_degrees(), 0.0);
     }
-    assert_ready_engagement_runtime_reset(&state);
+    assert_eq!(
+        state
+            .motor_torque_constant
+            .motor_current_from_torque(state.balance_loop.pid.integral_torque)
+            .current(),
+        Current::ZERO
+    );
+    assert_eq!(state.balance_loop.pid.kp_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_brake_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.balance_loop.pid.kp2_accel_scale, PidScale::new(1.0));
+    assert_eq!(state.motor_kinematics.average(), Rpm::ZERO);
+    assert_eq!(
+        base.motor().duty_cycle(),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0))
+    );
     assert!(!state.apply_requested_motor_current(bindings));
 }
 
@@ -496,7 +475,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         FloatOutBoyAllDataStatus::new(charging_state, base.status().beep_reason()),
         base.footpad(),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -512,7 +491,7 @@ fn ready_normal_charging_does_not_engage_like_float_out_boy_can_engage() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -537,7 +516,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
         )
         .with_directional_motor_current(DirectionalMotorCurrent::new(Current::from_amps(-6.75)));
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
 
     assert!(tick_float_out_boy_state_and_handle_packet(
         &mut state,
@@ -545,7 +524,7 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             0,
         ],
@@ -567,18 +546,9 @@ fn motor_payload_refreshes_like_float_out_boy_motor_data_update() {
             .abs()
             < 0.0001
     );
-    let alpha = crate::ema::EmaAlpha::from_sample_rate(
-        Frequency::from_hertz(1.0),
-        SampleRate::from_hertz(500.0),
-    );
-    assert_f32_eq!(
-        motor.battery_current().current().as_amps(),
-        4.0 * alpha.factor()
-    );
-    assert_f32_eq!(
-        motor.duty_cycle().ratio().as_ratio(),
-        0.375 * alpha.factor()
-    );
+    let alpha = vescpkg_rs::ema_alpha(Frequency::from_hertz(1.0), SampleRate::from_hertz(500.0));
+    assert_f32_eq!(motor.battery_current().current().as_amps(), 4.0 * alpha);
+    assert_f32_eq!(motor.duty_cycle().ratio().as_ratio(), 0.375 * alpha);
 }
 
 #[test]
@@ -589,7 +559,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
     let telemetry =
         FirmwareTest::new().with_d_axis_current(Some(DCurrent::new(Current::from_amps(-4.0))));
     let imu = telemetry.imu();
-    let mut state = FloatOutBoyPackageState::default();
+    let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
     state.refresh_runtime_state(telemetry.telemetry(), imu, now);
 
     let mut packet = Vec::new();
@@ -604,7 +574,7 @@ fn foc_id_current_refreshes_like_float_out_boy_all_data() {
         &mut now,
         &mut reply,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::GetAllData.id(),
             0,
         ],
@@ -647,7 +617,9 @@ fn running_runtime_fixture() -> (TimestampTicks, FirmwareTest, FloatOutBoyPackag
         base.status(),
         base.footpad(),
         setpoints,
-        FloatOutBoyRealtimeBoosterCurrent::new(MotorCurrent::new(Current::from_amps(0.0))),
+        FloatOutBoyRealtimeBoosterTorque::new(
+            crate::motor_torque::MotorTorque::from_newton_meters(0.0),
+        ),
         base.motor(),
     );
     let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -675,7 +647,7 @@ fn ready_bms_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
         base.status(),
         FloatOutBoyFootpadSample::new(Voltage::ZERO, Voltage::ZERO, FloatOutBoyFootpadState::None),
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -686,6 +658,92 @@ fn ready_bms_fixture() -> (FirmwareTest, FloatOutBoyPackageState) {
     ));
 
     (telemetry, state)
+}
+
+#[test]
+fn running_enters_reverse_stop_from_reverse_distance_like_refloat() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let telemetry = FirmwareTest::new()
+        .with_runtime_motor(
+            ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-500.0)),
+            VehicleSpeed::new(Speed::ZERO),
+            TotalMotorCurrent::new(Current::ZERO),
+            InputCurrent::new(Current::ZERO),
+            DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+        )
+        .with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.03)));
+    telemetry.set_imu_ready(true);
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    // Refloat starts reverse-stop after more than two approximate motor steps
+    // of reverse travel.
+    assert_eq!(
+        state
+            .all_data_payloads
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        FloatOutBoySetpointAdjustment::ReverseStop,
+    );
+}
+
+#[test]
+fn reverse_erpm_without_distance_does_not_enter_refloat_reverse_stop() {
+    let app_data = TimestampTicks::from_ticks(0);
+    let telemetry = FirmwareTest::new().with_runtime_motor(
+        ElectricalSpeed::new(Rpm::from_revolutions_per_minute(-1_000.0)),
+        VehicleSpeed::new(Speed::ZERO),
+        TotalMotorCurrent::new(Current::ZERO),
+        InputCurrent::new(Current::ZERO),
+        DutyCycle::new(SignedRatio::from_ratio_const(0.0)),
+    );
+    telemetry.set_imu_ready(true);
+    let mut state = FloatOutBoyPackageState::new(sample_all_data_payloads_with_ride_state(
+        FloatOutBoyRunState::Running,
+        FloatOutBoyMode::Normal,
+    ));
+    edit_config(&mut state, |config| {
+        assert!(config.set_reversestop_enabled(true));
+    });
+
+    assert!(tick_float_out_boy_state_and_handle_packet(
+        &mut state,
+        app_data,
+        telemetry.telemetry(),
+        telemetry.imu(),
+        &[
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+            FloatOutBoyAppDataCommand::RealtimeData.id(),
+        ],
+    ));
+
+    assert_eq!(
+        state
+            .all_data_payloads()
+            .base()
+            .status()
+            .ride_state()
+            .setpoint_adjustment(),
+        FloatOutBoySetpointAdjustment::None,
+    );
 }
 
 fn running_protective_pushback_fixture(
@@ -749,7 +807,7 @@ fn running_protective_pushback_fixture(
         status,
         base.footpad(),
         setpoints,
-        base.booster_current(),
+        base.booster_torque(),
         motor,
     );
     let state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::new(
@@ -788,7 +846,7 @@ fn running_speed_or_sag_fixture(
 }
 
 #[test]
-fn running_input_tilt_ignores_the_removed_legacy_speed_like_refloat() {
+fn running_input_tilt_ramps_remote_and_board_setpoints_like_float_out_boy() {
     let (now, telemetry, mut state) = running_speed_or_sag_fixture(
         InputVoltage::new(Voltage::from_volts(72.0)),
         DirectionalMotorCurrent::new(Current::ZERO),
@@ -806,8 +864,7 @@ fn running_input_tilt_ignores_the_removed_legacy_speed_like_refloat() {
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
     let setpoints = state.all_data_payloads().base().setpoints();
-    // Current Refloat removed the configured speed and uses 100 degrees/second;
-    // the legacy image value above must not alter this first 500 Hz step.
+    // Pinned Refloat SmoothSetpoint first step at 500 Hz for a five-degree target.
     let expected = 0.000_089_363_82;
     let remote = setpoints.remote().angle().as_degrees();
     let board = setpoints.board().angle().as_degrees();
@@ -823,13 +880,13 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         let firmware = FirmwareTest::new();
         firmware.set_ppm_input(
             PpmInput::new(SignedRatio::from_ratio_const(ppm)),
-            PpmAge::new(VescSeconds::from_seconds(0.49)),
+            PpmAge::new(VescSeconds::from_seconds(0.4999)),
         );
         firmware.set_remote_input(
             JoystickY::new(SignedRatio::from_ratio_const(uart)),
-            RemoteAge::new(VescSeconds::from_seconds(0.49)),
+            RemoteAge::new(VescSeconds::from_seconds(0.4999)),
         );
-        let mut state = FloatOutBoyPackageState::default();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
             assert!(config.set_input_tilt_deadband(Ratio::from_ratio_const(0.2)));
@@ -849,13 +906,13 @@ fn controller_input_selects_connected_uart_or_ppm_and_applies_deadband_like_floa
         let firmware = FirmwareTest::new();
         firmware.set_ppm_input(
             PpmInput::new(SignedRatio::from_ratio_const(0.8)),
-            PpmAge::new(VescSeconds::from_seconds(1.0)),
+            PpmAge::new(VescSeconds::from_seconds(0.5)),
         );
         firmware.set_remote_input(
             JoystickY::new(SignedRatio::from_ratio_const(0.8)),
-            RemoteAge::new(VescSeconds::from_seconds(1.0)),
+            RemoteAge::new(VescSeconds::from_seconds(0.5)),
         );
-        let mut state = FloatOutBoyPackageState::default();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
@@ -872,7 +929,7 @@ fn controller_input_fails_closed_when_the_selected_optional_slot_is_absent() {
         let firmware = FirmwareTest::new();
         firmware.set_remote_supported(remote_type != 1);
         firmware.set_ppm_available(remote_type != 2);
-        let mut state = FloatOutBoyPackageState::default();
+        let mut state = FloatOutBoyPackageState::new(FloatOutBoyAllDataPayloads::source_startup());
         edit_config(&mut state, |config| {
             assert!(config.set_input_tilt_remote_type(vescpkg_rs::WireByte::new(remote_type)));
         });
@@ -947,13 +1004,15 @@ fn running_torque_and_atr_update_runtime_setpoints_like_float_out_boy() {
         assert!(config.set_torque_tilt_start_current(MotorCurrent::new(Current::ZERO)));
         assert!(config.set_torque_tilt_strength(PidScale::new(0.1)));
         assert!(config.set_torque_tilt_angle_limit(AngleDegrees::from_degrees(10.0)));
-        assert!(config.set_torque_tilt_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(
+            config.set_torque_tilt_on_speed_limit(AngularVelocity::from_degrees_per_second(100.0))
+        );
         assert!(config.set_atr_strength_up(PidScale::new(1.0)));
         assert!(config.set_atr_strength_down(PidScale::new(1.0)));
         assert!(config.set_atr_threshold_up(AngleDegrees::ZERO));
         assert!(config.set_atr_threshold_down(AngleDegrees::ZERO));
-        assert!(config.set_atr_on_speed(AngularVelocity::from_degrees_per_second(100.0)));
-        assert!(config.set_atr_off_speed(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_on_speed_limit(AngularVelocity::from_degrees_per_second(100.0)));
+        assert!(config.set_atr_off_speed_limit(AngularVelocity::from_degrees_per_second(100.0)));
     });
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
@@ -992,7 +1051,7 @@ fn set_protective_ride_state(
         FloatOutBoyAllDataStatus::new(ride_state, base.status().beep_reason()),
         footpad,
         base.setpoints(),
-        base.booster_current(),
+        base.booster_torque(),
         base.motor(),
     );
     state.all_data_payloads =
@@ -1018,7 +1077,7 @@ fn tick_running_protective_pushback(
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1120,7 +1179,7 @@ fn running_enters_duty_pushback_above_configured_threshold_like_float_out_boy() 
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1366,17 +1425,14 @@ fn running_wheelslip_refreshes_timer_and_zeros_target_above_max_duty_like_float_
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.ride_flags.traction_control = FloatOutBoyTractionControlState::Freewheeling;
-    state.wheelslip_ticks = TimestampTicks::from_ticks(1);
+    state.ride_flags.traction_control = true;
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(1));
     let now = TimestampTicks::from_ticks(5_000);
 
     tick_running_protective_pushback(&mut state, &telemetry, now);
 
-    assert_eq!(state.wheelslip_ticks, now);
-    assert_eq!(
-        state.ride_flags.traction_control,
-        FloatOutBoyTractionControlState::FilteringCurrent
-    );
+    assert_eq!(state.wheelslip_ticks.started(), now);
+    assert!(!state.ride_flags.traction_control);
     assert_eq!(
         state
             .all_data_payloads()
@@ -1407,7 +1463,7 @@ fn running_wheelslip_exit_uses_strict_timer_and_raw_duty_thresholds_like_float_o
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(0));
 
     tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_000));
     assert_eq!(
@@ -1445,7 +1501,7 @@ fn running_wheelslip_exit_uses_strict_timer_and_raw_duty_thresholds_like_float_o
         FloatOutBoyWheelSlipState::Detected,
     );
     settle_motor_acceleration(&mut state, Rpm::from_revolutions_per_minute(1_000.0));
-    state.wheelslip_ticks = TimestampTicks::from_ticks(0);
+    state.wheelslip_ticks.restart(TimestampTicks::from_ticks(0));
 
     tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(2_001));
     assert_eq!(
@@ -1483,125 +1539,6 @@ fn reverse_stop_entry_precedes_wheelslip_detection_like_float_out_boy() {
     assert_eq!(ride_state.wheelslip(), FloatOutBoyWheelSlipState::None);
 }
 
-fn entered_reverse_stop_with_pressed_footpad() -> (FirmwareTest, FloatOutBoyPackageState) {
-    let (_, telemetry, mut state) = running_protective_pushback_fixture(
-        SignedRatio::from_ratio_const(0.10),
-        Rpm::from_revolutions_per_minute(-500.0),
-        FloatOutBoySetpointAdjustment::None,
-        InputVoltage::new(Voltage::from_volts(72.0)),
-    );
-
-    edit_config(&mut state, |config| {
-        assert!(config.set_reversestop_enabled(true));
-    });
-
-    // More than the two-centimetre entry threshold, but nowhere near the full
-    // 0.25 m reverse-stop distance.
-    let telemetry =
-        telemetry.with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.03)));
-
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_degrees(0.0)),
-        ImuPitch::new(AngleRadians::from_degrees(0.0)),
-        ImuYaw::new(AngleRadians::from_degrees(0.0)),
-    );
-
-    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(0));
-
-    let base = state.all_data_payloads().base();
-
-    assert_eq!(
-        base.status().ride_state().setpoint_adjustment(),
-        FloatOutBoySetpointAdjustment::ReverseStop,
-        "fixture must enter Reverse Stop before testing its shutdown behavior",
-    );
-    assert_eq!(
-        base.footpad().state(),
-        FloatOutBoyFootpadState::Both,
-        "fixture must keep the footpad logically pressed",
-    );
-
-    (telemetry, state)
-}
-
-#[test]
-fn reverse_stop_uses_physical_pitch_hard_stop_with_pressed_footpad() {
-    let (telemetry, mut state) = entered_reverse_stop_with_pressed_footpad();
-
-    // Refloat v1.2.3 stopped immediately above 18 degrees using measured pitch.
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_degrees(0.0)),
-        ImuPitch::new(AngleRadians::from_degrees(18.1)),
-        ImuYaw::new(AngleRadians::from_degrees(0.0)),
-    );
-
-    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(1));
-
-    let base = state.all_data_payloads().base();
-    let ride_state = base.status().ride_state();
-
-    assert_eq!(
-        base.footpad().state(),
-        FloatOutBoyFootpadState::Both,
-        "this must test pitch protection, not ordinary footpad release",
-    );
-    assert_eq!(
-        ride_state.run_state(),
-        FloatOutBoyRunState::Ready,
-        "physical pitch above 18 degrees must stop Reverse Stop even when the pad remains pressed",
-    );
-    assert_eq!(
-        ride_state.stop_condition(),
-        FloatOutBoyStopCondition::ReverseStop,
-    );
-}
-
-#[test]
-fn reverse_stop_uses_physical_pitch_timeout_with_pressed_footpad() {
-    let (telemetry, mut state) = entered_reverse_stop_with_pressed_footpad();
-    let telemetry =
-        telemetry.with_signed_trip_distance(SignedTripDistance::new(Distance::from_meters(-0.13)));
-
-    // Refloat v1.2.3 stopped after measured pitch remained above 10 degrees
-    // for strictly more than one second.
-    telemetry.set_imu_attitude(
-        ImuRoll::new(AngleRadians::from_degrees(0.0)),
-        ImuPitch::new(AngleRadians::from_degrees(11.0)),
-        ImuYaw::new(AngleRadians::from_degrees(0.0)),
-    );
-
-    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(10_000));
-
-    let base = state.all_data_payloads().base();
-    assert_eq!(
-        base.status().ride_state().run_state(),
-        FloatOutBoyRunState::Running,
-        "exactly one second is the strict legacy boundary",
-    );
-    assert_eq!(
-        base.footpad().state(),
-        FloatOutBoyFootpadState::Both,
-        "the test must continue simulating a ghosted footpad",
-    );
-    assert!(
-        base.setpoints().board().angle() < AngleDegrees::from_degrees(8.5),
-        "the commanded setpoint must remain below the v1.3 timer gate",
-    );
-
-    tick_running_protective_pushback(&mut state, &telemetry, TimestampTicks::from_ticks(10_001));
-
-    let ride_state = state.all_data_payloads().base().status().ride_state();
-    assert_eq!(
-        ride_state.run_state(),
-        FloatOutBoyRunState::Ready,
-        "physical pitch above 10 degrees for more than one second must stop even when distance progress is incomplete",
-    );
-    assert_eq!(
-        ride_state.stop_condition(),
-        FloatOutBoyStopCondition::ReverseStop,
-    );
-}
-
 #[test]
 fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_float_out_boy() {
     let (app_data, telemetry, mut state) = running_protective_pushback_fixture(
@@ -1617,7 +1554,7 @@ fn running_duty_pushback_uses_negative_target_for_reverse_erpm_like_float_out_bo
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1643,7 +1580,7 @@ fn running_duty_at_threshold_does_not_push_back_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1671,7 +1608,7 @@ fn running_duty_pushback_clears_below_threshold_like_float_out_boy() {
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1702,7 +1639,7 @@ fn running_enters_high_voltage_pushback_one_volt_above_threshold_like_float_out_
         telemetry.telemetry(),
         telemetry.imu(),
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -1755,7 +1692,10 @@ fn bms_cell_over_voltage_enters_immediate_high_voltage_pushback_like_float_out_b
         base.status().beep_reason(),
         FloatOutBoyBeepReason::CellHighVoltage
     );
-    assert_eq!(state.high_voltage_ticks, TimestampTicks::from_ticks(0));
+    assert_eq!(
+        state.high_voltage_ticks.started(),
+        TimestampTicks::from_ticks(0)
+    );
     assert_eq!(first_beeper_high_tick(&mut state, 12), Some(12));
 }
 
@@ -1974,7 +1914,9 @@ fn ready_bms_cell_balance_alert_requires_disengage_and_alert_delays_like_float_o
         VescSeconds::ZERO,
     );
     state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
-    state.disengage_ticks = TimestampTicks::from_ticks(100_000);
+    state
+        .disengage_ticks
+        .restart(TimestampTicks::from_ticks(100_000));
 
     state.refresh_imu_runtime_state(telemetry.imu(), TimestampTicks::from_ticks(150_000));
     assert_ne!(
@@ -2103,7 +2045,8 @@ fn running_low_voltage_refreshes_high_voltage_timer_before_every_selection_branc
         // Float Out Boy refreshes this timer before every setpoint-adjustment branch
         // at `third_party/float-out-boy/src/main.c:512-518`.
         assert_eq!(
-            state.high_voltage_ticks, now,
+            state.high_voltage_ticks.started(),
+            now,
             "mode={mode:?}, adjustment={adjustment:?}, wheelslip={wheelslip:?}",
         );
     }
@@ -2160,7 +2103,7 @@ fn running_runtime_requests_balance_current_like_float_out_boy_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));
@@ -2186,7 +2129,7 @@ fn running_motor_apply_uses_current_branch_like_float_out_boy_loop() {
         telemetry.telemetry(),
         imu,
         &[
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID.get(),
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
             FloatOutBoyAppDataCommand::RealtimeData.id(),
         ],
     ));

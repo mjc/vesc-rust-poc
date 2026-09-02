@@ -1,15 +1,5 @@
-use crate::bms::{
-    FloatOutBoyBmsConnectionMonitoring, FloatOutBoyBmsFault, FloatOutBoyBmsFaults,
-    FloatOutBoyBmsIntegration, FloatOutBoyBmsSample,
-};
-use vescpkg_rs::{TimestampTicks, VescSeconds};
-use vescpkg_rs::{
-    timer_older as float_out_boy_ticks_elapsed_seconds,
-    timer_older_whole_seconds as float_out_boy_ticks_elapsed,
-};
-
-#[cfg(test)]
-mod test_support;
+use crate::bms::{FloatOutBoyBmsFaults, FloatOutBoyBmsSample, FloatOutBoyBmsThresholds};
+use vescpkg_rs::{TimestampTicks, VescSeconds, WrappingTimer, timer_older};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BmsReadyAlertFault {
@@ -22,7 +12,7 @@ pub(super) struct BmsRuntimeState {
     sample: FloatOutBoyBmsSample,
     faults: FloatOutBoyBmsFaults,
     start_ticks: Option<TimestampTicks>,
-    alert_ticks: TimestampTicks,
+    alert_ticks: WrappingTimer,
     last_push_ticks: Option<TimestampTicks>,
 }
 
@@ -30,9 +20,9 @@ impl Default for BmsRuntimeState {
     fn default() -> Self {
         Self {
             sample: FloatOutBoyBmsSample::default(),
-            faults: FloatOutBoyBmsFaults::NONE,
+            faults: FloatOutBoyBmsFaults::empty(),
             start_ticks: None,
-            alert_ticks: TimestampTicks::from_ticks(0),
+            alert_ticks: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
             last_push_ticks: None,
         }
     }
@@ -50,7 +40,8 @@ impl BmsRuntimeState {
 
     pub(super) fn refresh(
         &mut self,
-        integration: FloatOutBoyBmsIntegration,
+        enabled: bool,
+        thresholds: FloatOutBoyBmsThresholds,
         system_time_ticks: TimestampTicks,
     ) {
         let last_push_ticks = *self.last_push_ticks.get_or_insert(system_time_ticks);
@@ -63,39 +54,46 @@ impl BmsRuntimeState {
             .as_vesc_seconds();
         let sample = self.sample.with_message_age(message_age);
         let start_ticks = *self.start_ticks.get_or_insert(system_time_ticks);
-        let connection_monitoring = if float_out_boy_ticks_elapsed_seconds(
+        let startup_timeout_elapsed = timer_older(
             system_time_ticks,
             start_ticks,
             VescSeconds::from_seconds(5.0),
-        ) {
-            FloatOutBoyBmsConnectionMonitoring::Armed
-        } else {
-            FloatOutBoyBmsConnectionMonitoring::Deferred
-        };
-        self.faults = FloatOutBoyBmsFaults::evaluate(integration, sample, connection_monitoring);
+        );
+        self.faults =
+            FloatOutBoyBmsFaults::evaluate(enabled, sample, thresholds, startup_timeout_elapsed);
     }
 
     pub(super) fn take_ready_alert_fault(
         &mut self,
         system_time_ticks: TimestampTicks,
-        disengage_ticks: TimestampTicks,
+        disengage_ticks: WrappingTimer,
     ) -> Option<BmsReadyAlertFault> {
-        let connection = self.faults.contains(FloatOutBoyBmsFault::Connection);
-        let balance = self.faults.contains(FloatOutBoyBmsFault::CellBalance)
-            && float_out_boy_ticks_elapsed(system_time_ticks, disengage_ticks, 5);
-        ((connection || balance)
-            && float_out_boy_ticks_elapsed(system_time_ticks, self.alert_ticks, 15))
-        .then(|| {
-            self.alert_ticks = system_time_ticks;
-            if connection {
-                BmsReadyAlertFault::Connection
-            } else {
-                BmsReadyAlertFault::CellBalance
-            }
-        })
+        let connection = self.faults.contains(FloatOutBoyBmsFaults::CONNECTION);
+        let balance = self.faults.contains(FloatOutBoyBmsFaults::CELL_BALANCE)
+            && disengage_ticks.older_than_secs(system_time_ticks, 5);
+        ((connection || balance) && self.alert_ticks.older_than_secs(system_time_ticks, 15)).then(
+            || {
+                self.alert_ticks.restart(system_time_ticks);
+                if connection {
+                    BmsReadyAlertFault::Connection
+                } else {
+                    BmsReadyAlertFault::CellBalance
+                }
+            },
+        )
     }
 
-    pub(super) const fn contains(&self, fault: FloatOutBoyBmsFault) -> bool {
+    pub(super) const fn contains(&self, fault: FloatOutBoyBmsFaults) -> bool {
         self.faults.contains(fault)
+    }
+
+    #[cfg(test)]
+    pub(super) const fn sample(self) -> FloatOutBoyBmsSample {
+        self.sample
+    }
+
+    #[cfg(test)]
+    pub(super) const fn faults(self) -> FloatOutBoyBmsFaults {
+        self.faults
     }
 }

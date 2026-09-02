@@ -305,12 +305,25 @@ pub fn saturating_trunc_f32_to_i16(value: f32) -> i16 {
     }
 }
 
+/// Keep the low 32 bits of a wrapping integer conversion.
+#[must_use]
+pub const fn truncating_u64_to_u32(value: u64) -> u32 {
+    let [b0, b1, b2, b3, ..] = value.to_le_bytes();
+    u32::from_le_bytes([b0, b1, b2, b3])
+}
+
+/// Return a wire flag mask only when its condition is active.
+#[must_use]
+pub const fn flag_if(condition: bool, mask: u8) -> u8 {
+    if condition { mask } else { 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        FixedBuffer, append_float32_auto, append_i16, append_i32, append_u32, float16_auto_bits,
-        read_float32_auto, read_i32, read_u32, saturating_trunc_f32_to_i16,
-        saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32,
+        FixedBuffer, append_float32_auto, append_i16, append_i32, append_u32, flag_if,
+        float16_auto_bits, read_float32_auto, read_i32, read_u32, saturating_trunc_f32_to_i16,
+        saturating_trunc_f32_to_u8, saturating_trunc_f32_to_u32, truncating_u64_to_u32,
     };
 
     #[test]
@@ -322,6 +335,12 @@ mod tests {
 
         assert_eq!(packet.as_bytes(), [0x12, 0x34, 0x56, 0x78, 0x9a]);
         assert_eq!(packet.len(), 7);
+    }
+
+    #[test]
+    fn truncating_u64_keeps_the_low_word() {
+        assert_eq!(truncating_u64_to_u32(0x1234_5678_9abc_def0), 0x9abc_def0);
+        assert_eq!((flag_if(true, 0x20), flag_if(false, 0x20)), (0x20, 0));
     }
 
     #[test]
