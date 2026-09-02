@@ -200,8 +200,7 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         payload: &[u8],
     ) -> bool {
-        let control = matches!(payload, [1, _, ..]);
-        if !self.data_recorder.has_capability() && !control {
+        if !self.data_recorder.has_capability() {
             return true;
         }
 
