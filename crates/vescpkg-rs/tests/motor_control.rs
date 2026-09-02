@@ -147,3 +147,25 @@ fn shared_motor_control_saturates_an_empty_tone_counter() {
     ));
     assert_eq!(control.tone_counter_for_test(), 1);
 }
+
+#[test]
+fn shared_motor_control_keeps_high_frequency_tones_alive() {
+    let firmware = FirmwareTest::new();
+    let mut control = MotorControl::default();
+    control.play_tone(
+        AudioFrequency::new(vescpkg_rs::Frequency::from_hertz(1_000.0)),
+        MotorCurrent::new(Current::from_amps(2.0)),
+        SampleRate::from_hertz(500.0),
+    );
+
+    control.request_current(MotorCurrent::new(Current::ZERO));
+    assert!(control.apply(
+        firmware.motor(),
+        MotorControlRunState::Running,
+        Rpm::ZERO,
+        TimestampTicks::from_ticks(0),
+        ParkingBrakeMode::NEVER,
+        MotorCurrent::new(Current::ZERO),
+    ));
+    assert_eq!(firmware.commanded_current().current().as_amps(), 2.0);
+}

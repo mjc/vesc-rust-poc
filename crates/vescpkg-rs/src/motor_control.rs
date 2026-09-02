@@ -89,7 +89,8 @@ impl MotorControl {
         sample_rate: SampleRate,
     ) {
         let half_period = sample_rate.as_hertz() / (2.0 * frequency.frequency().as_hertz());
-        let ticks = crate::protocol_buffer::saturating_trunc_f32_to_u8(half_period);
+        // Refloat's integer divider clamps a sub-tick half-period to one tick.
+        let ticks = crate::protocol_buffer::saturating_trunc_f32_to_u8(half_period).max(1);
         if ticks != self.tone_ticks {
             self.tone_ticks = ticks;
             self.tone_counter = ticks;
