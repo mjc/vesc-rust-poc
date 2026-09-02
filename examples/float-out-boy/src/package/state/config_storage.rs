@@ -195,7 +195,7 @@ impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
     pub(super) fn reconfigure_active_config(&mut self) {
         #[cfg(test)]
-        CONFIG_RECONFIGURE_COUNT.with(|count| count.set(count.get() + 1));
+        CONFIG_RECONFIGURE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
         self.refresh_balance_filter_config();
         self.refresh_led_config_runtime_state();
         self.refresh_config_runtime_state();

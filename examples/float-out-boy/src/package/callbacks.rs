@@ -51,7 +51,7 @@ fn log_float_out_boy_command_header_error(
             log.write_bytes(b"Received command data too short: 0 bytes.");
         }
         FloatOutBoyCommandHeaderError::Truncated(_) => {
-            log.write_bytes(b"Received command data too short: 1 bytes.");
+            log.write_bytes(b"Received command data too short: 1 byte.");
         }
         FloatOutBoyCommandHeaderError::InvalidPackageId(package_id) => {
             log.write_bytes(b"Invalid Package ID: ");

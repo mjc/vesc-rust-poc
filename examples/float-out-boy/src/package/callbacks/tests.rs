@@ -58,7 +58,7 @@ fn app_data_callback_logs_exact_truncated_header_lengths_before_dispatch() {
         ),
         (
             [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID].as_slice(),
-            b"Received command data too short: 1 bytes.".as_slice(),
+            b"Received command data too short: 1 byte.".as_slice(),
         ),
         (
             [FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID - 1, 0].as_slice(),
