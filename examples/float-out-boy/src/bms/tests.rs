@@ -156,6 +156,26 @@ fn stale_bms_during_startup_grace_does_not_report_connection() {
 }
 
 #[test]
+fn stale_bms_during_startup_grace_suppresses_telemetry_faults() {
+    let stale = FloatOutBoyBmsSample::new(
+        Voltage::from_volts(2.6),
+        Voltage::from_volts(4.4),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(-1),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(46),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(61),
+        VescSeconds::from_seconds(6.0),
+    );
+
+    let faults = FloatOutBoyBmsFaults::evaluate(
+        enabled_bms(),
+        stale,
+        FloatOutBoyBmsConnectionMonitoring::Deferred,
+    );
+
+    assert_eq!(faults, FloatOutBoyBmsFaults::NONE);
+}
+
+#[test]
 fn message_at_exact_timeout_is_not_stale_like_float_out_boy() {
     let at_timeout = FloatOutBoyBmsSample::new(
         Voltage::from_volts(4.0),
@@ -429,4 +449,31 @@ fn runtime_bms_connection_fault_uses_float_out_boy_startup_timer_boundary() {
         state.bms_faults_for_test(),
         FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
     );
+}
+
+#[test]
+fn runtime_bms_sample_age_includes_time_since_last_push() {
+    let mut state = enabled_state();
+    let fresh = FloatOutBoyBmsSample::new(
+        Voltage::from_volts(3.9),
+        Voltage::from_volts(4.0),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(20),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(30),
+        FloatOutBoyBmsTemperature::from_degrees_celsius(35),
+        VescSeconds::from_seconds(0.2),
+    );
+    state.record_bms_sample(fresh);
+
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(0));
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::NONE);
+
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_001));
+    assert_eq!(
+        state.bms_faults_for_test(),
+        FloatOutBoyBmsFaults::from_fault(FloatOutBoyBmsFault::Connection)
+    );
+
+    state.record_bms_sample(fresh);
+    state.refresh_bms_runtime_state(TimestampTicks::from_ticks(50_002));
+    assert_eq!(state.bms_faults_for_test(), FloatOutBoyBmsFaults::NONE);
 }
