@@ -21,6 +21,12 @@ fn handle_packet(
     imu: &impl vescpkg_rs::Imu,
     packet: AppDataPacket<'_>,
 ) -> bool {
+    let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+        packet.as_bytes(),
+        FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+    ) else {
+        return false;
+    };
     let mut now = || now;
     let mut record_packet = |bytes: &[u8]| {
         sent.push(Vec::from(bytes));
@@ -32,7 +38,8 @@ fn handle_packet(
         imu,
         &mut now,
         &mut record_packet,
-        packet,
+        command,
+        payload,
     )
 }
 
@@ -270,6 +277,7 @@ fn assert_real_config_save_context(firmware: &FirmwareTest) {
         FloatOutBoyRunState::Ready,
         FloatOutBoyMode::Normal,
     ));
+    state.initialize_time_epochs(TimestampTicks::from_ticks(0));
     let expected = *state.serialized_config();
     let installed =
         super::super::custom_config::install_test_float_out_boy_runtime_state(&mut state);

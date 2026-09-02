@@ -52,7 +52,7 @@ pub(super) fn sample_all_data_payloads_with_ride_state(
         FloatOutBoyRealtimeRuntimeSetpoint::new(AngleDegrees::from_degrees(3.0)),
     );
 
-    FloatOutBoyAllDataPayloads::new(
+    FloatOutBoyAllDataPayloads::from_groups(
         FloatOutBoyAllDataBasePayload::new(
             FloatOutBoyRealtimeBalanceCurrent::new(MotorCurrent::new(Current::from_amps(9.0))),
             FloatOutBoyAllDataAttitude::new(

@@ -1,10 +1,7 @@
 use super::{FloatOutBoyBeeperAlert, FloatOutBoyPackageState};
 use crate::config::FloatOutBoyMetadataConfig as Metadata;
 use crate::config::{FLOAT_OUT_BOY_CONFIG_LEN, FloatOutBoyConfigImage};
-use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
-    FloatOutBoyRunState,
-};
+use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyMode, FloatOutBoyRunState};
 use vescpkg_rs::{FirmwareEffects, TimestampTicks};
 
 #[cfg(test)]
@@ -13,6 +10,23 @@ std::thread_local! {
 }
 
 pub(super) const FLOAT_OUT_BOY_EEPROM_LEN: usize = 320;
+const DEFERRED_CONFIG_PERSISTENCE_DELAY_SECONDS: u32 = 1;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DeferredConfigPersistence {
+    #[default]
+    Clean,
+    Pending(FloatOutBoyConfigImage),
+    Writing(Option<FloatOutBoyConfigImage>),
+    Failed(FloatOutBoyConfigImage),
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ConfigEepromReadState {
+    #[default]
+    Idle,
+    Reading,
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in crate::package) enum FloatOutBoyConfigLoadOutcome {
@@ -179,12 +193,123 @@ impl FloatOutBoyPackageState {
     }
 
     pub(in crate::package) fn is_running(&self) -> bool {
-        self.all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state()
-            == FloatOutBoyRunState::Running
+        self.all_data_payloads.ride_state().run_state() == FloatOutBoyRunState::Running
+    }
+
+    fn config_can_persist_now(&self, now: TimestampTicks) -> bool {
+        match self.all_data_payloads.ride_state().run_state() {
+            FloatOutBoyRunState::Running => false,
+            FloatOutBoyRunState::Ready => self
+                .disengage_ticks
+                .older_than_secs(now, DEFERRED_CONFIG_PERSISTENCE_DELAY_SECONDS),
+            FloatOutBoyRunState::Disabled | FloatOutBoyRunState::Startup => true,
+        }
+    }
+
+    fn queue_config_persistence(&mut self, config: &FloatOutBoyConfigImage) {
+        // Keep one queued snapshot; each later AppUI apply replaces it.
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(_) => {
+                DeferredConfigPersistence::Writing(Some(*config))
+            }
+            _ => DeferredConfigPersistence::Pending(*config),
+        };
+    }
+
+    pub(in crate::package) fn begin_active_config_persistence(
+        &mut self,
+        now: TimestampTicks,
+    ) -> Option<FloatOutBoyConfigImage> {
+        let config = self.active_config_image();
+        if self.config_can_persist_now(now)
+            && matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
+            && !matches!(
+                self.deferred_config_persistence,
+                DeferredConfigPersistence::Writing(_)
+            )
+        {
+            self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
+            Some(config)
+        } else {
+            self.queue_config_persistence(&config);
+            None
+        }
+    }
+
+    pub(in crate::package) fn begin_deferred_config_persistence(
+        &mut self,
+        now: TimestampTicks,
+    ) -> Option<FloatOutBoyConfigImage> {
+        if !self.config_can_persist_now(now)
+            || !matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
+        {
+            return None;
+        }
+        let DeferredConfigPersistence::Pending(config) = self.deferred_config_persistence else {
+            return None;
+        };
+        self.deferred_config_persistence = DeferredConfigPersistence::Writing(None);
+        Some(config)
+    }
+
+    pub(in crate::package) fn finish_config_persistence(
+        &mut self,
+        config: &FloatOutBoyConfigImage,
+        stored: bool,
+        now: TimestampTicks,
+    ) {
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(Some(pending)) => {
+                DeferredConfigPersistence::Pending(pending)
+            }
+            DeferredConfigPersistence::Writing(None) if stored => DeferredConfigPersistence::Clean,
+            DeferredConfigPersistence::Writing(None) => DeferredConfigPersistence::Failed(*config),
+            state => state,
+        };
+        if stored {
+            self.acknowledge_command_config_write(now);
+        }
+    }
+
+    pub(super) const fn config_persistence_blocks_engagement(&self) -> bool {
+        matches!(
+            self.deferred_config_persistence,
+            DeferredConfigPersistence::Writing(_)
+        )
+    }
+
+    pub(super) const fn config_eeprom_operation_in_progress(&self) -> bool {
+        !matches!(self.config_eeprom_read_state, ConfigEepromReadState::Idle)
+            || self.config_persistence_blocks_engagement()
+    }
+
+    pub(in crate::package) fn begin_config_eeprom_read(&mut self) -> bool {
+        if self.config_eeprom_operation_in_progress() {
+            return false;
+        }
+        self.config_eeprom_read_state = ConfigEepromReadState::Reading;
+        true
+    }
+
+    pub(in crate::package) fn finish_config_eeprom_read(&mut self) {
+        self.config_eeprom_read_state = ConfigEepromReadState::Idle;
+    }
+
+    pub(super) fn retry_failed_config_persistence_after_ride(&mut self) {
+        if let DeferredConfigPersistence::Failed(config) = self.deferred_config_persistence {
+            self.deferred_config_persistence = DeferredConfigPersistence::Pending(config);
+        }
+    }
+
+    pub(in crate::package) fn finish_configure_without_firmware_migration(&mut self) {
+        self.alert_after_configure();
+    }
+
+    pub(in crate::package) fn record_firmware_imu_migration(
+        &mut self,
+        migration: FirmwareImuMigration,
+    ) {
+        self.firmware_imu_migration = migration;
     }
 
     pub(super) fn replace_active_config(&mut self, config: &FloatOutBoyConfigImage) {
@@ -217,6 +342,12 @@ impl FloatOutBoyPackageState {
     ) {
         self.serialized_config = loaded.config;
         self.config_load_outcome = loaded.outcome;
+        self.deferred_config_persistence = match self.deferred_config_persistence {
+            DeferredConfigPersistence::Writing(_) => {
+                DeferredConfigPersistence::Writing(Some(loaded.config))
+            }
+            _ => DeferredConfigPersistence::Clean,
+        };
     }
 
     pub(in crate::package) fn begin_configure_active(&mut self, now: TimestampTicks) {
@@ -243,7 +374,7 @@ impl FloatOutBoyPackageState {
         config: &[u8],
     ) -> Option<FloatOutBoyConfigImage> {
         let mut config = FloatOutBoyConfigImage::from_serialized(config)?;
-        let ride_state = self.all_data_payloads.base().status().ride_state();
+        let ride_state = self.all_data_payloads.ride_state();
         if !matches!(ride_state.mode(), FloatOutBoyMode::Normal) {
             return None;
         }
@@ -341,12 +472,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn alert_after_configure(&mut self) {
-        let run_state = self
-            .all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
+        let run_state = self.all_data_payloads.ride_state().run_state();
         let alert = match run_state {
             FloatOutBoyRunState::Disabled => FloatOutBoyBeeperAlert::Short(3),
             // Intentional Refloat 1.2.1 bug fix from upstream 37cf343:
@@ -361,16 +487,9 @@ impl FloatOutBoyPackageState {
 
     pub(super) fn handle_config_command(
         &mut self,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
         now: &mut impl FnMut() -> TimestampTicks,
     ) -> bool {
-        let Some((command, _)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
-            bytes,
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-        ) else {
-            return false;
-        };
-
         match command {
             FloatOutBoyAppDataCommand::TuneDefaults => {
                 let mut config = self.serialized_config;

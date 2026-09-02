@@ -179,10 +179,10 @@ impl FloatOutBoyPackageState {
         current_time: f32,
         paint: impl FnOnce(&FloatOutBoyLedRenderer),
     ) {
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
-        let filtered_current = base.motor().filtered_motor_current().current().current();
-        let motor_limit = if base.motor().motor_current().is_negative() {
+        let payloads = self.all_data_payloads;
+        let ride_state = payloads.ride_state();
+        let filtered_current = payloads.filtered_motor_current().current().current();
+        let motor_limit = if payloads.motor_current().is_negative() {
             self.motor_current_min
         } else {
             self.motor_current_max
@@ -191,7 +191,7 @@ impl FloatOutBoyPackageState {
             filtered_current,
             motor_limit.current(),
         );
-        let battery_current = base.motor().battery_current().current();
+        let battery_current = payloads.battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
         } else {
@@ -205,11 +205,11 @@ impl FloatOutBoyPackageState {
             run_state: ride_state.run_state(),
             mode: ride_state.mode(),
             darkride: ride_state.darkride() == FloatOutBoyDarkRideState::Active,
-            footpad: base.footpad().state(),
-            pitch_degrees: crate::wire::degrees(base.attitude().pitch().angle()),
+            footpad: payloads.footpad().state(),
+            pitch_degrees: crate::wire::degrees(payloads.pitch().angle()),
             distance: telemetry.signed_trip_distance().distance().as_meters(),
             battery_level: telemetry.battery_level().as_fraction(),
-            duty_cycle: base.motor().duty_cycle().ratio().as_ratio(),
+            duty_cycle: payloads.duty_cycle().ratio().as_ratio(),
             motor_current_saturation,
             battery_current_saturation,
             moving: telemetry

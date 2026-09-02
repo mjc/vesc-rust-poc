@@ -3,10 +3,11 @@ use crate::beeper::FloatOutBoyBeeperLevel;
 use crate::beeper::{FloatOutBoyBeeper, FloatOutBoyBeeperAlert};
 use crate::bms::FloatOutBoyBmsSample;
 use crate::config::FloatOutBoyConfigImage;
+#[cfg(test)]
+use crate::domain::FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID;
 use crate::domain::{
-    FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAllDataAttitude, FloatOutBoyAllDataBasePayload,
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyAppDataCommand,
-    FloatOutBoyChargingState, FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
+    FloatOutBoyAllDataPayloads, FloatOutBoyAppDataCommand, FloatOutBoyChargingState,
+    FloatOutBoyDarkRideState, FloatOutBoyFootpadState, FloatOutBoyMode,
     FloatOutBoyRealtimeAtrAccelerationDiff, FloatOutBoyRealtimeAtrSpeedBoost,
     FloatOutBoyRealtimeBalanceCurrent, FloatOutBoyRealtimeBalancePitch,
     FloatOutBoyRealtimeBoosterTorque, FloatOutBoyRealtimeControlFrequency,
@@ -71,6 +72,7 @@ mod tuning;
 mod tuning_tests;
 
 use alert_tracker::AlertTrackerState;
+use config_storage::{ConfigEepromReadState, DeferredConfigPersistence};
 pub(in crate::package) use config_storage::{
     FirmwareImuMigration, FloatOutBoyConfigLoadOutcome, migrate_legacy_firmware_imu_settings,
     store_persisted_config,
@@ -88,6 +90,7 @@ type InternalLedRuntime = internal_leds::RuntimeAllocation;
 use konami::FloatOutBoyKonami;
 use lcm::LcmState;
 use motor_kinematics::MotorKinematicsTracker;
+pub(in crate::package) use motor_runtime::{MotorConfigSnapshot, snapshot_motor_config};
 use remote_control::RemoteControlState;
 use reverse_stop::ReverseStop;
 use ride_modifiers::{RideModifierInput, RideModifierState};
@@ -101,6 +104,7 @@ use transition::{
 const FLOAT_OUT_BOY_AUX_BACKUP_DISTANCE_METERS: u64 = 200;
 
 #[inline]
+#[cfg(test)]
 /// C map: `on_command_received` in `third_party/float-out-boy/src/main.c:2143-2225` filters
 /// app-data packets by package byte and command ID before dispatching to per-command handlers.
 fn float_out_boy_command_payload(
@@ -113,13 +117,10 @@ fn float_out_boy_command_payload(
     (actual == command).then_some(payload)
 }
 
-fn float_out_boy_source_noop(bytes: &[u8]) -> bool {
+const fn float_out_boy_source_noop(command: FloatOutBoyAppDataCommand) -> bool {
     matches!(
-        bytes,
-        [package_id, command_id, ..]
-            if *package_id == FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
-                && (*command_id == FloatOutBoyAppDataCommand::PrintInfo.id()
-                    || *command_id == FloatOutBoyAppDataCommand::Experiment.id())
+        command,
+        FloatOutBoyAppDataCommand::PrintInfo | FloatOutBoyAppDataCommand::Experiment
     )
 }
 
@@ -171,6 +172,8 @@ pub struct FloatOutBoyPackageState {
     all_data_payloads: FloatOutBoyAllDataPayloads,
     serialized_config: FloatOutBoyConfigImage,
     config_load_outcome: FloatOutBoyConfigLoadOutcome,
+    deferred_config_persistence: DeferredConfigPersistence,
+    config_eeprom_read_state: ConfigEepromReadState,
     startup_configured: bool,
     firmware_imu_migration: FirmwareImuMigration,
     data_recorder: DataRecorderState,
@@ -242,6 +245,8 @@ impl FloatOutBoyPackageState {
             all_data_payloads: Default::default(),
             serialized_config: Default::default(),
             config_load_outcome: Default::default(),
+            deferred_config_persistence: Default::default(),
+            config_eeprom_read_state: Default::default(),
             startup_configured: Default::default(),
             firmware_imu_migration: Default::default(),
             data_recorder: Default::default(),
@@ -321,7 +326,7 @@ impl FloatOutBoyPackageState {
     pub fn new(all_data_payloads: FloatOutBoyAllDataPayloads) -> Self {
         let mut state = Self::default();
         state.all_data_payloads = all_data_payloads;
-        state.runtime_board_setpoint = state.all_data_payloads.base().setpoints().board().angle();
+        state.runtime_board_setpoint = state.all_data_payloads.setpoints().board().angle();
         state
     }
 
@@ -380,12 +385,7 @@ impl FloatOutBoyPackageState {
 
     /// Return whether the source-backed auxiliary backup threshold has been crossed.
     pub(crate) fn aux_backup_due(&self, odometer: OdometerMeters) -> bool {
-        self.all_data_payloads
-            .base()
-            .status()
-            .ride_state()
-            .run_state()
-            != FloatOutBoyRunState::Running
+        self.all_data_payloads.ride_state().run_state() != FloatOutBoyRunState::Running
             && odometer.as_meters()
                 > self
                     .aux_odometer
@@ -401,18 +401,18 @@ impl FloatOutBoyPackageState {
         }
     }
 
-    pub(crate) fn refresh_aux_motor_config_runtime_state(
+    pub(crate) fn aux_motor_config_refresh_due(&self, now: TimestampTicks) -> bool {
+        self.aux_motor_config_refresh_ticks
+            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
+    }
+
+    pub(in crate::package) fn finish_aux_motor_config_refresh(
         &mut self,
-        telemetry: &impl MotorTelemetry,
+        config: MotorConfigSnapshot,
         now: TimestampTicks,
     ) {
-        if self
-            .aux_motor_config_refresh_ticks
-            .older_than(now, vescpkg_rs::VescSeconds::from_seconds(0.5))
-        {
-            self.refresh_motor_config_runtime_state(telemetry);
-            self.aux_motor_config_refresh_ticks.restart(now);
-        }
+        motor_runtime::apply_motor_config(self, config);
+        self.aux_motor_config_refresh_ticks.restart(now);
     }
 
     #[cfg(test)]
@@ -571,8 +571,7 @@ impl FloatOutBoyPackageState {
         self.update_balance_filter(sample);
 
         let payloads = self.all_data_payloads;
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let (pitch, roll) = self.flywheel_attitude(
             ride_state.mode(),
             AngleDegrees::from(imu.pitch().angle()),
@@ -589,15 +588,15 @@ impl FloatOutBoyPackageState {
             let output = self.balance_loop.advance_balance_loop_elapsed(
                 self.runtime_balance_loop_config(),
                 LoopInput {
-                    setpoint: base.setpoints().board(),
-                    brake_tilt_setpoint: base.setpoints().brake_tilt(),
+                    setpoint: payloads.setpoints().board(),
+                    brake_tilt_setpoint: payloads.setpoints().brake_tilt(),
                     balance_pitch: balance_pitch.angle_degrees(),
                     raw_pitch: pitch,
                     roll: ImuRoll::new(AngleRadians::from(roll)),
                     gyro_pitch: angular_rate.pitch(),
                     gyro_yaw: angular_rate.yaw(),
-                    motor_erpm: base.motor().electrical_speed(),
-                    motor_current: base.motor().motor_current(),
+                    motor_erpm: payloads.electrical_speed(),
+                    motor_current: payloads.motor_current(),
                     motor_current_max: self.motor_current_max,
                     motor_current_min: self.motor_current_min,
                     mode: ride_state.mode(),
@@ -611,20 +610,16 @@ impl FloatOutBoyPackageState {
             self.request_motor_current(output.requested_current);
         }
 
-        let attitude = FloatOutBoyAllDataAttitude::new(
-            balance_pitch,
-            ImuRoll::new(AngleRadians::from(roll)),
-            ImuPitch::new(AngleRadians::from(pitch)),
-        );
-        let base = base
+        self.all_data_payloads = payloads
             .with_balance_current(FloatOutBoyRealtimeBalanceCurrent::new(
                 self.balance_loop.balance_current,
             ))
-            .with_attitude(attitude)
+            .with_balance_pitch(balance_pitch)
+            .with_roll(ImuRoll::new(AngleRadians::from(roll)))
+            .with_pitch(ImuPitch::new(AngleRadians::from(pitch)))
             .with_booster_torque(FloatOutBoyRealtimeBoosterTorque::new(
                 self.balance_loop.booster_torque,
             ));
-        self.all_data_payloads = payloads.with_base(base);
 
         self.apply_motor_control(motor, ride_state.run_state(), now);
         #[cfg(any(test, target_arch = "arm"))]
@@ -691,7 +686,7 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> u8 {
+    pub(crate) const fn lcm_hardware_mode_for_test(&self) -> crate::lcm::FloatOutBoyLedMode {
         self.lcm.hardware_mode()
     }
 
@@ -700,6 +695,7 @@ impl FloatOutBoyPackageState {
     }
 
     pub(super) fn refresh_running_epochs(&mut self, now: TimestampTicks) {
+        self.retry_failed_config_persistence_after_ride();
         self.disengage_ticks.restart(now);
         self.refresh_idle_epoch(now);
     }
@@ -776,12 +772,8 @@ impl FloatOutBoyPackageState {
         config_runtime::refresh_led_effects(self);
     }
 
-    /// Handle one app-data packet in the firmware callback context.
-    ///
-    /// Upstream `on_command_received` dispatches commands at
-    /// `third_party/float-out-boy/src/main.c:2143-2225`; the main
-    /// `float_out_boy_thd` owns `time_update`, `imu_update`, `motor_data_update`, and
-    /// control-loop transitions at `third_party/float-out-boy/src/main.c:772-1080`.
+    #[cfg(test)]
+    /// Parse and handle one raw app-data packet in host tests.
     pub fn handle_packet_with_runtime(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -790,10 +782,15 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        // Device callbacks keep the IMU parameter for one stable packet API;
-        // the device's dedicated IMU callback already refreshed state.
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        // The device's dedicated IMU callback already refreshed state.
         let _ = imu;
-        self.handle_packet_with_telemetry(telemetry, now, reply, bytes)
+        self.handle_command_with_telemetry(telemetry, now, reply, command, payload)
     }
 
     /// Refresh the source-backed runtime slices that Float Out Boy updates near the
@@ -882,11 +879,11 @@ impl FloatOutBoyPackageState {
         current_pitch: ImuPitch,
         system_time_ticks: TimestampTicks,
     ) -> bool {
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
+        let payloads = self.all_data_payloads;
+        let ride_state = payloads.ride_state();
         // C refreshes `d->imu.pitch` before entering the READY Konami branch at
         // `third_party/float-out-boy/src/main.c:775,947-953`.
-        let footpad = base.footpad().state();
+        let footpad = payloads.footpad().state();
 
         let restore_flywheel_config = if ride_state.run_state() == FloatOutBoyRunState::Ready
             && ride_state.mode() != FloatOutBoyMode::Flywheel
@@ -898,22 +895,13 @@ impl FloatOutBoyPackageState {
             self.start_internal_led_confirmation(system_time_ticks);
             // C map: `main.c:85-89` and `main.c:945-949`; this is the same
             // armed default flywheel command used by the native handler.
-            let command = [
-                FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-                FloatOutBoyAppDataCommand::Flywheel.id(),
-                0x82,
-                0,
-                0,
-                0,
-                0,
-                1,
-            ];
-            self.prepare_flywheel_packet(&command).unwrap_or(false)
+            self.prepare_flywheel_command(&[0x82, 0, 0, 0, 0, 1])
+                .unwrap_or(false)
         } else {
             false
         };
 
-        if self.serialized_config.hardware_led_mode_id() == 0 {
+        if self.serialized_config.hardware_led_mode() == crate::lcm::FloatOutBoyLedMode::Off {
             return restore_flywheel_config;
         }
         let status = self.led_runtime_status();
@@ -930,24 +918,16 @@ impl FloatOutBoyPackageState {
         restore_flywheel_config
     }
 
-    fn handle_remote_packet(
+    fn handle_remote_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        let [package_id, command, ..] = bytes else {
-            return false;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID
-            || *command != FloatOutBoyAppDataCommand::Remote.id()
-        {
-            return false;
-        }
-        self.remote_control.handle_packet(
+        self.remote_control.handle_command(
             now(),
             self.disengage_ticks.started(),
             self.serialized_config.remote().max_move_speed(),
-            bytes,
+            payload,
         )
     }
 
@@ -958,10 +938,10 @@ impl FloatOutBoyPackageState {
         system_time_ticks: TimestampTicks,
     ) {
         let config = self.serialized_config;
-        let base = self.all_data_payloads.base();
-        let ride_state = base.status().ride_state();
-        let filtered_current = base.motor().filtered_motor_current().current().current();
-        let braking = base.motor().motor_current().is_negative();
+        let payloads = self.all_data_payloads;
+        let ride_state = payloads.ride_state();
+        let filtered_current = payloads.filtered_motor_current().current().current();
+        let braking = payloads.motor_current().is_negative();
         let current_limit = if braking {
             self.motor_current_min
         } else {
@@ -969,7 +949,7 @@ impl FloatOutBoyPackageState {
         };
         let motor_saturation =
             normalized_current_saturation(filtered_current, current_limit.current());
-        let battery_current = base.motor().battery_current().current();
+        let battery_current = payloads.battery_current().current();
         let battery_limit = if battery_current.is_negative() {
             self.battery_current_min
         } else {
@@ -983,12 +963,12 @@ impl FloatOutBoyPackageState {
                 run_state: ride_state.run_state(),
                 mode: ride_state.mode(),
                 setpoint_adjustment: ride_state.setpoint_adjustment(),
-                duty_cycle: base.motor().duty_cycle().magnitude(),
+                duty_cycle: payloads.duty_cycle().magnitude(),
                 duty_solid_threshold: Ratio::clamped(
                     self.runtime_duty_pushback_threshold().as_ratio()
                         + config.haptic().duty_solid_offset().as_ratio(),
                 ),
-                speed: base.motor().vehicle_speed().speed(),
+                speed: payloads.vehicle_speed().speed(),
                 current_saturation: Ratio::clamped(motor_saturation.max(battery_saturation)),
                 fatal_error: self.alert_tracker.fatal_error(),
             },
@@ -999,8 +979,35 @@ impl FloatOutBoyPackageState {
         );
     }
 
-    /// Handle one app-data packet after refreshing live telemetry fields.
+    /// Handle one decoded app-data command after refreshing live telemetry fields.
     #[cfg_attr(target_arch = "arm", inline(never))]
+    pub fn handle_command_with_telemetry(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        now: &mut impl FnMut() -> TimestampTicks,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
+    ) -> bool {
+        #[cfg(test)]
+        if let Some(handled) = self.handle_effectful_packet_for_test(now, command, payload) {
+            return handled;
+        }
+        if self.handle_control_command(now, command, payload)
+            || self.handle_config_command_boundary(now, command)
+        {
+            return true;
+        }
+        #[cfg(test)]
+        if self.handle_tuning_command(now, command, payload) {
+            return true;
+        }
+        self.handle_query_command(telemetry, now, reply, command, payload)
+            || self.reply_to_all_data_command(telemetry, reply, command, payload)
+    }
+
+    #[cfg(test)]
+    /// Parse and handle one raw app-data packet in telemetry-only host tests.
     pub fn handle_packet_with_telemetry(
         &mut self,
         telemetry: &impl MotorTelemetry,
@@ -1008,50 +1015,40 @@ impl FloatOutBoyPackageState {
         reply: &mut impl FnMut(&[u8]) -> bool,
         bytes: &[u8],
     ) -> bool {
-        #[cfg(test)]
-        if let Some(handled) = self.handle_effectful_packet_for_test(now, bytes) {
-            return handled;
-        }
-        #[cfg(test)]
-        if let Some(handled) = self.handle_tune_packet_for_test(now, bytes) {
-            return handled;
-        }
-        self.handle_control_packet(now, bytes)
-            || self.handle_config_packet(now, bytes)
-            || self.handle_query_packet(telemetry, now, reply, bytes)
-            || self.reply_to_all_data_packet(telemetry, reply, bytes)
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        self.handle_command_with_telemetry(telemetry, now, reply, command, payload)
     }
 
     #[cfg(test)]
     fn handle_effectful_packet_for_test(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> Option<bool> {
-        let [package_id, command, payload @ ..] = bytes else {
-            return None;
-        };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return None;
-        }
-        let Ok(command) = FloatOutBoyAppDataCommand::try_from(*command) else {
-            return None;
-        };
-
         match command {
             FloatOutBoyAppDataCommand::ConfigSave => {
-                let config = self.active_config_image();
-                let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
-                    store_persisted_config(effects, &config)
-                });
-                if stored {
-                    self.acknowledge_command_config_write(now());
+                let requested_at = now();
+                if let Some(config) = self.begin_active_config_persistence(requested_at) {
+                    let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
+                        store_persisted_config(effects, &config)
+                    });
+                    self.finish_config_persistence(&config, stored, now());
                 }
                 Some(true)
             }
             FloatOutBoyAppDataCommand::ConfigRestore => {
+                if !self.begin_config_eeprom_read() {
+                    return Some(true);
+                }
                 let loaded = vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
                 self.begin_restore_persisted_config(&loaded, now());
+                self.finish_config_eeprom_read();
                 let migration = vescpkg_rs::test_support::with_firmware_effects(
                     migrate_legacy_firmware_imu_settings,
                 );
@@ -1062,12 +1059,13 @@ impl FloatOutBoyPackageState {
                 let Some(disabled) = payload.first() else {
                     return Some(false);
                 };
-                if !self.is_running() {
+                if !self.is_running() && self.begin_config_eeprom_read() {
                     let loaded =
                         vescpkg_rs::test_support::with_firmware_effects(load_persisted_config);
                     if let Some(config) =
                         self.apply_lock_from_persisted(&loaded, *disabled != 0, now())
                     {
+                        self.finish_config_eeprom_read();
                         let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
                             store_persisted_config(effects, &config)
                         });
@@ -1078,12 +1076,14 @@ impl FloatOutBoyPackageState {
                             migrate_legacy_firmware_imu_settings,
                         );
                         self.finish_configure_active(migration);
+                    } else {
+                        self.finish_config_eeprom_read();
                     }
                 }
                 Some(true)
             }
             FloatOutBoyAppDataCommand::HandTest => {
-                let Some(restore) = self.prepare_handtest_packet(bytes) else {
+                let Some(restore) = self.prepare_handtest_command(payload) else {
                     return Some(false);
                 };
                 if restore {
@@ -1102,7 +1102,7 @@ impl FloatOutBoyPackageState {
                 Some(true)
             }
             FloatOutBoyAppDataCommand::Flywheel => {
-                let Some(restore) = self.prepare_flywheel_packet(bytes) else {
+                let Some(restore) = self.prepare_flywheel_command(payload) else {
                     return Some(false);
                 };
                 if restore {
@@ -1112,6 +1112,7 @@ impl FloatOutBoyPackageState {
                         &loaded,
                         vescpkg_rs::FirmwareClock::current_timestamp(),
                     );
+                    self.finish_config_eeprom_read();
                     let migration = vescpkg_rs::test_support::with_firmware_effects(
                         migrate_legacy_firmware_imu_settings,
                     );
@@ -1123,70 +1124,61 @@ impl FloatOutBoyPackageState {
         }
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_control_command(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
+    ) -> bool {
+        float_out_boy_source_noop(command)
+            || command == FloatOutBoyAppDataCommand::ChargingState
+                && self.handle_charging_state_command(now, payload)
+            || command == FloatOutBoyAppDataCommand::Remote
+                && self.handle_remote_command(now, payload)
+    }
+
+    #[cfg_attr(target_arch = "arm", inline(never))]
+    fn handle_config_command_boundary(
+        &mut self,
+        now: &mut impl FnMut() -> TimestampTicks,
+        command: FloatOutBoyAppDataCommand,
+    ) -> bool {
+        self.handle_config_command(command, now)
+    }
+
     #[cfg(test)]
-    fn handle_tune_packet_for_test(
+    fn handle_tuning_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> Option<bool> {
-        let [package_id, command_id, ..] = bytes else {
-            return None;
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
+    ) -> bool {
+        let mut config = *self.serialized_config();
+        let Some(commit) = Self::prepare_tune_config(&mut config, command, payload) else {
+            return false;
         };
-        if *package_id != FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID {
-            return None;
-        }
-        let command = FloatOutBoyAppDataCommand::try_from(*command_id).ok()?;
-        if !matches!(
-            command,
-            FloatOutBoyAppDataCommand::RuntimeTune
-                | FloatOutBoyAppDataCommand::TuneTilt
-                | FloatOutBoyAppDataCommand::TuneOther
-                | FloatOutBoyAppDataCommand::Booster
-        ) {
-            return None;
-        }
-        let payload = float_out_boy_command_payload(bytes, command)?;
-        let mut config = *self.serialized_config.as_bytes();
-        let commit = Self::prepare_tune_config(&mut config, command, payload)?;
         self.commit_prepared_tune(&config, commit, now());
-        Some(true)
+        true
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_control_packet(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> bool {
-        float_out_boy_source_noop(bytes)
-            || self.handle_charging_state_packet(now, bytes)
-            || self.handle_remote_packet(now, bytes)
-    }
-
-    #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_config_packet(
-        &mut self,
-        now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
-    ) -> bool {
-        self.handle_config_command(bytes, now)
-    }
-
-    #[cfg_attr(target_arch = "arm", inline(never))]
-    fn handle_query_packet(
+    fn handle_query_command(
         &mut self,
         telemetry: &impl MotorTelemetry,
         now: &mut impl FnMut() -> TimestampTicks,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
-        self.handle_alert_packet(telemetry, reply, bytes)
-            || self.handle_lcm_packet(telemetry, reply, bytes)
-            || self.handle_data_recorder_packet(reply, bytes)
-            || self.reply_to_metadata_packet(reply, bytes)
-            || self.reply_to_legacy_realtime_data_packet(reply, bytes)
-            || self.reply_to_realtime_data_packet(telemetry, now, reply, bytes)
-            || self.reply_to_realtime_selected_packet(telemetry, now, reply, bytes)
+        self.handle_alert_packet(telemetry, reply, command, payload)
+            || self.handle_lcm_command(telemetry, reply, command, payload)
+            || command == FloatOutBoyAppDataCommand::DataRecordRequest
+                && self.handle_data_recorder_packet(reply, payload)
+            || self.reply_to_metadata_command(reply, command, payload)
+            || self.reply_to_legacy_realtime_data_command(reply, command)
+            || self.reply_to_realtime_data_command(telemetry, now, reply, command)
+            || self.reply_to_realtime_selected_command(telemetry, now, reply, command, payload)
     }
 
     #[cfg(test)]
@@ -1262,12 +1254,12 @@ impl FloatOutBoyPackageState {
         );
     }
 
-    fn handle_charging_state_packet(
+    fn handle_charging_state_command(
         &mut self,
         now: &mut impl FnMut() -> TimestampTicks,
-        bytes: &[u8],
+        payload: &[u8],
     ) -> bool {
-        match charging::handle_packet(self.all_data_payloads, bytes) {
+        match charging::handle_command(self.all_data_payloads, payload) {
             Some(payloads) => {
                 self.all_data_payloads = payloads;
                 self.charging_ticks.restart(now());

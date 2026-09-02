@@ -25,8 +25,7 @@ pub(super) fn refresh(state: &mut FloatOutBoyPackageState, adc1: AdcVoltage, adc
         ),
     );
 
-    let payloads = state.all_data_payloads;
-    state.all_data_payloads = payloads.with_base(payloads.base().with_footpad(sample));
+    state.all_data_payloads = state.all_data_payloads.with_footpad(sample);
 }
 
 #[inline]

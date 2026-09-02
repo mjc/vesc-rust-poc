@@ -4,6 +4,8 @@
 //! spawns the main and aux threads after loader metadata setup and before the registration tail.
 
 use super::state::FloatOutBoyPackageState;
+#[cfg(all(not(test), target_arch = "arm"))]
+use super::state::snapshot_motor_config;
 use core::time::Duration;
 use vescpkg_rs::ThreadWorkingAreaSize;
 use vescpkg_rs::prelude::{
@@ -157,12 +159,7 @@ fn finish_float_out_boy_main_thread_tick(
 ) -> FloatOutBoyMainThreadTick {
     #[cfg(test)]
     {
-        let run_state = state
-            .all_data_payloads()
-            .base()
-            .status()
-            .ride_state()
-            .run_state();
+        let run_state = state.all_data_payloads().ride_state().run_state();
         // Host main-loop fixtures preserve their existing deterministic control
         // step. The ARM artifact applies motor output and records samples from
         // the IMU callback, matching Refloat main.
@@ -212,6 +209,7 @@ pub(crate) fn tick_float_out_boy_main_thread_with(
         let loaded =
             vescpkg_rs::test_support::with_firmware_effects(super::state::load_persisted_config);
         state.commit_flywheel_restore(&loaded, system_time_ticks);
+        state.finish_config_eeprom_read();
         let migration = vescpkg_rs::test_support::with_firmware_effects(
             super::state::migrate_legacy_firmware_imu_settings,
         );
@@ -252,12 +250,7 @@ pub(crate) fn prepare_float_out_boy_aux_thread_tick(
     current_time: f32,
     paint_leds: impl FnOnce(&crate::leds::FloatOutBoyLedRenderer),
 ) -> bool {
-    let running = state
-        .all_data_payloads()
-        .base()
-        .status()
-        .ride_state()
-        .run_state()
+    let running = state.all_data_payloads().ride_state().run_state()
         == crate::domain::FloatOutBoyRunState::Running;
     state.check_frequency_tracking(running, system_time_ticks);
     state.apply_pending_internal_led_refresh();
@@ -387,10 +380,28 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyMainThread {
             {
                 let loaded = ctx.with_effects(super::state::load_persisted_config);
                 let now = ctx.firmware().clock().now();
-                let _ = ctx.with_state_mut(|state| state.commit_flywheel_restore(&loaded, now));
+                let _ = ctx.with_state_mut(|state| {
+                    state.commit_flywheel_restore(&loaded, now);
+                    state.finish_config_eeprom_read();
+                });
                 let migration =
                     ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
                 let _ = ctx.with_state_mut(|state| state.finish_configure_active(migration));
+            }
+
+            if let Some(config) = ctx
+                .with_state_mut(|state| state.begin_deferred_config_persistence(system_time_ticks))
+                .flatten()
+            {
+                let stored = ctx
+                    .with_effects(|effects| super::state::store_persisted_config(effects, &config));
+                let migration =
+                    ctx.with_effects(super::state::migrate_legacy_firmware_imu_settings);
+                let finished_at = ctx.firmware().clock().now();
+                let _ = ctx.with_state_mut(|state| {
+                    state.finish_config_persistence(&config, stored, finished_at);
+                    state.record_firmware_imu_migration(migration);
+                });
             }
 
             let tick = prepared.and_then(|prepared| {
@@ -470,12 +481,20 @@ impl vescpkg_rs::FirmwareThread for FloatOutBoyAuxThread {
                 })
                 .unwrap_or(false);
             let stored = backup_due.then(|| firmware.inputs().store_backup().is_ok());
-            let _ = ctx.with_state_mut(|state| {
-                if let Some(stored) = stored {
-                    state.record_aux_backup_result(odometer, stored);
-                }
-                state.refresh_aux_motor_config_runtime_state(telemetry, system_time_ticks);
-            });
+            let refresh_motor_config = ctx
+                .with_state_mut(|state| {
+                    if let Some(stored) = stored {
+                        state.record_aux_backup_result(odometer, stored);
+                    }
+                    state.aux_motor_config_refresh_due(system_time_ticks)
+                })
+                .unwrap_or(false);
+            if refresh_motor_config {
+                let config = snapshot_motor_config(telemetry);
+                let _ = ctx.with_state_mut(|state| {
+                    state.finish_aux_motor_config_refresh(config, system_time_ticks);
+                });
+            }
             threads.sleep_for(Duration::from_micros(u64::from(
                 FLOAT_OUT_BOY_AUX_LOOP_TIME_US,
             )));

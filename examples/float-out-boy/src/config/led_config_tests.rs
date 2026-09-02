@@ -18,6 +18,10 @@ fn decodes_pinned_refloat_cutoff_default_led_config() {
         .expect("generated default LED fields are valid");
 
     assert_eq!(hardware.mode(), FloatOutBoyLedMode::Off);
+    assert_eq!(
+        super::FLOAT_OUT_BOY_DEFAULT_HARDWARE_LED_MODE,
+        hardware.mode()
+    );
     assert_eq!(hardware.pin(), FloatOutBoyLedPin::B7);
     assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::PullupTo5v);
     assert_eq!(
@@ -69,7 +73,8 @@ fn decodes_hardware_mode_from_cutoff_byte_232() {
     let image = FloatOutBoyConfigImage::from_serialized(&bytes).expect("valid image");
     let (hardware, _) = image.led_configs().expect("valid LED fields");
 
-    assert_eq!(image.hardware_led_mode_id(), FloatOutBoyLedMode::Both.id());
+    let mode: FloatOutBoyLedMode = image.hardware_led_mode();
+    assert_eq!(mode, FloatOutBoyLedMode::Both);
     assert_eq!(hardware.mode(), FloatOutBoyLedMode::Both);
     assert_eq!(hardware.pin(), FloatOutBoyLedPin::C9);
     assert_eq!(hardware.pin_config(), FloatOutBoyLedPinConfig::NoPullup);

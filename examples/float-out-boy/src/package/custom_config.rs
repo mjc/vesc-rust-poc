@@ -36,17 +36,31 @@ impl vescpkg_rs::StatefulCustomConfigCallback<FLOAT_OUT_BOY_CONFIG_LEN>
         context: &mut vescpkg_rs::StatefulCallbackContext<'_, Self::State>,
         config: ConfigBytes<'_, FLOAT_OUT_BOY_CONFIG_LEN>,
     ) -> Result<(), Self::Error> {
-        let Some(config) =
-            context.with_state(|state| state.prepare_serialized_config(config.as_bytes()))
-        else {
+        // VESC 6.06+ releases motor control during flash. Apply in RAM first and
+        // defer persistence until the package has remained safely stopped.
+        let now = vescpkg_rs::FirmwareClock::current_timestamp();
+        let Some(config) = context.with_state(|state| {
+            let config = state.prepare_serialized_config(config.as_bytes())?;
+            state.commit_custom_config(config, false, now);
+            let config = state.begin_active_config_persistence(now);
+            if config.is_none() {
+                state.finish_configure_without_firmware_migration();
+            }
+            Some(config)
+        }) else {
             return Err(());
+        };
+        let Some(config) = config else {
+            return Ok(());
         };
         let stored =
             context.with_effects(|effects| super::state::store_persisted_config(effects, &config));
-        let now = vescpkg_rs::FirmwareClock::current_timestamp();
-        context.with_state(|state| state.commit_custom_config(config, stored, now));
         let migration = context.with_effects(super::state::migrate_legacy_firmware_imu_settings);
-        context.with_state(|state| state.finish_configure_active(migration));
+        let finished_at = vescpkg_rs::FirmwareClock::current_timestamp();
+        context.with_state(|state| {
+            state.finish_config_persistence(&config, stored, finished_at);
+            state.finish_configure_active(migration);
+        });
         Ok(())
     }
 
@@ -108,14 +122,19 @@ fn float_out_boy_set_cfg_payload_with_state(
     let Some(config) = state.prepare_serialized_config(config.as_bytes()) else {
         return false;
     };
+    let now = vescpkg_rs::FirmwareClock::current_timestamp();
+    state.commit_custom_config(config, false, now);
+    let Some(config) = state.begin_active_config_persistence(now) else {
+        state.finish_configure_without_firmware_migration();
+        return true;
+    };
     let stored = vescpkg_rs::test_support::with_firmware_effects(|effects| {
         super::state::store_persisted_config(effects, &config)
     });
-    let now = vescpkg_rs::FirmwareClock::current_timestamp();
-    state.commit_custom_config(config, stored, now);
     let migration = vescpkg_rs::test_support::with_firmware_effects(
         super::state::migrate_legacy_firmware_imu_settings,
     );
+    state.finish_config_persistence(&config, stored, now);
     state.finish_configure_active(migration);
     true
 }

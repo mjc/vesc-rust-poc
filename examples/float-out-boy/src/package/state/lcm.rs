@@ -17,6 +17,7 @@ use crate::domain::{
     FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID, FloatOutBoyAppDataCommand, FloatOutBoyMode,
     FloatOutBoyRunState,
 };
+use crate::lcm::FloatOutBoyLedMode;
 use crate::wire::{FloatOutBoyPacket, degrees};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::FirmwareFault;
@@ -52,7 +53,7 @@ fn configured_brightness(config: crate::leds::FloatOutBoyLedsConfig) -> [u8; 3] 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LcmState {
-    hardware_mode: u8,
+    hardware_mode: FloatOutBoyLedMode,
     brightness: [u8; 3],
     lights_off_when_lifted: bool,
     name: [u8; MAX_LCM_NAME_LENGTH],
@@ -73,7 +74,7 @@ impl LcmState {
     // Keep the buffer initialization in its own frame so the loader's direct
     // `package_lib_init` frame stays below the 1,024-byte stack budget.
     #[inline(never)]
-    pub(super) fn new(hardware_mode: u8, lights_off_when_lifted: bool) -> Self {
+    pub(super) fn new(hardware_mode: FloatOutBoyLedMode, lights_off_when_lifted: bool) -> Self {
         Self {
             hardware_mode,
             brightness: [0; 3],
@@ -84,12 +85,12 @@ impl LcmState {
         }
     }
 
-    pub(super) const fn set_hardware_mode(&mut self, hardware_mode: u8) {
+    pub(super) const fn set_hardware_mode(&mut self, hardware_mode: FloatOutBoyLedMode) {
         self.hardware_mode = hardware_mode;
     }
 
     #[cfg(test)]
-    pub(super) const fn hardware_mode(self) -> u8 {
+    pub(super) const fn hardware_mode(self) -> FloatOutBoyLedMode {
         self.hardware_mode
     }
 
@@ -103,7 +104,10 @@ impl LcmState {
     }
 
     const fn enabled(self) -> bool {
-        self.hardware_mode & 0x2 != 0
+        matches!(
+            self.hardware_mode,
+            FloatOutBoyLedMode::External | FloatOutBoyLedMode::Both
+        )
     }
 
     fn poll_request(&mut self, payload: &[u8]) {
@@ -139,10 +143,9 @@ impl LcmState {
             return packet;
         }
 
-        let base = payloads.base();
-        let ride_state = base.status().ride_state();
+        let ride_state = payloads.ride_state();
         let mut state = ride_state.float_state_compat() & 0x0f;
-        state |= base.footpad().state().id() << 4;
+        state |= payloads.footpad().state().id() << 4;
         if matches!(ride_state.mode(), FloatOutBoyMode::HandTest) {
             state |= 0x80;
         }
@@ -152,7 +155,7 @@ impl LcmState {
         let duty_or_pitch = if ride_state.run_state() == FloatOutBoyRunState::Running {
             (telemetry.duty_cycle().ratio().as_ratio().abs() * 100.0).clamp(0.0, 100.0) as u8
         } else if self.lights_off_when_lifted {
-            degrees(base.attitude().pitch().angle()).abs().min(255.0) as u8
+            degrees(payloads.pitch().angle()).abs().min(255.0) as u8
         } else {
             0
         };
@@ -218,20 +221,14 @@ fn firmware_fault_code(fault: FirmwareFault) -> u8 {
 }
 
 impl FloatOutBoyPackageState {
-    pub(super) fn handle_lcm_packet(
+    pub(super) fn handle_lcm_command(
         &mut self,
         telemetry: &impl MotorTelemetry,
         reply: &mut impl FnMut(&[u8]) -> bool,
-        bytes: &[u8],
+        command: FloatOutBoyAppDataCommand,
+        payload: &[u8],
     ) -> bool {
         use FloatOutBoyAppDataCommand as Command;
-
-        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
-            bytes,
-            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
-        ) else {
-            return false;
-        };
 
         match command {
             Command::LcmPoll => {
@@ -270,7 +267,23 @@ impl FloatOutBoyPackageState {
     }
 
     #[cfg(test)]
-    pub(super) fn set_lcm_hardware_mode_for_test(&mut self, mode: u8) {
+    pub(super) fn handle_lcm_packet(
+        &mut self,
+        telemetry: &impl MotorTelemetry,
+        reply: &mut impl FnMut(&[u8]) -> bool,
+        bytes: &[u8],
+    ) -> bool {
+        let Some((command, payload)) = vescpkg_rs::protocol_app_data::parse_app_data_command(
+            bytes,
+            FLOAT_OUT_BOY_APP_DATA_PACKAGE_ID,
+        ) else {
+            return false;
+        };
+        self.handle_lcm_command(telemetry, reply, command, payload)
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_lcm_hardware_mode_for_test(&mut self, mode: FloatOutBoyLedMode) {
         self.lcm.set_hardware_mode(mode);
     }
 }

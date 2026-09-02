@@ -1,10 +1,10 @@
 use super::FloatOutBoyPackageState;
+#[cfg(test)]
 use super::float_out_boy_command_payload;
 use crate::config::FloatOutBoyConfigImage;
-use crate::domain::{
-    FloatOutBoyAllDataPayloads, FloatOutBoyAllDataStatus, FloatOutBoyMode, FloatOutBoyRideState,
-};
-use crate::domain::{FloatOutBoyAppDataCommand, FloatOutBoyRunState};
+#[cfg(test)]
+use crate::domain::FloatOutBoyAppDataCommand;
+use crate::domain::{FloatOutBoyMode, FloatOutBoyRunState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -32,11 +32,11 @@ enum FloatOutBoyHandtestRequest {
 }
 
 impl FloatOutBoyHandtestRequest {
-    fn from_packet(bytes: &[u8]) -> Option<Self> {
+    fn from_payload(payload: &[u8]) -> Option<Self> {
         // C map: `COMMAND_HANDTEST` uses the first payload byte as the on/off
         // flag at `third_party/float-out-boy/src/main.c:2226-2228`.
-        match float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::HandTest) {
-            Some([on, ..]) => Some(Self::from_flag(*on)),
+        match payload {
+            [on, ..] => Some(Self::from_flag(*on)),
             _ => None,
         }
     }
@@ -54,7 +54,7 @@ impl FloatOutBoyHandtestRequest {
     fn apply_to(self, state: &mut FloatOutBoyPackageState) -> bool {
         // C map: `cmd_handtest` only applies when the board is READY and mode
         // is NORMAL or HANDTEST at `third_party/float-out-boy/src/main.c:1426-1430`.
-        let ride_state = state.all_data_payloads.base().status().ride_state();
+        let ride_state = state.all_data_payloads.ride_state();
         if ride_state.run_state() == FloatOutBoyRunState::Ready
             && matches!(
                 ride_state.mode(),
@@ -79,27 +79,27 @@ impl FloatOutBoyHandtestRequest {
     }
 }
 
-fn float_out_boy_payloads_with_ride_state(
-    payloads: FloatOutBoyAllDataPayloads,
-    ride_state: FloatOutBoyRideState,
-) -> FloatOutBoyAllDataPayloads {
-    // C map: `cmd_handtest` preserves the packed ride-state fields while
-    // swapping only mode at `third_party/float-out-boy/src/main.c:1430-1449`.
-    let base = payloads.base();
-    let status = base.status();
-    payloads.with_base(base.with_status(FloatOutBoyAllDataStatus::new(
-        ride_state,
-        status.beep_reason(),
-    )))
-}
-
 impl FloatOutBoyPackageState {
     #[cfg_attr(target_arch = "arm", inline(never))]
-    pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
+    pub(in crate::package) fn prepare_handtest_command(&mut self, payload: &[u8]) -> Option<bool> {
         // QML sends `[101, COMMAND_HANDTEST, on]` from `ui.qml.in:764-768`;
         // Float Out Boy C dispatches it at `third_party/float-out-boy/src/main.c:2226-2228`
         // and applies READY/NORMAL/HANDTEST gates at `third_party/float-out-boy/src/main.c:1421-1430`.
-        FloatOutBoyHandtestRequest::from_packet(bytes).map(|request| request.apply_to(self))
+        let request = FloatOutBoyHandtestRequest::from_payload(payload)?;
+        if self.config_eeprom_operation_in_progress() {
+            return None;
+        }
+        let restore = request.apply_to(self);
+        if restore {
+            debug_assert!(self.begin_config_eeprom_read());
+        }
+        Some(restore)
+    }
+
+    #[cfg(test)]
+    pub(in crate::package) fn prepare_handtest_packet(&mut self, bytes: &[u8]) -> Option<bool> {
+        let payload = float_out_boy_command_payload(bytes, FloatOutBoyAppDataCommand::HandTest)?;
+        self.prepare_handtest_command(payload)
     }
 
     #[cfg(test)]
@@ -112,22 +112,24 @@ impl FloatOutBoyPackageState {
                 vescpkg_rs::test_support::with_firmware_effects(super::load_persisted_config);
             let now = vescpkg_rs::FirmwareClock::current_timestamp();
             if self.commit_handtest_restore(&loaded, now) {
+                self.finish_config_eeprom_read();
                 let migration = vescpkg_rs::test_support::with_firmware_effects(
                     super::migrate_legacy_firmware_imu_settings,
                 );
                 self.finish_configure_active(migration);
+            } else {
+                self.finish_config_eeprom_read();
             }
         }
         true
     }
 
+    #[cfg_attr(target_arch = "arm", inline(never))]
     pub(super) fn set_ride_mode(&mut self, mode: FloatOutBoyMode) {
         // HANDTEST changes only `state.mode` in C at `third_party/float-out-boy/src/main.c:1430`;
         // preserve the rest of the packed Rust ride state while swapping mode.
-        let payloads = self.all_data_payloads;
-        let ride_state = payloads.base().status().ride_state();
-        self.all_data_payloads =
-            float_out_boy_payloads_with_ride_state(payloads, ride_state.with_mode(mode));
+        let ride_state = self.all_data_payloads.ride_state().with_mode(mode);
+        self.all_data_payloads = self.all_data_payloads.with_ride_state(ride_state);
     }
 
     #[cfg_attr(target_arch = "arm", inline(never))]
@@ -144,7 +146,7 @@ impl FloatOutBoyPackageState {
         loaded: &super::FloatOutBoyPersistedConfig,
         now: vescpkg_rs::TimestampTicks,
     ) -> bool {
-        let ride_state = self.all_data_payloads.base().status().ride_state();
+        let ride_state = self.all_data_payloads.ride_state();
         if ride_state.run_state() != FloatOutBoyRunState::Ready
             || ride_state.mode() != FloatOutBoyMode::Normal
         {

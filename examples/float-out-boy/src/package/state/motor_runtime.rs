@@ -1,18 +1,29 @@
 use super::FloatOutBoyPackageState;
 use super::limits::traction_loss;
-use crate::domain::{
-    FloatOutBoyAllDataMotorPayload, FloatOutBoyRealtimeFilteredMotorCurrent,
-    FloatOutBoyRealtimeMotorCurrents,
-};
+use crate::domain::{FloatOutBoyRealtimeFilteredMotorCurrent, FloatOutBoyRealtimeMotorCurrents};
 use vescpkg_rs::MotorTelemetry;
 use vescpkg_rs::prelude::{
-    BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle, Frequency,
-    MotorCurrent, SampleRate, SignedRatio,
+    BatteryCellCount, BatteryCurrent, BatteryVoltage, Current, DirectionalMotorCurrent, DutyCycle,
+    DutyCycleLimit, Frequency, InputCurrent, MotorCurrent, MotorCurrentLimit, SampleRate,
+    SignedRatio, TemperatureLimitStart,
 };
 
 const CURRENT_FILTER_Q: f32 = 0.707;
 const DEFAULT_CURRENT_FILTER_FREQUENCY: Frequency = Frequency::from_hertz(20.0);
 const MOTOR_DATA_EMA_CUTOFF: Frequency = Frequency::from_hertz(1.0);
+
+#[derive(Clone, Copy)]
+pub(in crate::package) struct MotorConfigSnapshot {
+    duty_max_with_margin: DutyCycleLimit,
+    motor_current_max: MotorCurrentLimit,
+    motor_current_min: MotorCurrentLimit,
+    battery_current_max: InputCurrent,
+    battery_current_min: InputCurrent,
+    mosfet_temperature_limit_start: TemperatureLimitStart,
+    motor_temperature_limit_start: TemperatureLimitStart,
+    battery_cell_count: Option<BatteryCellCount>,
+    motor_torque_constant: crate::motor_torque::MotorTorqueConstant,
+}
 
 pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
     if configured.as_hertz() < 1.0 {
@@ -22,22 +33,42 @@ pub(super) fn current_filter_frequency(configured: Frequency) -> Frequency {
     }
 }
 
-pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
-    state.duty_max_with_margin = telemetry
-        .duty_cycle_limit()
-        .reduced_by(traction_loss::DUTY_MARGIN);
-    state.motor_current_max = telemetry.drive_current_limit();
-    state.motor_current_min = telemetry.brake_current_limit();
+pub(in crate::package) fn snapshot_motor_config(
+    telemetry: &impl MotorTelemetry,
+) -> MotorConfigSnapshot {
     let settings = vescpkg_rs::FirmwareSettings;
-    state.battery_current_max = settings.input_current_max();
-    state.battery_current_min = settings.input_current_min();
-    state.mosfet_temperature_limit_start = telemetry.mosfet_temperature_limit_start();
-    state.motor_temperature_limit_start = telemetry.motor_temperature_limit_start();
-    state.battery_cell_count = telemetry.battery_cell_count();
-    state.motor_torque_constant = crate::motor_torque::MotorTorqueConstant::from_firmware_config(
-        settings.foc_motor_flux_linkage(),
-        settings.motor_pole_count().ok(),
-    );
+    MotorConfigSnapshot {
+        duty_max_with_margin: telemetry
+            .duty_cycle_limit()
+            .reduced_by(traction_loss::DUTY_MARGIN),
+        motor_current_max: telemetry.drive_current_limit(),
+        motor_current_min: telemetry.brake_current_limit(),
+        battery_current_max: settings.input_current_max(),
+        battery_current_min: settings.input_current_min(),
+        mosfet_temperature_limit_start: telemetry.mosfet_temperature_limit_start(),
+        motor_temperature_limit_start: telemetry.motor_temperature_limit_start(),
+        battery_cell_count: telemetry.battery_cell_count(),
+        motor_torque_constant: crate::motor_torque::MotorTorqueConstant::from_firmware_config(
+            settings.foc_motor_flux_linkage(),
+            settings.motor_pole_count().ok(),
+        ),
+    }
+}
+
+pub(super) fn apply_motor_config(state: &mut FloatOutBoyPackageState, config: MotorConfigSnapshot) {
+    state.duty_max_with_margin = config.duty_max_with_margin;
+    state.motor_current_max = config.motor_current_max;
+    state.motor_current_min = config.motor_current_min;
+    state.battery_current_max = config.battery_current_max;
+    state.battery_current_min = config.battery_current_min;
+    state.mosfet_temperature_limit_start = config.mosfet_temperature_limit_start;
+    state.motor_temperature_limit_start = config.motor_temperature_limit_start;
+    state.battery_cell_count = config.battery_cell_count;
+    state.motor_torque_constant = config.motor_torque_constant;
+}
+
+pub(super) fn refresh_config(state: &mut FloatOutBoyPackageState, telemetry: &impl MotorTelemetry) {
+    apply_motor_config(state, snapshot_motor_config(telemetry));
 }
 
 pub(super) fn refresh(
@@ -46,15 +77,13 @@ pub(super) fn refresh(
     elapsed: vescpkg_rs::prelude::VescSeconds,
 ) {
     let payloads = state.all_data_payloads;
-    let base = payloads.base();
-    let motor = base.motor();
     // C map: Float Out Boy v1.2.1 updates motor fields in `motor_data_update` at
     // `third_party/float-out-boy/src/motor_data.c:108-145`. Battery current uses the same first-order
     // smoothing expression from `third_party/float-out-boy/src/motor_data.c:140`; the package main
     // loop invokes this refresh before control aggregation like the source loop.
-    let previous_battery_current = motor.battery_current().current();
+    let previous_battery_current = payloads.battery_current().current();
     let next_battery_current = telemetry.battery_current().current();
-    let previous_duty_cycle = motor.duty_cycle().ratio().as_ratio();
+    let previous_duty_cycle = payloads.duty_cycle().ratio().as_ratio();
     let raw_duty_cycle = telemetry.duty_cycle().ratio().as_ratio().abs();
     let smoothing = vescpkg_rs::ema_alpha(
         MOTOR_DATA_EMA_CUTOFF,
@@ -82,11 +111,11 @@ pub(super) fn refresh(
     // Upstream averages acceleration over `ACCEL_ARRAY_SIZE == 40` samples
     // in `third_party/float-out-boy/src/motor_data.c:128-133`.
     state.motor_kinematics.record(motor_erpm, elapsed);
-    let motor = FloatOutBoyAllDataMotorPayload::new(
-        BatteryVoltage::new(telemetry.input_voltage().voltage()),
-        electrical_speed,
-        telemetry.vehicle_speed(),
-        FloatOutBoyRealtimeMotorCurrents::new(
+    state.all_data_payloads = payloads
+        .with_motor_battery_voltage(BatteryVoltage::new(telemetry.input_voltage().voltage()))
+        .with_electrical_speed(electrical_speed)
+        .with_vehicle_speed(telemetry.vehicle_speed())
+        .with_currents(FloatOutBoyRealtimeMotorCurrents::new(
             MotorCurrent::new(telemetry.motor_current().current()),
             directional_current,
             filtered_current,
@@ -94,17 +123,17 @@ pub(super) fn refresh(
                 previous_battery_current
                     + (next_battery_current - previous_battery_current) * smoothing,
             ),
-        ),
-        DutyCycle::new(SignedRatio::clamped(
+        ))
+        .with_duty_cycle(DutyCycle::new(SignedRatio::clamped(
             previous_duty_cycle + smoothing * (raw_duty_cycle - previous_duty_cycle),
-        )),
+        )))
         // Upstream compact all-data reads optional `VESC_IF->foc_get_id` at
         // `third_party/float-out-boy/src/main.c:1364-1368` and writes 222 when the slot is absent.
-        telemetry
-            .d_axis_current()
-            .map(|current| MotorCurrent::new(current.current())),
-    );
-    state.all_data_payloads = payloads.with_base(base.with_motor(motor));
+        .with_foc_id_current(
+            telemetry
+                .d_axis_current()
+                .map(|current| MotorCurrent::new(current.current())),
+        );
 }
 
 pub(super) fn reconfigure_filters(state: &mut FloatOutBoyPackageState, frequency: SampleRate) {

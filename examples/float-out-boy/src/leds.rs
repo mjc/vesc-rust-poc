@@ -37,7 +37,9 @@ pub mod lcm {
 
 use vescpkg_rs::prelude::Ratio;
 
-const FULL_RATIO: Ratio = Ratio::from_ratio_const(1.0);
+const LED_FADE_STEP: Ratio = Ratio::from_ratio_const(3.0 / 30.0);
+const SENSOR_FADE_STEP: Ratio = Ratio::from_ratio_const(10.0 / 30.0);
+const UTILIZATION_FADE_STEP: Ratio = Ratio::from_ratio_const(5.0 / 30.0);
 
 pub use vescpkg_rs::stm32::float_out_boy_ws2812::{
     Pin as FloatOutBoyLedPin, PinConfig as FloatOutBoyLedPinConfig,
@@ -122,6 +124,12 @@ pub struct FloatOutBoyLedPixel {
 }
 
 impl FloatOutBoyLedPixel {
+    const fn rgb(red: u8, green: u8, blue: u8) -> Self {
+        Self {
+            channels: [red, green, blue, 0],
+        }
+    }
+
     /// Return Refloat 1.2.1's exact channel values for a named color.
     #[must_use]
     pub fn from_named(color: FloatOutBoyLedColor) -> Self {
@@ -168,7 +176,7 @@ impl FloatOutBoyLedPixel {
         if blend.is_nan() {
             return Self::default();
         }
-        first.scaled_and_blended(second, FULL_RATIO, Ratio::clamped(blend))
+        first.scaled_and_blended(second, Ratio::FULL, Ratio::clamped(blend))
     }
 }
 
@@ -375,9 +383,9 @@ pub struct FloatOutBoyLedUpdate {
 pub struct FloatOutBoyLedDynamics {
     run_state: crate::FloatOutBoyRunState,
     board_is_upright: bool,
-    on_off_fade: f32,
-    left_sensor: f32,
-    right_sensor: f32,
+    on_off_fade: Ratio,
+    left_sensor: Ratio,
+    right_sensor: Ratio,
     headlights_state: FloatOutBoyHeadlightsState,
     headlights_split: f32,
     headlights_time: f32,
@@ -393,9 +401,9 @@ impl FloatOutBoyLedDynamics {
         Self {
             run_state: crate::FloatOutBoyRunState::Startup,
             board_is_upright: false,
-            on_off_fade: 0.0,
-            left_sensor: 0.0,
-            right_sensor: 0.0,
+            on_off_fade: Ratio::ZERO,
+            left_sensor: Ratio::ZERO,
+            right_sensor: Ratio::ZERO,
             headlights_state: FloatOutBoyHeadlightsState::Off,
             headlights_split: 1.0,
             headlights_time: 0.0,
@@ -426,12 +434,11 @@ impl FloatOutBoyLedDynamics {
             return false;
         }
 
-        if !config.on && self.on_off_fade == 0.0 {
+        if !config.on && self.on_off_fade.is_zero() {
             self.run_state = run_state;
             return false;
         }
-        self.on_off_fade =
-            vescpkg_rs::slew_toward(self.on_off_fade, f32::from(u8::from(config.on)), 3.0 / 30.0);
+        self.on_off_fade = self.on_off_fade.slew_toward(config.on, LED_FADE_STEP);
 
         if !self.board_is_upright && pitch_degrees > 60.0 {
             self.board_is_upright = true;
@@ -444,7 +451,7 @@ impl FloatOutBoyLedDynamics {
             if matches!(self.run_state, crate::FloatOutBoyRunState::Disabled)
                 || matches!(run_state, crate::FloatOutBoyRunState::Disabled)
             {
-                self.on_off_fade = 0.0;
+                self.on_off_fade = Ratio::ZERO;
             }
             if running && !self.headlights_state.is_transitioning() {
                 self.direction_forward = pitch_degrees >= 0.0;
@@ -459,10 +466,8 @@ impl FloatOutBoyLedDynamics {
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Left));
         let right =
             show_sensors && (both || matches!(footpad, crate::FloatOutBoyFootpadState::Right));
-        self.left_sensor =
-            vescpkg_rs::slew_toward(self.left_sensor, f32::from(u8::from(left)), 10.0 / 30.0);
-        self.right_sensor =
-            vescpkg_rs::slew_toward(self.right_sensor, f32::from(u8::from(right)), 10.0 / 30.0);
+        self.left_sensor = self.left_sensor.slew_toward(left, SENSOR_FADE_STEP);
+        self.right_sensor = self.right_sensor.slew_toward(right, SENSOR_FADE_STEP);
 
         let headlights_should = run_state == crate::FloatOutBoyRunState::Running
             && mode != crate::FloatOutBoyMode::Flywheel
@@ -523,16 +528,13 @@ impl FloatOutBoyLedDynamics {
     /// Return the global renderer fade.
     #[must_use]
     pub fn on_off_fade(self) -> Ratio {
-        Ratio::clamped(self.on_off_fade)
+        self.on_off_fade
     }
 
     /// Return the left/right footpad indicator fades.
     #[must_use]
     pub fn sensor_fades(self) -> (Ratio, Ratio) {
-        (
-            Ratio::clamped(self.left_sensor),
-            Ratio::clamped(self.right_sensor),
-        )
+        (self.left_sensor, self.right_sensor)
     }
 
     vescpkg_rs::const_field_getters! {
@@ -575,9 +577,9 @@ pub struct FloatOutBoyLedStatusUpdate {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyStatusDynamics {
-    brightness: f32,
-    utilization_blend: f32,
-    idle_blend: f32,
+    brightness: Ratio,
+    utilization_blend: Ratio,
+    idle_blend: Ratio,
     idle_time: f32,
     animation_start: f32,
 }
@@ -609,9 +611,9 @@ struct FloatOutBoyStatusLayers {
 impl FloatOutBoyStatusDynamics {
     const fn new() -> Self {
         Self {
-            brightness: 0.0,
-            utilization_blend: 0.0,
-            idle_blend: 0.0,
+            brightness: Ratio::ZERO,
+            utilization_blend: Ratio::ZERO,
+            idle_blend: Ratio::ZERO,
             idle_time: 0.0,
             animation_start: 0.0,
         }
@@ -624,16 +626,13 @@ impl FloatOutBoyStatusDynamics {
         } else {
             status_config.brightness_headlights_off
         };
-        if self.idle_blend > 0.0 {
-            target_brightness = Ratio::clamped(
-                target_brightness
-                    .as_ratio()
-                    .min(config.status_idle.brightness.as_ratio()),
-            );
+        if !self.idle_blend.is_zero() {
+            target_brightness = target_brightness.min(config.status_idle.brightness);
         }
-        self.brightness =
-            vescpkg_rs::slew_toward(self.brightness, target_brightness.as_ratio(), 3.0 / 30.0);
-        Ratio::clamped(self.brightness)
+        self.brightness = self
+            .brightness
+            .slew_toward(target_brightness, LED_FADE_STEP);
+        self.brightness
     }
 
     fn update(
@@ -674,38 +673,33 @@ impl FloatOutBoyStatusDynamics {
         // Upstream 73086101 reuses this serialized field as the motor-utilization threshold.
         let utilization_threshold = status_config.duty_threshold.as_ratio().max(0.15);
         let utilization_target = if utilization > utilization_threshold {
-            1.0
+            Ratio::FULL
         } else if utilization < utilization_threshold - 0.1 {
-            0.0
+            Ratio::ZERO
         } else {
             self.utilization_blend
         };
-        self.utilization_blend =
-            vescpkg_rs::slew_toward(self.utilization_blend, utilization_target, 5.0 / 30.0)
-                .clamp(0.0, 1.0);
+        self.utilization_blend = self
+            .utilization_blend
+            .slew_toward(utilization_target, UTILIZATION_FADE_STEP);
 
         if sensors.0.is_full() || sensors.1.is_full() {
-            self.idle_blend = 0.0;
+            self.idle_blend = Ratio::ZERO;
         }
         let idle_timeout = f32::from(status_config.idle_timeout);
-        let idle_target = if idle_timeout > 0.0 && current_time - self.idle_time > idle_timeout {
-            if self.idle_blend == 0.0 {
-                self.animation_start = current_time;
-            }
-            1.0
-        } else {
-            0.0
-        };
-        self.idle_blend =
-            vescpkg_rs::slew_toward(self.idle_blend, idle_target, 3.0 / 30.0).clamp(0.0, 1.0);
+        let idle = idle_timeout > 0.0 && current_time - self.idle_time > idle_timeout;
+        if idle && self.idle_blend.is_zero() {
+            self.animation_start = current_time;
+        }
+        self.idle_blend = self.idle_blend.slew_toward(idle, LED_FADE_STEP);
         if input.moving {
             self.idle_time = current_time;
         }
         (
             utilization,
             utilization_kind,
-            Ratio::clamped(self.utilization_blend),
-            Ratio::clamped(self.idle_blend),
+            self.utilization_blend,
+            self.idle_blend,
             current_time - self.animation_start,
         )
     }
@@ -726,10 +720,10 @@ pub struct FloatOutBoyLedRenderer {
     rear_bar: FloatOutBoyLedBarConfig,
     animation_start: f32,
     confirmation_start: f32,
-    front_brightness: f32,
-    rear_brightness: f32,
-    status_on_front_blend: f32,
-    status_on_front_idle_blend: f32,
+    front_brightness: Ratio,
+    rear_brightness: Ratio,
+    status_on_front_blend: Ratio,
+    status_on_front_idle_blend: Ratio,
     status_on_front_idle_time: f32,
 }
 
@@ -751,15 +745,19 @@ impl FloatOutBoyLedRenderer {
             rear_bar: config.rear,
             animation_start: 0.0,
             confirmation_start: -1.0,
-            front_brightness: config.front.brightness.as_ratio(),
-            rear_brightness: config.rear.brightness.as_ratio(),
-            status_on_front_blend: 0.0,
-            status_on_front_idle_blend: 0.0,
+            front_brightness: config.front.brightness,
+            rear_brightness: config.rear.brightness,
+            status_on_front_blend: Ratio::ZERO,
+            status_on_front_idle_blend: Ratio::ZERO,
             status_on_front_idle_time: 0.0,
         }
     }
 
     /// Advance and compose the front/rear frame in Refloat's transition order.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one source-ordered LED composition pass"
+    )]
     pub fn update(
         &mut self,
         config: FloatOutBoyLedsConfig,
@@ -782,7 +780,7 @@ impl FloatOutBoyLedRenderer {
             self.status_dynamics.idle_time = current_time;
             self.status_on_front_idle_time = current_time;
             if upright {
-                self.status_on_front_blend = 1.0;
+                self.status_on_front_blend = Ratio::FULL;
             }
         }
         if input.footpad.is_pressed() || (!was_upright && upright) {
@@ -793,52 +791,69 @@ impl FloatOutBoyLedRenderer {
             && upright;
         let status_brightness = self.status_dynamics.update_brightness(config);
         let front_target = if status_on_front {
-            status_brightness.as_ratio()
+            status_brightness
         } else if upright && config.lifted.lights_off {
-            0.0
+            Ratio::ZERO
         } else {
-            self.front_bar.brightness.as_ratio()
+            self.front_bar.brightness
         };
         let rear_target = if upright && config.lifted.lights_off {
-            0.0
+            Ratio::ZERO
         } else {
-            self.rear_bar.brightness.as_ratio()
+            self.rear_bar.brightness
         };
-        self.front_brightness =
-            vescpkg_rs::slew_toward(self.front_brightness, front_target, 3.0 / 30.0);
-        self.rear_brightness =
-            vescpkg_rs::slew_toward(self.rear_brightness, rear_target, 3.0 / 30.0);
-        self.status_on_front_blend = vescpkg_rs::slew_toward(
-            self.status_on_front_blend,
-            f32::from(u8::from(status_on_front)),
-            3.0 / 30.0,
-        );
+        self.front_brightness = self
+            .front_brightness
+            .slew_toward(front_target, LED_FADE_STEP);
+        self.rear_brightness = self.rear_brightness.slew_toward(rear_target, LED_FADE_STEP);
+        self.status_on_front_blend = self
+            .status_on_front_blend
+            .slew_toward(status_on_front, LED_FADE_STEP);
         if matches!(input.run_state, crate::FloatOutBoyRunState::Disabled) {
             self.status
-                .render_disabled(status_brightness, fade, current_time);
+                .render_disabled(status_brightness * fade, current_time);
             self.front
-                .render_disabled(Ratio::clamped(self.front_brightness), fade, current_time);
+                .render_disabled(self.front_brightness * fade, current_time);
             self.rear
-                .render_disabled(Ratio::clamped(self.rear_brightness), fade, current_time);
+                .render_disabled(self.rear_brightness * fade, current_time);
             return true;
         }
 
-        let status_layers = self.compose_status(config, input, current_time, fade, upright_changed);
-        if config.lifted.status_on_front && self.status_on_front_blend > 0.0 {
+        let status_config = config.status;
+        let sensors = self.dynamics.sensor_fades();
+        let (utilization, utilization_kind, utilization_blend, idle_blend, idle_animation_time) =
+            self.status_dynamics
+                .update(config, input, sensors, upright_changed, current_time);
+        let status_layers = FloatOutBoyStatusLayers {
+            brightness: self.status_dynamics.brightness,
+            fade,
+            blend: Ratio::FULL,
+            idle_blend,
+            idle: FloatOutBoyStatusIdleLayer::Animate(config.status_idle, idle_animation_time),
+            reverse: false,
+            red_percentage: status_config.red_bar_percentage,
+            battery: input.battery_level.clamp(0.0, 1.0),
+            utilization,
+            utilization_kind,
+            utilization_blend,
+            current_time,
+            sensors,
+            confirmation_progress: (current_time - self.confirmation_start) / 0.8,
+        };
+        self.status.render_status_layers(status_layers);
+        if config.lifted.status_on_front && !self.status_on_front_blend.is_zero() {
             let front_idle =
                 config.lifted.lights_off && current_time - self.status_on_front_idle_time > 3.0;
-            self.status_on_front_idle_blend = vescpkg_rs::slew_toward(
-                self.status_on_front_idle_blend,
-                f32::from(u8::from(front_idle)),
-                3.0 / 30.0,
-            );
+            self.status_on_front_idle_blend = self
+                .status_on_front_idle_blend
+                .slew_toward(front_idle, LED_FADE_STEP);
         }
 
         let animation_time = current_time - self.animation_start;
         let mut front_bar = self.front_bar;
-        front_bar.brightness = Ratio::clamped(self.front_brightness);
+        front_bar.brightness = self.front_brightness;
         let mut rear_bar = self.rear_bar;
-        rear_bar.brightness = Ratio::clamped(self.rear_brightness);
+        rear_bar.brightness = self.rear_brightness;
         self.front.render_bar(front_bar, fade, animation_time);
         self.rear.render_bar(rear_bar, fade, animation_time);
 
@@ -853,7 +868,16 @@ impl FloatOutBoyLedRenderer {
             (old_headlights, headlights),
             (old_direction, direction),
         );
-        self.compose_front_status(config, status_layers);
+        let blend = self.status_on_front_blend;
+        if config.lifted.status_on_front && !blend.is_zero() {
+            let mut layers = status_layers;
+            layers.brightness = self.front_brightness;
+            layers.blend = blend;
+            layers.idle_blend = self.status_on_front_idle_blend;
+            layers.idle = FloatOutBoyStatusIdleLayer::Black;
+            layers.reverse = true;
+            self.front.render_status_layers(layers);
+        }
         true
     }
 
@@ -909,57 +933,6 @@ impl FloatOutBoyLedRenderer {
         }
     }
 
-    fn compose_status(
-        &mut self,
-        config: FloatOutBoyLedsConfig,
-        input: FloatOutBoyLedUpdate,
-        current_time: f32,
-        fade: Ratio,
-        reset_idle: bool,
-    ) -> FloatOutBoyStatusLayers {
-        let status_config = config.status;
-        let sensors = self.dynamics.sensor_fades();
-        let (utilization, utilization_kind, utilization_blend, idle_blend, idle_animation_time) =
-            self.status_dynamics
-                .update(config, input, sensors, reset_idle, current_time);
-
-        let layers = FloatOutBoyStatusLayers {
-            brightness: Ratio::clamped(self.status_dynamics.brightness),
-            fade,
-            blend: FULL_RATIO,
-            idle_blend,
-            idle: FloatOutBoyStatusIdleLayer::Animate(config.status_idle, idle_animation_time),
-            reverse: false,
-            red_percentage: status_config.red_bar_percentage,
-            battery: input.battery_level.clamp(0.0, 1.0),
-            utilization,
-            utilization_kind,
-            utilization_blend,
-            current_time,
-            sensors,
-            confirmation_progress: (current_time - self.confirmation_start) / 0.8,
-        };
-        self.status.render_status_layers(layers);
-        layers
-    }
-
-    fn compose_front_status(
-        &mut self,
-        config: FloatOutBoyLedsConfig,
-        mut layers: FloatOutBoyStatusLayers,
-    ) {
-        let blend = Ratio::clamped(self.status_on_front_blend);
-        if !config.lifted.status_on_front || blend.is_zero() {
-            return;
-        }
-        layers.brightness = Ratio::clamped(self.front_brightness);
-        layers.blend = blend;
-        layers.idle_blend = Ratio::clamped(self.status_on_front_idle_blend);
-        layers.idle = FloatOutBoyStatusIdleLayer::Black;
-        layers.reverse = true;
-        self.front.render_status_layers(layers);
-    }
-
     fn render_pair_transition(
         &mut self,
         mode: FloatOutBoyLedTransition,
@@ -998,14 +971,13 @@ pub enum FloatOutBoyStatusProgress {
 /// Shared brightness and blend inputs for one LED overlay.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FloatOutBoyLedOverlay {
-    strip_brightness: Ratio,
-    on_off_fade: Ratio,
+    brightness: Ratio,
     blend: Ratio,
 }
 
 impl FloatOutBoyLedOverlay {
     fn brightness(self, dim: f32) -> Ratio {
-        Ratio::clamped((self.strip_brightness * self.on_off_fade).as_ratio() * dim)
+        Ratio::clamped(self.brightness.as_ratio() * dim)
     }
 }
 
@@ -1059,9 +1031,7 @@ impl FloatOutBoyLedStripFrame {
             (left.as_ratio(), right.as_ratio())
         };
         let blend = Ratio::clamped(overlay.blend.as_ratio().min(left.max(right)));
-        let color = FloatOutBoyLedPixel {
-            channels: [0, 0xc0, 0xff, 0],
-        };
+        let color = FloatOutBoyLedPixel::rgb(0, 0xc0, 0xff);
 
         for index in 0..len {
             let mut dim = 0.0_f32;
@@ -1111,8 +1081,7 @@ impl FloatOutBoyLedStripFrame {
         }
 
         let overlay = |amount| FloatOutBoyLedOverlay {
-            strip_brightness: brightness,
-            on_off_fade: fade,
+            brightness: brightness * fade,
             blend: amount,
         };
         if !idle_blend.is_full() && !utilization_blend.is_full() {
@@ -1136,7 +1105,7 @@ impl FloatOutBoyLedStripFrame {
             self.render_footpads(left, right, reverse, overlay(blend));
         }
         if (0.0..=1.0).contains(&confirmation_progress) {
-            self.render_confirmation(brightness, fade, confirmation_progress);
+            self.render_confirmation(brightness * fade, confirmation_progress);
         }
     }
 
@@ -1158,22 +1127,12 @@ impl FloatOutBoyLedStripFrame {
             len_float * red_percentage.as_ratio(),
         )));
         let red_offset = len.saturating_sub(red_count);
-        let red = FloatOutBoyLedPixel {
-            channels: [0xff, 0x38, 0x28, 0],
-        };
+        let red = FloatOutBoyLedPixel::rgb(0xff, 0x38, 0x28);
         let base = match kind {
-            FloatOutBoyStatusProgress::Battery => FloatOutBoyLedPixel {
-                channels: [0x90, 0x90, 0x90, 0],
-            },
-            FloatOutBoyStatusProgress::Duty => FloatOutBoyLedPixel {
-                channels: [0xff, 0xb0, 0x30, 0],
-            },
-            FloatOutBoyStatusProgress::MotorCurrent => FloatOutBoyLedPixel {
-                channels: [0xff, 0x50, 0x90, 0],
-            },
-            FloatOutBoyStatusProgress::BatteryCurrent => FloatOutBoyLedPixel {
-                channels: [0, 0xff, 0x80, 0],
-            },
+            FloatOutBoyStatusProgress::Battery => FloatOutBoyLedPixel::rgb(0x90, 0x90, 0x90),
+            FloatOutBoyStatusProgress::Duty => FloatOutBoyLedPixel::rgb(0xff, 0xb0, 0x30),
+            FloatOutBoyStatusProgress::MotorCurrent => FloatOutBoyLedPixel::rgb(0xff, 0x50, 0x90),
+            FloatOutBoyStatusProgress::BatteryCurrent => FloatOutBoyLedPixel::rgb(0, 0xff, 0x80),
         };
 
         for index in 0..len {
@@ -1226,20 +1185,15 @@ impl FloatOutBoyLedStripFrame {
         let blink = 0.15 + 0.85 * refloat_cosine_progress(current_time * 2.0);
         self.render_pixel_blended(
             index,
-            FloatOutBoyLedPixel {
-                channels: [0xff, 0x50, 0x38, 0],
-            },
+            FloatOutBoyLedPixel::rgb(0xff, 0x50, 0x38),
             overlay.brightness(blink),
             overlay.blend,
         );
     }
 
     /// Paint Refloat's disabled red pulse.
-    pub fn render_disabled(&mut self, strip_brightness: Ratio, on_off_fade: Ratio, time: f32) {
-        let red = FloatOutBoyLedPixel {
-            channels: [0xff, 0, 0, 0],
-        };
-        let brightness = strip_brightness * on_off_fade;
+    pub fn render_disabled(&mut self, brightness: Ratio, time: f32) {
+        let red = FloatOutBoyLedPixel::rgb(0xff, 0, 0);
         self.render_pulse_shape(
             red,
             FloatOutBoyLedPixel::default(),
@@ -1250,12 +1204,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     /// Paint Refloat's status-confirm pulse over this strip.
-    pub fn render_confirmation(
-        &mut self,
-        strip_brightness: Ratio,
-        on_off_fade: Ratio,
-        progress: f32,
-    ) {
+    pub fn render_confirmation(&mut self, brightness: Ratio, progress: f32) {
         let len = usize::from(self.config.count);
         let len_float = f32::from(self.config.count);
         let progress = progress.min(1.0);
@@ -1285,10 +1234,7 @@ impl FloatOutBoyLedStripFrame {
         let length = len_float * 0.5 - sides - center;
         let offset = sides + length * (1.0 - pulse);
         let feather = len_float * 0.25;
-        let confirm = FloatOutBoyLedPixel {
-            channels: [0xa0, 0x40, 0xff, 0],
-        };
-        let brightness = strip_brightness * on_off_fade;
+        let confirm = FloatOutBoyLedPixel::rgb(0xa0, 0x40, 0xff);
 
         for index in 0..len {
             let index_float = f32::from(u8::try_from(index).unwrap_or_default());
@@ -1303,25 +1249,26 @@ impl FloatOutBoyLedStripFrame {
     }
 
     /// Render one currently implemented Refloat bar animation.
-    pub fn render_bar(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+    pub fn render_bar(&mut self, mut bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+        bar.brightness = bar.brightness * on_off_fade;
         let time = time * bar.animation_speed;
         let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::Felony => {
-                self.render_felony(bar, on_off_fade, time);
+                self.render_felony(bar, time);
                 return;
             }
             FloatOutBoyLedAnimationMode::RainbowCycle
             | FloatOutBoyLedAnimationMode::RainbowFade
             | FloatOutBoyLedAnimationMode::RainbowRoll => {
-                self.render_rainbow(bar, on_off_fade, time);
+                self.render_rainbow(bar, time);
                 return;
             }
             FloatOutBoyLedAnimationMode::Pulse => {
-                self.render_pulse(bar, on_off_fade, time);
+                self.render_pulse(bar, time);
                 return;
             }
             FloatOutBoyLedAnimationMode::KnightRider => {
-                self.render_knight_rider(bar, on_off_fade, time);
+                self.render_knight_rider(bar, time);
                 return;
             }
             FloatOutBoyLedAnimationMode::Solid => {
@@ -1341,8 +1288,7 @@ impl FloatOutBoyLedStripFrame {
                 FloatOutBoyLedPixel::from_named(color)
             }
         };
-        let brightness = bar.brightness * on_off_fade;
-        self.render_target(target, brightness, FULL_RATIO);
+        self.render_target(target, bar.brightness, Ratio::FULL);
     }
 
     /// Render one Refloat transition over the existing source frame.
@@ -1390,7 +1336,7 @@ impl FloatOutBoyLedStripFrame {
                     transition_target(to_bar),
                     progress,
                 ),
-                FULL_RATIO,
+                Ratio::FULL,
                 progress,
             )
         };
@@ -1473,7 +1419,7 @@ impl FloatOutBoyLedStripFrame {
     }
 
     fn render_pixel(&mut self, index: usize, target: FloatOutBoyLedPixel, brightness: Ratio) {
-        self.render_pixel_blended(index, target, brightness, FULL_RATIO);
+        self.render_pixel_blended(index, target, brightness, Ratio::FULL);
     }
 
     fn render_pixel_blended(
@@ -1488,11 +1434,10 @@ impl FloatOutBoyLedStripFrame {
         }
     }
 
-    fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+    fn render_pulse(&mut self, bar: FloatOutBoyLedBarConfig, time: f32) {
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
-        let brightness = bar.brightness * on_off_fade;
-        self.render_pulse_shape(primary, secondary, brightness, time, 5.0);
+        self.render_pulse_shape(primary, secondary, bar.brightness, time, 5.0);
     }
 
     fn render_pulse_shape(
@@ -1519,11 +1464,11 @@ impl FloatOutBoyLedStripFrame {
             let distance = (index - offset + 1.0).min(len_float - offset - index);
             let blend = (distance / feather).clamp(0.0, 1.0) * fade;
             let target = FloatOutBoyLedPixel::blend(secondary, primary, blend);
-            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
+            *pixel = pixel.scaled_and_blended(target, brightness, Ratio::FULL);
         }
     }
 
-    fn render_knight_rider(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+    fn render_knight_rider(&mut self, bar: FloatOutBoyLedBarConfig, time: f32) {
         let count = self.config.count;
         if count == 0 {
             return;
@@ -1536,8 +1481,6 @@ impl FloatOutBoyLedStripFrame {
         let second = 1.5 * len_float - len_float * vescpkg_rs::remainder(time - 1.0, 2.0);
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
-        let brightness = bar.brightness * on_off_fade;
-
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let index = f32::from(u8::try_from(index).unwrap_or_default());
             let trail_blend = |position, direction| {
@@ -1552,11 +1495,11 @@ impl FloatOutBoyLedStripFrame {
             };
             let blend = trail_blend(first, 1.0_f32).max(trail_blend(second, -1.0));
             let target = FloatOutBoyLedPixel::blend(secondary, primary, blend);
-            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
+            *pixel = pixel.scaled_and_blended(target, bar.brightness, Ratio::FULL);
         }
     }
 
-    fn render_felony(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
+    fn render_felony(&mut self, bar: FloatOutBoyLedBarConfig, time: f32) {
         let phase = vescpkg_rs::remainder(time, 0.15);
         let len = usize::from(self.config.count);
         let stop = len / 2;
@@ -1564,8 +1507,6 @@ impl FloatOutBoyLedStripFrame {
         let primary = FloatOutBoyLedPixel::from_named(bar.primary_color);
         let secondary = FloatOutBoyLedPixel::from_named(bar.secondary_color);
         let black = FloatOutBoyLedPixel::default();
-        let brightness = bar.brightness * on_off_fade;
-
         for (index, pixel) in self.pixels_mut().iter_mut().enumerate() {
             let target = if phase < 0.05 {
                 if index < stop { primary } else { black }
@@ -1578,12 +1519,11 @@ impl FloatOutBoyLedStripFrame {
             } else {
                 black
             };
-            *pixel = pixel.scaled_and_blended(target, brightness, FULL_RATIO);
+            *pixel = pixel.scaled_and_blended(target, bar.brightness, Ratio::FULL);
         }
     }
 
-    fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, on_off_fade: Ratio, time: f32) {
-        let brightness = bar.brightness * on_off_fade;
+    fn render_rainbow(&mut self, bar: FloatOutBoyLedBarConfig, time: f32) {
         let target = match bar.animation_mode {
             FloatOutBoyLedAnimationMode::RainbowCycle => {
                 let step = crate::wire::saturating_trunc_f32_to_u8(time * 10.0)
@@ -1609,8 +1549,11 @@ impl FloatOutBoyLedStripFrame {
                     let hue = crate::wire::saturating_trunc_f32_to_u8(
                         255.0 / f32::from(count) * f32::from(index) + offset,
                     );
-                    *pixel =
-                        pixel.scaled_and_blended(refloat_hue_to_pixel(hue), brightness, FULL_RATIO);
+                    *pixel = pixel.scaled_and_blended(
+                        refloat_hue_to_pixel(hue),
+                        bar.brightness,
+                        Ratio::FULL,
+                    );
                 }
                 return;
             }
@@ -1621,7 +1564,7 @@ impl FloatOutBoyLedStripFrame {
             | FloatOutBoyLedAnimationMode::KnightRider
             | FloatOutBoyLedAnimationMode::Felony => return,
         };
-        self.render_target(target, brightness, FULL_RATIO);
+        self.render_target(target, bar.brightness, Ratio::FULL);
     }
 
     fn render_target(&mut self, target: FloatOutBoyLedPixel, brightness: Ratio, blend: Ratio) {
@@ -1632,12 +1575,10 @@ impl FloatOutBoyLedStripFrame {
 }
 
 fn transition_target(bar: FloatOutBoyLedBarConfig) -> FloatOutBoyLedPixel {
-    let color = if matches!(bar.animation_mode, FloatOutBoyLedAnimationMode::Solid) {
-        bar.primary_color
-    } else {
-        bar.secondary_color
-    };
-    FloatOutBoyLedPixel::from_named(color)
+    FloatOutBoyLedPixel::from_named(match bar.animation_mode {
+        FloatOutBoyLedAnimationMode::Solid => bar.primary_color,
+        _ => bar.secondary_color,
+    })
 }
 
 /// Select physical front/rear bars from settled headlight and travel direction state.
@@ -1647,13 +1588,10 @@ pub const fn select_front_rear_bars(
     headlights_on: bool,
     direction_forward: bool,
 ) -> (FloatOutBoyLedBarConfig, FloatOutBoyLedBarConfig) {
-    if !headlights_on {
-        return (config.front, config.rear);
-    }
-    if direction_forward {
-        (config.headlights, config.taillights)
-    } else {
-        (config.taillights, config.headlights)
+    match (headlights_on, direction_forward) {
+        (false, _) => (config.front, config.rear),
+        (true, true) => (config.headlights, config.taillights),
+        (true, false) => (config.taillights, config.headlights),
     }
 }
 
@@ -1703,14 +1641,11 @@ fn refloat_hue_to_pixel(hue: u8) -> FloatOutBoyLedPixel {
     };
     let channel =
         |value| crate::wire::saturating_trunc_f32_to_u8(refloat_cosine_progress(value) * 255.0);
-    FloatOutBoyLedPixel {
-        channels: [
-            channel(tweak(red, 3.2)),
-            channel(tweak(green, 2.4)),
-            channel(tweak(blue, 2.2)),
-            0,
-        ],
-    }
+    FloatOutBoyLedPixel::rgb(
+        channel(tweak(red, 3.2)),
+        channel(tweak(green, 2.4)),
+        channel(tweak(blue, 2.2)),
+    )
 }
 
 #[cfg(test)]
