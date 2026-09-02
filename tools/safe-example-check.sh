@@ -20,5 +20,8 @@ for example in "${examples[@]}"; do
 done
 
 for module in config custom_data display sync threads; do
-  rg -q "^pub mod ${module};$" examples/loopback/src/main.rs
+  if ! rg -q "^pub mod ${module};$" examples/loopback/src/main.rs; then
+    printf 'loopback example is missing public module: %s\n' "$module" >&2
+    exit 1
+  fi
 done
