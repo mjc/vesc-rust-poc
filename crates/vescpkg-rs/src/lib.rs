@@ -101,6 +101,7 @@ mod encoder;
 mod extension;
 mod fault_history;
 mod firmware;
+mod firmware_str;
 mod gnss;
 mod lifecycle_core;
 mod logging;
@@ -124,6 +125,7 @@ mod test_ffi;
 mod timer;
 mod uart;
 
+pub use firmware_str::FirmwareStr;
 pub use uart::UartDuplexMode;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -381,7 +383,7 @@ pub mod prelude {
         FirmwareAhrsError, FirmwareAhrsParameters, FirmwareAhrsSnapshot, FirmwareCapabilities,
         FirmwareClock, FirmwareEffects, FirmwareFloatSetting, FirmwareInputs, FirmwareIntSetting,
         FirmwareLog, FirmwareMutex, FirmwareMutexGuard, FirmwareSemaphore, FirmwareSettings,
-        FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
+        FirmwareStr, FirmwareThread, FirmwareThreads, FocAudio, FocAudioError, FocAudioSampleTable,
         FocAudioStopMode, Gnss, GnssError, GnssSnapshot, Gpio, Imu, ImuReadCallback,
         ImuReadCallbackError, ImuReadCallbackLease, ImuReadHandler, InputError, LbmExtension,
         LispArgs, LispContextId, LispFlatValue, LispFlatValueError, LispIntegerError, LispList,
