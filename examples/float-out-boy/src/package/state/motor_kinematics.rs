@@ -106,6 +106,7 @@ impl Default for MotorKinematicsTracker {
             pending_window: None,
         };
         tracker.configure(crate::config::FLOAT_OUT_BOY_MAIN_THREAD_SAMPLE_RATE);
+        tracker.window = tracker.pending_window.take().unwrap_or(tracker.window);
         tracker
     }
 }

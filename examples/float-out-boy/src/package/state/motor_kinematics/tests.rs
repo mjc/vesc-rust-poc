@@ -21,6 +21,18 @@ fn acceleration_is_normalized_to_elapsed_seconds() {
 }
 
 #[test]
+fn initial_acceleration_window_starts_zero_filled_like_refloat() {
+    let mut tracker = MotorKinematicsTracker::default();
+
+    tracker.record(
+        Rpm::from_revolutions_per_minute(10.0),
+        VescSeconds::from_seconds(0.002),
+    );
+
+    assert_f32_eq!(tracker.average().as_erpm_per_second(), 5_000.0 / 27.0,);
+}
+
+#[test]
 fn acceleration_window_tracks_refloat_eight_hertz_cutoff() {
     let mut at_500_hz = MotorKinematicsTracker::default();
     at_500_hz.configure(SampleRate::from_hertz(500.0));
