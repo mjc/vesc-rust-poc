@@ -13,6 +13,7 @@ pub(super) struct BmsRuntimeState {
     faults: FloatOutBoyBmsFaults,
     start_ticks: Option<TimestampTicks>,
     alert_ticks: WrappingTimer,
+    last_push_ticks: Option<TimestampTicks>,
 }
 
 impl Default for BmsRuntimeState {
@@ -22,6 +23,7 @@ impl Default for BmsRuntimeState {
             faults: FloatOutBoyBmsFaults::empty(),
             start_ticks: None,
             alert_ticks: WrappingTimer::started_at(TimestampTicks::from_ticks(0)),
+            last_push_ticks: None,
         }
     }
 }
@@ -29,6 +31,7 @@ impl Default for BmsRuntimeState {
 impl BmsRuntimeState {
     pub(super) fn record_sample(&mut self, sample: FloatOutBoyBmsSample) {
         self.sample = sample;
+        self.last_push_ticks = None;
     }
 
     pub(super) fn initialize_start_epoch(&mut self, now: TimestampTicks) {
@@ -41,18 +44,23 @@ impl BmsRuntimeState {
         thresholds: FloatOutBoyBmsThresholds,
         system_time_ticks: TimestampTicks,
     ) {
+        let last_push_ticks = *self.last_push_ticks.get_or_insert(system_time_ticks);
+        let message_age = self.sample.message_age()
+            + TimestampTicks::from_ticks(
+                system_time_ticks
+                    .wrapping_duration_since(last_push_ticks)
+                    .as_ticks(),
+            )
+            .as_vesc_seconds();
+        let sample = self.sample.with_message_age(message_age);
         let start_ticks = *self.start_ticks.get_or_insert(system_time_ticks);
         let startup_timeout_elapsed = timer_older(
             system_time_ticks,
             start_ticks,
             VescSeconds::from_seconds(5.0),
         );
-        self.faults = FloatOutBoyBmsFaults::evaluate(
-            enabled,
-            self.sample,
-            thresholds,
-            startup_timeout_elapsed,
-        );
+        self.faults =
+            FloatOutBoyBmsFaults::evaluate(enabled, sample, thresholds, startup_timeout_elapsed);
     }
 
     pub(super) fn take_ready_alert_fault(

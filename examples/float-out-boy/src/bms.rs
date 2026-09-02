@@ -29,7 +29,7 @@ vescpkg_rs::typed_fields! {
         cell_low_temperature: FloatOutBoyBmsTemperature => cell_low_temperature,
         cell_high_temperature: FloatOutBoyBmsTemperature => cell_high_temperature,
         bms_high_temperature: FloatOutBoyBmsTemperature => bms_high_temperature,
-        message_age: VescSeconds => message_age,
+        message_age: VescSeconds => message_age => with_message_age,
     }
 }
 
@@ -123,8 +123,12 @@ impl FloatOutBoyBmsFaults {
             return Self::empty();
         }
 
-        if sample.message_age() > VescSeconds::from_seconds(5.0) && startup_timeout_elapsed {
-            return Self::CONNECTION;
+        if sample.message_age() > VescSeconds::from_seconds(5.0) {
+            return if startup_timeout_elapsed {
+                Self::CONNECTION
+            } else {
+                Self::empty()
+            };
         }
 
         let mut faults = Self::empty();
