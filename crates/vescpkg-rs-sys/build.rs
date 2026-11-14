@@ -160,7 +160,7 @@ fn verify_function_classifier() {
 
 fn is_function_type(ty: &Type, function_aliases: &HashSet<String>) -> bool {
     match ty {
-        Type::BareFn(_) => true,
+        Type::FnPtr(_) => true,
         Type::Paren(paren) => is_function_type(&paren.elem, function_aliases),
         Type::Path(path) => path.path.segments.last().is_some_and(|segment| {
             if function_aliases.contains(&segment.ident.to_string()) {

@@ -18,7 +18,7 @@ workspace = true
 test-support = ["vescpkg-rs/test-support"]
 
 [dependencies]
-bitflags = { version = "2.13.1", default-features = false }
+bitflags = { version = "2.13.2", default-features = false }
 pin-init = "0.2.0"
 vesc-protocol = { path = "../../crates/vesc-protocol" }
 vescpkg-rs = { path = "../../crates/vescpkg-rs", features = ["alloc", "in-place-init", "math"] }

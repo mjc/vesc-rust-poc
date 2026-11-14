@@ -9,4 +9,4 @@ description = "Unofficial shared Rust protocol types for VESC-related host and p
 workspace = true
 
 [dependencies]
-no-panic = "0.1.36"
+no-panic = "0.1.37"
