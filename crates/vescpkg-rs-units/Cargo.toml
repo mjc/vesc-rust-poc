@@ -13,4 +13,4 @@ default = []
 std = []
 
 [dependencies]
-fugit = { version = "0.4", default-features = false }
+fugit = { version = "0.6", default-features = false }
